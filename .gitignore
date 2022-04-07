@@ -1,3 +1,4 @@
+manager
 bin/*
 build-service
 *.out

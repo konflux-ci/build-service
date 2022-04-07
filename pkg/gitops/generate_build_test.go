@@ -399,6 +399,9 @@ func TestGetParamsForComponentBuild(t *testing.T) {
 						ContainerImage: "whatever-is-set",
 					},
 				},
+				Status: appstudiov1alpha1.ComponentStatus{
+					ContainerImage: "whatever-is-set",
+				},
 			},
 			want: []tektonapi.Param{
 				{
@@ -437,6 +440,9 @@ func TestGetParamsForComponentBuild(t *testing.T) {
 					Build: appstudiov1alpha1.Build{
 						ContainerImage: "docker.io/foo/bar:tag",
 					},
+				},
+				Status: appstudiov1alpha1.ComponentStatus{
+					ContainerImage: "docker.io/foo/bar:tag",
 				},
 			},
 			want: []tektonapi.Param{
@@ -478,7 +484,8 @@ func TestGetParamsForComponentBuild(t *testing.T) {
 					},
 				},
 				Status: appstudiov1alpha1.ComponentStatus{
-					Devfile: getDevfileWithOuterloopBuildDockerfile(),
+					Devfile:        getDevfileWithOuterloopBuildDockerfile(),
+					ContainerImage: "docker.io/foo/bar:tag",
 				},
 			},
 			want: []tektonapi.Param{

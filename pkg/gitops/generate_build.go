@@ -200,9 +200,9 @@ func normalizeOutputImageURL(outputImage string) string {
 // is that the git revision appended to the output image tag in case of webhook build.
 func getParamsForComponentBuild(component appstudiov1alpha1.Component, isInitialBuild bool) []tektonapi.Param {
 	sourceCode := component.Spec.Source.GitSource.URL
-	outputImage := component.Spec.Build.ContainerImage
+	outputImage := component.Status.ContainerImage
 	if !isInitialBuild {
-		outputImage = normalizeOutputImageURL(component.Spec.Build.ContainerImage)
+		outputImage = normalizeOutputImageURL(outputImage)
 	}
 
 	// Default required parameters
@@ -375,7 +375,7 @@ func GenerateTriggerTemplate(component appstudiov1alpha1.Component) (*triggersap
 			},
 		},
 	}
-	return &triggerTemplate, err
+	return &triggerTemplate, nil
 }
 
 // The GenerateEventListener is responsible for defining how to "parse" the incoming event ( "github-push ")
