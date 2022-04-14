@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -31,11 +32,11 @@ import (
 
 	routev1 "github.com/openshift/api/route/v1"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-service/api/v1alpha1"
+	gitopsprepare "github.com/redhat-appstudio/build-service/pkg/gitops/prepare"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	triggersapi "github.com/tektoncd/triggers/pkg/apis/triggers/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	// "sigs.k8s.io/controller-runtime/pkg/client"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -88,6 +89,81 @@ func createAndFetchSimpleApp(name string, namespace string, display string, desc
 	return fetchedHasApp
 }
 
+func createAndFetchConfigMap(name string, namespace string, data map[string]string) *corev1.ConfigMap {
+	configMap := corev1.ConfigMap{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "ConfigMap",
+		},
+		Data: data,
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+	}
+
+	Expect(k8sClient.Create(ctx, &configMap)).Should(Succeed())
+
+	configMapLookupKey := types.NamespacedName{Name: name, Namespace: namespace}
+	createdConfigMap := &corev1.ConfigMap{}
+
+	Eventually(func() bool {
+		k8sClient.Get(context.Background(), configMapLookupKey, createdConfigMap)
+		return reflect.DeepEqual(createdConfigMap.Data, data)
+	}, timeout, interval).Should(BeTrue())
+
+	return createdConfigMap
+}
+
+func createAndFetchComponent(name string, namespace string, application string, componentName string, gitUrl string) *appstudiov1alpha1.Component {
+	hasComp := &appstudiov1alpha1.Component{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "appstudio.redhat.com/v1alpha1",
+			Kind:       "Component",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: appstudiov1alpha1.ComponentSpec{
+			ComponentName: componentName,
+			Application:   application,
+			Source: appstudiov1alpha1.ComponentSource{
+				ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
+					GitSource: &appstudiov1alpha1.GitSource{
+						URL: gitUrl,
+					},
+				},
+			},
+		},
+	}
+	Expect(k8sClient.Create(ctx, hasComp)).Should(Succeed())
+
+	hasCompLookupKey := types.NamespacedName{Name: name, Namespace: namespace}
+	createdHasComp := &appstudiov1alpha1.Component{}
+	Eventually(func() bool {
+		k8sClient.Get(context.Background(), hasCompLookupKey, createdHasComp)
+		return len(createdHasComp.Status.Conditions) > 0 && createdHasComp.ResourceVersion != ""
+	}, timeout, interval).Should(BeTrue())
+
+	return createdHasComp
+}
+
+func deleteConfigMap(configMapLookupKey types.NamespacedName) {
+	// Delete
+	Eventually(func() error {
+		f := &corev1.ConfigMap{}
+		k8sClient.Get(context.Background(), configMapLookupKey, f)
+		return k8sClient.Delete(context.Background(), f)
+	}, timeout, interval).Should(Succeed())
+
+	// Wait for delete to finish
+	Eventually(func() error {
+		f := &corev1.ConfigMap{}
+		return k8sClient.Get(context.Background(), configMapLookupKey, f)
+	}, timeout, interval).ShouldNot(Succeed())
+}
+
 // deleteHASAppCR deletes the specified hasApp resource and verifies it was properly deleted
 func deleteHASAppCR(hasAppLookupKey types.NamespacedName) {
 	// Delete
@@ -118,6 +194,42 @@ func deleteHASCompCR(hasCompLookupKey types.NamespacedName) {
 		f := &appstudiov1alpha1.Component{}
 		return k8sClient.Get(ctx, hasCompLookupKey, f)
 	}, timeout, interval).ShouldNot(Succeed())
+}
+
+func fetchPipelineRun(componentName string) tektonapi.PipelineRun {
+	pipelineRuns := tektonapi.PipelineRunList{}
+
+	Eventually(func() bool {
+		labelSelectors := client.ListOptions{Raw: &metav1.ListOptions{
+			LabelSelector: "build.appstudio.openshift.io/component=" + componentName,
+		}}
+		k8sClient.List(context.Background(), &pipelineRuns, &labelSelectors)
+		return len(pipelineRuns.Items) > 0
+	}, timeout, interval).Should(BeTrue())
+
+	return pipelineRuns.Items[0]
+}
+
+func fetchTriggerTemplate(componentName string, componentNamespace string) triggersapi.TriggerTemplate {
+	triggerTemplate := triggersapi.TriggerTemplate{}
+
+	lookupKey := types.NamespacedName{Name: componentName, Namespace: componentNamespace}
+
+	Eventually(func() bool {
+		k8sClient.Get(context.Background(), lookupKey, &triggerTemplate)
+		return triggerTemplate.ResourceVersion != ""
+	}, timeout, interval).Should(BeTrue())
+
+	return triggerTemplate
+}
+
+func fetchPipelineRunFromTriggerTemplate(componentName string, componentNamespace string) tektonapi.PipelineRun {
+	triggerTemplate := fetchTriggerTemplate(componentName, componentNamespace)
+
+	pipelineRun := tektonapi.PipelineRun{}
+	json.Unmarshal(triggerTemplate.Spec.ResourceTemplates[0].RawExtension.Raw, &pipelineRun)
+
+	return pipelineRun
 }
 
 var _ = Describe("Component build controller", func() {
@@ -531,6 +643,77 @@ var _ = Describe("Component build controller", func() {
 
 			// Delete the specified HASApp resource
 			deleteHASAppCR(hasAppLookupKey)
+		})
+	})
+
+	Context("Resolve the correct build bundle during the component's creation", func() {
+		It("should use the build bundle specified if a configmap is set in the current namespace", func() {
+			HASAppNameForBuild := "test-application-custom-bundle"
+			HASCompNameForBuild := "test-component-custom-bundle"
+			customBuildBundle := "quay.io/custom-bundle/bundle:latest"
+
+			bundleConfigMapData := map[string]string{
+				gitopsprepare.BuildBundleConfigMapKey: customBuildBundle,
+			}
+
+			configMap := createAndFetchConfigMap(gitopsprepare.BuildBundleConfigMapName, HASAppNamespace, bundleConfigMapData)
+			app := createAndFetchSimpleApp(HASAppNameForBuild, HASAppNamespace, DisplayName, Description)
+			component := createAndFetchComponent(HASCompNameForBuild, HASAppNamespace, HASAppNameForBuild, ComponentName, SampleRepoLink)
+			pipelineRun := fetchPipelineRun(HASCompNameForBuild)
+			triggerTemplatePipelineRun := fetchPipelineRunFromTriggerTemplate(HASCompNameForBuild, HASAppNamespace)
+
+			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(customBuildBundle))
+			Expect(triggerTemplatePipelineRun.Spec.PipelineRef.Bundle).To(Equal(customBuildBundle))
+
+			deleteHASCompCR(types.NamespacedName{Name: component.Name, Namespace: component.Namespace})
+			deleteHASAppCR(types.NamespacedName{Name: app.Name, Namespace: app.Namespace})
+			deleteConfigMap(types.NamespacedName{Name: configMap.Name, Namespace: configMap.Namespace})
+		})
+
+		It("should use the build bundle specified if a configmap is set in the default bundle namespace", func() {
+			HASAppNameForBuild := "test-application-default-bundle"
+			HASCompNameForBuild := "test-component-default-bundle"
+			customBuildBundle := "quay.io/default-bundle/bundle:latest"
+
+			bundleConfigMapData := map[string]string{
+				gitopsprepare.BuildBundleConfigMapKey: customBuildBundle,
+			}
+
+			//create default build bundle namespace
+			Expect(k8sClient.Create(ctx, &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: gitopsprepare.BuildBundleDefaultNamepace,
+				},
+			})).Should(Succeed())
+
+			configMap := createAndFetchConfigMap(gitopsprepare.BuildBundleConfigMapName, gitopsprepare.BuildBundleDefaultNamepace, bundleConfigMapData)
+			app := createAndFetchSimpleApp(HASAppNameForBuild, HASAppNamespace, DisplayName, Description)
+			component := createAndFetchComponent(HASCompNameForBuild, HASAppNamespace, HASAppNameForBuild, ComponentName, SampleRepoLink)
+			pipelineRun := fetchPipelineRun(HASCompNameForBuild)
+			triggerTemplatePipelineRun := fetchPipelineRunFromTriggerTemplate(HASCompNameForBuild, HASAppNamespace)
+
+			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(customBuildBundle))
+			Expect(triggerTemplatePipelineRun.Spec.PipelineRef.Bundle).To(Equal(customBuildBundle))
+
+			deleteHASCompCR(types.NamespacedName{Name: component.Name, Namespace: component.Namespace})
+			deleteHASAppCR(types.NamespacedName{Name: app.Name, Namespace: app.Namespace})
+			deleteConfigMap(types.NamespacedName{Name: configMap.Name, Namespace: configMap.Namespace})
+		})
+
+		It("should use the fallback build bundle in case no configmap is found", func() {
+			HASAppNameForBuild := "test-application-fallback-bundle-2"
+			HASCompNameForBuild := "test-component-fallback-bundle-2"
+
+			createAndFetchSimpleApp(HASAppNameForBuild, HASAppNamespace, DisplayName, Description)
+			component := createAndFetchComponent(HASCompNameForBuild, HASAppNamespace, HASAppNameForBuild, ComponentName, SampleRepoLink)
+			pipelineRun := fetchPipelineRun(HASCompNameForBuild)
+			triggerTemplatePipelineRun := fetchPipelineRunFromTriggerTemplate(HASCompNameForBuild, HASAppNamespace)
+
+			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(gitopsprepare.FallbackBuildBundle))
+			Expect(triggerTemplatePipelineRun.Spec.PipelineRef.Bundle).To(Equal(gitopsprepare.FallbackBuildBundle))
+
+			deleteHASCompCR(types.NamespacedName{Name: component.Name, Namespace: component.Namespace})
+			deleteHASAppCR(types.NamespacedName{Name: HASAppNameForBuild, Namespace: HASAppNamespace})
 		})
 	})
 })
