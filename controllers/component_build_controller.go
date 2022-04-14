@@ -42,6 +42,7 @@ import (
 	"github.com/go-logr/logr"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-service/api/v1alpha1"
 	"github.com/redhat-appstudio/build-service/pkg/gitops"
+	gitopsprepare "github.com/redhat-appstudio/build-service/pkg/gitops/prepare"
 )
 
 // ComponentBuildReconciler watches AppStudio Component object in order to submit builds
@@ -131,7 +132,8 @@ var triggerResourceTemplateDiffOpts = cmp.Options{
 func (r *ComponentBuildReconciler) IsNewBuildRequired(ctx context.Context, component appstudiov1alpha1.Component) (bool, error) {
 	log := r.Log.WithValues("Namespace", component.Namespace, "Application", component.Spec.Application, "Component", component.Name)
 
-	expectedTriggerTemplate, err := gitops.GenerateTriggerTemplate(component)
+	gitopsConfig := gitopsprepare.PrepareGitopsConfig(ctx, r.Client, component)
+	expectedTriggerTemplate, err := gitops.GenerateTriggerTemplate(component, gitopsConfig)
 	if err != nil {
 		return false, err
 	}
@@ -255,7 +257,8 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 		}
 	}
 
-	triggerTemplate, err := gitops.GenerateTriggerTemplate(component)
+	gitopsConfig := gitopsprepare.PrepareGitopsConfig(ctx, r.Client, component)
+	triggerTemplate, err := gitops.GenerateTriggerTemplate(component, gitopsConfig)
 	if err != nil {
 		log.Error(err, "Unable to generate triggerTemplate ")
 		return err
@@ -310,7 +313,7 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 	}
 	log.Info(fmt.Sprintf("Eventlistener created/updated %v", eventListener.Name))
 
-	initialBuild := gitops.GenerateInitialBuildPipelineRun(component)
+	initialBuild := gitops.GenerateInitialBuildPipelineRun(component, gitopsConfig)
 	err = controllerutil.SetOwnerReference(&component, &initialBuild, r.Scheme)
 	if err != nil {
 		log.Error(err, fmt.Sprintf("Unable to set owner reference for %v", initialBuild))

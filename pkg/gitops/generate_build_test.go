@@ -23,9 +23,12 @@ import (
 	"github.com/devfile/api/v2/pkg/devfile"
 	data "github.com/devfile/library/pkg/devfile/parser/data"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-service/api/v1alpha1"
+	gitopsprepare "github.com/redhat-appstudio/build-service/pkg/gitops/prepare"
+	"github.com/redhat-appstudio/build-service/pkg/gitops/testutils"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 )
 
@@ -107,6 +110,12 @@ func TestNormalizeOutputImageURL(t *testing.T) {
 }
 
 func TestGenerateInitialBuildPipelineRun(t *testing.T) {
+	mockedClient := &testutils.MockedClient{}
+
+	mockedClient.MockedGet = func(obj client.Object) error {
+		return nil
+	}
+
 	component := appstudiov1alpha1.Component{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testcomponent",
@@ -121,6 +130,10 @@ func TestGenerateInitialBuildPipelineRun(t *testing.T) {
 				},
 			},
 		},
+	}
+
+	gitopsConfig := gitopsprepare.GitopsConfig{
+		BuildBundle: "quay.io/sample/bundle",
 	}
 
 	type args struct {
@@ -144,7 +157,7 @@ func TestGenerateInitialBuildPipelineRun(t *testing.T) {
 				},
 				Spec: tektonapi.PipelineRunSpec{
 					PipelineRef: &tektonapi.PipelineRef{
-						Bundle: "quay.io/redhat-appstudio/build-templates-bundle:8201a567956ba6d2095d615ea2c0f6ab35f9ba5f",
+						Bundle: "quay.io/sample/bundle",
 						Name:   "noop",
 					},
 					Params: []tektonapi.Param{
@@ -184,14 +197,19 @@ func TestGenerateInitialBuildPipelineRun(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := GenerateInitialBuildPipelineRun(tt.args.component); !reflect.DeepEqual(got, tt.want) {
+			if got := GenerateInitialBuildPipelineRun(tt.args.component, gitopsConfig); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("GenerateInitialBuildPipelineRun() = %v, want %v", got, tt.want)
+				t.Errorf("BUILDBUNDLE: %v", got.Spec.PipelineRef.Bundle)
 			}
 		})
 	}
 }
 
 func TestDetermineBuildExecution(t *testing.T) {
+	gitopsConfig := gitopsprepare.GitopsConfig{
+		BuildBundle: "quay.io/sample/bundle",
+	}
+
 	type args struct {
 		component        appstudiov1alpha1.Component
 		params           []tektonapi.Param
@@ -216,7 +234,7 @@ func TestDetermineBuildExecution(t *testing.T) {
 			},
 			want: tektonapi.PipelineRunSpec{
 				PipelineRef: &tektonapi.PipelineRef{
-					Bundle: "quay.io/redhat-appstudio/build-templates-bundle:8201a567956ba6d2095d615ea2c0f6ab35f9ba5f",
+					Bundle: "quay.io/sample/bundle",
 					Name:   "noop",
 				},
 				Params: []tektonapi.Param{},
@@ -251,7 +269,7 @@ func TestDetermineBuildExecution(t *testing.T) {
 			},
 			want: tektonapi.PipelineRunSpec{
 				PipelineRef: &tektonapi.PipelineRef{
-					Bundle: "quay.io/redhat-appstudio/build-templates-bundle:8201a567956ba6d2095d615ea2c0f6ab35f9ba5f",
+					Bundle: "quay.io/sample/bundle",
 					Name:   "noop",
 				},
 				Params: []tektonapi.Param{},
@@ -275,7 +293,7 @@ func TestDetermineBuildExecution(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := DetermineBuildExecution(tt.args.component, tt.args.params, tt.args.workspaceSubPath); !reflect.DeepEqual(got, tt.want) {
+			if got := DetermineBuildExecution(tt.args.component, tt.args.params, tt.args.workspaceSubPath, gitopsConfig); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("DetermineBuildExecution() = %v, want %v", got, tt.want)
 			}
 		})
