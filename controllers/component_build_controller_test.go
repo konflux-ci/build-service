@@ -532,6 +532,61 @@ var _ = Describe("Component build controller", func() {
 			// Delete the specified HASApp resource
 			deleteHASAppCR(hasAppLookupKey)
 		})
+
+		It("should not create build objects when a container image component is specified", func() {
+			HASAppNameForBuild := "test-application-container-image-comp"
+			HASCompNameForBuild := "test-application-container-image-comp"
+
+			createAndFetchSimpleApp(HASAppNameForBuild, HASAppNamespace, DisplayName, Description)
+
+			hasComp := &appstudiov1alpha1.Component{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "appstudio.redhat.com/v1alpha1",
+					Kind:       "Component",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      HASCompNameForBuild,
+					Namespace: HASAppNamespace,
+				},
+				Spec: appstudiov1alpha1.ComponentSpec{
+					ComponentName: ComponentName,
+					Application:   HASAppNameForBuild,
+					Source: appstudiov1alpha1.ComponentSource{
+						ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
+							ImageSource: &appstudiov1alpha1.ImageSource{
+								ContainerImage: "quay.io/test/image:latest",
+							},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, hasComp)).Should(Succeed())
+
+			hasCompLookupKey := types.NamespacedName{Name: HASCompNameForBuild, Namespace: HASAppNamespace}
+			createdHasComp := &appstudiov1alpha1.Component{}
+			Eventually(func() bool {
+				k8sClient.Get(ctx, hasCompLookupKey, createdHasComp)
+				return len(createdHasComp.Status.Conditions) > 0 && createdHasComp.Status.Conditions[0].Reason == "OK"
+			}, timeout, interval).Should(BeTrue())
+
+			// Validate that no pipeline run gets created
+			pipelineRuns := &tektonapi.PipelineRunList{}
+
+			Consistently(func() bool {
+				labelSelectors := client.ListOptions{Raw: &metav1.ListOptions{
+					LabelSelector: "build.appstudio.openshift.io/component=" + createdHasComp.Name,
+				}}
+				k8sClient.List(ctx, pipelineRuns, &labelSelectors)
+				return len(pipelineRuns.Items) == 0
+			}, timeout, interval).WithTimeout(10 * time.Second).Should(BeTrue())
+
+			// Delete the specified HASComp resource
+			deleteHASCompCR(hasCompLookupKey)
+
+			// Delete the specified HASApp resource
+			hasAppLookupKey := types.NamespacedName{Name: HASAppNameForBuild, Namespace: HASAppNamespace}
+			deleteHASAppCR(hasAppLookupKey)
+		})
 	})
 })
 
