@@ -93,6 +93,12 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
+	// Do not run any builds for any container-image components
+	if component.Spec.Source.ImageSource != nil && component.Spec.Source.ImageSource.ContainerImage != "" {
+		log.Info(fmt.Sprintf("Nothing to do for container image component: %v", req.NamespacedName))
+		return ctrl.Result{}, nil
+	}
+
 	if component.Status.Devfile == "" {
 		// The component has been just created.
 		// Component controller must set devfile model, wait for it.
@@ -136,7 +142,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component appstudiov1alpha1.Component) error {
 	log := r.Log.WithValues("Namespace", component.Namespace, "Application", component.Spec.Application, "Component", component.Name)
 
-	gitSecretName := component.Spec.Source.GitSource.Secret
+	gitSecretName := component.Spec.Secret
 	// Make the Secret ready for consumption by Tekton.
 	if gitSecretName != "" {
 		gitSecret := corev1.Secret{}
