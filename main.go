@@ -31,7 +31,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	routev1 "github.com/openshift/api/route/v1"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-service/api/v1alpha1"
 	"github.com/redhat-appstudio/build-service/controllers"
 	taskrunapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
@@ -91,17 +90,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := routev1.AddToScheme(mgr.GetScheme()); err != nil {
-		setupLog.Error(err, "unable to add route api to the scheme")
-		os.Exit(1)
-	}
-
 	if err = (&controllers.ComponentBuildReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
-		Log:    ctrl.Log.WithName("controllers").WithName("ComponentBuilder"),
+		Log:    ctrl.Log.WithName("controllers").WithName("ComponentInitialBuild"),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ComponentBuilder")
+		setupLog.Error(err, "unable to create controller", "controller", "ComponentInitialBuild")
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder
