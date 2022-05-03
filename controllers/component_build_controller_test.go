@@ -29,6 +29,7 @@ import (
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-service/api/v1alpha1"
+	"github.com/redhat-appstudio/application-service/gitops/prepare"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -83,6 +84,22 @@ func createComponent(componentLookupKey types.NamespacedName) {
 	Expect(k8sClient.Create(ctx, component)).Should(Succeed())
 
 	getComponent(componentLookupKey)
+}
+
+func createConfigMap(name string, namespace string, data map[string]string) {
+	configMap := corev1.ConfigMap{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "ConfigMap",
+		},
+		Data: data,
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+	}
+
+	Expect(k8sClient.Create(ctx, &configMap)).Should(Succeed())
 }
 
 func getComponent(componentLookupKey types.NamespacedName) *appstudiov1alpha1.Component {
@@ -246,6 +263,12 @@ var _ = Describe("Component initial build controller", func() {
 			}
 			Expect(k8sClient.Create(ctx, gitSecret)).Should(Succeed())
 
+			// Configure the build bundle
+			buildBundle := "quay.io/some-repo/some-bundle:0.0.1"
+			createConfigMap(prepare.BuildBundleConfigMapName, HASAppNamespace, map[string]string{
+				prepare.BuildBundleConfigMapKey: buildBundle,
+			})
+
 			// Create component that refers to the git secret
 			component := &appstudiov1alpha1.Component{
 				TypeMeta: metav1.TypeMeta{
@@ -312,7 +335,7 @@ var _ = Describe("Component initial build controller", func() {
 				}
 			}
 
-			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(ContainSubstring("quay.io/redhat-appstudio/build-templates-bundle:"))
+			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(buildBundle))
 
 			Expect(pipelineRun.Spec.Workspaces).To(Not(BeEmpty()))
 			for _, w := range pipelineRun.Spec.Workspaces {

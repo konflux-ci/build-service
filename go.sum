@@ -1799,6 +1799,8 @@ github.com/rcrowley/go-metrics v0.0.0-20190706150252-9beb055b7962/go.mod h1:bCqn
 github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475/go.mod h1:bCqnVzQkZxMG4s8nGwiZ5l3QUCyqpo9Y+/ZMZ9VjZe4=
 github.com/redhat-appstudio/application-service v0.0.0-20220429161414-fd5f11553e0f h1:+O6nY2rWbYMM8ak3f8UCoGQn9ULDbhB+WzNifJ/bi34=
 github.com/redhat-appstudio/application-service v0.0.0-20220429161414-fd5f11553e0f/go.mod h1:QzlBejIgkmnzM/tiKzJKK86IXil/6j8KxmxaDInqtmU=
+github.com/redhat-appstudio/application-service v0.0.0-20220504153308-f3507a2f91ed h1:pImL7M8vIDPHGzA3dXW4Cqbb1XtvQQUN3wkFB+Iut98=
+github.com/redhat-appstudio/application-service v0.0.0-20220504153308-f3507a2f91ed/go.mod h1:QzlBejIgkmnzM/tiKzJKK86IXil/6j8KxmxaDInqtmU=
 github.com/redhat-appstudio/service-provider-integration-operator v0.4.3/go.mod h1:S7NKaaZ0rhCrmHGqae9i21ROY23LurTtII3eMKqxjBQ=
 github.com/redhat-appstudio/service-provider-integration-scm-file-retriever v0.4.3/go.mod h1:hzWm/OOlLXmtF8Qwox3GZlfGJAjVM7KaRkbBjmYAI9k=
 github.com/redhat-developer/alizer/go v0.0.0-20220215154256-33df7feef4ae h1:N2wsIYtziHQ51GNcJY5YcB0YldpR5BwPoTvby+l0vy8=
