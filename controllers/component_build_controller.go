@@ -23,6 +23,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -141,6 +142,26 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 // SubmitNewBuild creates a new PipelineRun to build a new image for the given component.
 func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component appstudiov1alpha1.Component) error {
 	log := r.Log.WithValues("Namespace", component.Namespace, "Application", component.Spec.Application, "Component", component.Name)
+
+	// TODO delete this block which is workaround for delayed sync of pvc
+	workspaceStorage := gitops.GenerateCommonStorage(component, "appstudio")
+	existingPvc := &corev1.PersistentVolumeClaim{}
+	if err := r.Client.Get(ctx, types.NamespacedName{Name: workspaceStorage.Name, Namespace: workspaceStorage.Namespace}, existingPvc); err != nil {
+		if errors.IsNotFound(err) {
+			// Patch PVC size to 1 Gi, because default 10 Mi is not enough
+			workspaceStorage.Spec.Resources.Requests["storage"] = resource.MustParse("1Gi")
+			// Create PVC (Argo CD will patch it later)
+			err = r.Client.Create(ctx, workspaceStorage)
+			if err != nil {
+				log.Error(err, fmt.Sprintf("Unable to create common storage %v", workspaceStorage))
+				return err
+			}
+			log.Info(fmt.Sprintf("PV is now present : %v", workspaceStorage.Name))
+		} else {
+			log.Error(err, fmt.Sprintf("Unable to get common storage %v", workspaceStorage))
+			return err
+		}
+	}
 
 	gitSecretName := component.Spec.Secret
 	// Make the Secret ready for consumption by Tekton.
