@@ -37,6 +37,7 @@ import (
 
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-service/api/v1alpha1"
 	"github.com/redhat-appstudio/application-service/gitops"
+	"github.com/redhat-appstudio/application-service/gitops/prepare"
 )
 
 const (
@@ -72,6 +73,7 @@ func (r *ComponentBuildReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=components,verbs=get;list;watch;update;patch
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=components/status,verbs=get;list;watch
+//+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -205,7 +207,8 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 		}
 	}
 
-	initialBuild := gitops.GenerateInitialBuildPipelineRun(component)
+	gitopsConfig := prepare.PrepareGitopsConfig(ctx, r.Client, component)
+	initialBuild := gitops.GenerateInitialBuildPipelineRun(component, gitopsConfig)
 	err = controllerutil.SetOwnerReference(&component, &initialBuild, r.Scheme)
 	if err != nil {
 		log.Error(err, fmt.Sprintf("Unable to set owner reference for %v", initialBuild))
