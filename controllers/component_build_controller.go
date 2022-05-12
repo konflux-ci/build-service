@@ -46,9 +46,10 @@ const (
 
 // ComponentBuildReconciler watches AppStudio Component object in order to submit builds
 type ComponentBuildReconciler struct {
-	client.Client
-	Scheme *runtime.Scheme
-	Log    logr.Logger
+	Client           client.Client
+	NonCachingClient client.Client
+	Scheme           *runtime.Scheme
+	Log              logr.Logger
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -169,7 +170,7 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 	// Make the Secret ready for consumption by Tekton.
 	if gitSecretName != "" {
 		gitSecret := corev1.Secret{}
-		err := r.Client.Get(ctx, types.NamespacedName{Name: gitSecretName, Namespace: component.Namespace}, &gitSecret)
+		err := r.NonCachingClient.Get(ctx, types.NamespacedName{Name: gitSecretName, Namespace: component.Namespace}, &gitSecret)
 		if err != nil {
 			log.Error(err, fmt.Sprintf("Secret %s is missing", gitSecretName))
 			return err
