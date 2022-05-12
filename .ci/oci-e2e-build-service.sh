@@ -18,11 +18,12 @@ export APPLICATION_NAME="all-components-staging"
 # BUILD_SERVICE_IMAGE - build-service image built in openshift CI job workflow. More info about how image dependencies work in ci: https://github.com/openshift/ci-tools/blob/master/TEMPLATES.md#parameters-available-to-templates
 # Container env defined at: https://github.com/openshift/release/blob/master/ci-operator/config/redhat-appstudio/build-service/redhat-appstudio-build-service-main.yaml
 # Openshift CI generates the build service container image value as registry.build01.ci.openshift.org/ci-op-83gwcnmk/pipeline@sha256:8812e26b50b262d0cc45da7912970a205add4bd4e4ff3fed421baf3120027206. Need to get the image without sha.
-export BUILD_SERVICE_IMAGE_REPO=${BUILD_SERVICE_IMAGE%@*:-"quay.io/redhat-appstudio/build-service"}
+export BUILD_SERVICE_IMAGE=${BUILD_SERVICE_IMAGE%@*}
+export BUILD_SERVICE_IMAGE_REPO=${BUILD_SERVICE_IMAGE:-"quay.io/redhat-appstudio/build-service"}
 # Tag defined at: https://github.com/openshift/release/blob/master/ci-operator/config/redhat-appstudio/build-service/redhat-appstudio-build-service-main.yaml
 export BUILD_SERVICE_IMAGE_TAG=${BUILD_SERVICE_IMAGE_TAG:-"redhat-appstudio-build-service-image"}
 
-if [ -n "${JOB_SPEC}" ]; then
+if [[ -n "${JOB_SPEC}" && "${REPO_NAME}" == "build-service" ]]; then
     # Extract PR author and commit SHA to also override default kustomization in infra-deployments repo
     # https://github.com/redhat-appstudio/infra-deployments/blob/d3b56adc1bd2a7cf500793a7863660ea5117c531/hack/preview.sh#L88
     BUILD_SERVICE_PR_OWNER=$(jq -r '.refs.pulls[0].author' <<< "$JOB_SPEC")
