@@ -98,7 +98,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	// Do not run any builds for any container-image components
-	if component.Spec.Source.ImageSource != nil && component.Spec.Source.ImageSource.ContainerImage != "" {
+	if component.Spec.ContainerImage != "" && component.Spec.Source.GitSource == nil {
 		log.Info(fmt.Sprintf("Nothing to do for container image component: %v", req.NamespacedName))
 		return ctrl.Result{}, nil
 	}

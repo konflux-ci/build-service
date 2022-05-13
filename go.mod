@@ -6,7 +6,7 @@ require (
 	github.com/go-logr/logr v1.2.3
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.19.0
-	github.com/redhat-appstudio/application-service v0.0.0-20220504153308-f3507a2f91ed
+	github.com/redhat-appstudio/application-service v0.0.0-20220509201208-86571e38f52e
 	github.com/tektoncd/pipeline v0.33.0
 	github.com/tektoncd/triggers v0.19.1
 	k8s.io/api v0.23.5
