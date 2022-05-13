@@ -208,7 +208,7 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 		}
 	}
 
-	gitopsConfig := prepare.PrepareGitopsConfig(ctx, r.Client, component)
+	gitopsConfig := prepare.PrepareGitopsConfig(ctx, r.NonCachingClient, component)
 	initialBuild := gitops.GenerateInitialBuildPipelineRun(component, gitopsConfig)
 	err = controllerutil.SetOwnerReference(&component, &initialBuild, r.Scheme)
 	if err != nil {
