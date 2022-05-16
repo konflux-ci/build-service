@@ -130,7 +130,7 @@ func (r *NewComponentImageReconciler) SetupWithManager(mgr ctrl.Manager) error {
 func (r *NewComponentImageReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("PipelineRun", req.NamespacedName)
 
-	log.Info("====START OF RECONCILE")
+	log.Info("PipelineRun succeeded, checking for a new image...")
 
 	// Fetch the PipelineRun
 	var pipelineRun tektonapi.PipelineRun
@@ -144,14 +144,12 @@ func (r *NewComponentImageReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, err
 	}
 
-	log.Info(fmt.Sprintf("==== PIPELINERUN: %v", req.NamespacedName))
-
 	// Get Component the PipelineRun is associated to.
 	componentName := getOwnerNameOfKind(&pipelineRun, "Component")
 	if componentName == "" {
 		// Component owner is not set (usually for webhook builds), check the annotation
 		if pipelineRun.ObjectMeta.Annotations == nil || len(pipelineRun.ObjectMeta.Annotations[ComponentAnnotationName]) == 0 {
-			log.Info(fmt.Sprintf("PipelineRun '%v' has no '%s' annotatiion", req.NamespacedName, ComponentAnnotationName))
+			log.Info(fmt.Sprintf("PipelineRun '%v' has no '%s' annotation", req.NamespacedName, ComponentAnnotationName))
 			// Failed to detect Component owner, stop.
 			return ctrl.Result{}, nil
 		}
@@ -174,8 +172,6 @@ func (r *NewComponentImageReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, err
 	}
 
-	log.Info(fmt.Sprintf("==== COMPONENT: %v", componentKey))
-
 	// Obtain newly built image
 
 	// Search for the build TaskRun
@@ -193,8 +189,6 @@ func (r *NewComponentImageReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, err
 	}
 
-	log.Info(fmt.Sprintf("==== TASKRUNS FOUND: %d", len(tasks.Items)))
-
 	var taskrun *tektonapi.TaskRun
 	switch len(tasks.Items) {
 	case 0:
@@ -208,8 +202,6 @@ func (r *NewComponentImageReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		log.Info(fmt.Sprintf("Found %d build tasks for %v PipelineRun", len(tasks.Items), pipelineRun))
 		return ctrl.Result{}, nil
 	}
-
-	log.Info(fmt.Sprintf("====TASKRUN: %s %s", taskrun.Name, taskrun.Namespace))
 
 	imageReference := ""
 	for _, taskRunResult := range taskrun.Status.TaskRunResults {
@@ -226,14 +218,14 @@ func (r *NewComponentImageReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	// Update the image reference in the component
 	if component.Spec.Build.ContainerImage != imageReference {
-		log.Info("==== ENTERED UPDATE")
 		component.Spec.Build.ContainerImage = imageReference
 		if err := r.Client.Update(ctx, &component); err != nil {
 			return ctrl.Result{}, err
 		}
 		log.Info(fmt.Sprintf("Updated '%v' component image to '%s'", componentKey, imageReference))
+	} else {
+		log.Info(fmt.Sprintf("Component '%v' image '%s' is up to date", componentKey, imageReference))
 	}
-	log.Info("====END OF RECONCILE")
 
 	return ctrl.Result{}, nil
 }

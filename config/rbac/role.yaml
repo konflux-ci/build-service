@@ -27,6 +27,11 @@ rules:
   - ""
   resources:
   - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - tekton.dev
   resources:
   - pipelineruns
