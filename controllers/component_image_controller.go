@@ -39,8 +39,11 @@ import (
 )
 
 const (
-	ComponentTaskLabelName = "build.appstudio.openshift.io/component"
-	BuildTaskName          = "build-container"
+	ComponentAnnotationName = "build.appstudio.openshift.io/component"
+	ComponentTaskLabelName  = "build.appstudio.openshift.io/component"
+	PipelineRunLabelName    = "tekton.dev/pipelineRun"
+	PipelineTaskLabelName   = "tekton.dev/pipelineTask"
+	BuildImageTaskName      = "build-container"
 )
 
 // NewComponentImageReconciler reconciles a Frigate object
@@ -125,7 +128,9 @@ func (r *NewComponentImageReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.11.0/pkg/reconcile
 func (r *NewComponentImageReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := r.Log.WithValues("NewComponentImage", req.NamespacedName)
+	log := r.Log.WithValues("PipelineRun", req.NamespacedName)
+
+	log.Info("====START OF RECONCILE")
 
 	// Fetch the PipelineRun
 	var pipelineRun tektonapi.PipelineRun
@@ -139,18 +144,24 @@ func (r *NewComponentImageReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, err
 	}
 
-	owners := pipelineRun.GetOwnerReferences()
-	if len(owners) == 0 {
-		log.Info(fmt.Sprintf("PipelineRun '%v' has no owner reference", req.NamespacedName))
-		return ctrl.Result{}, nil
-	}
-	owner := owners[0]
+	log.Info(fmt.Sprintf("==== PIPELINERUN: %v", req.NamespacedName))
 
-	// Get associated Component
+	// Get Component the PipelineRun is associated to.
+	componentName := getOwnerNameOfKind(&pipelineRun, "Component")
+	if componentName == "" {
+		// Component owner is not set (usually for webhook builds), check the annotation
+		if pipelineRun.ObjectMeta.Annotations == nil || len(pipelineRun.ObjectMeta.Annotations[ComponentAnnotationName]) == 0 {
+			log.Info(fmt.Sprintf("PipelineRun '%v' has no '%s' annotatiion", req.NamespacedName, ComponentAnnotationName))
+			// Failed to detect Component owner, stop.
+			return ctrl.Result{}, nil
+		}
+		componentName = pipelineRun.ObjectMeta.Annotations[ComponentAnnotationName]
+	}
+
 	var component appstudiov1alpha1.Component
 	componentKey := types.NamespacedName{
 		Namespace: req.Namespace,
-		Name:      owner.Name,
+		Name:      componentName,
 	}
 	err = r.Client.Get(ctx, componentKey, &component)
 	if err != nil {
@@ -159,55 +170,81 @@ func (r *NewComponentImageReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			return ctrl.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
+		log.Error(err, fmt.Sprintf("Failed to read component %v", componentKey))
 		return ctrl.Result{}, err
 	}
+
+	log.Info(fmt.Sprintf("==== COMPONENT: %v", componentKey))
 
 	// Obtain newly built image
 
-	// Search for build TaskRun
-	componentTaskRunRequirement, err := labels.NewRequirement(ComponentTaskLabelName, selection.Equals, []string{component.Name})
+	// Search for the build TaskRun
+	taskRunBelongsToPipelineRunRequirement, err := labels.NewRequirement(PipelineRunLabelName, selection.Equals, []string{pipelineRun.Name})
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	componentTaskRunSelector := labels.NewSelector().Add(*componentTaskRunRequirement)
+	taskRunPipelineTaskNameRequirement, err := labels.NewRequirement(PipelineTaskLabelName, selection.Equals, []string{BuildImageTaskName})
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	componentBuildTaskRunSelector := labels.NewSelector().Add(*taskRunBelongsToPipelineRunRequirement).Add(*taskRunPipelineTaskNameRequirement)
 	var tasks tektonapi.TaskRunList
-	if err := r.Client.List(ctx, &tasks, &client.ListOptions{LabelSelector: componentTaskRunSelector}); err != nil {
+	if err := r.Client.List(ctx, &tasks, &client.ListOptions{LabelSelector: componentBuildTaskRunSelector}); err != nil {
 		return ctrl.Result{}, err
 	}
+
+	log.Info(fmt.Sprintf("==== TASKRUNS FOUND: %d", len(tasks.Items)))
+
 	var taskrun *tektonapi.TaskRun
-	for _, tr := range tasks.Items {
-		if strings.Contains(tr.Name, BuildTaskName) {
-			taskrun = &tr
-			break
-		}
+	switch len(tasks.Items) {
+	case 0:
+		// Build task not found, it was skipped
+		log.Info(fmt.Sprintf("No new image built in '%v' PipelineRun for '%v' Comoponent", req.NamespacedName, componentKey))
+		return ctrl.Result{}, nil
+	case 1:
+		taskrun = &tasks.Items[0]
+	default:
+		// Should not happen
+		log.Info(fmt.Sprintf("Found %d build tasks for %v PipelineRun", len(tasks.Items), pipelineRun))
+		return ctrl.Result{}, nil
 	}
-	if taskrun == nil {
-		// Build task not found, shouldn't happen
-		err := fmt.Errorf("failed to find build TaskRun for %v pipeline", req.NamespacedName)
-		log.Info(err.Error())
-		return ctrl.Result{}, err
-	}
+
+	log.Info(fmt.Sprintf("====TASKRUN: %s %s", taskrun.Name, taskrun.Namespace))
 
 	imageReference := ""
 	for _, taskRunResult := range taskrun.Status.TaskRunResults {
 		if taskRunResult.Name == "IMAGE_URL" {
-			imageReference = taskRunResult.Value
+			imageReference = strings.TrimSpace(taskRunResult.Value)
 			break
 		}
 	}
 	if imageReference == "" {
-		err := fmt.Errorf("failed to find build image parameter in TaskRun for %v pipeline", req.NamespacedName)
+		err := fmt.Errorf("failed to find build image in build TaskRun status of %v pipeline", req.NamespacedName)
 		log.Info(err.Error())
 		return ctrl.Result{}, err
 	}
 
 	// Update the image reference in the component
 	if component.Spec.Build.ContainerImage != imageReference {
+		log.Info("==== ENTERED UPDATE")
 		component.Spec.Build.ContainerImage = imageReference
 		if err := r.Client.Update(ctx, &component); err != nil {
 			return ctrl.Result{}, err
 		}
+		log.Info(fmt.Sprintf("Updated '%v' component image to '%s'", componentKey, imageReference))
 	}
+	log.Info("====END OF RECONCILE")
 
 	return ctrl.Result{}, nil
+}
+
+// getOwnerNameOfKind returns name of the resource owner of expected kind.
+// If owners is not set or owner of given kind is missing, then empty string is returned.
+func getOwnerNameOfKind(obj client.Object, kind string) string {
+	for _, owner := range obj.GetOwnerReferences() {
+		if owner.Kind == kind {
+			return owner.Name
+		}
+	}
+	return ""
 }
