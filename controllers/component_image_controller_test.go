@@ -20,6 +20,8 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/types"
+
+	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -110,8 +112,31 @@ var _ = Describe("New Component Image Controller", func() {
 			succeedInitialPipelienRun(resourceKey)
 
 			createWebhookPipelineRun(resourceKey)
-			createBuildTaskRunWithImage(resourceKey, "newImage")
+			createBuildTaskRunWithImage(resourceKey, ComponentContainerImage+"-new")
 			failWebhookPipelineRun(resourceKey)
+
+			component := getComponent(resourceKey)
+			Expect(component.Spec.Build.ContainerImage).To(Equal(ComponentContainerImage))
+		})
+
+		It("Should not do anything if PipelineRun doesn't belong to any component", func() {
+			ensureOneInitialPipelineRunCreated(resourceKey)
+			succeedInitialPipelienRun(resourceKey)
+
+			createWebhookPipelineRun(resourceKey)
+			// Delete relation to the Component
+			pipelineRun := &tektonapi.PipelineRun{}
+			Expect(k8sClient.Get(ctx, resourceKey, pipelineRun)).Should(Succeed())
+			if pipelineRun.Annotations != nil {
+				delete(pipelineRun.Annotations, ComponentAnnotationName)
+			}
+			if pipelineRun.Labels != nil {
+				delete(pipelineRun.Labels, ComponentAnnotationName)
+			}
+			Expect(k8sClient.Update(ctx, pipelineRun)).Should(Succeed())
+
+			createBuildTaskRunWithImage(resourceKey, ComponentContainerImage+"-new")
+			succeedWebhookPipelineRun(resourceKey)
 
 			component := getComponent(resourceKey)
 			Expect(component.Spec.Build.ContainerImage).To(Equal(ComponentContainerImage))

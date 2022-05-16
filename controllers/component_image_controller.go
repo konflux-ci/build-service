@@ -84,6 +84,12 @@ func (r *NewComponentImageReconciler) SetupWithManager(mgr ctrl.Manager) error {
 					return false
 				}
 
+				// Ensure the PipelineRun belongs to a Component
+				if new.ObjectMeta.Annotations[ComponentAnnotationName] == "" && new.ObjectMeta.Labels[ComponentAnnotationName] == "" {
+					// PipelineRun does not belong to a Component
+					return false
+				}
+
 				// Ensure the build is successful
 				buildSuccessful := false
 				for _, c := range new.Status.Conditions {
