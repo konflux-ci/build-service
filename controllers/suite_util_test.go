@@ -303,7 +303,7 @@ func deleteAllTaskRuns() {
 	})).Should(Succeed())
 }
 
-func createConfigMap(name string, namespace string, data map[string]string) {
+func createConfigMap(resourceKey types.NamespacedName, data map[string]string) {
 	configMap := corev1.ConfigMap{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "v1",
@@ -311,8 +311,8 @@ func createConfigMap(name string, namespace string, data map[string]string) {
 		},
 		Data: data,
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
+			Name:      resourceKey.Name,
+			Namespace: resourceKey.Namespace,
 		},
 	}
 
@@ -346,4 +346,18 @@ func createSecret(name, namespace string) {
 		},
 	}
 	Expect(k8sClient.Create(ctx, &secret)).Should(Succeed())
+}
+
+func createNamespace(name string) {
+	namespace := corev1.Namespace{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "Namespace",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+	}
+
+	Expect(k8sClient.Create(ctx, &namespace)).Should(Succeed())
 }

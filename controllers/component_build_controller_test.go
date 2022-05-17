@@ -248,4 +248,65 @@ var _ = Describe("Component initial build controller", func() {
 			}
 		})
 	})
+
+	Context("Resolve the correct build bundle during the component's creation", func() {
+		It("should use the build bundle specified if a configmap is set in the current namespace", func() {
+			buildBundle := "quay.io/some-repo/some-bundle:0.0.1"
+
+			componentKey := types.NamespacedName{Name: HASCompName, Namespace: HASAppNamespace}
+			configMapKey := types.NamespacedName{Name: prepare.BuildBundleConfigMapName, Namespace: HASAppNamespace}
+
+			createConfigMap(configMapKey, map[string]string{
+				prepare.BuildBundleConfigMapKey: buildBundle,
+			})
+			createComponent(componentKey)
+			setComponentDevfileModel(componentKey)
+
+			ensureOneInitialPipelineRunCreated(componentKey)
+			pipelineRuns := listComponentInitialPipelineRuns(componentKey)
+
+			Expect(pipelineRuns.Items[0].Spec.PipelineRef.Bundle).To(Equal(buildBundle))
+
+			deleteComponent(componentKey)
+			deleteComponentInitialPipelineRuns(componentKey)
+			deleteConfigMap(configMapKey.Name, configMapKey.Namespace)
+		})
+
+		It("should use the build bundle specified if a configmap is set in the default bundle namespace", func() {
+			buildBundle := "quay.io/some-repo/some-bundle:0.0.2"
+
+			componentKey := types.NamespacedName{Name: HASCompName, Namespace: HASAppNamespace}
+			configMapKey := types.NamespacedName{Name: prepare.BuildBundleConfigMapName, Namespace: prepare.BuildBundleDefaultNamespace}
+
+			createNamespace(prepare.BuildBundleDefaultNamespace)
+			createConfigMap(configMapKey, map[string]string{
+				prepare.BuildBundleConfigMapKey: buildBundle,
+			})
+			createComponent(componentKey)
+			setComponentDevfileModel(componentKey)
+
+			ensureOneInitialPipelineRunCreated(componentKey)
+			pipelineRuns := listComponentInitialPipelineRuns(componentKey)
+
+			Expect(pipelineRuns.Items[0].Spec.PipelineRef.Bundle).To(Equal(buildBundle))
+
+			deleteComponent(componentKey)
+			deleteComponentInitialPipelineRuns(componentKey)
+			deleteConfigMap(configMapKey.Name, configMapKey.Namespace)
+		})
+
+		It("should use the fallback build bundle in case no configmap is found", func() {
+			componentKey := types.NamespacedName{Name: HASCompName, Namespace: HASAppNamespace}
+			createComponent(componentKey)
+			setComponentDevfileModel(componentKey)
+
+			ensureOneInitialPipelineRunCreated(componentKey)
+			pipelineRuns := listComponentInitialPipelineRuns(componentKey)
+
+			Expect(pipelineRuns.Items[0].Spec.PipelineRef.Bundle).To(Equal(prepare.FallbackBuildBundle))
+
+			deleteComponent(componentKey)
+			deleteComponentInitialPipelineRuns(componentKey)
+		})
+	})
 })
