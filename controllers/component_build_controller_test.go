@@ -95,7 +95,6 @@ var _ = Describe("Component initial build controller", func() {
 
 	Context("Check if build objects are created", func() {
 
-		var buildBundle string
 		var gitSecret *corev1.Secret
 
 		BeforeEach(func() {
@@ -107,11 +106,6 @@ var _ = Describe("Component initial build controller", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, gitSecret)).Should(Succeed())
-			// Configure the build bundle
-			buildBundle = "quay.io/some-repo/some-bundle:0.0.1"
-			createConfigMap(prepare.BuildBundleConfigMapName, HASAppNamespace, map[string]string{
-				prepare.BuildBundleConfigMapKey: buildBundle,
-			})
 			// Create component that refers to the git secret
 			component := &appstudiov1alpha1.Component{
 				TypeMeta: metav1.TypeMeta{
@@ -142,7 +136,6 @@ var _ = Describe("Component initial build controller", func() {
 			// Clean up
 			deleteComponentInitialPipelineRuns(resourceKey)
 			deleteComponent(resourceKey)
-			deleteConfigMap(prepare.BuildBundleConfigMapName, HASAppNamespace)
 			Expect(k8sClient.Delete(ctx, gitSecret)).Should(Succeed())
 		})
 
@@ -186,7 +179,7 @@ var _ = Describe("Component initial build controller", func() {
 				}
 			}
 
-			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(buildBundle))
+			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(prepare.FallbackBuildBundle))
 
 			Expect(pipelineRun.Spec.Workspaces).To(Not(BeEmpty()))
 			for _, w := range pipelineRun.Spec.Workspaces {
@@ -241,7 +234,7 @@ var _ = Describe("Component initial build controller", func() {
 				}
 			}
 
-			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(buildBundle))
+			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(prepare.FallbackBuildBundle))
 
 			Expect(pipelineRun.Spec.Workspaces).To(Not(BeEmpty()))
 			for _, w := range pipelineRun.Spec.Workspaces {
