@@ -232,15 +232,9 @@ var _ = Describe("Component initial build controller", func() {
 					Namespace: HASAppNamespace,
 				},
 				Spec: appstudiov1alpha1.ComponentSpec{
-					ComponentName: HASCompName,
-					Application:   HASAppName,
-					Source: appstudiov1alpha1.ComponentSource{
-						ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
-							ImageSource: &appstudiov1alpha1.ImageSource{
-								ContainerImage: "quay.io/test/image:latest",
-							},
-						},
-					},
+					ComponentName:  HASCompName,
+					Application:    HASAppName,
+					ContainerImage: "quay.io/test/image:latest",
 				},
 			}
 			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
@@ -280,18 +274,16 @@ var _ = Describe("Component initial build controller", func() {
 					Namespace: HASAppNamespace,
 				},
 				Spec: appstudiov1alpha1.ComponentSpec{
-					ComponentName: HASCompName,
-					Application:   HASAppName,
-					Secret:        GitSecretName,
+					ComponentName:  HASCompName,
+					Application:    HASAppName,
+					Secret:         GitSecretName,
+					ContainerImage: "docker.io/foo/customized:default-test-component",
 					Source: appstudiov1alpha1.ComponentSource{
 						ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
 							GitSource: &appstudiov1alpha1.GitSource{
 								URL: SampleRepoLink,
 							},
 						},
-					},
-					Build: appstudiov1alpha1.Build{
-						ContainerImage: "docker.io/foo/customized:default-test-component",
 					},
 				},
 			}
