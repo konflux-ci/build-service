@@ -70,8 +70,9 @@ func createComponent(componentLookupKey types.NamespacedName) {
 			Namespace: HASAppNamespace,
 		},
 		Spec: appstudiov1alpha1.ComponentSpec{
-			ComponentName: HASCompName,
-			Application:   HASAppName,
+			ComponentName:  HASCompName,
+			Application:    HASAppName,
+			ContainerImage: "registry.io/user/image:tag",
 			Source: appstudiov1alpha1.ComponentSource{
 				ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
 					GitSource: &appstudiov1alpha1.GitSource{
