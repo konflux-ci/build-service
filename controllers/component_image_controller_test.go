@@ -128,10 +128,10 @@ var _ = Describe("New Component Image Controller", func() {
 			pipelineRun := &tektonapi.PipelineRun{}
 			Expect(k8sClient.Get(ctx, resourceKey, pipelineRun)).Should(Succeed())
 			if pipelineRun.Annotations != nil {
-				delete(pipelineRun.Annotations, ComponentAnnotationName)
+				delete(pipelineRun.Annotations, ComponentNameLabelName)
 			}
 			if pipelineRun.Labels != nil {
-				delete(pipelineRun.Labels, ComponentAnnotationName)
+				delete(pipelineRun.Labels, ComponentNameLabelName)
 			}
 			Expect(k8sClient.Update(ctx, pipelineRun)).Should(Succeed())
 

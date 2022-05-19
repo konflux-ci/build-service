@@ -40,11 +40,10 @@ import (
 )
 
 const (
-	ComponentAnnotationName = "build.appstudio.openshift.io/component"
-	ComponentTaskLabelName  = "build.appstudio.openshift.io/component"
-	PipelineRunLabelName    = "tekton.dev/pipelineRun"
-	PipelineTaskLabelName   = "tekton.dev/pipelineTask"
-	BuildImageTaskName      = "build-container"
+	ComponentNameLabelName = "build.appstudio.openshift.io/component"
+	PipelineRunLabelName   = "tekton.dev/pipelineRun"
+	PipelineTaskLabelName  = "tekton.dev/pipelineTask"
+	BuildImageTaskName     = "build-container"
 )
 
 // ComponentImageReconciler reconciles a Frigate object
@@ -87,7 +86,7 @@ func (r *ComponentImageReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				}
 
 				// Ensure the PipelineRun belongs to a Component
-				if new.ObjectMeta.Annotations[ComponentAnnotationName] == "" && new.ObjectMeta.Labels[ComponentAnnotationName] == "" {
+				if new.ObjectMeta.Labels == nil || new.ObjectMeta.Labels[ComponentNameLabelName] == "" {
 					// PipelineRun does not belong to a Component
 					return false
 				}
@@ -154,16 +153,12 @@ func (r *ComponentImageReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	// Get Component the PipelineRun is associated to.
-	componentName := getOwnerNameOfKind(&pipelineRun, "Component")
-	if componentName == "" {
-		// Component owner is not set (usually for webhook builds), check the annotation
-		if pipelineRun.ObjectMeta.Annotations == nil || len(pipelineRun.ObjectMeta.Annotations[ComponentAnnotationName]) == 0 {
-			log.Info(fmt.Sprintf("PipelineRun '%v' has no '%s' annotation", req.NamespacedName, ComponentAnnotationName))
-			// Failed to detect Component owner, stop.
-			return ctrl.Result{}, nil
-		}
-		componentName = pipelineRun.ObjectMeta.Annotations[ComponentAnnotationName]
+	if pipelineRun.ObjectMeta.Labels == nil || len(pipelineRun.ObjectMeta.Labels[ComponentNameLabelName]) == 0 {
+		log.Info(fmt.Sprintf("PipelineRun '%v' has no '%s' label", req.NamespacedName, ComponentNameLabelName))
+		// Failed to detect Component owner, stop.
+		return ctrl.Result{}, nil
 	}
+	componentName := pipelineRun.ObjectMeta.Labels[ComponentNameLabelName]
 
 	var component appstudiov1alpha1.Component
 	componentKey := types.NamespacedName{
@@ -239,15 +234,4 @@ func (r *ComponentImageReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	return ctrl.Result{}, nil
-}
-
-// getOwnerNameOfKind returns name of the resource owner of expected kind.
-// If owners is not set or owner of given kind is missing, then empty string is returned.
-func getOwnerNameOfKind(obj client.Object, kind string) string {
-	for _, owner := range obj.GetOwnerReferences() {
-		if owner.Kind == kind {
-			return owner.Name
-		}
-	}
-	return ""
 }

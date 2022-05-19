@@ -170,8 +170,8 @@ func createWebhookPipelineRun(resourceKey types.NamespacedName) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      resourceKey.Name,
 			Namespace: resourceKey.Namespace,
-			Annotations: map[string]string{
-				ComponentAnnotationName: resourceKey.Name,
+			Labels: map[string]string{
+				ComponentNameLabelName: resourceKey.Name,
 			},
 		},
 	}
