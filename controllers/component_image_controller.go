@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"knative.dev/pkg/apis"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -46,15 +47,16 @@ const (
 	BuildImageTaskName      = "build-container"
 )
 
-// NewComponentImageReconciler reconciles a Frigate object
-type NewComponentImageReconciler struct {
+// ComponentImageReconciler reconciles a Frigate object
+type ComponentImageReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
-	Log    logr.Logger
+	Scheme        *runtime.Scheme
+	Log           logr.Logger
+	EventRecorder record.EventRecorder
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *NewComponentImageReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *ComponentImageReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&tektonapi.PipelineRun{}, builder.WithPredicates(predicate.Funcs{
 			CreateFunc: func(e event.CreateEvent) bool {
@@ -128,12 +130,13 @@ func (r *NewComponentImageReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=tekton.dev,resources=taskruns/status,verbs=get;list;watch
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=components,verbs=get;list;watch;update;patch
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=components/status,verbs=get;list;watch
+//+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.11.0/pkg/reconcile
-func (r *NewComponentImageReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *ComponentImageReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("PipelineRun", req.NamespacedName)
 
 	log.Info("PipelineRun succeeded, checking for a new image...")
@@ -205,7 +208,9 @@ func (r *NewComponentImageReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		taskrun = &tasks.Items[0]
 	default:
 		// Should not happen
-		log.Info(fmt.Sprintf("Found %d build tasks for %v PipelineRun", len(tasks.Items), pipelineRun))
+		message := fmt.Sprintf("Found %d build tasks for %v PipelineRun", len(tasks.Items), pipelineRun)
+		log.Info(message)
+		r.EventRecorder.Event(&pipelineRun, "Warning", "TooManyBuildTasksForPipeline", message)
 		return ctrl.Result{}, nil
 	}
 
@@ -223,8 +228,8 @@ func (r *NewComponentImageReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	// Update the image reference in the component
-	if component.Spec.Build.ContainerImage != imageReference {
-		component.Spec.Build.ContainerImage = imageReference
+	if component.Spec.ContainerImage != imageReference {
+		component.Spec.ContainerImage = imageReference
 		if err := r.Client.Update(ctx, &component); err != nil {
 			return ctrl.Result{}, err
 		}

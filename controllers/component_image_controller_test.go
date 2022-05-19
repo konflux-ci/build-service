@@ -52,10 +52,10 @@ var _ = Describe("New Component Image Controller", func() {
 				Namespace: HASAppNamespace,
 			}
 			createBuildTaskRunWithImage(initialBuildPipelineKey, ComponentContainerImage)
-			succeedInitialPipelienRun(resourceKey)
+			succeedInitialPipelineRun(resourceKey)
 
 			component := getComponent(resourceKey)
-			Expect(component.Spec.Build.ContainerImage).To(Equal(ComponentContainerImage))
+			Expect(component.Spec.ContainerImage).To(Equal(ComponentContainerImage))
 		})
 
 		It("Should update component image after initial build if the image was changed", func() {
@@ -67,11 +67,11 @@ var _ = Describe("New Component Image Controller", func() {
 				Namespace: HASAppNamespace,
 			}
 			createBuildTaskRunWithImage(initialBuildPipelineKey, newImage)
-			succeedInitialPipelienRun(resourceKey)
+			succeedInitialPipelineRun(resourceKey)
 
 			Eventually(func() bool {
 				component := getComponent(resourceKey)
-				return component.Spec.Build.ContainerImage == newImage
+				return component.Spec.ContainerImage == newImage
 			}, timeout, interval).Should(BeTrue())
 		})
 
@@ -84,7 +84,7 @@ var _ = Describe("New Component Image Controller", func() {
 				Namespace: HASAppNamespace,
 			}
 			createBuildTaskRunWithImage(initialBuildPipelineKey, ComponentContainerImage+"-initial")
-			succeedInitialPipelienRun(resourceKey)
+			succeedInitialPipelineRun(resourceKey)
 
 			createWebhookPipelineRun(resourceKey)
 			createBuildTaskRunWithImage(resourceKey, newImage)
@@ -92,36 +92,36 @@ var _ = Describe("New Component Image Controller", func() {
 
 			Eventually(func() bool {
 				component := getComponent(resourceKey)
-				return component.Spec.Build.ContainerImage == newImage
+				return component.Spec.ContainerImage == newImage
 			}, timeout, interval).Should(BeTrue())
 		})
 
 		It("Should not update component image after webhook build if new image build was skipped", func() {
 			ensureOneInitialPipelineRunCreated(resourceKey)
-			succeedInitialPipelienRun(resourceKey)
+			succeedInitialPipelineRun(resourceKey)
 
 			createWebhookPipelineRun(resourceKey)
 			succeedWebhookPipelineRun(resourceKey)
 
 			component := getComponent(resourceKey)
-			Expect(component.Spec.Build.ContainerImage).To(Equal(ComponentContainerImage))
+			Expect(component.Spec.ContainerImage).To(Equal(ComponentContainerImage))
 		})
 
 		It("Should not update component image after failed build", func() {
 			ensureOneInitialPipelineRunCreated(resourceKey)
-			succeedInitialPipelienRun(resourceKey)
+			succeedInitialPipelineRun(resourceKey)
 
 			createWebhookPipelineRun(resourceKey)
 			createBuildTaskRunWithImage(resourceKey, ComponentContainerImage+"-new")
 			failWebhookPipelineRun(resourceKey)
 
 			component := getComponent(resourceKey)
-			Expect(component.Spec.Build.ContainerImage).To(Equal(ComponentContainerImage))
+			Expect(component.Spec.ContainerImage).To(Equal(ComponentContainerImage))
 		})
 
 		It("Should not do anything if PipelineRun doesn't belong to any component", func() {
 			ensureOneInitialPipelineRunCreated(resourceKey)
-			succeedInitialPipelienRun(resourceKey)
+			succeedInitialPipelineRun(resourceKey)
 
 			createWebhookPipelineRun(resourceKey)
 			// Delete relation to the Component
@@ -139,7 +139,7 @@ var _ = Describe("New Component Image Controller", func() {
 			succeedWebhookPipelineRun(resourceKey)
 
 			component := getComponent(resourceKey)
-			Expect(component.Spec.Build.ContainerImage).To(Equal(ComponentContainerImage))
+			Expect(component.Spec.ContainerImage).To(Equal(ComponentContainerImage))
 		})
 	})
 })

@@ -70,17 +70,15 @@ func createComponent(componentLookupKey types.NamespacedName) {
 			Namespace: HASAppNamespace,
 		},
 		Spec: appstudiov1alpha1.ComponentSpec{
-			ComponentName: HASCompName,
-			Application:   HASAppName,
+			ComponentName:  HASCompName,
+			Application:    HASAppName,
+			ContainerImage: ComponentContainerImage,
 			Source: appstudiov1alpha1.ComponentSource{
 				ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
 					GitSource: &appstudiov1alpha1.GitSource{
 						URL: SampleRepoLink,
 					},
 				},
-			},
-			Build: appstudiov1alpha1.Build{
-				ContainerImage: ComponentContainerImage,
 			},
 		},
 	}
@@ -136,7 +134,7 @@ func listComponentInitialPipelineRuns(componentKey types.NamespacedName) *tekton
 	return pipelineRuns
 }
 
-func deleteComponentInitialPipelienRuns(componentKey types.NamespacedName) {
+func deleteComponentInitialPipelineRuns(componentKey types.NamespacedName) {
 	for _, pipelineRun := range listComponentInitialPipelineRuns(componentKey).Items {
 		Expect(k8sClient.Delete(ctx, &pipelineRun)).Should(Succeed())
 	}
@@ -227,7 +225,7 @@ func failWebhookPipelineRun(resourceKey types.NamespacedName) {
 	Expect(k8sClient.Status().Update(ctx, pipelineRun)).Should(Succeed())
 }
 
-func succeedInitialPipelienRun(componentKey types.NamespacedName) {
+func succeedInitialPipelineRun(componentKey types.NamespacedName) {
 	// Put the PipelineRun in runnning state
 	pipelineRun := &listComponentInitialPipelineRuns(componentKey).Items[0]
 	pipelineRun.Status.StartTime = &metav1.Time{Time: time.Now()}

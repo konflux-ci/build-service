@@ -107,12 +107,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controllers.NewComponentImageReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-		Log:    ctrl.Log.WithName("controllers").WithName("NewComponentImage"),
+	if err = (&controllers.ComponentImageReconciler{
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		Log:           ctrl.Log.WithName("controllers").WithName("ComponentImage"),
+		EventRecorder: mgr.GetEventRecorderFor("ComponentImage"),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "NewComponentImage")
+		setupLog.Error(err, "unable to create controller", "controller", "ComponentImage")
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder

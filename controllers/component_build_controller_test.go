@@ -42,7 +42,7 @@ var _ = Describe("Component initial build controller", func() {
 		}, 30)
 
 		_ = AfterEach(func() {
-			deleteComponentInitialPipelienRuns(resourceKey)
+			deleteComponentInitialPipelineRuns(resourceKey)
 			deleteComponent(resourceKey)
 		}, 30)
 
@@ -189,7 +189,7 @@ var _ = Describe("Component initial build controller", func() {
 			}
 
 			// Clean up
-			deleteComponentInitialPipelienRuns(resourceKey)
+			deleteComponentInitialPipelineRuns(resourceKey)
 			deleteComponent(resourceKey)
 		})
 	})
