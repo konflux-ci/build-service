@@ -145,7 +145,7 @@ func main() {
 }
 
 func getCacheFunc() (cache.NewCacheFunc, error) {
-	componentPipelineRunRequirement, err := labels.NewRequirement(controllers.PipelineRunLabelName, selection.Exists, []string{})
+	componentPipelineRunRequirement, err := labels.NewRequirement(controllers.ComponentNameLabelName, selection.Exists, []string{})
 	if err != nil {
 		return nil, err
 	}
