@@ -17,169 +17,16 @@ limitations under the License.
 package controllers
 
 import (
-	"time"
-
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-service/api/v1alpha1"
 	"github.com/redhat-appstudio/application-service/gitops/prepare"
 	//+kubebuilder:scaffold:imports
 )
-
-const (
-	timeout  = time.Second * 15
-	interval = time.Millisecond * 250
-)
-
-const (
-	HASAppName      = "test-application"
-	HASCompName     = "test-component"
-	HASAppNamespace = "default"
-	SampleRepoLink  = "https://github.com/devfile-samples/devfile-sample-java-springboot-basic"
-	GitSecretName   = "git-secret"
-)
-
-func isOwnedBy(resource []metav1.OwnerReference, component appstudiov1alpha1.Component) bool {
-	if len(resource) == 0 {
-		return false
-	}
-	if resource[0].Kind == "Component" &&
-		resource[0].APIVersion == "appstudio.redhat.com/v1alpha1" &&
-		resource[0].Name == component.Name {
-		return true
-	}
-	return false
-}
-
-// createComponent creates sample component resource and verifies it was properly created
-func createComponent(componentLookupKey types.NamespacedName) {
-	component := &appstudiov1alpha1.Component{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "appstudio.redhat.com/v1alpha1",
-			Kind:       "Component",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      HASCompName,
-			Namespace: HASAppNamespace,
-		},
-		Spec: appstudiov1alpha1.ComponentSpec{
-			ComponentName:  HASCompName,
-			Application:    HASAppName,
-			ContainerImage: "registry.io/user/image:tag",
-			Source: appstudiov1alpha1.ComponentSource{
-				ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
-					GitSource: &appstudiov1alpha1.GitSource{
-						URL: SampleRepoLink,
-					},
-				},
-			},
-		},
-	}
-	Expect(k8sClient.Create(ctx, component)).Should(Succeed())
-
-	getComponent(componentLookupKey)
-}
-
-func createConfigMap(name string, namespace string, data map[string]string) {
-	configMap := corev1.ConfigMap{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "v1",
-			Kind:       "ConfigMap",
-		},
-		Data: data,
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-	}
-
-	Expect(k8sClient.Create(ctx, &configMap)).Should(Succeed())
-}
-
-func getComponent(componentLookupKey types.NamespacedName) *appstudiov1alpha1.Component {
-	component := &appstudiov1alpha1.Component{}
-	Eventually(func() bool {
-		k8sClient.Get(ctx, componentLookupKey, component)
-		return component.ResourceVersion != ""
-	}, timeout, interval).Should(BeTrue())
-	return component
-}
-
-func setComponentDevfileModel(componentLookupKey types.NamespacedName) {
-	component := &appstudiov1alpha1.Component{}
-	Eventually(func() error {
-		k8sClient.Get(ctx, componentLookupKey, component)
-		component.Status.Devfile = "version: 2.2.0"
-		return k8sClient.Status().Update(ctx, component)
-	}, timeout, interval).Should(Succeed())
-
-	component = getComponent(componentLookupKey)
-	Expect(component.Status.Devfile).Should(Not(Equal("")))
-}
-
-// deleteComponent deletes the specified component resource and verifies it was properly deleted
-func deleteComponent(componentLookupKey types.NamespacedName) {
-	// Delete
-	Eventually(func() error {
-		f := &appstudiov1alpha1.Component{}
-		k8sClient.Get(ctx, componentLookupKey, f)
-		return k8sClient.Delete(ctx, f)
-	}, timeout, interval).Should(Succeed())
-
-	// Wait for delete to finish
-	Eventually(func() error {
-		f := &appstudiov1alpha1.Component{}
-		return k8sClient.Get(ctx, componentLookupKey, f)
-	}, timeout, interval).ShouldNot(Succeed())
-}
-
-func listComponentPipelienRuns(componentLookupKey types.NamespacedName) *tektonapi.PipelineRunList {
-	pipelineRuns := &tektonapi.PipelineRunList{}
-	labelSelectors := client.ListOptions{Raw: &metav1.ListOptions{
-		LabelSelector: "build.appstudio.openshift.io/component=" + componentLookupKey.Name,
-	}}
-	err := k8sClient.List(ctx, pipelineRuns, &labelSelectors)
-	Expect(err).ToNot(HaveOccurred())
-	return pipelineRuns
-}
-
-func deleteComponentPipelienRuns(componentLookupKey types.NamespacedName) {
-	for _, pipelineRun := range listComponentPipelienRuns(componentLookupKey).Items {
-		Expect(k8sClient.Delete(ctx, &pipelineRun)).Should(Succeed())
-	}
-}
-
-func ensureOnePipelineRunCreated(componentLookupKey types.NamespacedName) {
-	component := getComponent(componentLookupKey)
-	Eventually(func() bool {
-		pipelineRuns := listComponentPipelienRuns(componentLookupKey).Items
-		if len(pipelineRuns) != 1 {
-			return false
-		}
-		pipelineRun := pipelineRuns[0]
-		return isOwnedBy(pipelineRun.OwnerReferences, *component)
-	}, timeout, interval).Should(BeTrue())
-}
-
-func ensureNoPipelineRunsCreated(componentLookupKey types.NamespacedName) {
-	component := getComponent(componentLookupKey)
-
-	pipelineRuns := &tektonapi.PipelineRunList{}
-	Consistently(func() bool {
-		labelSelectors := client.ListOptions{Raw: &metav1.ListOptions{
-			LabelSelector: "build.appstudio.openshift.io/component=" + component.Name,
-		}}
-		k8sClient.List(ctx, pipelineRuns, &labelSelectors)
-		return len(pipelineRuns.Items) == 0
-	}, timeout, interval).WithTimeout(10 * time.Second).Should(BeTrue())
-}
 
 var _ = Describe("Component initial build controller", func() {
 
@@ -195,18 +42,18 @@ var _ = Describe("Component initial build controller", func() {
 		}, 30)
 
 		_ = AfterEach(func() {
-			deleteComponentPipelienRuns(resourceKey)
+			deleteComponentInitialPipelineRuns(resourceKey)
 			deleteComponent(resourceKey)
 		}, 30)
 
 		It("should submit initial build", func() {
 			setComponentDevfileModel(resourceKey)
 
-			ensureOnePipelineRunCreated(resourceKey)
+			ensureOneInitialPipelineRunCreated(resourceKey)
 		})
 
 		It("should not submit initial build if the component devfile model is not set", func() {
-			ensureNoPipelineRunsCreated(resourceKey)
+			ensureNoInitialPipelineRunsCreated(resourceKey)
 		})
 
 		It("should not submit initial build if initial build annotation exists on the component", func() {
@@ -217,7 +64,7 @@ var _ = Describe("Component initial build controller", func() {
 
 			setComponentDevfileModel(resourceKey)
 
-			ensureNoPipelineRunsCreated(resourceKey)
+			ensureNoInitialPipelineRunsCreated(resourceKey)
 		})
 
 		It("should not submit initial build if a container image source is specified in component", func() {
@@ -242,7 +89,7 @@ var _ = Describe("Component initial build controller", func() {
 
 			setComponentDevfileModel(resourceKey)
 
-			ensureNoPipelineRunsCreated(resourceKey)
+			ensureNoInitialPipelineRunsCreated(resourceKey)
 		})
 	})
 
@@ -293,7 +140,7 @@ var _ = Describe("Component initial build controller", func() {
 			setComponentDevfileModel(resourceKey)
 
 			// Wait until all resources created
-			ensureOnePipelineRunCreated(resourceKey)
+			ensureOneInitialPipelineRunCreated(resourceKey)
 
 			// Check that git credentials secret is annotated
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: GitSecretName, Namespace: HASAppNamespace}, gitSecret)).Should(Succeed())
@@ -314,7 +161,7 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(secretFound).To(BeTrue())
 
 			// Check the pipeline run and its resources
-			pipelineRuns := listComponentPipelienRuns(resourceKey)
+			pipelineRuns := listComponentInitialPipelineRuns(resourceKey)
 			Expect(len(pipelineRuns.Items)).To(Equal(1))
 			pipelineRun := pipelineRuns.Items[0]
 
@@ -342,7 +189,7 @@ var _ = Describe("Component initial build controller", func() {
 			}
 
 			// Clean up
-			deleteComponentPipelienRuns(resourceKey)
+			deleteComponentInitialPipelineRuns(resourceKey)
 			deleteComponent(resourceKey)
 		})
 	})

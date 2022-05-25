@@ -24,10 +24,13 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/selection"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -68,6 +71,22 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
+	if err := triggersapi.AddToScheme(scheme); err != nil {
+		setupLog.Error(err, "unable to add triggers api to the scheme")
+		os.Exit(1)
+	}
+
+	if err := taskrunapi.AddToScheme(scheme); err != nil {
+		setupLog.Error(err, "unable to add triggers api to the scheme")
+		os.Exit(1)
+	}
+
+	cacheFunction, err := getCacheFunc()
+	if err != nil {
+		setupLog.Error(err, "failed to create cache function")
+		os.Exit(1)
+	}
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
 		MetricsBindAddress:     metricsAddr,
@@ -75,19 +94,10 @@ func main() {
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "5483be8f.redhat.com",
+		NewCache:               cacheFunction,
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
-		os.Exit(1)
-	}
-
-	if err := triggersapi.AddToScheme(mgr.GetScheme()); err != nil {
-		setupLog.Error(err, "unable to add triggers api to the scheme")
-		os.Exit(1)
-	}
-
-	if err := taskrunapi.AddToScheme(mgr.GetScheme()); err != nil {
-		setupLog.Error(err, "unable to add triggers api to the scheme")
 		os.Exit(1)
 	}
 
@@ -106,6 +116,16 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "ComponentInitialBuild")
 		os.Exit(1)
 	}
+
+	if err = (&controllers.ComponentImageReconciler{
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		Log:           ctrl.Log.WithName("controllers").WithName("ComponentImage"),
+		EventRecorder: mgr.GetEventRecorderFor("ComponentImage"),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ComponentImage")
+		os.Exit(1)
+	}
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
@@ -122,4 +142,22 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+func getCacheFunc() (cache.NewCacheFunc, error) {
+	componentPipelineRunRequirement, err := labels.NewRequirement(controllers.ComponentNameLabelName, selection.Exists, []string{})
+	if err != nil {
+		return nil, err
+	}
+	appStudioComponentPipelineRunSelector := labels.NewSelector().Add(*componentPipelineRunRequirement)
+
+	selectors := cache.SelectorsByObject{
+		&taskrunapi.PipelineRun{}: {
+			Label: appStudioComponentPipelineRunSelector,
+		},
+	}
+
+	return cache.BuilderWithOptions(cache.Options{
+		SelectorsByObject: selectors,
+	}), nil
 }
