@@ -7,7 +7,7 @@ require (
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.19.0
 	//if you update this you must also update controllers/suite_test.go
-	github.com/redhat-appstudio/application-service v0.0.0-20220509201208-86571e38f52e
+	github.com/redhat-appstudio/application-service v0.0.0-20220525194657-93eb79a48fe1
 	github.com/tektoncd/pipeline v0.33.0
 	github.com/tektoncd/triggers v0.19.1
 	k8s.io/api v0.23.5
