@@ -314,6 +314,21 @@ func createConfigMap(name string, namespace string, data map[string]string) {
 	Expect(k8sClient.Create(ctx, &configMap)).Should(Succeed())
 }
 
+func deleteConfigMap(name string, namespace string) {
+	configMap := corev1.ConfigMap{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "ConfigMap",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+	}
+
+	Expect(k8sClient.Delete(ctx, &configMap)).Should(Succeed())
+}
+
 func createSecret(name, namespace string) {
 	secret := corev1.Secret{
 		TypeMeta: metav1.TypeMeta{
@@ -324,7 +339,6 @@ func createSecret(name, namespace string) {
 			Name:      name,
 			Namespace: namespace,
 		},
-
 	}
 	Expect(k8sClient.Create(ctx, &secret)).Should(Succeed())
 }
