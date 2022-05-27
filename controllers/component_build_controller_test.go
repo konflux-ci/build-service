@@ -95,22 +95,23 @@ var _ = Describe("Component initial build controller", func() {
 
 	Context("Check if build objects are created", func() {
 
-		It("should create build objects when secret missing", func() {
+		var buildBundle string
+		var gitSecret *corev1.Secret
+
+		BeforeEach(func() {
 			// Pre-create git secret
-			gitSecret := &corev1.Secret{
+			gitSecret = &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      GitSecretName,
 					Namespace: HASAppNamespace,
 				},
 			}
 			Expect(k8sClient.Create(ctx, gitSecret)).Should(Succeed())
-
 			// Configure the build bundle
-			buildBundle := "quay.io/some-repo/some-bundle:0.0.1"
+			buildBundle = "quay.io/some-repo/some-bundle:0.0.1"
 			createConfigMap(prepare.BuildBundleConfigMapName, HASAppNamespace, map[string]string{
 				prepare.BuildBundleConfigMapKey: buildBundle,
 			})
-
 			// Create component that refers to the git secret
 			component := &appstudiov1alpha1.Component{
 				TypeMeta: metav1.TypeMeta{
@@ -136,6 +137,16 @@ var _ = Describe("Component initial build controller", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
+		})
+		AfterEach(func() {
+			// Clean up
+			deleteComponentInitialPipelineRuns(resourceKey)
+			deleteComponent(resourceKey)
+			deleteConfigMap(prepare.BuildBundleConfigMapName, HASAppNamespace)
+			Expect(k8sClient.Delete(ctx, gitSecret)).Should(Succeed())
+		})
+
+		It("should create build objects when secret missing", func() {
 
 			setComponentDevfileModel(resourceKey)
 
@@ -186,56 +197,12 @@ var _ = Describe("Component initial build controller", func() {
 				}
 			}
 
-			// Clean up
-			deleteComponentInitialPipelineRuns(resourceKey)
-			deleteComponent(resourceKey)
 		})
 
 		It("should create build objects when secrets exists", func() {
-			// Pre-create git secret
-			gitSecret := &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      GitSecretName,
-					Namespace: HASAppNamespace,
-				},
-			}
-			Expect(k8sClient.Create(ctx, gitSecret)).Should(Succeed())
-
-			// Configure the build bundle
-			buildBundle := "quay.io/some-repo/some-bundle:0.0.1"
-			createConfigMap(prepare.BuildBundleConfigMapName, HASAppNamespace, map[string]string{
-				prepare.BuildBundleConfigMapKey: buildBundle,
-			})
 
 			// Setup registry secret in local namespace
 			createSecret(prepare.RegistrySecret, HASAppNamespace)
-
-			// Create component that refers to the git secret
-			component := &appstudiov1alpha1.Component{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "appstudio.redhat.com/v1alpha1",
-					Kind:       "Component",
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      HASCompName,
-					Namespace: HASAppNamespace,
-				},
-				Spec: appstudiov1alpha1.ComponentSpec{
-					ComponentName:  HASCompName,
-					Application:    HASAppName,
-					Secret:         GitSecretName,
-					ContainerImage: "docker.io/foo/customized:default-test-component",
-					Source: appstudiov1alpha1.ComponentSource{
-						ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
-							GitSource: &appstudiov1alpha1.GitSource{
-								URL: SampleRepoLink,
-							},
-						},
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
-
 			setComponentDevfileModel(resourceKey)
 
 			// Wait until all resources created
@@ -286,10 +253,6 @@ var _ = Describe("Component initial build controller", func() {
 					Expect(w.SubPath).To(ContainSubstring("/initialbuild-"))
 				}
 			}
-
-			// Clean up
-			deleteComponentInitialPipelineRuns(resourceKey)
-			deleteComponent(resourceKey)
 		})
 	})
 })
