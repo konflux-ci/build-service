@@ -90,7 +90,7 @@ func createComponent(componentLookupKey types.NamespacedName) {
 func getComponent(componentKey types.NamespacedName) *appstudiov1alpha1.Component {
 	component := &appstudiov1alpha1.Component{}
 	Eventually(func() bool {
-		k8sClient.Get(ctx, componentKey, component)
+		Expect(k8sClient.Get(ctx, componentKey, component)).Should(Succeed())
 		return component.ResourceVersion != ""
 	}, timeout, interval).Should(BeTrue())
 	return component
@@ -101,7 +101,7 @@ func deleteComponent(componentKey types.NamespacedName) {
 	// Delete
 	Eventually(func() error {
 		f := &appstudiov1alpha1.Component{}
-		k8sClient.Get(ctx, componentKey, f)
+		Expect(k8sClient.Get(ctx, componentKey, f)).To(Succeed())
 		return k8sClient.Delete(ctx, f)
 	}, timeout, interval).Should(Succeed())
 
@@ -115,7 +115,7 @@ func deleteComponent(componentKey types.NamespacedName) {
 func setComponentDevfileModel(componentKey types.NamespacedName) {
 	component := &appstudiov1alpha1.Component{}
 	Eventually(func() error {
-		k8sClient.Get(ctx, componentKey, component)
+		Expect(k8sClient.Get(ctx, componentKey, component)).To(Succeed())
 		component.Status.Devfile = "version: 2.2.0"
 		return k8sClient.Status().Update(ctx, component)
 	}, timeout, interval).Should(Succeed())
@@ -160,7 +160,7 @@ func ensureNoInitialPipelineRunsCreated(componentLookupKey types.NamespacedName)
 		labelSelectors := client.ListOptions{Raw: &metav1.ListOptions{
 			LabelSelector: "build.appstudio.openshift.io/component=" + component.Name,
 		}}
-		k8sClient.List(ctx, pipelineRuns, &labelSelectors)
+		Expect(k8sClient.List(ctx, pipelineRuns, &labelSelectors)).To(Succeed())
 		return len(pipelineRuns.Items) == 0
 	}, timeout, interval).WithTimeout(10 * time.Second).Should(BeTrue())
 }
@@ -251,9 +251,9 @@ func succeedInitialPipelineRun(componentKey types.NamespacedName) {
 }
 
 func deleteAllPipelineRuns() {
-	k8sClient.DeleteAllOf(ctx, &tektonapi.PipelineRun{}, &client.DeleteAllOfOptions{
+	Expect(k8sClient.DeleteAllOf(ctx, &tektonapi.PipelineRun{}, &client.DeleteAllOfOptions{
 		ListOptions: client.ListOptions{Namespace: HASAppNamespace},
-	})
+	})).Should(Succeed())
 }
 
 func createBuildTaskRunWithImage(resourceKey types.NamespacedName, image string) {
@@ -293,9 +293,9 @@ func createBuildTaskRunWithImage(resourceKey types.NamespacedName, image string)
 }
 
 func deleteAllTaskRuns() {
-	k8sClient.DeleteAllOf(ctx, &tektonapi.TaskRun{}, &client.DeleteAllOfOptions{
+	Expect(k8sClient.DeleteAllOf(ctx, &tektonapi.TaskRun{}, &client.DeleteAllOfOptions{
 		ListOptions: client.ListOptions{Namespace: HASAppNamespace},
-	})
+	})).Should(Succeed())
 }
 
 func createConfigMap(name string, namespace string, data map[string]string) {
