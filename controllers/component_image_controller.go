@@ -40,10 +40,11 @@ import (
 )
 
 const (
-	ComponentNameLabelName = "build.appstudio.openshift.io/component"
-	PipelineRunLabelName   = "tekton.dev/pipelineRun"
-	PipelineTaskLabelName  = "tekton.dev/pipelineTask"
-	BuildImageTaskName     = "build-container"
+	ComponentNameLabelName        = "build.appstudio.openshift.io/component"
+	PipelineRunLabelName          = "tekton.dev/pipelineRun"
+	PipelineTaskLabelName         = "tekton.dev/pipelineTask"
+	UpdateComponentAnnotationName = "appstudio.redhat.com/updateComponentOnSuccess"
+	BuildImageTaskName            = "build-container"
 )
 
 // ComponentImageReconciler reconciles a Frigate object
@@ -88,6 +89,11 @@ func (r *ComponentImageReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				// Ensure the PipelineRun belongs to a Component
 				if new.ObjectMeta.Labels == nil || new.ObjectMeta.Labels[ComponentNameLabelName] == "" {
 					// PipelineRun does not belong to a Component
+					return false
+				}
+
+				// Check if the build should be handled by the operator
+				if new.ObjectMeta.Annotations != nil && new.ObjectMeta.Annotations[UpdateComponentAnnotationName] == "false" {
 					return false
 				}
 

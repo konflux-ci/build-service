@@ -141,5 +141,28 @@ var _ = Describe("New Component Image Controller", func() {
 			component := getComponent(resourceKey)
 			Expect(component.Spec.ContainerImage).To(Equal(ComponentContainerImage))
 		})
+
+		It("Should not update component if updateComponentOnSuccess annotation set to false", func() {
+			ensureOneInitialPipelineRunCreated(resourceKey)
+			succeedInitialPipelineRun(resourceKey)
+
+			createWebhookPipelineRun(resourceKey)
+			// Add appstudio.redhat.com/updateComponentOnSuccess=false annotation to the Component
+			pipelineRun := &tektonapi.PipelineRun{}
+			Expect(k8sClient.Get(ctx, resourceKey, pipelineRun)).Should(Succeed())
+			if pipelineRun.Annotations == nil {
+				pipelineRun.Annotations = make(map[string]string)
+			}
+			pipelineRun.Annotations[UpdateComponentAnnotationName] = "false"
+			Expect(k8sClient.Update(ctx, pipelineRun)).Should(Succeed())
+
+			createBuildTaskRunWithImage(resourceKey, ComponentContainerImage+"-new")
+			succeedWebhookPipelineRun(resourceKey)
+
+			Consistently(func() bool {
+				component := getComponent(resourceKey)
+				return component.Spec.ContainerImage == ComponentContainerImage
+			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
+		})
 	})
 })

@@ -33,8 +33,13 @@ import (
 )
 
 const (
-	timeout  = time.Second * 15
-	interval = time.Millisecond * 250
+	// timeout is used as a limit until condition become true
+	// Usually used in Eventually statements
+	timeout = time.Second * 15
+	// ensureTimeout is used as a period of time during which the condition should not be changed
+	// Usually used in Consistently statements
+	ensureTimeout = time.Second * 4
+	interval      = time.Millisecond * 250
 )
 
 const (
@@ -162,7 +167,7 @@ func ensureNoInitialPipelineRunsCreated(componentLookupKey types.NamespacedName)
 		}}
 		Expect(k8sClient.List(ctx, pipelineRuns, &labelSelectors)).To(Succeed())
 		return len(pipelineRuns.Items) == 0
-	}, timeout, interval).WithTimeout(10 * time.Second).Should(BeTrue())
+	}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 }
 
 func createWebhookPipelineRun(resourceKey types.NamespacedName) {
