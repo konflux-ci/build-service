@@ -95,22 +95,23 @@ var _ = Describe("Component initial build controller", func() {
 
 	Context("Check if build objects are created", func() {
 
-		It("should create build objects", func() {
+		var buildBundle string
+		var gitSecret *corev1.Secret
+
+		BeforeEach(func() {
 			// Pre-create git secret
-			gitSecret := &corev1.Secret{
+			gitSecret = &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      GitSecretName,
 					Namespace: HASAppNamespace,
 				},
 			}
 			Expect(k8sClient.Create(ctx, gitSecret)).Should(Succeed())
-
 			// Configure the build bundle
-			buildBundle := "quay.io/some-repo/some-bundle:0.0.1"
+			buildBundle = "quay.io/some-repo/some-bundle:0.0.1"
 			createConfigMap(prepare.BuildBundleConfigMapName, HASAppNamespace, map[string]string{
 				prepare.BuildBundleConfigMapKey: buildBundle,
 			})
-
 			// Create component that refers to the git secret
 			component := &appstudiov1alpha1.Component{
 				TypeMeta: metav1.TypeMeta{
@@ -136,6 +137,16 @@ var _ = Describe("Component initial build controller", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
+		})
+		AfterEach(func() {
+			// Clean up
+			deleteComponentInitialPipelineRuns(resourceKey)
+			deleteComponent(resourceKey)
+			deleteConfigMap(prepare.BuildBundleConfigMapName, HASAppNamespace)
+			Expect(k8sClient.Delete(ctx, gitSecret)).Should(Succeed())
+		})
+
+		It("should create build objects when secret missing", func() {
 
 			setComponentDevfileModel(resourceKey)
 
@@ -179,18 +190,69 @@ var _ = Describe("Component initial build controller", func() {
 
 			Expect(pipelineRun.Spec.Workspaces).To(Not(BeEmpty()))
 			for _, w := range pipelineRun.Spec.Workspaces {
-				if w.Name == "registry-auth" {
-					Expect(w.Secret.SecretName).To(Equal("redhat-appstudio-registry-pull-secret"))
-				}
+				Expect(w.Name).NotTo(Equal("registry-auth"))
 				if w.Name == "workspace" {
 					Expect(w.PersistentVolumeClaim.ClaimName).To(Equal("appstudio"))
 					Expect(w.SubPath).To(ContainSubstring("/initialbuild-"))
 				}
 			}
 
-			// Clean up
-			deleteComponentInitialPipelineRuns(resourceKey)
-			deleteComponent(resourceKey)
+		})
+
+		It("should create build objects when secrets exists", func() {
+
+			// Setup registry secret in local namespace
+			createSecret(prepare.RegistrySecret, HASAppNamespace)
+			setComponentDevfileModel(resourceKey)
+
+			// Wait until all resources created
+			ensureOneInitialPipelineRunCreated(resourceKey)
+
+			// Check that git credentials secret is annotated
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: GitSecretName, Namespace: HASAppNamespace}, gitSecret)).Should(Succeed())
+			tektonGitAnnotation := gitSecret.ObjectMeta.Annotations["tekton.dev/git-0"]
+			Expect(tektonGitAnnotation).To(Equal("https://github.com"))
+
+			// Check that the pipeline service account has been linked with the Github authentication credentials
+			var pipelineSA corev1.ServiceAccount
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "pipeline", Namespace: HASAppNamespace}, &pipelineSA)).Should(Succeed())
+
+			secretFound := false
+			for _, secret := range pipelineSA.Secrets {
+				if secret.Name == GitSecretName {
+					secretFound = true
+					break
+				}
+			}
+			Expect(secretFound).To(BeTrue())
+
+			// Check the pipeline run and its resources
+			pipelineRuns := listComponentInitialPipelineRuns(resourceKey)
+			Expect(len(pipelineRuns.Items)).To(Equal(1))
+			pipelineRun := pipelineRuns.Items[0]
+
+			Expect(pipelineRun.Spec.Params).ToNot(BeEmpty())
+			for _, p := range pipelineRun.Spec.Params {
+				if p.Name == "output-image" {
+					Expect(p.Value.StringVal).To(Equal("docker.io/foo/customized:default-test-component"))
+				}
+				if p.Name == "git-url" {
+					Expect(p.Value.StringVal).To(Equal(SampleRepoLink))
+				}
+			}
+
+			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(buildBundle))
+
+			Expect(pipelineRun.Spec.Workspaces).To(Not(BeEmpty()))
+			for _, w := range pipelineRun.Spec.Workspaces {
+				if w.Name == "registry-auth" {
+					Expect(w.Secret.SecretName).To(Equal(prepare.RegistrySecret))
+				}
+				if w.Name == "workspace" {
+					Expect(w.PersistentVolumeClaim.ClaimName).To(Equal("appstudio"))
+					Expect(w.SubPath).To(ContainSubstring("/initialbuild-"))
+				}
+			}
 		})
 	})
 })
