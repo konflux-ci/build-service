@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-service/api/v1alpha1"
+	"github.com/redhat-appstudio/application-service/gitops"
 	"github.com/redhat-appstudio/application-service/gitops/prepare"
 	//+kubebuilder:scaffold:imports
 )
@@ -83,6 +84,68 @@ var _ = Describe("Component initial build controller", func() {
 					ComponentName:  HASCompName,
 					Application:    HASAppName,
 					ContainerImage: "quay.io/test/image:latest",
+				},
+			}
+			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
+
+			setComponentDevfileModel(resourceKey)
+
+			ensureNoInitialPipelineRunsCreated(resourceKey)
+		})
+		It("should submit initial build if a container image is set to default repo and starting with namespace tag", func() {
+			deleteComponent(resourceKey)
+
+			component := &appstudiov1alpha1.Component{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "appstudio.redhat.com/v1alpha1",
+					Kind:       "Component",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      HASCompName,
+					Namespace: HASAppNamespace,
+				},
+				Spec: appstudiov1alpha1.ComponentSpec{
+					ComponentName:  HASCompName,
+					Application:    HASAppName,
+					ContainerImage: gitops.GetDefaultImageRepo() + ":" + HASAppNamespace + "-tag",
+					Source: appstudiov1alpha1.ComponentSource{
+						ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
+							GitSource: &appstudiov1alpha1.GitSource{
+								URL: SampleRepoLink,
+							},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
+
+			setComponentDevfileModel(resourceKey)
+
+			ensureOneInitialPipelineRunCreated(resourceKey)
+		})
+		It("should not submit initial build if a container image is set to default repo not starting with namespace tag", func() {
+			deleteComponent(resourceKey)
+
+			component := &appstudiov1alpha1.Component{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "appstudio.redhat.com/v1alpha1",
+					Kind:       "Component",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      HASCompName,
+					Namespace: HASAppNamespace,
+				},
+				Spec: appstudiov1alpha1.ComponentSpec{
+					ComponentName:  HASCompName,
+					Application:    HASAppName,
+					ContainerImage: gitops.GetDefaultImageRepo() + ":test-tag",
+					Source: appstudiov1alpha1.ComponentSource{
+						ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
+							GitSource: &appstudiov1alpha1.GitSource{
+								URL: SampleRepoLink,
+							},
+						},
+					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, component)).Should(Succeed())

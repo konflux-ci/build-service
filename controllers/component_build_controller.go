@@ -216,7 +216,11 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 	}
 
 	gitopsConfig := prepare.PrepareGitopsConfig(ctx, r.NonCachingClient, component)
-	initialBuild := gitops.GenerateInitialBuildPipelineRun(component, gitopsConfig)
+	initialBuild, err := gitops.GenerateInitialBuildPipelineRun(component, gitopsConfig)
+	if err != nil {
+		log.Error(err, fmt.Sprintf("Unable to create PipelineRun for %v", initialBuild))
+		return err
+	}
 	err = controllerutil.SetOwnerReference(&component, &initialBuild, r.Scheme)
 	if err != nil {
 		log.Error(err, fmt.Sprintf("Unable to set owner reference for %v", initialBuild))
