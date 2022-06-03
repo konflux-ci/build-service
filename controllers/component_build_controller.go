@@ -133,6 +133,16 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	if err := r.SubmitNewBuild(ctx, component); err != nil {
+		// Try to revert the annotation
+		if err := r.Client.Get(ctx, req.NamespacedName, &component); err == nil {
+			component.Annotations[InitialBuildAnnotationName] = "false"
+			if err := r.Client.Update(ctx, &component); err != nil {
+				log.Error(err, fmt.Sprintf("Failed to schedule initial build for component: %v", req.NamespacedName))
+			}
+		} else {
+			log.Error(err, fmt.Sprintf("Failed to schedule initial build for component: %v", req.NamespacedName))
+		}
+
 		return ctrl.Result{}, err
 	}
 
@@ -209,6 +219,7 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 	initialBuild, err := gitops.GenerateInitialBuildPipelineRun(component, gitopsConfig)
 	if err != nil {
 		log.Error(err, "Unable to create PipelineRun")
+		// Return nil to avoid retries
 		return nil
 	}
 	err = controllerutil.SetOwnerReference(&component, &initialBuild, r.Scheme)
