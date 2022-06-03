@@ -41,7 +41,7 @@ import (
 )
 
 const (
-	InitialBuildAnnotationName = "com.redhat.appstudio/component-initial-build-happend"
+	InitialBuildAnnotationName = "com.redhat.appstudio/component-initial-build-processed"
 )
 
 // ComponentBuildReconciler watches AppStudio Component object in order to submit builds
@@ -133,16 +133,6 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	if err := r.SubmitNewBuild(ctx, component); err != nil {
-		// Try to revert the annotation
-		if err := r.Client.Get(ctx, req.NamespacedName, &component); err == nil {
-			component.Annotations[InitialBuildAnnotationName] = "false"
-			if err := r.Client.Update(ctx, &component); err != nil {
-				log.Error(err, fmt.Sprintf("Failed to schedule initial build for component: %v", req.NamespacedName))
-			}
-		} else {
-			log.Error(err, fmt.Sprintf("Failed to schedule initial build for component: %v", req.NamespacedName))
-		}
-
 		return ctrl.Result{}, err
 	}
 
@@ -218,8 +208,8 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 	gitopsConfig := prepare.PrepareGitopsConfig(ctx, r.NonCachingClient, component)
 	initialBuild, err := gitops.GenerateInitialBuildPipelineRun(component, gitopsConfig)
 	if err != nil {
-		log.Error(err, fmt.Sprintf("Unable to create PipelineRun for %v", initialBuild))
-		return err
+		log.Error(err, "Unable to create PipelineRun")
+		return nil
 	}
 	err = controllerutil.SetOwnerReference(&component, &initialBuild, r.Scheme)
 	if err != nil {
