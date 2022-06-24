@@ -45,6 +45,7 @@ const (
 	PipelineTaskLabelName         = "tekton.dev/pipelineTask"
 	UpdateComponentAnnotationName = "appstudio.redhat.com/updateComponentOnSuccess"
 	BuildImageTaskName            = "build-container"
+	PullRequestAnnotationName     = "pipelinesascode.tekton.dev/pull-request"
 )
 
 // ComponentImageReconciler reconciles a Frigate object
@@ -94,6 +95,11 @@ func (r *ComponentImageReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 				// Check if the build should be handled by the operator
 				if new.ObjectMeta.Annotations != nil && new.ObjectMeta.Annotations[UpdateComponentAnnotationName] == "false" {
+					return false
+				}
+
+				// Skip build on PullRequest
+				if new.ObjectMeta.Annotations != nil && new.ObjectMeta.Annotations[PullRequestAnnotationName] != "" {
 					return false
 				}
 

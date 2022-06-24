@@ -35,6 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-service/api/v1alpha1"
 	"github.com/redhat-appstudio/build-service/controllers"
 	taskrunapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
@@ -78,6 +79,11 @@ func main() {
 
 	if err := taskrunapi.AddToScheme(scheme); err != nil {
 		setupLog.Error(err, "unable to add triggers api to the scheme")
+		os.Exit(1)
+	}
+
+	if err := pacv1alpha1.AddToScheme(scheme); err != nil {
+		setupLog.Error(err, "unable to add pipelinesascode api to the scheme")
 		os.Exit(1)
 	}
 

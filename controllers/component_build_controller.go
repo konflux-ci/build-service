@@ -20,10 +20,13 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strconv"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -32,16 +35,26 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/yaml"
 
 	"github.com/go-logr/logr"
 
+	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-service/api/v1alpha1"
 	"github.com/redhat-appstudio/application-service/gitops"
 	"github.com/redhat-appstudio/application-service/gitops/prepare"
+	"github.com/redhat-appstudio/build-service/github"
+	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 )
 
 const (
 	InitialBuildAnnotationName = "com.redhat.appstudio/component-initial-build-processed"
+	PipelineRunOnPushSuffix    = "-on-push"
+	PipelineRunOnPRSuffix      = "-on-pull-request"
+	PipelineRunOnPushFilename  = "push.yaml"
+	PipelineRunOnPRFilename    = "pull-request.yaml"
+	pipelinesAsCodeNamespace   = "pipelines-as-code"
+	pipelinesAsCodeSecret      = "pipelines-as-code-secret"
 )
 
 // ComponentBuildReconciler watches AppStudio Component object in order to submit builds
@@ -74,8 +87,9 @@ func (r *ComponentBuildReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=components,verbs=get;list;watch;update;patch
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=components/status,verbs=get;list;watch
-//+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch
+//+kubebuilder:rbac:groups=core,resources=configmaps,verbs=create;get;list;update;watch
 //+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch
+//+kubebuilder:rbac:groups=pipelinesascode.tekton.dev,resources=repositories,verbs=create;get;list;watch;update;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -131,29 +145,168 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err := r.Client.Update(ctx, &component); err != nil {
 		return ctrl.Result{}, err
 	}
+	if err = r.EnsurePersistentStorage(ctx, component); err != nil {
+		return ctrl.Result{}, err
+	}
 
-	if err := r.SubmitNewBuild(ctx, component); err != nil {
-		// Try to revert the annotation
-		if err := r.Client.Get(ctx, req.NamespacedName, &component); err == nil {
-			component.Annotations[InitialBuildAnnotationName] = "false"
-			if err := r.Client.Update(ctx, &component); err != nil {
+	if val, ok := component.Annotations[gitops.PacAnnotation]; ok && val == "1" {
+		r.Log.Info("Pac enabled")
+		if err := r.EnsurePACRepository(ctx, component); err != nil {
+			return ctrl.Result{}, err
+		}
+		if err := r.GeneratePullRequest(ctx, component); err != nil {
+			return ctrl.Result{}, err
+		}
+	} else {
+		if err := r.SubmitNewBuild(ctx, component); err != nil {
+			// Try to revert the annotation
+			if err := r.Client.Get(ctx, req.NamespacedName, &component); err == nil {
+				component.Annotations[InitialBuildAnnotationName] = "false"
+				if err := r.Client.Update(ctx, &component); err != nil {
+					log.Error(err, fmt.Sprintf("Failed to schedule initial build for component: %v", req.NamespacedName))
+				}
+			} else {
 				log.Error(err, fmt.Sprintf("Failed to schedule initial build for component: %v", req.NamespacedName))
 			}
-		} else {
-			log.Error(err, fmt.Sprintf("Failed to schedule initial build for component: %v", req.NamespacedName))
-		}
 
-		return ctrl.Result{}, err
+			return ctrl.Result{}, err
+		}
 	}
 
 	return ctrl.Result{}, nil
 }
 
-// SubmitNewBuild creates a new PipelineRun to build a new image for the given component.
-func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component appstudiov1alpha1.Component) error {
+func (r *ComponentBuildReconciler) EnsurePACRepository(ctx context.Context, component appstudiov1alpha1.Component) error {
+	repository := gitops.GeneratePACRepository(component)
+	existingRepository := &pacv1alpha1.Repository{}
+	if err := r.Client.Get(ctx, types.NamespacedName{Name: component.Name, Namespace: component.Namespace}, existingRepository); err != nil {
+		if errors.IsNotFound(err) {
+			err = r.Client.Create(ctx, &repository)
+			if err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *ComponentBuildReconciler) GeneratePullRequest(ctx context.Context, component appstudiov1alpha1.Component) error {
+	bundle := prepare.PrepareGitopsConfig(ctx, r.NonCachingClient, component).BuildBundle
+	pipelineOnPush, _ := GeneratePipelineRun(component.Name, component.Namespace, bundle, component.Spec.ContainerImage, false)
+	pipelineOnPR, _ := GeneratePipelineRun(component.Name, component.Namespace, bundle, component.Spec.ContainerImage, true)
+	parsedUrl := strings.Split(component.Spec.Source.GitSource.URL, "/")
+	owner := parsedUrl[3]
+	repo := parsedUrl[4]
+	commit := github.CommitPR{
+		SourceOwner:   owner,
+		SourceRepo:    repo,
+		CommitMessage: "Appstudio update" + component.Name,
+		CommitBranch:  "appstudio-" + component.Name,
+		BaseBranch:    "main",
+		PRTitle:       "Appstudio update " + component.Name,
+		PRText:        "PR proposal",
+		Files: []github.File{
+			{Name: ".tekton/" + component.Name + "-" + PipelineRunOnPushFilename, Content: pipelineOnPush},
+			{Name: ".tekton/" + component.Name + "-" + PipelineRunOnPRFilename, Content: pipelineOnPR},
+		},
+		AuthorName:  "redhat-appstudio",
+		AuthorEmail: "appstudio@redhat.com",
+	}
+
+	secret := corev1.Secret{}
+	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: pipelinesAsCodeNamespace, Name: pipelinesAsCodeSecret}, &secret); err != nil {
+		return fmt.Errorf("failed to get PipelinesAsCode secret: %w", err)
+	}
+	githubAppIdStr, found := secret.Data["github-application-id"]
+	if !found {
+		return fmt.Errorf("missing github-application-id in pipelinesascode secret")
+	}
+	githubPrivateKey, found := secret.Data["github-private-key"]
+	if !found {
+		return fmt.Errorf("missing github-private-key in pipelinesascode secret")
+	}
+	githubAppId, err := strconv.ParseInt(string(githubAppIdStr), 10, 64)
+	if err != nil {
+		return fmt.Errorf("failed to convert %s to int : %w", githubAppIdStr, err)
+	}
+
+	if err := commit.CreateCommitAndPR(githubAppId, []byte(githubPrivateKey)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func GeneratePipelineRun(name, namespace, bundle, image string, onPull bool) ([]byte, error) {
+	var pipelineName string
+	annotations := map[string]string{
+		"pipelinesascode.tekton.dev/on-target-branch": "[main]",
+		"pipelinesascode.tekton.dev/max-keep-runs":    "3",
+		"build.appstudio.redhat.com/commit_sha":       "{{revision}}",
+		"build.appstudio.redhat.com/target_branch":    "{{target_branch}}",
+	}
+	labels := map[string]string{
+		ComponentNameLabelName: name,
+	}
+	image_repo := strings.Split(image, ":")[0]
+	var proposedImage string
+	if onPull {
+		annotations["pipelinesascode.tekton.dev/on-event"] = "[pull_request]"
+		annotations["build.appstudio.redhat.com/pull_request_number"] = "{{pull_request_number}}"
+		pipelineName = name + PipelineRunOnPRSuffix
+		proposedImage = image_repo + ":on-pr-{{revision}}"
+	} else {
+		annotations["pipelinesascode.tekton.dev/on-event"] = "[push]"
+		pipelineName = name + PipelineRunOnPushSuffix
+		proposedImage = image_repo + ":{{revision}}"
+
+	}
+	pipelineRun := tektonapi.PipelineRun{
+		TypeMeta: v1.TypeMeta{
+			Kind:       "PipelineRun",
+			APIVersion: "tekton.dev/v1beta1",
+		},
+		ObjectMeta: v1.ObjectMeta{
+			Name:        pipelineName,
+			Namespace:   namespace,
+			Labels:      labels,
+			Annotations: annotations,
+		},
+		Spec: tektonapi.PipelineRunSpec{
+			PipelineRef: &tektonapi.PipelineRef{
+				Name:   "docker-build",
+				Bundle: bundle,
+			},
+			Params: []tektonapi.Param{
+				{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "{{repo_url}}"}},
+				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "{{revision}}"}},
+				{Name: "output-image", Value: tektonapi.ArrayOrString{Type: "string", StringVal: proposedImage}},
+				{Name: "path-context", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "."}},
+				{Name: "dockerfile", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "Dockerfile"}},
+			},
+			Workspaces: []tektonapi.WorkspaceBinding{
+				{
+					Name:                  "workspace",
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "appstudio"},
+					SubPath:               pipelineName + "-{{revision}}",
+				},
+				{
+					Name:   "registry-auth",
+					Secret: &corev1.SecretVolumeSource{SecretName: "redhat-appstudio-registry-pull-secret"},
+				},
+			},
+		},
+	}
+
+	yamlformat, err := yaml.Marshal(pipelineRun)
+
+	return yamlformat, err
+}
+
+func (r *ComponentBuildReconciler) EnsurePersistentStorage(ctx context.Context, component appstudiov1alpha1.Component) error {
 	log := r.Log.WithValues("Namespace", component.Namespace, "Application", component.Spec.Application, "Component", component.Name)
 
-	// TODO delete this block which is workaround for delayed sync of pvc
 	workspaceStorage := gitops.GenerateCommonStorage(component, "appstudio")
 	existingPvc := &corev1.PersistentVolumeClaim{}
 	if err := r.Client.Get(ctx, types.NamespacedName{Name: workspaceStorage.Name, Namespace: workspaceStorage.Namespace}, existingPvc); err != nil {
@@ -172,6 +325,12 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 			return err
 		}
 	}
+	return nil
+}
+
+// SubmitNewBuild creates a new PipelineRun to build a new image for the given component.
+func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component appstudiov1alpha1.Component) error {
+	log := r.Log.WithValues("Namespace", component.Namespace, "Application", component.Spec.Application, "Component", component.Name)
 
 	gitSecretName := component.Spec.Secret
 	// Make the Secret ready for consumption by Tekton.
