@@ -21,6 +21,7 @@ import (
 
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"knative.dev/pkg/apis"
@@ -256,9 +257,11 @@ func succeedInitialPipelineRun(componentKey types.NamespacedName) {
 }
 
 func deleteAllPipelineRuns() {
-	Expect(k8sClient.DeleteAllOf(ctx, &tektonapi.PipelineRun{}, &client.DeleteAllOfOptions{
+	if err := k8sClient.DeleteAllOf(ctx, &tektonapi.PipelineRun{}, &client.DeleteAllOfOptions{
 		ListOptions: client.ListOptions{Namespace: HASAppNamespace},
-	})).Should(Succeed())
+	}); err != nil {
+		Expect(k8sErrors.IsNotFound(err)).To(BeTrue())
+	}
 }
 
 func createBuildTaskRunWithImage(resourceKey types.NamespacedName, image string) {
@@ -298,9 +301,11 @@ func createBuildTaskRunWithImage(resourceKey types.NamespacedName, image string)
 }
 
 func deleteAllTaskRuns() {
-	Expect(k8sClient.DeleteAllOf(ctx, &tektonapi.TaskRun{}, &client.DeleteAllOfOptions{
+	if err := k8sClient.DeleteAllOf(ctx, &tektonapi.TaskRun{}, &client.DeleteAllOfOptions{
 		ListOptions: client.ListOptions{Namespace: HASAppNamespace},
-	})).Should(Succeed())
+	}); err != nil {
+		Expect(k8sErrors.IsNotFound(err)).To(BeTrue())
+	}
 }
 
 func createConfigMap(resourceKey types.NamespacedName, data map[string]string) {
