@@ -6,8 +6,9 @@ require (
 	github.com/go-logr/logr v1.2.3
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.19.0
+	github.com/openshift-pipelines/pipelines-as-code v0.0.0-20220622161720-2a6007e17200
 	//if you update this you must also update controllers/suite_test.go
-	github.com/redhat-appstudio/application-service v0.0.0-20220603053259-4dfb289796d7
+	github.com/redhat-appstudio/application-service v0.0.0-20220707194445-0350dea68ebc
 	github.com/tektoncd/pipeline v0.33.0
 	github.com/tektoncd/triggers v0.19.1
 	k8s.io/api v0.23.5
@@ -15,16 +16,7 @@ require (
 	k8s.io/client-go v0.23.0
 	knative.dev/pkg v0.0.0-20220131144930-f4b57aef0006
 	sigs.k8s.io/controller-runtime v0.11.0
-)
-
-require (
-	github.com/openshift-pipelines/pipelines-as-code v0.0.0-20220622161720-2a6007e17200
 	sigs.k8s.io/yaml v1.3.0
-)
-
-require (
-	github.com/google/go-github/v41 v41.0.0 // indirect
-	github.com/google/go-querystring v1.1.0 // indirect
 )
 
 require (
@@ -80,7 +72,9 @@ require (
 	github.com/google/cel-go v0.10.1 // indirect
 	github.com/google/go-cmp v0.5.8 // indirect
 	github.com/google/go-containerregistry v0.8.1-0.20220211173031-41f8d92709b7 // indirect
+	github.com/google/go-github/v41 v41.0.0 // indirect
 	github.com/google/go-github/v45 v45.2.0
+	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/googleapis/gnostic v0.5.5 // indirect
@@ -114,7 +108,8 @@ require (
 	github.com/prometheus/common v0.32.1 // indirect
 	github.com/prometheus/procfs v0.6.0 // indirect
 	github.com/prometheus/statsd_exporter v0.21.0 // indirect
-	github.com/redhat-developer/alizer/go v0.0.0-20220610160520-e7064efb37bc // indirect
+	github.com/redhat-appstudio/managed-gitops/appstudio-shared v0.0.0-20220623041404-010a781bb3fb // indirect
+	github.com/redhat-developer/alizer/go v0.0.0-20220704150640-ef50ead0b279 // indirect
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06 // indirect
 	github.com/sergi/go-diff v1.1.0 // indirect
 	github.com/sirupsen/logrus v1.8.1 // indirect
@@ -162,5 +157,3 @@ require (
 )
 
 replace github.com/antlr/antlr4 => github.com/antlr/antlr4 v0.0.0-20211106181442-e4c1a74c66bd
-
-replace github.com/redhat-appstudio/application-service => github.com/Michkov/application-service v0.7.2

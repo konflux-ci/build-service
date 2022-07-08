@@ -26,7 +26,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -132,6 +132,11 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
+	// Persistent storage is required to do builds
+	if err = r.EnsurePersistentStorage(ctx, component); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	if len(component.Annotations) == 0 {
 		component.Annotations = make(map[string]string)
 	}
@@ -140,26 +145,31 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
-	// Set initial build annotation to prevent next builds
-	component.Annotations[InitialBuildAnnotationName] = "true"
-	if err := r.Client.Update(ctx, &component); err != nil {
-		return ctrl.Result{}, err
-	}
-	if err = r.EnsurePersistentStorage(ctx, component); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	if val, ok := component.Annotations[gitops.PacAnnotation]; ok && val == "1" {
-		r.Log.Info("Pac enabled")
+	if val, ok := component.Annotations[gitops.PaCAnnotation]; ok && val == "1" {
+		// Use pipelines as code build
+		r.Log.Info("PaC enabled")
 		if err := r.EnsurePACRepository(ctx, component); err != nil {
 			return ctrl.Result{}, err
 		}
 		if err := r.GeneratePullRequest(ctx, component); err != nil {
 			return ctrl.Result{}, err
 		}
+
+		// Set initial build annotation to prevent next builds
+		component.Annotations[InitialBuildAnnotationName] = "true"
+		if err := r.Client.Update(ctx, &component); err != nil {
+			return ctrl.Result{}, err
+		}
 	} else {
+		// Use trigger build
+		// Set initial build annotation to prevent next builds
+		component.Annotations[InitialBuildAnnotationName] = "true"
+		if err := r.Client.Update(ctx, &component); err != nil {
+			return ctrl.Result{}, err
+		}
+
 		if err := r.SubmitNewBuild(ctx, component); err != nil {
-			// Try to revert the annotation
+			// Try to revert the initial build annotation
 			if err := r.Client.Get(ctx, req.NamespacedName, &component); err == nil {
 				component.Annotations[InitialBuildAnnotationName] = "false"
 				if err := r.Client.Update(ctx, &component); err != nil {
@@ -179,7 +189,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 func (r *ComponentBuildReconciler) EnsurePACRepository(ctx context.Context, component appstudiov1alpha1.Component) error {
 	repository := gitops.GeneratePACRepository(component)
 	existingRepository := &pacv1alpha1.Repository{}
-	if err := r.Client.Get(ctx, types.NamespacedName{Name: component.Name, Namespace: component.Namespace}, existingRepository); err != nil {
+	if err := r.Client.Get(ctx, types.NamespacedName{Name: repository.Name, Namespace: repository.Namespace}, existingRepository); err != nil {
 		if errors.IsNotFound(err) {
 			err = r.Client.Create(ctx, &repository)
 			if err != nil {
@@ -260,14 +270,14 @@ func GeneratePipelineRun(name, namespace, bundle, image string, onPull bool) ([]
 		annotations["pipelinesascode.tekton.dev/on-event"] = "[push]"
 		pipelineName = name + PipelineRunOnPushSuffix
 		proposedImage = image_repo + ":{{revision}}"
-
 	}
+
 	pipelineRun := tektonapi.PipelineRun{
-		TypeMeta: v1.TypeMeta{
+		TypeMeta: metav1.TypeMeta{
 			Kind:       "PipelineRun",
 			APIVersion: "tekton.dev/v1beta1",
 		},
-		ObjectMeta: v1.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:        pipelineName,
 			Namespace:   namespace,
 			Labels:      labels,
