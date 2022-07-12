@@ -19,9 +19,12 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/selection"
@@ -36,6 +39,7 @@ import (
 
 	"github.com/go-logr/logr"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-service/api/v1alpha1"
+	appstudiosharedv1alpha1 "github.com/redhat-appstudio/managed-gitops/appstudio-shared/apis/appstudio.redhat.com/v1alpha1"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 )
 
@@ -46,6 +50,8 @@ const (
 	UpdateComponentAnnotationName = "appstudio.redhat.com/updateComponentOnSuccess"
 	BuildImageTaskName            = "build-container"
 	PullRequestAnnotationName     = "pipelinesascode.tekton.dev/pull-request"
+
+	k8sNameMaxLen = 253
 )
 
 // ComponentImageReconciler reconciles a Frigate object
@@ -141,6 +147,7 @@ func (r *ComponentImageReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=tekton.dev,resources=taskruns/status,verbs=get;list;watch
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=components,verbs=get;list;watch;update;patch
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=components/status,verbs=get;list;watch
+//+kubebuilder:rbac:groups=appstudio.redhat.com,resources=applicationsnapshots,verbs=create;get;list;watch
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
@@ -245,5 +252,63 @@ func (r *ComponentImageReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		log.Info(fmt.Sprintf("Component '%v' image '%s' is up to date", componentKey, imageReference))
 	}
 
+	// Create Application Snapshot
+	// This object will be used to regenerate the GitOps repository
+	// (based on the Binding, which references the Snapshot)
+	applicationSnapshot := generateApplicationSnapshot(&component, imageReference)
+	if err := r.Client.Create(ctx, applicationSnapshot); err != nil {
+		log.Error(err, fmt.Sprintf("Failed to create application snapshot for the new image: %s", imageReference))
+		return ctrl.Result{}, err
+	}
+	log.Info(fmt.Sprintf("Created application snapshot %s", applicationSnapshot.GetName()))
+
 	return ctrl.Result{}, nil
+}
+
+func generateApplicationSnapshot(component *appstudiov1alpha1.Component, image string) *appstudiosharedv1alpha1.ApplicationSnapshot {
+	name := getApplicationSnapshotName(component.GetName())
+	applicationSnapshot := &appstudiosharedv1alpha1.ApplicationSnapshot{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: component.GetNamespace(),
+			Labels: map[string]string{
+				ComponentNameLabelName: component.GetName(),
+			},
+		},
+		Spec: appstudiosharedv1alpha1.ApplicationSnapshotSpec{
+			Application: component.Spec.Application,
+			DisplayName: fmt.Sprintf("Snapshot of \"%s\" component", component.GetName()),
+			DisplayDescription: fmt.Sprintf("Snapshot of \"%s\" component of \"%s\" application using \"%s\" image. Created at %s",
+				component.GetName(), component.Spec.Application, image, time.Now().Format("2006 Jan 02 Monday 15:04:05")),
+			Components: []appstudiosharedv1alpha1.ApplicationSnapshotComponent{
+				{
+					Name:           component.GetName(),
+					ContainerImage: image,
+				},
+			},
+		},
+	}
+
+	applicationSnapshot.SetOwnerReferences([]metav1.OwnerReference{
+		{
+			APIVersion: component.APIVersion,
+			Kind:       component.Kind,
+			Name:       component.Name,
+			UID:        component.UID,
+		},
+	})
+
+	return applicationSnapshot
+}
+
+func getApplicationSnapshotName(componentName string) string {
+	timestamp := strconv.FormatInt(time.Now().UnixNano(), 10)
+	name := fmt.Sprintf("snapshot-of-component-%s-%s", componentName, timestamp)
+	if len(name) <= k8sNameMaxLen {
+		return name
+	}
+
+	// Need to truncate component name
+	componentNameAllowedLen := len(componentName) - (len(name) - k8sNameMaxLen)
+	return getApplicationSnapshotName(componentName[:componentNameAllowedLen])
 }

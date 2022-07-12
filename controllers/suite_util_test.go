@@ -34,6 +34,7 @@ import (
 
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-service/api/v1alpha1"
 	"github.com/redhat-appstudio/application-service/gitops"
+	appstudiosharedv1alpha1 "github.com/redhat-appstudio/managed-gitops/appstudio-shared/apis/appstudio.redhat.com/v1alpha1"
 )
 
 const (
@@ -165,10 +166,28 @@ func setComponentDevfileModel(componentKey types.NamespacedName) {
 	Expect(component.Status.Devfile).Should(Not(Equal("")))
 }
 
+func listApplicationSnapshots(componentKey types.NamespacedName) []appstudiosharedv1alpha1.ApplicationSnapshot {
+	applicationSnapshots := &appstudiosharedv1alpha1.ApplicationSnapshotList{}
+	labelSelectors := client.ListOptions{Raw: &metav1.ListOptions{
+		LabelSelector: ComponentNameLabelName + "=" + componentKey.Name,
+	}}
+	err := k8sClient.List(ctx, applicationSnapshots, &labelSelectors)
+	Expect(err).ToNot(HaveOccurred())
+	return applicationSnapshots.Items
+}
+
+func deleteAllApplicationSnapshots() {
+	if err := k8sClient.DeleteAllOf(ctx, &appstudiosharedv1alpha1.ApplicationSnapshot{}, &client.DeleteAllOfOptions{
+		ListOptions: client.ListOptions{Namespace: HASAppNamespace},
+	}); err != nil {
+		Expect(k8sErrors.IsNotFound(err)).To(BeTrue())
+	}
+}
+
 func listComponentInitialPipelineRuns(componentKey types.NamespacedName) *tektonapi.PipelineRunList {
 	pipelineRuns := &tektonapi.PipelineRunList{}
 	labelSelectors := client.ListOptions{Raw: &metav1.ListOptions{
-		LabelSelector: "build.appstudio.openshift.io/component=" + componentKey.Name,
+		LabelSelector: ComponentNameLabelName + "=" + componentKey.Name,
 	}}
 	err := k8sClient.List(ctx, pipelineRuns, &labelSelectors)
 	Expect(err).ToNot(HaveOccurred())

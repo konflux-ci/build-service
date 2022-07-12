@@ -164,5 +164,33 @@ var _ = Describe("New Component Image Controller", func() {
 				return component.Spec.ContainerImage == ComponentContainerImage
 			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 		})
+
+		It("Should create application snapshot on component image update", func() {
+			newImage := ComponentContainerImage + "-1234"
+
+			deleteAllApplicationSnapshots()
+			Expect(len(listApplicationSnapshots(resourceKey))).To(Equal(0))
+
+			ensureOneInitialPipelineRunCreated(resourceKey)
+			initialBuildPipelineKey := types.NamespacedName{
+				Name:      listComponentInitialPipelineRuns(resourceKey).Items[0].Name,
+				Namespace: HASAppNamespace,
+			}
+			createBuildTaskRunWithImage(initialBuildPipelineKey, newImage)
+			succeedInitialPipelineRun(resourceKey)
+
+			Eventually(func() bool {
+				component := getComponent(resourceKey)
+				return component.Spec.ContainerImage == newImage
+			}, timeout, interval).Should(BeTrue())
+			Eventually(func() bool {
+				return len(listApplicationSnapshots(resourceKey)) == 1
+			}, timeout, interval).Should(BeTrue())
+			applicationSnaphot := listApplicationSnapshots(resourceKey)[0]
+			applicationSnaphotOwners := applicationSnaphot.GetOwnerReferences()
+			Expect(len(applicationSnaphotOwners)).To(Equal(1))
+			Expect(applicationSnaphotOwners[0].Name).To(Equal(resourceKey.Name))
+			Expect(applicationSnaphotOwners[0].Kind).To(Equal("Component"))
+		})
 	})
 })

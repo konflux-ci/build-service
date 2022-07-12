@@ -9,6 +9,7 @@ require (
 	github.com/openshift-pipelines/pipelines-as-code v0.0.0-20220622161720-2a6007e17200
 	//if you update this you must also update controllers/suite_test.go
 	github.com/redhat-appstudio/application-service v0.0.0-20220707194445-0350dea68ebc
+	github.com/redhat-appstudio/managed-gitops/appstudio-shared v0.0.0-20220706140453-45b53e5f01fe
 	github.com/tektoncd/pipeline v0.33.0
 	github.com/tektoncd/triggers v0.19.1
 	k8s.io/api v0.23.5
@@ -108,7 +109,6 @@ require (
 	github.com/prometheus/common v0.32.1 // indirect
 	github.com/prometheus/procfs v0.6.0 // indirect
 	github.com/prometheus/statsd_exporter v0.21.0 // indirect
-	github.com/redhat-appstudio/managed-gitops/appstudio-shared v0.0.0-20220623041404-010a781bb3fb // indirect
 	github.com/redhat-developer/alizer/go v0.0.0-20220704150640-ef50ead0b279 // indirect
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06 // indirect
 	github.com/sergi/go-diff v1.1.0 // indirect
