@@ -35,8 +35,10 @@ rules:
   resources:
   - configmaps
   verbs:
+  - create
   - get
   - list
+  - update
   - watch
 - apiGroups:
   - ""
@@ -45,6 +47,17 @@ rules:
   verbs:
   - get
   - list
+  - watch
+- apiGroups:
+  - pipelinesascode.tekton.dev
+  resources:
+  - repositories
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - tekton.dev

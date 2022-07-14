@@ -6,8 +6,9 @@ require (
 	github.com/go-logr/logr v1.2.3
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.19.0
+	github.com/openshift-pipelines/pipelines-as-code v0.0.0-20220622161720-2a6007e17200
 	//if you update this you must also update controllers/suite_test.go
-	github.com/redhat-appstudio/application-service v0.0.0-20220603053259-4dfb289796d7
+	github.com/redhat-appstudio/application-service v0.0.0-20220707194445-0350dea68ebc
 	github.com/tektoncd/pipeline v0.33.0
 	github.com/tektoncd/triggers v0.19.1
 	k8s.io/api v0.23.5
@@ -15,6 +16,7 @@ require (
 	k8s.io/client-go v0.23.0
 	knative.dev/pkg v0.0.0-20220131144930-f4b57aef0006
 	sigs.k8s.io/controller-runtime v0.11.0
+	sigs.k8s.io/yaml v1.3.0
 )
 
 require (
@@ -32,9 +34,10 @@ require (
 	github.com/PuerkitoBio/purell v1.1.1 // indirect
 	github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578 // indirect
 	github.com/acomagu/bufpipe v1.0.3 // indirect
-	github.com/antlr/antlr4/runtime/Go/antlr v0.0.0-20210826220005-b48c857c3a0e // indirect
+	github.com/antlr/antlr4/runtime/Go/antlr v0.0.0-20211221011931-643d94fcab96 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blendle/zapdriver v1.3.1 // indirect
+	github.com/bradleyfalzon/ghinstallation/v2 v2.0.4
 	github.com/census-instrumentation/opencensus-proto v0.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/containerd/containerd v1.5.9 // indirect
@@ -66,9 +69,12 @@ require (
 	github.com/golang/mock v1.6.0 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/google/btree v1.0.1 // indirect
-	github.com/google/cel-go v0.9.0 // indirect
-	github.com/google/go-cmp v0.5.7 // indirect
+	github.com/google/cel-go v0.10.1 // indirect
+	github.com/google/go-cmp v0.5.8 // indirect
 	github.com/google/go-containerregistry v0.8.1-0.20220211173031-41f8d92709b7 // indirect
+	github.com/google/go-github/v41 v41.0.0 // indirect
+	github.com/google/go-github/v45 v45.2.0
+	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/googleapis/gnostic v0.5.5 // indirect
@@ -102,7 +108,9 @@ require (
 	github.com/prometheus/common v0.32.1 // indirect
 	github.com/prometheus/procfs v0.6.0 // indirect
 	github.com/prometheus/statsd_exporter v0.21.0 // indirect
-	github.com/redhat-developer/alizer/go v0.0.0-20220215154256-33df7feef4ae // indirect
+	github.com/redhat-appstudio/managed-gitops/appstudio-shared v0.0.0-20220623041404-010a781bb3fb // indirect
+	github.com/redhat-developer/alizer/go v0.0.0-20220704150640-ef50ead0b279 // indirect
+	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06 // indirect
 	github.com/sergi/go-diff v1.1.0 // indirect
 	github.com/sirupsen/logrus v1.8.1 // indirect
 	github.com/spf13/afero v1.8.0 // indirect
@@ -119,7 +127,7 @@ require (
 	golang.org/x/crypto v0.0.0-20220208050332-20e1d8d225ab // indirect
 	golang.org/x/mod v0.5.1 // indirect
 	golang.org/x/net v0.0.0-20220225172249-27dd8689420f // indirect
-	golang.org/x/oauth2 v0.0.0-20211104180415-d3ed0bb246c8 // indirect
+	golang.org/x/oauth2 v0.0.0-20211104180415-d3ed0bb246c8
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c // indirect
 	golang.org/x/sys v0.0.0-20220319134239-a9b59b0215f8 // indirect
 	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211 // indirect
@@ -136,7 +144,7 @@ require (
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
+	gopkg.in/yaml.v3 v3.0.0 // indirect
 	k8s.io/apiextensions-apiserver v0.23.0 // indirect
 	k8s.io/component-base v0.23.0 // indirect
 	k8s.io/klog v1.0.0 // indirect
@@ -146,7 +154,6 @@ require (
 	oras.land/oras-go v0.4.0 // indirect
 	sigs.k8s.io/json v0.0.0-20211020170558-c049b76a60c6 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.1 // indirect
-	sigs.k8s.io/yaml v1.3.0 // indirect
 )
 
 replace github.com/antlr/antlr4 => github.com/antlr/antlr4 v0.0.0-20211106181442-e4c1a74c66bd

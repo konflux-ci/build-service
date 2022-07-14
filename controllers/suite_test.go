@@ -35,6 +35,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	taskrunapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-service/api/v1alpha1"
@@ -65,12 +66,13 @@ var _ = BeforeSuite(func() {
 	ctx, cancel = context.WithCancel(context.TODO())
 
 	By("bootstrapping test environment")
-	applicationServiceDepVersion := "v0.0.0-20220603053259-4dfb289796d7"
+	applicationServiceDepVersion := "v0.0.0-20220707194445-0350dea68ebc"
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "redhat-appstudio", "application-service@"+applicationServiceDepVersion, "config", "crd", "bases"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "tektoncd", "triggers@v0.19.1", "config"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "tektoncd", "pipeline@v0.33.0", "config"),
+			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "openshift-pipelines", "pipelines-as-code@v0.0.0-20220622161720-2a6007e17200", "config"),
 		},
 		ErrorIfCRDPathMissing: true,
 	}
@@ -84,6 +86,9 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 
 	err = taskrunapi.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	err = pacv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	//+kubebuilder:scaffold:scheme

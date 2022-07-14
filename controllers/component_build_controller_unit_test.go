@@ -138,3 +138,111 @@ func TestUpdateServiceAccountIfSecretNotLinked(t *testing.T) {
 		})
 	}
 }
+
+func TestGeneratePipelineRun(t *testing.T) {
+	tests := []struct {
+		name   string
+		onPull bool
+		want   string
+	}{
+		{
+			name:   "pull-request-test",
+			onPull: true,
+			want: `apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  annotations:
+    build.appstudio.redhat.com/commit_sha: '{{revision}}'
+    build.appstudio.redhat.com/pull_request_number: '{{pull_request_number}}'
+    build.appstudio.redhat.com/target_branch: '{{target_branch}}'
+    pipelinesascode.tekton.dev/max-keep-runs: "3"
+    pipelinesascode.tekton.dev/on-event: '[pull_request]'
+    pipelinesascode.tekton.dev/on-target-branch: '[main]'
+  creationTimestamp: null
+  labels:
+    build.appstudio.openshift.io/component: pull-request-test
+  name: pull-request-test-on-pull-request
+  namespace: namespace
+spec:
+  params:
+  - name: git-url
+    value: '{{repo_url}}'
+  - name: revision
+    value: '{{revision}}'
+  - name: output-image
+    value: image:on-pr-{{revision}}
+  - name: path-context
+    value: .
+  - name: dockerfile
+    value: Dockerfile
+  pipelineRef:
+    bundle: bundle
+    name: docker-build
+  workspaces:
+  - name: workspace
+    persistentVolumeClaim:
+      claimName: appstudio
+    subPath: pull-request-test-on-pull-request-{{revision}}
+  - name: registry-auth
+    secret:
+      secretName: redhat-appstudio-registry-pull-secret
+status: {}
+`,
+		},
+		{
+			name:   "push-test",
+			onPull: false,
+			want: `apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  annotations:
+    build.appstudio.redhat.com/commit_sha: '{{revision}}'
+    build.appstudio.redhat.com/target_branch: '{{target_branch}}'
+    pipelinesascode.tekton.dev/max-keep-runs: "3"
+    pipelinesascode.tekton.dev/on-event: '[push]'
+    pipelinesascode.tekton.dev/on-target-branch: '[main]'
+  creationTimestamp: null
+  labels:
+    build.appstudio.openshift.io/component: push-test
+  name: push-test-on-push
+  namespace: namespace
+spec:
+  params:
+  - name: git-url
+    value: '{{repo_url}}'
+  - name: revision
+    value: '{{revision}}'
+  - name: output-image
+    value: image:{{revision}}
+  - name: path-context
+    value: .
+  - name: dockerfile
+    value: Dockerfile
+  pipelineRef:
+    bundle: bundle
+    name: docker-build
+  workspaces:
+  - name: workspace
+    persistentVolumeClaim:
+      claimName: appstudio
+    subPath: push-test-on-push-{{revision}}
+  - name: registry-auth
+    secret:
+      secretName: redhat-appstudio-registry-pull-secret
+status: {}
+`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := GeneratePipelineRun(tt.name, "namespace", "bundle", "image", tt.onPull)
+			if err != nil {
+				t.Errorf("err")
+			}
+			if string(got) != tt.want {
+				output := string(got)
+				t.Errorf("TestGeneratePipelineRun() = %v, want %v", output, tt.want)
+			}
+		})
+	}
+}
