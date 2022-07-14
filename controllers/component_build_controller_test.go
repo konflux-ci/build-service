@@ -17,6 +17,10 @@ limitations under the License.
 package controllers
 
 import (
+	"errors"
+	"strings"
+	"time"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -26,6 +30,7 @@ import (
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-service/api/v1alpha1"
 	"github.com/redhat-appstudio/application-service/gitops"
 	"github.com/redhat-appstudio/application-service/gitops/prepare"
+	"github.com/redhat-appstudio/build-service/github"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -33,8 +38,200 @@ var _ = Describe("Component initial build controller", func() {
 
 	var (
 		// All related to the component resources have the same key (but different type)
-		resourceKey = types.NamespacedName{Name: HASCompName, Namespace: HASAppNamespace}
+		resourceKey  = types.NamespacedName{Name: HASCompName, Namespace: HASAppNamespace}
+		pacSecretKey = types.NamespacedName{Name: pipelinesAsCodeSecret, Namespace: pipelinesAsCodeNamespace}
 	)
+
+	Context("Test Pipelines as Code build preparation", func() {
+
+		_ = BeforeEach(func() {
+			createNamespace(pipelinesAsCodeNamespace)
+			pacSecretData := map[string]string{
+				"github-application-id": "12345",
+				"github-private-key":    "Z2l0aHViLXByaXZhdGUta2V5Cg==",
+			}
+			createSecret(pacSecretKey, pacSecretData)
+
+			createComponentForPaCBuild(resourceKey)
+		}, 30)
+
+		_ = AfterEach(func() {
+			deleteComponent(resourceKey)
+
+			deleteSecret(pacSecretKey)
+		}, 30)
+
+		It("should successfully submit PR with PaC definitions and set initial build annotation", func() {
+			github.CreateCommitAndPR = func(c *github.CommitPR, appId int64, privatePem []byte) error {
+				Expect(c.SourceOwner).To(Equal("devfile-samples"))
+				Expect(c.SourceRepo).To(Equal("devfile-sample-java-springboot-basic"))
+				Expect(len(c.Files)).To(Equal(2))
+				for _, file := range c.Files {
+					Expect(strings.HasPrefix(file.Name, ".tekton/")).To(BeTrue())
+				}
+				Expect(c.CommitMessage).ToNot(BeEmpty())
+				Expect(c.CommitBranch).ToNot(BeEmpty())
+				Expect(c.BaseBranch).ToNot(BeEmpty())
+				Expect(c.PRTitle).ToNot(BeEmpty())
+				Expect(c.PRText).ToNot(BeEmpty())
+				Expect(c.AuthorName).ToNot(BeEmpty())
+				Expect(c.AuthorEmail).ToNot(BeEmpty())
+				return nil
+			}
+
+			setComponentDevfileModel(resourceKey)
+
+			ensurePersistentStorageCreated(resourceKey)
+			ensurePaCRepositoryCreated(resourceKey)
+
+			ensureComponentInitialBuildAnnotationState(resourceKey, true)
+		})
+
+		It("should not set initial build annotation if PaC definitions PR submition failed", func() {
+			github.CreateCommitAndPR = func(c *github.CommitPR, appId int64, privatePem []byte) error {
+				return errors.New("Failed to submit PaC definitions PR")
+			}
+
+			setComponentDevfileModel(resourceKey)
+
+			ensurePersistentStorageCreated(resourceKey)
+			ensurePaCRepositoryCreated(resourceKey)
+
+			ensureComponentInitialBuildAnnotationState(resourceKey, false)
+		})
+
+		It("should not submit PaC definitions PR if PaC secret is missing", func() {
+			github.CreateCommitAndPR = func(c *github.CommitPR, appId int64, privatePem []byte) error {
+				Fail("PR creation should not be invoked")
+				return nil
+			}
+
+			deleteSecret(pacSecretKey)
+
+			setComponentDevfileModel(resourceKey)
+
+			ensurePersistentStorageCreated(resourceKey)
+			ensurePaCRepositoryCreated(resourceKey)
+
+			ensureComponentInitialBuildAnnotationState(resourceKey, false)
+		})
+
+		It("should not submit PaC definitions PR if PaC secret misses 'github-application-id'", func() {
+			github.CreateCommitAndPR = func(c *github.CommitPR, appId int64, privatePem []byte) error {
+				Fail("PR creation should not be invoked")
+				return nil
+			}
+
+			deleteSecret(pacSecretKey)
+			pacSecretData := map[string]string{
+				"github-private-key": "Z2l0aHViLXByaXZhdGUta2V5Cg==",
+			}
+			createSecret(pacSecretKey, pacSecretData)
+
+			setComponentDevfileModel(resourceKey)
+
+			ensurePersistentStorageCreated(resourceKey)
+			ensurePaCRepositoryCreated(resourceKey)
+
+			ensureComponentInitialBuildAnnotationState(resourceKey, false)
+		})
+
+		It("should not submit PaC definitions PR if PaC secret misses 'github-private-key'", func() {
+			github.CreateCommitAndPR = func(c *github.CommitPR, appId int64, privatePem []byte) error {
+				Fail("PR creation should not be invoked")
+				return nil
+			}
+
+			deleteSecret(pacSecretKey)
+			pacSecretData := map[string]string{
+				"github-application-id": "12345",
+			}
+			createSecret(pacSecretKey, pacSecretData)
+
+			setComponentDevfileModel(resourceKey)
+
+			ensurePersistentStorageCreated(resourceKey)
+			ensurePaCRepositoryCreated(resourceKey)
+
+			ensureComponentInitialBuildAnnotationState(resourceKey, false)
+		})
+
+		It("should not submit PaC definitions PR if PaC secret has invalid 'github-application-id'", func() {
+			github.CreateCommitAndPR = func(c *github.CommitPR, appId int64, privatePem []byte) error {
+				Fail("PR creation should not be invoked")
+				return nil
+			}
+
+			deleteSecret(pacSecretKey)
+			pacSecretData := map[string]string{
+				"github-application-id": "abcdef",
+				"github-private-key":    "Z2l0aHViLXByaXZhdGUta2V5Cg==",
+			}
+			createSecret(pacSecretKey, pacSecretData)
+
+			setComponentDevfileModel(resourceKey)
+
+			ensurePersistentStorageCreated(resourceKey)
+			ensurePaCRepositoryCreated(resourceKey)
+
+			ensureComponentInitialBuildAnnotationState(resourceKey, false)
+		})
+
+		It("should do nothing if the component devfile model is not set", func() {
+			github.CreateCommitAndPR = func(c *github.CommitPR, appId int64, privatePem []byte) error {
+				Fail("PR creation should not be invoked")
+				return nil
+			}
+
+			ensureComponentInitialBuildAnnotationState(resourceKey, false)
+		})
+
+		It("should do nothing if initial build annotation is already set", func() {
+			github.CreateCommitAndPR = func(c *github.CommitPR, appId int64, privatePem []byte) error {
+				Fail("PR creation should not be invoked")
+				return nil
+			}
+
+			component := getComponent(resourceKey)
+			component.Annotations = make(map[string]string)
+			component.Annotations[InitialBuildAnnotationName] = "true"
+			Expect(k8sClient.Update(ctx, component)).Should(Succeed())
+
+			setComponentDevfileModel(resourceKey)
+
+			time.Sleep(ensureTimeout)
+		})
+
+		It("should do nothing if a container image source is specified in component", func() {
+			github.CreateCommitAndPR = func(c *github.CommitPR, appId int64, privatePem []byte) error {
+				Fail("PR creation should not be invoked")
+				return nil
+			}
+
+			deleteComponent(resourceKey)
+			component := &appstudiov1alpha1.Component{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "appstudio.redhat.com/v1alpha1",
+					Kind:       "Component",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      HASCompName,
+					Namespace: HASAppNamespace,
+				},
+				Spec: appstudiov1alpha1.ComponentSpec{
+					ComponentName:  HASCompName,
+					Application:    HASAppName,
+					ContainerImage: "quay.io/test/image:latest",
+				},
+			}
+			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
+
+			setComponentDevfileModel(resourceKey)
+
+			ensureComponentInitialBuildAnnotationState(resourceKey, false)
+		})
+
+	})
 
 	Context("Test initial build", func() {
 
@@ -258,7 +455,8 @@ var _ = Describe("Component initial build controller", func() {
 		It("should create build objects when secrets exists", func() {
 
 			// Setup registry secret in local namespace
-			createSecret(prepare.RegistrySecret, HASAppNamespace)
+			registrySecretKey := types.NamespacedName{Name: prepare.RegistrySecret, Namespace: HASAppNamespace}
+			createSecret(registrySecretKey, nil)
 			setComponentDevfileModel(resourceKey)
 
 			// Wait until all resources created
@@ -332,7 +530,7 @@ var _ = Describe("Component initial build controller", func() {
 
 			deleteComponent(componentKey)
 			deleteComponentInitialPipelineRuns(componentKey)
-			deleteConfigMap(configMapKey.Name, configMapKey.Namespace)
+			deleteConfigMap(configMapKey)
 		})
 
 		It("should use the build bundle specified if a configmap is set in the default bundle namespace", func() {
@@ -355,7 +553,7 @@ var _ = Describe("Component initial build controller", func() {
 
 			deleteComponent(componentKey)
 			deleteComponentInitialPipelineRuns(componentKey)
-			deleteConfigMap(configMapKey.Name, configMapKey.Namespace)
+			deleteConfigMap(configMapKey)
 		})
 
 		It("should use the fallback build bundle in case no configmap is found", func() {

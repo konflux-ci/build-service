@@ -50,6 +50,9 @@ type CommitPR struct {
 	AuthorEmail   string
 }
 
+// Allow mocking for tests
+var CreateCommitAndPR func(c *CommitPR, appId int64, privatePem []byte) error = (*CommitPR).createCommitAndPR
+
 // getRef returns the commit branch reference object if it exists or creates it
 // from the base branch before returning it.
 func (c *CommitPR) getRef() (ref *github.Reference, err error) {
@@ -152,8 +155,8 @@ func (c *CommitPR) createPR() (err error) {
 	fmt.Printf("PR created: %s\n", pr.GetHTMLURL())
 	return nil
 }
-func (c *CommitPR) GetAuthApp(appId int64, privatePem []byte) (err error) {
 
+func (c *CommitPR) getAuthApp(appId int64, privatePem []byte) (err error) {
 	itr, err := ghinstallation.NewAppsTransport(http.DefaultTransport, appId, privatePem) // 172616 (appstudio) 184730(Michkov)
 	if err != nil {
 		return err
@@ -191,9 +194,9 @@ func (c *CommitPR) GetAuthApp(appId int64, privatePem []byte) (err error) {
 	return nil
 }
 
-func (c *CommitPR) CreateCommitAndPR(appId int64, privatePem []byte) (err error) {
+func (c *CommitPR) createCommitAndPR(appId int64, privatePem []byte) (err error) {
 	c.ctx = context.Background()
-	err = c.GetAuthApp(appId, privatePem)
+	err = c.getAuthApp(appId, privatePem)
 	if err != nil {
 		return err
 	}

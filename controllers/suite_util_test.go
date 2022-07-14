@@ -19,7 +19,9 @@ package controllers
 import (
 	"time"
 
+	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -31,6 +33,7 @@ import (
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-service/api/v1alpha1"
+	"github.com/redhat-appstudio/application-service/gitops"
 )
 
 const (
@@ -62,6 +65,38 @@ func isOwnedBy(resource []metav1.OwnerReference, component appstudiov1alpha1.Com
 		return true
 	}
 	return false
+}
+
+// createComponent creates sample component resource and verifies it was properly created
+func createComponentForPaCBuild(componentLookupKey types.NamespacedName) {
+	component := &appstudiov1alpha1.Component{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "appstudio.redhat.com/v1alpha1",
+			Kind:       "Component",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      HASCompName,
+			Namespace: HASAppNamespace,
+			Annotations: map[string]string{
+				gitops.PaCAnnotation: "1",
+			},
+		},
+		Spec: appstudiov1alpha1.ComponentSpec{
+			ComponentName:  HASCompName,
+			Application:    HASAppName,
+			ContainerImage: ComponentContainerImage,
+			Source: appstudiov1alpha1.ComponentSource{
+				ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
+					GitSource: &appstudiov1alpha1.GitSource{
+						URL: SampleRepoLink,
+					},
+				},
+			},
+		},
+	}
+	Expect(k8sClient.Create(ctx, component)).Should(Succeed())
+
+	getComponent(componentLookupKey)
 }
 
 // createComponent creates sample component resource and verifies it was properly created
@@ -324,33 +359,47 @@ func createConfigMap(resourceKey types.NamespacedName, data map[string]string) {
 	Expect(k8sClient.Create(ctx, &configMap)).Should(Succeed())
 }
 
-func deleteConfigMap(name string, namespace string) {
+func deleteConfigMap(resourceKey types.NamespacedName) {
 	configMap := corev1.ConfigMap{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "v1",
 			Kind:       "ConfigMap",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
+			Name:      resourceKey.Name,
+			Namespace: resourceKey.Namespace,
 		},
 	}
 
 	Expect(k8sClient.Delete(ctx, &configMap)).Should(Succeed())
 }
 
-func createSecret(name, namespace string) {
+func createSecret(resourceKey types.NamespacedName, data map[string]string) {
 	secret := corev1.Secret{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "v1",
 			Kind:       "Secret",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
+			Name:      resourceKey.Name,
+			Namespace: resourceKey.Namespace,
 		},
+		StringData: data,
 	}
 	Expect(k8sClient.Create(ctx, &secret)).Should(Succeed())
+}
+
+func deleteSecret(resourceKey types.NamespacedName) {
+	secret := &corev1.Secret{}
+	if err := k8sClient.Get(ctx, resourceKey, secret); err != nil {
+		if k8sErrors.IsNotFound(err) {
+			return
+		}
+		Fail(err.Error())
+	}
+	if err := k8sClient.Delete(ctx, secret); err != nil && !k8sErrors.IsNotFound(err) {
+		Fail(err.Error())
+	}
 }
 
 func createNamespace(name string) {
@@ -364,5 +413,43 @@ func createNamespace(name string) {
 		},
 	}
 
-	Expect(k8sClient.Create(ctx, &namespace)).Should(Succeed())
+	if err := k8sClient.Create(ctx, &namespace); err != nil && !k8sErrors.IsAlreadyExists(err) {
+		Fail(err.Error())
+	}
+}
+
+func ensurePersistentStorageCreated(componentKey types.NamespacedName) {
+	pvc := &corev1.PersistentVolumeClaim{}
+	pvcKey := types.NamespacedName{Name: "appstudio", Namespace: componentKey.Namespace}
+	Eventually(func() bool {
+		err := k8sClient.Get(ctx, pvcKey, pvc)
+		return err == nil && pvc.ResourceVersion != ""
+	}, timeout, interval).Should(BeTrue())
+}
+
+func ensurePaCRepositoryCreated(resourceKey types.NamespacedName) {
+	pacRepository := &pacv1alpha1.Repository{}
+	Eventually(func() bool {
+		err := k8sClient.Get(ctx, resourceKey, pacRepository)
+		return err == nil && pacRepository.ResourceVersion != ""
+	}, timeout, interval).Should(BeTrue())
+}
+
+func ensureComponentInitialBuildAnnotationState(componentKey types.NamespacedName, initialBuildAnnotation bool) {
+	if initialBuildAnnotation {
+		Eventually(func() bool {
+			component := getComponent(componentKey)
+			annotations := component.GetAnnotations()
+			return annotations != nil && annotations[InitialBuildAnnotationName] == "true"
+		}, timeout, interval).Should(BeTrue())
+	} else {
+		Consistently(func() bool {
+			component := getComponent(componentKey)
+			annotations := component.GetAnnotations()
+			if annotations == nil {
+				return true
+			}
+			return annotations[InitialBuildAnnotationName] != "true"
+		}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
+	}
 }

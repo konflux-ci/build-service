@@ -132,17 +132,17 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
-	// Persistent storage is required to do builds
-	if err = r.EnsurePersistentStorage(ctx, component); err != nil {
-		return ctrl.Result{}, err
-	}
-
 	if len(component.Annotations) == 0 {
 		component.Annotations = make(map[string]string)
 	}
 	if component.Annotations[InitialBuildAnnotationName] == "true" {
 		// Initial build have already happend, nothing to do.
 		return ctrl.Result{}, nil
+	}
+
+	// Persistent storage is required to do builds
+	if err = r.EnsurePersistentStorage(ctx, component); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	if val, ok := component.Annotations[gitops.PaCAnnotation]; ok && val == "1" {
@@ -191,8 +191,10 @@ func (r *ComponentBuildReconciler) EnsurePACRepository(ctx context.Context, comp
 	existingRepository := &pacv1alpha1.Repository{}
 	if err := r.Client.Get(ctx, types.NamespacedName{Name: repository.Name, Namespace: repository.Namespace}, existingRepository); err != nil {
 		if errors.IsNotFound(err) {
-			err = r.Client.Create(ctx, &repository)
-			if err != nil {
+			if err := controllerutil.SetOwnerReference(&component, &repository, r.Scheme); err != nil {
+				return err
+			}
+			if err := r.Client.Create(ctx, &repository); err != nil {
 				return err
 			}
 		} else {
@@ -242,7 +244,7 @@ func (r *ComponentBuildReconciler) GeneratePullRequest(ctx context.Context, comp
 		return fmt.Errorf("failed to convert %s to int : %w", githubAppIdStr, err)
 	}
 
-	if err := commit.CreateCommitAndPR(githubAppId, []byte(githubPrivateKey)); err != nil {
+	if err := github.CreateCommitAndPR(&commit, githubAppId, []byte(githubPrivateKey)); err != nil {
 		return err
 	}
 	return nil
