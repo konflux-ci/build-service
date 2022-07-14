@@ -218,7 +218,7 @@ func (r *ComponentBuildReconciler) GeneratePullRequest(ctx context.Context, comp
 		CommitBranch:  "appstudio-" + component.Name,
 		BaseBranch:    "main",
 		PRTitle:       "Appstudio update " + component.Name,
-		PRText:        "PR proposal",
+		PRText:        "Pipelines as Code configuration proposal",
 		Files: []github.File{
 			{Name: ".tekton/" + component.Name + "-" + PipelineRunOnPushFilename, Content: pipelineOnPush},
 			{Name: ".tekton/" + component.Name + "-" + PipelineRunOnPRFilename, Content: pipelineOnPR},
