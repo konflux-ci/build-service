@@ -45,6 +45,7 @@ import (
 
 const (
 	ComponentNameLabelName        = "build.appstudio.openshift.io/component"
+	ApplicationNameLabelName      = "build.appstudio.openshift.io/application"
 	PipelineRunLabelName          = "tekton.dev/pipelineRun"
 	PipelineTaskLabelName         = "tekton.dev/pipelineTask"
 	UpdateComponentAnnotationName = "appstudio.redhat.com/updateComponentOnSuccess"
@@ -145,6 +146,8 @@ func (r *ComponentImageReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns/status,verbs=get;list;watch
 //+kubebuilder:rbac:groups=tekton.dev,resources=taskruns,verbs=get;list;watch
 //+kubebuilder:rbac:groups=tekton.dev,resources=taskruns/status,verbs=get;list;watch
+//+kubebuilder:rbac:groups=appstudio.redhat.com,resources=applications,verbs=get;list;watch;
+//+kubebuilder:rbac:groups=appstudio.redhat.com,resources=applications/status,verbs=get;list;watch
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=components,verbs=get;list;watch;update;patch
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=components/status,verbs=get;list;watch
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=applicationsnapshots,verbs=create;get;list;watch
@@ -254,10 +257,30 @@ func (r *ComponentImageReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	// Create Application Snapshot
 	// This object will be used to regenerate the GitOps repository
-	// (based on the Binding, which references the Snapshot)
-	applicationSnapshot := generateApplicationSnapshot(&component, imageReference)
+	// (based on the ApplicationSnapshotEnvironmentBinding, which references the ApplicationSnapshot)
+	applicationName := component.Spec.Application
+
+	application := &appstudiov1alpha1.Application{}
+	applicationKey := types.NamespacedName{Name: applicationName, Namespace: req.Namespace}
+	if err := r.Get(ctx, applicationKey, application); err != nil {
+		log.Error(err, fmt.Sprintf("Failed to get application \"%s\"", applicationName))
+		return ctrl.Result{}, err
+	}
+
+	applicationComponents, err := r.getApplicationComponents(ctx, application)
+	if err != nil {
+		log.Error(err, fmt.Sprintf("Failed to list components of application \"%s\"", applicationName))
+		return ctrl.Result{}, err
+	}
+
+	applicationSnapshot, err := generateApplicationSnapshot(application, applicationComponents)
+	if err != nil {
+		log.Error(err, fmt.Sprintf("Failed to generate application snapshot \"%s\"", applicationName))
+		return ctrl.Result{}, err
+	}
+
 	if err := r.Client.Create(ctx, applicationSnapshot); err != nil {
-		log.Error(err, fmt.Sprintf("Failed to create application snapshot for the new image: %s", imageReference))
+		log.Error(err, fmt.Sprintf("Failed to create application snapshot \"%s\"", applicationName))
 		return ctrl.Result{}, err
 	}
 	log.Info(fmt.Sprintf("Created application snapshot %s", applicationSnapshot.GetName()))
@@ -265,50 +288,86 @@ func (r *ComponentImageReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	return ctrl.Result{}, nil
 }
 
-func generateApplicationSnapshot(component *appstudiov1alpha1.Component, image string) *appstudiosharedv1alpha1.ApplicationSnapshot {
-	name := getApplicationSnapshotName(component.GetName())
+func (r *ComponentImageReconciler) getApplicationComponents(ctx context.Context, application *appstudiov1alpha1.Application) ([]appstudiov1alpha1.Component, error) {
+	applicationName := application.GetName()
+
+	var allComponentsList appstudiov1alpha1.ComponentList
+	listOptions := &client.ListOptions{Namespace: application.GetNamespace()}
+	if err := r.Client.List(ctx, &allComponentsList, listOptions); err != nil {
+		return nil, err
+	}
+
+	var applicationComponents []appstudiov1alpha1.Component
+	for _, component := range allComponentsList.Items {
+		if component.Spec.Application == applicationName {
+			applicationComponents = append(applicationComponents, component)
+		}
+	}
+	if len(applicationComponents) < 1 {
+		return nil, fmt.Errorf("application \"%s\" has no components", applicationName)
+	}
+
+	return applicationComponents, nil
+}
+
+func generateApplicationSnapshot(application *appstudiov1alpha1.Application, components []appstudiov1alpha1.Component) (*appstudiosharedv1alpha1.ApplicationSnapshot, error) {
+	if len(components) < 1 {
+		return nil, fmt.Errorf("application must contain at least one component")
+	}
+
+	var imagesList []string
+	var applicationSnapshotComponents []appstudiosharedv1alpha1.ApplicationSnapshotComponent
+	for _, component := range components {
+		applicationSnapshotComponents = append(applicationSnapshotComponents, appstudiosharedv1alpha1.ApplicationSnapshotComponent{
+			Name:           component.GetName(),
+			ContainerImage: component.Spec.ContainerImage,
+		})
+
+		imagesList = append(imagesList, component.GetName()+"->"+component.Spec.ContainerImage)
+	}
+
+	applicationName := application.GetName()
+	snapshotName := getApplicationSnapshotName(applicationName)
+	displayName := fmt.Sprintf("Snapshot of \"%s\" application", applicationName)
+	displayDescription := fmt.Sprintf("Snapshot of \"%s\" application created at %s. Component images: %s",
+		applicationName, time.Now().Format("2006 Jan 02 Monday 15:04:05"), strings.Join(imagesList, " "))
+
 	applicationSnapshot := &appstudiosharedv1alpha1.ApplicationSnapshot{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: component.GetNamespace(),
+			Name:      snapshotName,
+			Namespace: application.GetNamespace(),
 			Labels: map[string]string{
-				ComponentNameLabelName: component.GetName(),
+				ApplicationNameLabelName: applicationName,
 			},
 		},
 		Spec: appstudiosharedv1alpha1.ApplicationSnapshotSpec{
-			Application: component.Spec.Application,
-			DisplayName: fmt.Sprintf("Snapshot of \"%s\" component", component.GetName()),
-			DisplayDescription: fmt.Sprintf("Snapshot of \"%s\" component of \"%s\" application using \"%s\" image. Created at %s",
-				component.GetName(), component.Spec.Application, image, time.Now().Format("2006 Jan 02 Monday 15:04:05")),
-			Components: []appstudiosharedv1alpha1.ApplicationSnapshotComponent{
-				{
-					Name:           component.GetName(),
-					ContainerImage: image,
-				},
-			},
+			Application:        applicationName,
+			DisplayName:        displayName,
+			DisplayDescription: displayDescription,
+			Components:         applicationSnapshotComponents,
 		},
 	}
 
 	applicationSnapshot.SetOwnerReferences([]metav1.OwnerReference{
 		{
-			APIVersion: component.APIVersion,
-			Kind:       component.Kind,
-			Name:       component.Name,
-			UID:        component.UID,
+			APIVersion: application.APIVersion,
+			Kind:       application.Kind,
+			Name:       application.Name,
+			UID:        application.UID,
 		},
 	})
 
-	return applicationSnapshot
+	return applicationSnapshot, nil
 }
 
-func getApplicationSnapshotName(componentName string) string {
+func getApplicationSnapshotName(applicationName string) string {
 	timestamp := strconv.FormatInt(time.Now().UnixNano(), 10)
-	name := fmt.Sprintf("snapshot-of-component-%s-%s", componentName, timestamp)
+	name := fmt.Sprintf("snapshot-of-application-%s-%s", applicationName, timestamp)
 	if len(name) <= k8sNameMaxLen {
 		return name
 	}
 
-	// Need to truncate component name
-	componentNameAllowedLen := len(componentName) - (len(name) - k8sNameMaxLen)
-	return getApplicationSnapshotName(componentName[:componentNameAllowedLen])
+	// Need to truncate application name
+	applicationNameAllowedLen := len(applicationName) - (len(name) - k8sNameMaxLen)
+	return getApplicationSnapshotName(applicationName[:applicationNameAllowedLen])
 }

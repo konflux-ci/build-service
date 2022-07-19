@@ -68,6 +68,39 @@ func isOwnedBy(resource []metav1.OwnerReference, component appstudiov1alpha1.Com
 	return false
 }
 
+func createApplication(resourceKey types.NamespacedName) {
+	application := &appstudiov1alpha1.Application{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "appstudio.redhat.com/v1alpha1",
+			Kind:       "Application",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      resourceKey.Name,
+			Namespace: resourceKey.Namespace,
+		},
+		Spec: appstudiov1alpha1.ApplicationSpec{
+			DisplayName: "test-app",
+		},
+	}
+
+	Expect(k8sClient.Create(ctx, application)).Should(Succeed())
+}
+
+func deleteApplication(resourceKey types.NamespacedName) {
+	// Delete
+	Eventually(func() error {
+		f := &appstudiov1alpha1.Application{}
+		Expect(k8sClient.Get(ctx, resourceKey, f)).To(Succeed())
+		return k8sClient.Delete(ctx, f)
+	}, timeout, interval).Should(Succeed())
+
+	// Wait for delete to finish
+	Eventually(func() error {
+		f := &appstudiov1alpha1.Component{}
+		return k8sClient.Get(ctx, resourceKey, f)
+	}, timeout, interval).ShouldNot(Succeed())
+}
+
 // createComponent creates sample component resource and verifies it was properly created
 func createComponentForPaCBuild(componentLookupKey types.NamespacedName) {
 	component := &appstudiov1alpha1.Component{
@@ -166,10 +199,10 @@ func setComponentDevfileModel(componentKey types.NamespacedName) {
 	Expect(component.Status.Devfile).Should(Not(Equal("")))
 }
 
-func listApplicationSnapshots(componentKey types.NamespacedName) []appstudiosharedv1alpha1.ApplicationSnapshot {
+func listApplicationSnapshots(resourceKey types.NamespacedName) []appstudiosharedv1alpha1.ApplicationSnapshot {
 	applicationSnapshots := &appstudiosharedv1alpha1.ApplicationSnapshotList{}
 	labelSelectors := client.ListOptions{Raw: &metav1.ListOptions{
-		LabelSelector: ComponentNameLabelName + "=" + componentKey.Name,
+		LabelSelector: ApplicationNameLabelName + "=" + resourceKey.Name,
 	}}
 	err := k8sClient.List(ctx, applicationSnapshots, &labelSelectors)
 	Expect(err).ToNot(HaveOccurred())
