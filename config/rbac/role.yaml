@@ -15,6 +15,31 @@ rules:
 - apiGroups:
   - appstudio.redhat.com
   resources:
+  - applications
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - appstudio.redhat.com
+  resources:
+  - applications/status
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - appstudio.redhat.com
+  resources:
+  - applicationsnapshots
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+- apiGroups:
+  - appstudio.redhat.com
+  resources:
   - components
   verbs:
   - get

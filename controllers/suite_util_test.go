@@ -34,6 +34,7 @@ import (
 
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-service/api/v1alpha1"
 	"github.com/redhat-appstudio/application-service/gitops"
+	appstudiosharedv1alpha1 "github.com/redhat-appstudio/managed-gitops/appstudio-shared/apis/appstudio.redhat.com/v1alpha1"
 )
 
 const (
@@ -65,6 +66,39 @@ func isOwnedBy(resource []metav1.OwnerReference, component appstudiov1alpha1.Com
 		return true
 	}
 	return false
+}
+
+func createApplication(resourceKey types.NamespacedName) {
+	application := &appstudiov1alpha1.Application{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "appstudio.redhat.com/v1alpha1",
+			Kind:       "Application",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      resourceKey.Name,
+			Namespace: resourceKey.Namespace,
+		},
+		Spec: appstudiov1alpha1.ApplicationSpec{
+			DisplayName: "test-app",
+		},
+	}
+
+	Expect(k8sClient.Create(ctx, application)).Should(Succeed())
+}
+
+func deleteApplication(resourceKey types.NamespacedName) {
+	// Delete
+	Eventually(func() error {
+		f := &appstudiov1alpha1.Application{}
+		Expect(k8sClient.Get(ctx, resourceKey, f)).To(Succeed())
+		return k8sClient.Delete(ctx, f)
+	}, timeout, interval).Should(Succeed())
+
+	// Wait for delete to finish
+	Eventually(func() error {
+		f := &appstudiov1alpha1.Component{}
+		return k8sClient.Get(ctx, resourceKey, f)
+	}, timeout, interval).ShouldNot(Succeed())
 }
 
 // createComponent creates sample component resource and verifies it was properly created
@@ -165,10 +199,28 @@ func setComponentDevfileModel(componentKey types.NamespacedName) {
 	Expect(component.Status.Devfile).Should(Not(Equal("")))
 }
 
+func listApplicationSnapshots(resourceKey types.NamespacedName) []appstudiosharedv1alpha1.ApplicationSnapshot {
+	applicationSnapshots := &appstudiosharedv1alpha1.ApplicationSnapshotList{}
+	labelSelectors := client.ListOptions{Raw: &metav1.ListOptions{
+		LabelSelector: ApplicationNameLabelName + "=" + resourceKey.Name,
+	}}
+	err := k8sClient.List(ctx, applicationSnapshots, &labelSelectors)
+	Expect(err).ToNot(HaveOccurred())
+	return applicationSnapshots.Items
+}
+
+func deleteAllApplicationSnapshots() {
+	if err := k8sClient.DeleteAllOf(ctx, &appstudiosharedv1alpha1.ApplicationSnapshot{}, &client.DeleteAllOfOptions{
+		ListOptions: client.ListOptions{Namespace: HASAppNamespace},
+	}); err != nil {
+		Expect(k8sErrors.IsNotFound(err)).To(BeTrue())
+	}
+}
+
 func listComponentInitialPipelineRuns(componentKey types.NamespacedName) *tektonapi.PipelineRunList {
 	pipelineRuns := &tektonapi.PipelineRunList{}
 	labelSelectors := client.ListOptions{Raw: &metav1.ListOptions{
-		LabelSelector: "build.appstudio.openshift.io/component=" + componentKey.Name,
+		LabelSelector: ComponentNameLabelName + "=" + componentKey.Name,
 	}}
 	err := k8sClient.List(ctx, pipelineRuns, &labelSelectors)
 	Expect(err).ToNot(HaveOccurred())
