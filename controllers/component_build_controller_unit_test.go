@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 func TestGetGitProvider(t *testing.T) {
@@ -245,4 +246,35 @@ status: {}
 			}
 		})
 	}
+}
+
+func TestGenerateCommonStorage(t *testing.T) {
+	t.Run("Must generate PVC for builds ", func(t *testing.T) {
+		name := "appstudio"
+		namespace := "user-namespace"
+
+		pvc := generateCommonStorage(name, namespace)
+
+		if pvc.GetName() != name {
+			t.Errorf("pvc should have given name")
+		}
+		if pvc.GetNamespace() != namespace {
+			t.Errorf("pvc should be created in given namespace")
+		}
+
+		if len(pvc.Spec.AccessModes) != 1 {
+			t.Errorf("pvc should have access mode specified")
+		}
+		if pvc.Spec.AccessModes[0] != "ReadWriteOnce" {
+			t.Errorf("pvc access mode ReadWriteOnce expected")
+		}
+
+		if !pvc.Spec.Resources.Requests.Storage().Equal(resource.MustParse("1Gi")) {
+			t.Errorf("pvc storage size 1Gi expected")
+		}
+
+		if *pvc.Spec.VolumeMode != corev1.PersistentVolumeFilesystem {
+			t.Errorf("pvc volume mode PersistentVolumeFilesystem expected")
+		}
+	})
 }
