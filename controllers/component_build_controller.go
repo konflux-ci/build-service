@@ -319,7 +319,7 @@ func GeneratePipelineRun(name, namespace, bundle, image string, onPull bool) ([]
 func (r *ComponentBuildReconciler) EnsurePersistentStorage(ctx context.Context, component appstudiov1alpha1.Component) error {
 	log := r.Log.WithValues("Namespace", component.Namespace, "Application", component.Spec.Application, "Component", component.Name)
 
-	workspaceStorage := gitops.GenerateCommonStorage(component, "appstudio")
+	workspaceStorage := generateCommonStorage("appstudio", component.GetNamespace())
 	existingPvc := &corev1.PersistentVolumeClaim{}
 	if err := r.Client.Get(ctx, types.NamespacedName{Name: workspaceStorage.Name, Namespace: workspaceStorage.Namespace}, existingPvc); err != nil {
 		if errors.IsNotFound(err) {
@@ -338,6 +338,34 @@ func (r *ComponentBuildReconciler) EnsurePersistentStorage(ctx context.Context, 
 		}
 	}
 	return nil
+}
+
+// generateCommonStorage returns the PVC that would be created per namespace for user's components builds.
+func generateCommonStorage(name, namespace string) *corev1.PersistentVolumeClaim {
+	fsMode := corev1.PersistentVolumeFilesystem
+
+	workspaceStorage := &corev1.PersistentVolumeClaim{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "PersistentVolumeClaim",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{
+				"ReadWriteOnce",
+			},
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					"storage": resource.MustParse("1Gi"),
+				},
+			},
+			VolumeMode: &fsMode,
+		},
+	}
+	return workspaceStorage
 }
 
 // SubmitNewBuild creates a new PipelineRun to build a new image for the given component.

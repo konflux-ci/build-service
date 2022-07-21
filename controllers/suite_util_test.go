@@ -375,11 +375,11 @@ func createBuildTaskRunWithImage(resourceKey types.NamespacedName, image string)
 			TaskRunResults: []tektonapi.TaskRunResult{
 				{
 					Name:  "IMAGE_DIGEST",
-					Value: "sha256:71fd928246979eb68fbe12ee60159408f7535f6252335a4d13497e35eb81854f",
+					Value: *tektonapi.NewArrayOrString("sha256:71fd928246979eb68fbe12ee60159408f7535f6252335a4d13497e35eb81854f"),
 				},
 				{
 					Name:  "IMAGE_URL",
-					Value: image,
+					Value: *tektonapi.NewArrayOrString(image),
 				},
 			},
 		},

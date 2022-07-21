@@ -234,7 +234,7 @@ func (r *ComponentImageReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	imageReference := ""
 	for _, taskRunResult := range taskrun.Status.TaskRunResults {
 		if taskRunResult.Name == "IMAGE_URL" {
-			imageReference = strings.TrimSpace(taskRunResult.Value)
+			imageReference = strings.TrimSpace(taskRunResult.Value.StringVal)
 			break
 		}
 	}
