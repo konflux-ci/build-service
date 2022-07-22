@@ -13,6 +13,25 @@ rules:
   - create
   - patch
 - apiGroups:
+  - ""
+  resources:
+  - persistentvolumeclaims
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - serviceaccounts
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - appstudio.redhat.com
   resources:
   - applications
@@ -34,9 +53,6 @@ rules:
   - applicationsnapshots
   verbs:
   - create
-  - get
-  - list
-  - watch
 - apiGroups:
   - appstudio.redhat.com
   resources:
@@ -60,9 +76,9 @@ rules:
   resources:
   - configmaps
   verbs:
-  - create
   - get
   - list
+  - patch
   - update
   - watch
 - apiGroups:
@@ -89,6 +105,7 @@ rules:
   resources:
   - pipelineruns
   verbs:
+  - create
   - get
   - list
   - watch

@@ -150,7 +150,7 @@ func (r *ComponentImageReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=applications/status,verbs=get;list;watch
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=components,verbs=get;list;watch;update;patch
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=components/status,verbs=get;list;watch
-//+kubebuilder:rbac:groups=appstudio.redhat.com,resources=applicationsnapshots,verbs=create;get;list;watch
+//+kubebuilder:rbac:groups=appstudio.redhat.com,resources=applicationsnapshots,verbs=create
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
