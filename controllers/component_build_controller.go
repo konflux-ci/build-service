@@ -132,6 +132,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
+	// Check initial build annotation to know if any work should be done for the component
 	if len(component.Annotations) == 0 {
 		component.Annotations = make(map[string]string)
 	}
@@ -139,6 +140,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		// Initial build have already happend, nothing to do.
 		return ctrl.Result{}, nil
 	}
+	// The nitial build annotation is absent, onboarding of the component needed
 
 	// Persistent storage is required to do builds
 	if err = r.EnsurePersistentStorage(ctx, component); err != nil {
@@ -155,7 +157,14 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return ctrl.Result{}, err
 		}
 
-		// Set initial build annotation to prevent next builds
+		// Set initial build annotation to prevent recreation of the PaC integration PR
+		if err := r.Client.Get(ctx, req.NamespacedName, &component); err != nil {
+			r.Log.Error(err, "Failed to read Component")
+			return ctrl.Result{}, err
+		}
+		if len(component.Annotations) == 0 {
+			component.Annotations = make(map[string]string)
+		}
 		component.Annotations[InitialBuildAnnotationName] = "true"
 		if err := r.Client.Update(ctx, &component); err != nil {
 			return ctrl.Result{}, err

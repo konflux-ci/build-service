@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	ghinstallation "github.com/bradleyfalzon/ghinstallation/v2"
@@ -149,6 +150,11 @@ func (c *CommitPR) createPR() (err error) {
 
 	pr, _, err := c.client.PullRequests.Create(c.ctx, c.PRRepoOwner, c.PRRepo, newPR)
 	if err != nil {
+		// Unfortunately, it's not possible to detect this error via an error code.
+		if strings.Contains(err.Error(), "pull request already exists") {
+			fmt.Printf("PaC integration PR already exists\n")
+			return nil
+		}
 		return err
 	}
 
