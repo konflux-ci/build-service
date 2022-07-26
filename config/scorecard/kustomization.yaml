@@ -1,5 +1,5 @@
 resources:
-- bases/config.yaml
+- bases
 patchesJson6902:
 - path: patches/basic.config.yaml
   target:
