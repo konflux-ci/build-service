@@ -12,8 +12,6 @@ export WORKSPACE BUILD_SERVICE_PR_OWNER BUILD_SERVICE_PR_SHA
 
 WORKSPACE=$(dirname "$(dirname "$(readlink -f "$0")")");
 export TEST_SUITE="build-service-suite"
-export APPLICATION_NAMESPACE="openshift-gitops"
-export APPLICATION_NAME="all-components-staging"
 
 # BUILD_SERVICE_IMAGE - build-service image built in openshift CI job workflow. More info about how image dependencies work in ci: https://github.com/openshift/ci-tools/blob/master/TEMPLATES.md#parameters-available-to-templates
 # Container env defined at: https://github.com/openshift/release/blob/master/ci-operator/config/redhat-appstudio/build-service/redhat-appstudio-build-service-main.yaml
@@ -33,29 +31,6 @@ fi
 # Available openshift ci environments https://docs.ci.openshift.org/docs/architecture/step-registry/#available-environment-variables
 export ARTIFACT_DIR=${ARTIFACT_DIR:-"/tmp/appstudio"}
 
-function waitHASApplicationToBeReady() {
-    while [ "$(kubectl get applications.argoproj.io has -n openshift-gitops -o jsonpath='{.status.health.status}')" != "Healthy" ]; do
-        echo "[INFO] Waiting for HAS to be ready."
-        sleep 30s
-    done
-}
-
-function waitAppStudioToBeReady() {
-    while [ "$(kubectl get applications.argoproj.io ${APPLICATION_NAME} -n ${APPLICATION_NAMESPACE} -o jsonpath='{.status.health.status}')" != "Healthy" ] ||
-          [ "$(kubectl get applications.argoproj.io ${APPLICATION_NAME} -n ${APPLICATION_NAMESPACE} -o jsonpath='{.status.sync.status}')" != "Synced" ]; do
-        echo "[INFO] Waiting for AppStudio to be ready."
-        sleep 1m
-    done
-}
-
-function waitBuildToBeReady() {
-    while [ "$(kubectl get applications.argoproj.io build -n ${APPLICATION_NAMESPACE} -o jsonpath='{.status.health.status}')" != "Healthy" ] ||
-          [ "$(kubectl get applications.argoproj.io build -n ${APPLICATION_NAMESPACE} -o jsonpath='{.status.sync.status}')" != "Synced" ]; do
-        echo "[INFO] Waiting for Build to be ready."
-        sleep 1m
-    done
-}
-
 function executeE2ETests() {
     # E2E instructions can be found: https://github.com/redhat-appstudio/e2e-tests
     # The e2e binary is included in Openshift CI test container from the dockerfile: https://github.com/redhat-appstudio/infra-deployments/blob/main/.ci/openshift-ci/Dockerfile
@@ -67,14 +42,5 @@ function executeE2ETests() {
 }
 
 curl https://raw.githubusercontent.com/redhat-appstudio/e2e-tests/main/scripts/install-appstudio-e2e-mode.sh | bash -s install
-
-export -f waitAppStudioToBeReady
-export -f waitBuildToBeReady
-export -f waitHASApplicationToBeReady
-
-# Install AppStudio Controllers and wait for HAS and other AppStudio application to be running.
-timeout --foreground 10m bash -c waitAppStudioToBeReady
-timeout --foreground 10m bash -c waitBuildToBeReady
-timeout --foreground 10m bash -c waitHASApplicationToBeReady
 
 executeE2ETests
