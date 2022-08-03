@@ -27,6 +27,8 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	routev1 "github.com/openshift/api/route/v1"
+	corev1 "k8s.io/api/core/v1"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -80,6 +82,11 @@ func main() {
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
 	makeSureTektonCRDsAreInstalled()
+
+	if err := routev1.AddToScheme(scheme); err != nil {
+		setupLog.Error(err, "unable to add triggers api to the scheme")
+		os.Exit(1)
+	}
 
 	if err := triggersapi.AddToScheme(scheme); err != nil {
 		setupLog.Error(err, "unable to add triggers api to the scheme")
@@ -190,9 +197,18 @@ func getCacheFunc() (cache.NewCacheFunc, error) {
 	}
 	appStudioComponentPipelineRunSelector := labels.NewSelector().Add(*componentPipelineRunRequirement)
 
+	partOfAppStudioRequirement, err := labels.NewRequirement(controllers.PartOfLabelName, selection.Equals, []string{controllers.PartOfAppStudioLabelValue})
+	if err != nil {
+		return nil, err
+	}
+	partOfAppStudioSelector := labels.NewSelector().Add(*partOfAppStudioRequirement)
+
 	selectors := cache.SelectorsByObject{
 		&taskrunapi.PipelineRun{}: {
 			Label: appStudioComponentPipelineRunSelector,
+		},
+		&corev1.Secret{}: {
+			Label: partOfAppStudioSelector,
 		},
 	}
 
