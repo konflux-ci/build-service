@@ -32,6 +32,12 @@ rules:
   - update
   - watch
 - apiGroups:
+  - apiextensions.k8s.io
+  resources:
+  - customresourcedefinitions
+  verbs:
+  - get
+- apiGroups:
   - appstudio.redhat.com
   resources:
   - applications
@@ -78,16 +84,17 @@ rules:
   verbs:
   - get
   - list
-  - patch
-  - update
   - watch
 - apiGroups:
   - ""
   resources:
   - secrets
   verbs:
+  - create
   - get
   - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - pipelinesascode.tekton.dev
@@ -99,6 +106,14 @@ rules:
   - list
   - patch
   - update
+  - watch
+- apiGroups:
+  - route.openshift.io
+  resources:
+  - routes
+  verbs:
+  - get
+  - list
   - watch
 - apiGroups:
   - tekton.dev
@@ -133,9 +148,3 @@ rules:
   - get
   - list
   - watch
-- apiGroups:
-  - apiextensions.k8s.io
-  resources:
-  - customresourcedefinitions
-  verbs:
-  - get

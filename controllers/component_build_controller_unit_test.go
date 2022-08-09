@@ -20,6 +20,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/redhat-appstudio/application-service/gitops"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
@@ -83,7 +84,7 @@ func TestGetGitProvider(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got, err := getGitProvider(tt.args.gitURL); (got != tt.wantString) ||
+			if got, err := getGitProviderUrl(tt.args.gitURL); (got != tt.wantString) ||
 				(tt.wantErr == true && err == nil) ||
 				(tt.wantErr == false && err != nil) {
 				t.Errorf("UpdateServiceAccountIfSecretNotLinked() Got Error: = %v, want %v ; Got String:  = %v , want %v", err, tt.wantErr, got, tt.wantString)
@@ -236,10 +237,7 @@ status: {}
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := GeneratePipelineRun(tt.name, "namespace", "bundle", "image", tt.onPull)
-			if err != nil {
-				t.Errorf("err")
-			}
+			got := GeneratePipelineRun(tt.name, "namespace", "bundle", "image", tt.onPull)
 			if string(got) != tt.want {
 				output := string(got)
 				t.Errorf("TestGeneratePipelineRun() = %v, want %v", output, tt.want)
@@ -249,7 +247,7 @@ status: {}
 }
 
 func TestGenerateCommonStorage(t *testing.T) {
-	t.Run("Must generate PVC for builds ", func(t *testing.T) {
+	t.Run("Must generate PVC for builds", func(t *testing.T) {
 		name := "appstudio"
 		namespace := "user-namespace"
 
@@ -275,6 +273,189 @@ func TestGenerateCommonStorage(t *testing.T) {
 
 		if *pvc.Spec.VolumeMode != corev1.PersistentVolumeFilesystem {
 			t.Errorf("pvc volume mode PersistentVolumeFilesystem expected")
+		}
+	})
+}
+
+func TestValidatePaCConfiguration(t *testing.T) {
+	ghAppPrivateKeyStub := "-----BEGIN RSA PRIVATE KEY-----_key-content_-----END RSA PRIVATE KEY-----"
+
+	tests := []struct {
+		name        string
+		gitProvider string
+		config      map[string][]byte
+		expectError bool
+	}{
+		{
+			name:        "should accept GitHub application configuration",
+			gitProvider: "github",
+			config: map[string][]byte{
+				gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
+				gitops.PipelinesAsCode_githubPrivateKey: []byte(ghAppPrivateKeyStub),
+			},
+			expectError: false,
+		},
+		{
+			name:        "should accept GitHub webhook configuration",
+			gitProvider: "github",
+			config: map[string][]byte{
+				"github.token": []byte("ghp_token"),
+			},
+			expectError: false,
+		},
+		{
+			name:        "should reject empty GitHub webhook token",
+			gitProvider: "github",
+			config: map[string][]byte{
+				"github.token": []byte(""),
+			},
+			expectError: true,
+		},
+		{
+			name:        "should accept GitHub application configuration if both GitHub application and webhook configured",
+			gitProvider: "github",
+			config: map[string][]byte{
+				gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
+				gitops.PipelinesAsCode_githubPrivateKey: []byte(ghAppPrivateKeyStub),
+				"github.token":                          []byte("ghp_token"),
+				"gitlab.token":                          []byte("token"),
+			},
+			expectError: false,
+		},
+		{
+			name:        "should reject GitHub application configuration if GitHub id is missing",
+			gitProvider: "github",
+			config: map[string][]byte{
+				gitops.PipelinesAsCode_githubPrivateKey: []byte(ghAppPrivateKeyStub),
+				"github.token":                          []byte("ghp_token"),
+			},
+			expectError: true,
+		},
+		{
+			name:        "should reject GitHub application configuration if GitHub application private key is missing",
+			gitProvider: "github",
+			config: map[string][]byte{
+				gitops.PipelinesAsCode_githubAppIdKey: []byte("12345"),
+				"github.token":                        []byte("ghp_token"),
+			},
+			expectError: true,
+		},
+		{
+			name:        "should reject GitHub application configuration if GitHub application id is invalid",
+			gitProvider: "github",
+			config: map[string][]byte{
+				gitops.PipelinesAsCode_githubAppIdKey:   []byte("12ab"),
+				gitops.PipelinesAsCode_githubPrivateKey: []byte(ghAppPrivateKeyStub),
+			},
+			expectError: true,
+		},
+		{
+			name:        "should reject GitHub application configuration if GitHub application application private key is invalid",
+			gitProvider: "github",
+			config: map[string][]byte{
+				gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
+				gitops.PipelinesAsCode_githubPrivateKey: []byte("private-key"),
+			},
+			expectError: true,
+		},
+		{
+			name:        "should accept GitLab webhook configuration",
+			gitProvider: "gitlab",
+			config: map[string][]byte{
+				"gitlab.token": []byte("token"),
+			},
+			expectError: false,
+		},
+		{
+			name:        "should accept GitLab webhook configuration even if other providers configured",
+			gitProvider: "gitlab",
+			config: map[string][]byte{
+				gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
+				gitops.PipelinesAsCode_githubPrivateKey: []byte(ghAppPrivateKeyStub),
+				"github.token":                          []byte("ghp_token"),
+				"gitlab.token":                          []byte("token"),
+				"bitbucket.token":                       []byte("token2"),
+			},
+			expectError: false,
+		},
+		{
+			name:        "should reject empty GitLab webhook token",
+			gitProvider: "gitlab",
+			config: map[string][]byte{
+				"gitlab.token": []byte(""),
+			},
+			expectError: true,
+		},
+		{
+			name:        "should accept Bitbucket webhook configuration even if other providers configured",
+			gitProvider: "bitbucket",
+			config: map[string][]byte{
+				gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
+				gitops.PipelinesAsCode_githubPrivateKey: []byte(ghAppPrivateKeyStub),
+				"github.token":                          []byte("ghp_token"),
+				"gitlab.token":                          []byte("token"),
+				"bitbucket.token":                       []byte("token2"),
+				"username":                              []byte("user"),
+			},
+			expectError: false,
+		},
+		{
+			name:        "should reject empty Bitbucket webhook token",
+			gitProvider: "gitlab",
+			config: map[string][]byte{
+				"bitbucket.token": []byte(""),
+				"username":        []byte("user"),
+			},
+			expectError: true,
+		},
+		{
+			name:        "should reject Bitbucket webhook configuration with empty username",
+			gitProvider: "gitlab",
+			config: map[string][]byte{
+				"bitbucket.token": []byte("token"),
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validatePaCConfiguration(tt.gitProvider, tt.config)
+			if err != nil {
+				if !tt.expectError {
+					t.Errorf("Expected that the configuration %#v fro provider %s shoould be valid", tt.config, tt.gitProvider)
+				}
+			} else {
+				if tt.expectError {
+					t.Errorf("Expected that the configuration %#v fro provider %s fails", tt.config, tt.gitProvider)
+				}
+			}
+		})
+	}
+}
+
+func TestGeneratePaCWebhookSecretString(t *testing.T) {
+	expectedSecretStringLength := 20 * 2 // each byte is represented by 2 hex chars
+
+	t.Run("should be able to generate webhook secret string", func(t *testing.T) {
+		secret := generatePaCWebhookSecretString()
+		if len(secret) != expectedSecretStringLength {
+			t.Errorf("Expected that webhook secret string has length %d, but got %d", expectedSecretStringLength, len(secret))
+		}
+	})
+
+	t.Run("should generate different webhook secret strings", func(t *testing.T) {
+		n := 100
+		secrets := make([]string, n)
+		for i := 0; i < n; i++ {
+			secrets[i] = generatePaCWebhookSecretString()
+		}
+
+		secret := secrets[0]
+		for i := 1; i < n; i++ {
+			if secret == secrets[i] {
+				t.Errorf("All webhook secrets strings must be different")
+			}
 		}
 	})
 }

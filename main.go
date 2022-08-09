@@ -27,6 +27,8 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	routev1 "github.com/openshift/api/route/v1"
+	corev1 "k8s.io/api/core/v1"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -62,6 +64,8 @@ func init() {
 	//+kubebuilder:scaffold:scheme
 }
 
+//+kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get
+
 func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
@@ -80,6 +84,11 @@ func main() {
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
 	makeSureTektonCRDsAreInstalled()
+
+	if err := routev1.AddToScheme(scheme); err != nil {
+		setupLog.Error(err, "unable to add openshift route api to the scheme")
+		os.Exit(1)
+	}
 
 	if err := triggersapi.AddToScheme(scheme); err != nil {
 		setupLog.Error(err, "unable to add triggers api to the scheme")
@@ -131,9 +140,10 @@ func main() {
 		Client:           mgr.GetClient(),
 		NonCachingClient: nonCachingClient,
 		Scheme:           mgr.GetScheme(),
-		Log:              ctrl.Log.WithName("controllers").WithName("ComponentInitialBuild"),
+		Log:              ctrl.Log.WithName("controllers").WithName("ComponentOnboarding"),
+		EventRecorder:    mgr.GetEventRecorderFor("ComponentOnboarding"),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ComponentInitialBuild")
+		setupLog.Error(err, "unable to create controller", "controller", "ComponentOnboarding")
 		os.Exit(1)
 	}
 
@@ -190,9 +200,18 @@ func getCacheFunc() (cache.NewCacheFunc, error) {
 	}
 	appStudioComponentPipelineRunSelector := labels.NewSelector().Add(*componentPipelineRunRequirement)
 
+	partOfAppStudioRequirement, err := labels.NewRequirement(controllers.PartOfLabelName, selection.Equals, []string{controllers.PartOfAppStudioLabelValue})
+	if err != nil {
+		return nil, err
+	}
+	partOfAppStudioSelector := labels.NewSelector().Add(*partOfAppStudioRequirement)
+
 	selectors := cache.SelectorsByObject{
 		&taskrunapi.PipelineRun{}: {
 			Label: appStudioComponentPipelineRunSelector,
+		},
+		&corev1.Secret{}: {
+			Label: partOfAppStudioSelector,
 		},
 	}
 
