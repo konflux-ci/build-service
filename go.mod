@@ -19,7 +19,7 @@ require (
 // If you update dependencies below you must also update controllers/suite_test.go
 require (
 	github.com/openshift-pipelines/pipelines-as-code v0.11.0
-	github.com/redhat-appstudio/application-service v0.0.0-20220720202512-cfea75e87cec
+	github.com/redhat-appstudio/application-service v0.0.0-20220808180535-be837eb63845
 	github.com/redhat-appstudio/managed-gitops/appstudio-shared v0.0.0-20220706140453-45b53e5f01fe
 	github.com/tektoncd/pipeline v0.37.0
 	github.com/tektoncd/triggers v0.19.1
@@ -160,5 +160,3 @@ require (
 )
 
 replace github.com/antlr/antlr4 => github.com/antlr/antlr4 v0.0.0-20211106181442-e4c1a74c66bd
-
-replace github.com/redhat-appstudio/application-service => github.com/mmorhun/application-service v1.0.2

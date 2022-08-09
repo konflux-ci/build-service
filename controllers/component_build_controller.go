@@ -33,6 +33,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -70,6 +71,7 @@ type ComponentBuildReconciler struct {
 	NonCachingClient client.Client
 	Scheme           *runtime.Scheme
 	Log              logr.Logger
+	EventRecorder    record.EventRecorder
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -100,6 +102,7 @@ func (r *ComponentBuildReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;patch;update
 //+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;update;patch
 //+kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create
+//+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
@@ -107,7 +110,7 @@ func (r *ComponentBuildReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.11.0/pkg/reconcile
 func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := r.Log.WithValues("ComponentInitialBuild", req.NamespacedName)
+	log := r.Log.WithValues("ComponentOnboarding", req.NamespacedName)
 
 	// Fetch the Component instance
 	var component appstudiov1alpha1.Component
@@ -182,11 +185,13 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		pacSecret := corev1.Secret{}
 		if err := r.NonCachingClient.Get(ctx, types.NamespacedName{Namespace: pipelinesAsCodeNamespace, Name: gitopsprepare.PipelinesAsCodeSecretName}, &pacSecret); err != nil {
 			r.Log.Error(err, "failed to get Pipelines as Code secret")
+			r.EventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
 			return ctrl.Result{}, err
 		}
 
 		if err := validatePaCConfiguration(gitProvider, pacSecret.Data); err != nil {
 			r.Log.Error(err, "Invalid configuration in Pipelines as Code secret")
+			r.EventRecorder.Event(&pacSecret, "Warning", "ErrorValidatingPaCSecret", err.Error())
 			// Do not reconcile, because configuration must be fixed before it is possible to proceed.
 			return ctrl.Result{}, nil
 		}
@@ -211,6 +216,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		mrUrl, err := ConfigureRepositoryForPaC(component, pacSecret.Data, webhookTargetUrl, webhookSecretString, bundle)
 		if err != nil {
 			r.Log.Error(err, "failed to setup repository for Pipelines as Code")
+			r.EventRecorder.Event(&component, "Warning", "ErrorConfiguringPaCForComponentRepository", err.Error())
 			return ctrl.Result{}, err
 		}
 		if mrUrl != "" {
@@ -422,7 +428,9 @@ func (r *ComponentBuildReconciler) ensureWebhookSecret(ctx context.Context, comp
 func generatePaCWebhookSecretString() string {
 	length := 20 // in bytes
 	tokenBytes := make([]byte, length)
-	rand.Read(tokenBytes)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		panic("Failed to read from random generator")
+	}
 	return hex.EncodeToString(tokenBytes)
 }
 

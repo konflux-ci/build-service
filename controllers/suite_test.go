@@ -126,7 +126,8 @@ var _ = BeforeSuite(func() {
 		Client:           k8sManager.GetClient(),
 		NonCachingClient: k8sManager.GetClient(),
 		Scheme:           k8sManager.GetScheme(),
-		Log:              ctrl.Log.WithName("controllers").WithName("ComponentInitialBuild"),
+		Log:              ctrl.Log.WithName("controllers").WithName("ComponentOnboarding"),
+		EventRecorder:    k8sManager.GetEventRecorderFor("ComponentOnboarding"),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 

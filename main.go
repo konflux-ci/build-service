@@ -64,6 +64,8 @@ func init() {
 	//+kubebuilder:scaffold:scheme
 }
 
+//+kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get
+
 func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
@@ -138,9 +140,10 @@ func main() {
 		Client:           mgr.GetClient(),
 		NonCachingClient: nonCachingClient,
 		Scheme:           mgr.GetScheme(),
-		Log:              ctrl.Log.WithName("controllers").WithName("ComponentInitialBuild"),
+		Log:              ctrl.Log.WithName("controllers").WithName("ComponentOnboarding"),
+		EventRecorder:    mgr.GetEventRecorderFor("ComponentOnboarding"),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ComponentInitialBuild")
+		setupLog.Error(err, "unable to create controller", "controller", "ComponentOnboarding")
 		os.Exit(1)
 	}
 
