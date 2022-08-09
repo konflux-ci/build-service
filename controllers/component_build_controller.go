@@ -277,7 +277,7 @@ func validatePaCConfiguration(gitProvider string, config map[string][]byte) erro
 
 	expectedPaCWebhookConfigFields := []string{gitops.GetProviderTokenKey(gitProvider)}
 
-	var err error = nil
+	var err error
 	switch gitProvider {
 	case "github":
 		if isApp {
@@ -363,7 +363,7 @@ func (r *ComponentBuildReconciler) propagatePaCConfigurationSecretToLocalNamespa
 		}
 	} else {
 		for key := range pacSecret.Data {
-			if bytes.Compare(localPaCSecret.Data[key], pacSecret.Data[key]) != 0 {
+			if !bytes.Equal(localPaCSecret.Data[key], pacSecret.Data[key]) {
 				isUpdateNeeded = true
 				localPaCSecret.Data[key] = pacSecret.Data[key]
 			}

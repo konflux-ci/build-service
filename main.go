@@ -86,7 +86,7 @@ func main() {
 	makeSureTektonCRDsAreInstalled()
 
 	if err := routev1.AddToScheme(scheme); err != nil {
-		setupLog.Error(err, "unable to add triggers api to the scheme")
+		setupLog.Error(err, "unable to add openshift route api to the scheme")
 		os.Exit(1)
 	}
 
