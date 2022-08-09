@@ -68,7 +68,7 @@ var _ = BeforeSuite(func() {
 	ctx, cancel = context.WithCancel(context.TODO())
 
 	By("bootstrapping test environment")
-	applicationServiceDepVersion := "v0.0.0-20220720202512-cfea75e87cec"
+	applicationServiceDepVersion := "v0.0.0-20220808180535-be837eb63845"
 	appstudioSharedDepVersion := "v0.0.0-20220706140453-45b53e5f01fe"
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
