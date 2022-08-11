@@ -124,7 +124,7 @@ func (c *GithubClient) filesUpToDate(owner, repository, branch string, files []F
 			Ref: "refs/heads/" + branch,
 		}
 
-		fileContentReader, resp, err := c.client.Repositories.DownloadContents(c.ctx, owner, repository, file.Name, opts)
+		fileContentReader, resp, err := c.client.Repositories.DownloadContents(c.ctx, owner, repository, file.FullPath, opts)
 		if err != nil {
 			// It's not clear when it returns 404 or 200 with the error message. Check both.
 			if resp.StatusCode == 404 || strings.Contains(err.Error(), "no file named") {
@@ -149,7 +149,7 @@ func (c *GithubClient) createTree(owner, repository string, baseRef *github.Refe
 	// Load each file into the tree.
 	entries := []*github.TreeEntry{}
 	for _, file := range files {
-		entries = append(entries, &github.TreeEntry{Path: github.String(file.Name), Type: github.String("blob"), Content: github.String(string(file.Content)), Mode: github.String("100644")})
+		entries = append(entries, &github.TreeEntry{Path: github.String(file.FullPath), Type: github.String("blob"), Content: github.String(string(file.Content)), Mode: github.String("100644")})
 	}
 
 	tree, _, err = c.client.Git.CreateTree(c.ctx, owner, repository, *baseRef.Object.SHA, entries)

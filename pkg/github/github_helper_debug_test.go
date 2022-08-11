@@ -48,9 +48,8 @@ func TestCreatePaCPullRequest(t *testing.T) {
 
 	componentName := "unittest-component-name"
 	gitSourceUrlParts := strings.Split(repoUrl, "/")
-	owner := gitSourceUrlParts[3]
 	prData := &PaCPullRequestData{
-		Owner:         owner,
+		Owner:         gitSourceUrlParts[3],
 		Repository:    gitSourceUrlParts[4],
 		CommitMessage: "Appstudio update " + componentName,
 		Branch:        "appstudio-" + componentName,
@@ -60,8 +59,8 @@ func TestCreatePaCPullRequest(t *testing.T) {
 		AuthorName:    "redhat-appstudio",
 		AuthorEmail:   "appstudio@redhat.com",
 		Files: []File{
-			{Name: ".tekton/" + componentName + "-push.yaml", Content: pipelineOnPush},
-			{Name: ".tekton/" + componentName + "-pull.yaml", Content: pipelineOnPR},
+			{FullPath: ".tekton/" + componentName + "-push.yaml", Content: pipelineOnPush},
+			{FullPath: ".tekton/" + componentName + "-pull.yaml", Content: pipelineOnPR},
 		},
 	}
 
@@ -106,8 +105,8 @@ func TestCreatePaCPullRequestViaGitHubApplication(t *testing.T) {
 		AuthorName:    "redhat-appstudio",
 		AuthorEmail:   "appstudio@redhat.com",
 		Files: []File{
-			{Name: ".tekton/" + componentName + "-push.yaml", Content: pipelineOnPush},
-			{Name: ".tekton/" + componentName + "-pull.yaml", Content: pipelineOnPR},
+			{FullPath: ".tekton/" + componentName + "-push.yaml", Content: pipelineOnPush},
+			{FullPath: ".tekton/" + componentName + "-pull.yaml", Content: pipelineOnPR},
 		},
 	}
 

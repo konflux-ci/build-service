@@ -36,8 +36,8 @@ var (
 )
 
 type File struct {
-	Name    string
-	Content []byte
+	FullPath string
+	Content  []byte
 }
 
 type PaCPullRequestData struct {
