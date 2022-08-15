@@ -43,7 +43,7 @@ func TestCreatePaCPullRequest(t *testing.T) {
 
 	ghclient := NewGithubClient(accessToken)
 
-	pipelineOnPush := []byte("pipelineOnPush:\n  bundle: 'test-bundle-1'\n  when: 'in-push'\n")
+	pipelineOnPush := []byte("pipelineOnPush:\n  bundle: 'test-bundle-1'\n  when: 'on-push'\n")
 	pipelineOnPR := []byte("pipelineOnPR:\n  bundle: 'test-bundle-2'\n  when: 'on-pr'\n")
 
 	componentName := "unittest-component-name"

@@ -17,11 +17,13 @@ limitations under the License.
 package github
 
 import (
+	"strings"
+
 	"github.com/google/go-github/v45/github"
 )
 
 // Allow mocking for tests
-var CreatePaCPullRequest func(g *GithubClient, d *PaCPullRequestData) (string, error) = createPaCPullRequest
+var CreatePaCPullRequest func(g *GithubClient, d *PaCPullRequestData) (string, error) = ensurePaCPullRequest
 var SetupPaCWebhook func(g *GithubClient, webhookUrl, webhookSecret, owner, repository string) error = setupPaCWebhook
 
 const (
@@ -51,24 +53,84 @@ type PaCPullRequestData struct {
 	Files         []File
 }
 
-// createPaCPullRequest creates a new pull request and retirns its web URL
-func createPaCPullRequest(ghclient *GithubClient, d *PaCPullRequestData) (string, error) {
-	branchRef, err := ghclient.GetOrCreateBranchReference(d.Owner, d.Repository, d.Branch, d.BaseBranch)
+// ensurePaCPullRequest creates a new pull request or updates existing (if needed) and returns its web URL.
+// If there is no error and web URL is empty, it means that the PR is not needed (main branch is up to date).
+func ensurePaCPullRequest(ghclient *GithubClient, d *PaCPullRequestData) (string, error) {
+	// Check if Pipelines as Code configuration up to date in the main branch
+	upToDate, err := ghclient.filesUpToDate(d.Owner, d.Repository, d.BaseBranch, d.Files)
+	if err != nil {
+		return "", err
+	}
+	if upToDate {
+		// Nothing to do, the configuration is alredy in the main branch of the repository
+		return "", nil
+	}
+
+	// Check if branch with a proposal exists
+	branchExists, err := ghclient.referenceExist(d.Owner, d.Repository, d.Branch)
 	if err != nil {
 		return "", err
 	}
 
-	err = ghclient.AddCommitToBranchReference(d.Owner, d.Repository, d.AuthorName, d.AuthorEmail, d.CommitMessage, d.Files, branchRef)
-	if err != nil {
-		return "", err
-	}
+	if branchExists {
+		upToDate, err := ghclient.filesUpToDate(d.Owner, d.Repository, d.Branch, d.Files)
+		if err != nil {
+			return "", err
+		}
+		if !upToDate {
+			// Update branch
+			branchRef, err := ghclient.getReference(d.Owner, d.Repository, d.Branch)
+			if err != nil {
+				return "", err
+			}
 
-	return ghclient.CreatePullRequestWithinRepository(d.Owner, d.Repository, d.Branch, d.BaseBranch, d.PRTitle, d.PRText)
+			err = ghclient.addCommitToBranch(d.Owner, d.Repository, d.AuthorName, d.AuthorEmail, d.CommitMessage, d.Files, branchRef)
+			if err != nil {
+				return "", err
+			}
+		}
+
+		pr, err := ghclient.findPullRequestByBranchesWithinRepository(d.Owner, d.Repository, d.Branch, d.BaseBranch)
+		if err != nil {
+			return "", err
+		}
+		if pr != nil {
+			return *pr.HTMLURL, nil
+		}
+
+		prUrl, err := ghclient.createPullRequestWithinRepository(d.Owner, d.Repository, d.Branch, d.BaseBranch, d.PRTitle, d.PRText)
+		if err != nil {
+			if strings.Contains(err.Error(), "No commits between") {
+				// This could happen when a PR was created and merged, but PR branch was not deleted. Then main was updated.
+				// Current branch has correct configuration, but it's not possible to create a PR,
+				// because current branch reference is included into main branch.
+				if err := ghclient.deleteReference(d.Owner, d.Repository, d.Branch); err != nil {
+					return "", err
+				}
+				return ensurePaCPullRequest(ghclient, d)
+			}
+		}
+		return prUrl, nil
+
+	} else {
+		// Create branch, commit and pull request
+		branchRef, err := ghclient.createReference(d.Owner, d.Repository, d.Branch, d.BaseBranch)
+		if err != nil {
+			return "", err
+		}
+
+		err = ghclient.addCommitToBranch(d.Owner, d.Repository, d.AuthorName, d.AuthorEmail, d.CommitMessage, d.Files, branchRef)
+		if err != nil {
+			return "", err
+		}
+
+		return ghclient.createPullRequestWithinRepository(d.Owner, d.Repository, d.Branch, d.BaseBranch, d.PRTitle, d.PRText)
+	}
 }
 
 // SetupPaCWebhook creates or updates Pipelines as Code webhook configuration
 func setupPaCWebhook(ghclient *GithubClient, webhookUrl, webhookSecret, owner, repository string) error {
-	existingWebhook, err := ghclient.GetWebhookByTargetUrl(owner, repository, webhookUrl)
+	existingWebhook, err := ghclient.getWebhookByTargetUrl(owner, repository, webhookUrl)
 	if err != nil {
 		return err
 	}
@@ -77,7 +139,7 @@ func setupPaCWebhook(ghclient *GithubClient, webhookUrl, webhookSecret, owner, r
 
 	if existingWebhook == nil {
 		// Webhook does not exist
-		_, err = ghclient.CreateWebhook(owner, repository, defaultWebhook)
+		_, err = ghclient.createWebhook(owner, repository, defaultWebhook)
 		return err
 	}
 
@@ -110,7 +172,7 @@ func setupPaCWebhook(ghclient *GithubClient, webhookUrl, webhookSecret, owner, r
 		existingWebhook.Active = defaultWebhook.Active
 	}
 
-	_, err = ghclient.UpdateWebhook(owner, repository, existingWebhook)
+	_, err = ghclient.updateWebhook(owner, repository, existingWebhook)
 	return err
 }
 
