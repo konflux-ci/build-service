@@ -23,6 +23,9 @@ import (
 	"github.com/redhat-appstudio/application-service/gitops"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	appstudiov1alpha1 "github.com/redhat-appstudio/application-service/api/v1alpha1"
 )
 
 func TestGetGitProvider(t *testing.T) {
@@ -162,7 +165,10 @@ metadata:
     pipelinesascode.tekton.dev/on-target-branch: '[main]'
   creationTimestamp: null
   labels:
+    appstudio.openshift.io/application: app
+    appstudio.openshift.io/component: pull-request-test
     build.appstudio.openshift.io/component: pull-request-test
+    pipelines.appstudio.openshift.io/type: build
   name: pull-request-test-on-pull-request
   namespace: namespace
 spec:
@@ -205,7 +211,10 @@ metadata:
     pipelinesascode.tekton.dev/on-target-branch: '[main]'
   creationTimestamp: null
   labels:
+    appstudio.openshift.io/application: app
+    appstudio.openshift.io/component: push-test
     build.appstudio.openshift.io/component: push-test
+    pipelines.appstudio.openshift.io/type: build
   name: push-test-on-push
   namespace: namespace
 spec:
@@ -237,7 +246,21 @@ status: {}
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := GeneratePipelineRun(tt.name, "namespace", "bundle", "image", tt.onPull)
+			component := appstudiov1alpha1.Component{
+				TypeMeta: v1.TypeMeta{
+					Kind:       "Component",
+					APIVersion: "appstudio.redhat.com/v1alpha1",
+				},
+				ObjectMeta: v1.ObjectMeta{
+					Name:      tt.name,
+					Namespace: "namespace",
+				},
+				Spec: appstudiov1alpha1.ComponentSpec{
+					Application:    "app",
+					ContainerImage: "image",
+				},
+			}
+			got := GeneratePipelineRun(component, "bundle", tt.onPull)
 			if string(got) != tt.want {
 				output := string(got)
 				t.Errorf("TestGeneratePipelineRun() = %v, want %v", output, tt.want)
