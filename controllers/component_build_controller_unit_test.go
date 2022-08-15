@@ -296,6 +296,15 @@ func TestValidatePaCConfiguration(t *testing.T) {
 			expectError: false,
 		},
 		{
+			name:        "should accept GitHub application configuration with end line",
+			gitProvider: "github",
+			config: map[string][]byte{
+				gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
+				gitops.PipelinesAsCode_githubPrivateKey: []byte(ghAppPrivateKeyStub + "\n"),
+			},
+			expectError: false,
+		},
+		{
 			name:        "should accept GitHub webhook configuration",
 			gitProvider: "github",
 			config: map[string][]byte{
