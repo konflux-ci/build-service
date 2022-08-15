@@ -294,7 +294,7 @@ func validatePaCConfiguration(gitProvider string, config map[string][]byte) erro
 				break
 			}
 
-			privateKey := string(config[gitops.PipelinesAsCode_githubPrivateKey])
+			privateKey := strings.TrimSpace(string(config[gitops.PipelinesAsCode_githubPrivateKey]))
 			if !strings.HasPrefix(privateKey, "-----BEGIN RSA PRIVATE KEY-----") ||
 				!strings.HasSuffix(privateKey, "-----END RSA PRIVATE KEY-----") {
 				err = fmt.Errorf(" Pipelines as Code secret: GitHub application private key is invalid")
