@@ -196,9 +196,12 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return ctrl.Result{}, nil
 		}
 
-		// Copy or update global PaC configuration in local namespace
-		if err := r.propagatePaCConfigurationSecretToLocalNamespace(ctx, req.Namespace, pacSecret); err != nil {
-			return ctrl.Result{}, err
+		if !gitops.IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
+			// Webhook is used. We need to reference access token in the component namespace.
+			// Copy or update global PaC configuration in component namespace
+			if err := r.propagatePaCConfigurationSecretToComponentNamespace(ctx, req.Namespace, pacSecret); err != nil {
+				return ctrl.Result{}, err
+			}
 		}
 
 		// Generate webhook secret for the component git repository if not yet generated
@@ -340,7 +343,7 @@ func checkMandatoryFieldsNotEmpty(config map[string][]byte, mandatoryFields []st
 	return nil
 }
 
-func (r *ComponentBuildReconciler) propagatePaCConfigurationSecretToLocalNamespace(ctx context.Context, namespace string, pacSecret corev1.Secret) error {
+func (r *ComponentBuildReconciler) propagatePaCConfigurationSecretToComponentNamespace(ctx context.Context, namespace string, pacSecret corev1.Secret) error {
 	isUpdateNeeded := false
 	localPaCSecret := corev1.Secret{}
 	localPaCSecretKey := types.NamespacedName{Namespace: namespace, Name: gitopsprepare.PipelinesAsCodeSecretName}
