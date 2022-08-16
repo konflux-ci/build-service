@@ -163,7 +163,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	if val, ok := component.Annotations[gitops.PaCAnnotation]; ok && val == "1" {
 		// Use pipelines as code build
-		r.Log.Info("Pipelines as Code enabled")
+		log.Info("Pipelines as Code enabled")
 
 		// Obtain Pipelines as Code callback URL
 		webhookTargetUrl, err := r.getPaCRoutePublicUrl(ctx)
@@ -173,7 +173,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 		gitProvider, err := gitops.GetGitProvider(component)
 		if err != nil {
-			r.Log.Error(err, "error detecting git provider")
+			log.Error(err, "error detecting git provider")
 			// Do not reconcile, because configuration must be fixed before it is possible to proceed.
 			return ctrl.Result{}, nil
 		}
@@ -184,13 +184,13 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		// in case GitHub Application is used instead of webhook.
 		pacSecret := corev1.Secret{}
 		if err := r.NonCachingClient.Get(ctx, types.NamespacedName{Namespace: pipelinesAsCodeNamespace, Name: gitopsprepare.PipelinesAsCodeSecretName}, &pacSecret); err != nil {
-			r.Log.Error(err, "failed to get Pipelines as Code secret")
+			log.Error(err, "failed to get Pipelines as Code secret")
 			r.EventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
 			return ctrl.Result{}, err
 		}
 
 		if err := validatePaCConfiguration(gitProvider, pacSecret.Data); err != nil {
-			r.Log.Error(err, "Invalid configuration in Pipelines as Code secret")
+			log.Error(err, "Invalid configuration in Pipelines as Code secret")
 			r.EventRecorder.Event(&pacSecret, "Warning", "ErrorValidatingPaCSecret", err.Error())
 			// Do not reconcile, because configuration must be fixed before it is possible to proceed.
 			return ctrl.Result{}, nil
@@ -212,20 +212,26 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return ctrl.Result{}, err
 		}
 
+		// Manage merge request for Pipelines as Code configuration
 		bundle := gitopsprepare.PrepareGitopsConfig(ctx, r.NonCachingClient, component).BuildBundle
 		mrUrl, err := ConfigureRepositoryForPaC(component, pacSecret.Data, webhookTargetUrl, webhookSecretString, bundle)
 		if err != nil {
-			r.Log.Error(err, "failed to setup repository for Pipelines as Code")
+			log.Error(err, "failed to setup repository for Pipelines as Code")
 			r.EventRecorder.Event(&component, "Warning", "ErrorConfiguringPaCForComponentRepository", err.Error())
 			return ctrl.Result{}, err
 		}
+		var mrMessage string
 		if mrUrl != "" {
-			r.Log.Info(fmt.Sprintf("Created Pipelines as Code configuration merge request: %s", mrUrl))
+			mrMessage = fmt.Sprintf("Pipelines as Code configuration merge request: %s", mrUrl)
+		} else {
+			mrMessage = "Pipelines as Code configuration is up to date"
 		}
+		log.Info(mrMessage)
+		r.EventRecorder.Event(&component, "Normal", "PipelinesAsCodeConfiguration", mrMessage)
 
 		// Set initial build annotation to prevent recreation of the PaC integration PR
 		if err := r.Client.Get(ctx, req.NamespacedName, &component); err != nil {
-			r.Log.Error(err, "failed to get Component")
+			log.Error(err, "failed to get Component")
 			return ctrl.Result{}, err
 		}
 		if len(component.Annotations) == 0 {

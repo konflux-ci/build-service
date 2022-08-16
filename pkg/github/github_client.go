@@ -17,9 +17,12 @@ limitations under the License.
 package github
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io/ioutil"
 	"net/http"
+	"strings"
 	"time"
 
 	ghinstallation "github.com/bradleyfalzon/ghinstallation/v2"
@@ -80,20 +83,25 @@ func newGithubClientByApp(appId int64, privateKeyPem []byte, owner string) (*Git
 	return NewGithubClient(token.GetToken()), nil
 }
 
-func (c *GithubClient) GetReference(owner, repository, branch string) (*github.Reference, error) {
+func (c *GithubClient) referenceExist(owner, repository, branch string) (bool, error) {
+	_, resp, err := c.client.Git.GetRef(c.ctx, owner, repository, "refs/heads/"+branch)
+	if err == nil {
+		return true, nil
+	}
+
+	if resp.StatusCode == 404 {
+		return false, nil
+	}
+	return false, err
+}
+
+func (c *GithubClient) getReference(owner, repository, branch string) (*github.Reference, error) {
 	ref, _, err := c.client.Git.GetRef(c.ctx, owner, repository, "refs/heads/"+branch)
 	return ref, err
 }
 
-func (c *GithubClient) GetOrCreateBranchReference(owner, repository, branch, baseBranch string) (*github.Reference, error) {
-	ref, resp, err := c.client.Git.GetRef(c.ctx, owner, repository, "refs/heads/"+branch)
-	if err == nil {
-		return ref, nil
-	} else if resp.StatusCode != 404 {
-		return nil, err
-	}
-
-	baseBranchRef, err := c.GetReference(owner, repository, baseBranch)
+func (c *GithubClient) createReference(owner, repository, branch, baseBranch string) (*github.Reference, error) {
+	baseBranchRef, err := c.getReference(owner, repository, baseBranch)
 	if err != nil {
 		return nil, err
 	}
@@ -101,11 +109,43 @@ func (c *GithubClient) GetOrCreateBranchReference(owner, repository, branch, bas
 		Ref:    github.String("refs/heads/" + branch),
 		Object: &github.GitObject{SHA: baseBranchRef.Object.SHA},
 	}
-	ref, _, err = c.client.Git.CreateRef(c.ctx, owner, repository, newBranchRef)
+	ref, _, err := c.client.Git.CreateRef(c.ctx, owner, repository, newBranchRef)
 	return ref, err
 }
 
-func (c *GithubClient) CreateTree(owner, repository string, baseRef *github.Reference, files []File) (tree *github.Tree, err error) {
+func (c *GithubClient) deleteReference(owner, repository, branch string) error {
+	_, err := c.client.Git.DeleteRef(c.ctx, owner, repository, "refs/heads/"+branch)
+	return err
+}
+
+func (c *GithubClient) filesUpToDate(owner, repository, branch string, files []File) (bool, error) {
+	for _, file := range files {
+		opts := &github.RepositoryContentGetOptions{
+			Ref: "refs/heads/" + branch,
+		}
+
+		fileContentReader, resp, err := c.client.Repositories.DownloadContents(c.ctx, owner, repository, file.Name, opts)
+		if err != nil {
+			// It's not clear when it returns 404 or 200 with the error message. Check both.
+			if resp.StatusCode == 404 || strings.Contains(err.Error(), "no file named") {
+				// Given file not found
+				return false, nil
+			}
+			return false, err
+		}
+		fileContent, err := ioutil.ReadAll(fileContentReader)
+		if err != nil {
+			return false, err
+		}
+
+		if !bytes.Equal(fileContent, file.Content) {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func (c *GithubClient) createTree(owner, repository string, baseRef *github.Reference, files []File) (tree *github.Tree, err error) {
 	// Load each file into the tree.
 	entries := []*github.TreeEntry{}
 	for _, file := range files {
@@ -116,7 +156,7 @@ func (c *GithubClient) CreateTree(owner, repository string, baseRef *github.Refe
 	return tree, err
 }
 
-func (c *GithubClient) AddCommitToBranchReference(owner, repository, authorName, authorEmail, commitMessage string, files []File, ref *github.Reference) error {
+func (c *GithubClient) addCommitToBranch(owner, repository, authorName, authorEmail, commitMessage string, files []File, ref *github.Reference) error {
 	// Get the parent commit to attach the commit to.
 	parent, _, err := c.client.Repositories.GetCommit(c.ctx, owner, repository, *ref.Object.SHA, nil)
 	if err != nil {
@@ -125,7 +165,7 @@ func (c *GithubClient) AddCommitToBranchReference(owner, repository, authorName,
 	// This is not always populated, but is needed.
 	parent.Commit.SHA = parent.SHA
 
-	tree, err := c.CreateTree(owner, repository, ref, files)
+	tree, err := c.createTree(owner, repository, ref, files)
 	if err != nil {
 		return err
 	}
@@ -145,9 +185,31 @@ func (c *GithubClient) AddCommitToBranchReference(owner, repository, authorName,
 	return err
 }
 
-// CreatePullRequestWithinRepository create a new pull request into the same repository.
+// findPullRequestByBranchesWithinRepository searches for a PR within repository by current and target (base) branch.
+func (c *GithubClient) findPullRequestByBranchesWithinRepository(owner, repository, branchName, baseBranchName string) (*github.PullRequest, error) {
+	opts := &github.PullRequestListOptions{
+		State:       "open",
+		Base:        baseBranchName,
+		Head:        owner + ":" + branchName,
+		ListOptions: github.ListOptions{PerPage: 100},
+	}
+	prs, _, err := c.client.PullRequests.List(c.ctx, owner, repository, opts)
+	if err != nil {
+		return nil, err
+	}
+	switch len(prs) {
+	case 0:
+		return nil, nil
+	case 1:
+		return prs[0], nil
+	default:
+		return nil, fmt.Errorf("failed to find pull request by branch %s: %d matches found", opts.Head, len(prs))
+	}
+}
+
+// createPullRequestWithinRepository create a new pull request into the same repository.
 // Returns url to the created pull request.
-func (c *GithubClient) CreatePullRequestWithinRepository(owner, repository, branchName, baseBranchName, prTitle, prText string) (string, error) {
+func (c *GithubClient) createPullRequestWithinRepository(owner, repository, branchName, baseBranchName, prTitle, prText string) (string, error) {
 	branch := fmt.Sprintf("%s:%s", owner, branchName)
 
 	newPRData := &github.NewPullRequest{
@@ -166,8 +228,8 @@ func (c *GithubClient) CreatePullRequestWithinRepository(owner, repository, bran
 	return pr.GetHTMLURL(), nil
 }
 
-// GetWebhookByTargetUrl returns webhook by its target url or nil if such webhook doesn't exist.
-func (c *GithubClient) GetWebhookByTargetUrl(owner, repository, webhookTargetUrl string) (*github.Hook, error) {
+// getWebhookByTargetUrl returns webhook by its target url or nil if such webhook doesn't exist.
+func (c *GithubClient) getWebhookByTargetUrl(owner, repository, webhookTargetUrl string) (*github.Hook, error) {
 	// Suppose that the repository does not have more than 100 webhooks
 	listOpts := &github.ListOptions{PerPage: 100}
 	webhooks, _, err := c.client.Repositories.ListHooks(c.ctx, owner, repository, listOpts)
@@ -184,12 +246,12 @@ func (c *GithubClient) GetWebhookByTargetUrl(owner, repository, webhookTargetUrl
 	return nil, nil
 }
 
-func (c *GithubClient) CreateWebhook(owner, repository string, webhook *github.Hook) (*github.Hook, error) {
+func (c *GithubClient) createWebhook(owner, repository string, webhook *github.Hook) (*github.Hook, error) {
 	webhook, _, err := c.client.Repositories.CreateHook(c.ctx, owner, repository, webhook)
 	return webhook, err
 }
 
-func (c *GithubClient) UpdateWebhook(owner, repository string, webhook *github.Hook) (*github.Hook, error) {
+func (c *GithubClient) updateWebhook(owner, repository string, webhook *github.Hook) (*github.Hook, error) {
 	webhook, _, err := c.client.Repositories.EditHook(c.ctx, owner, repository, *webhook.ID, webhook)
 	return webhook, err
 }
