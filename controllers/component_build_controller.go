@@ -468,8 +468,8 @@ func (r *ComponentBuildReconciler) EnsurePaCRepository(ctx context.Context, comp
 // ConfigureRepositoryForPaC creates a merge request with initial Pipelines as Code configuration
 // and configures a webhook to notify in-cluster PaC unless application (on the repository side) is used.
 func ConfigureRepositoryForPaC(component appstudiov1alpha1.Component, config map[string][]byte, webhookTargetUrl, webhookSecret, buildBundle string) (prUrl string, err error) {
-	pipelineOnPush := GeneratePipelineRun(component.Name, component.Namespace, buildBundle, component.Spec.ContainerImage, false)
-	pipelineOnPR := GeneratePipelineRun(component.Name, component.Namespace, buildBundle, component.Spec.ContainerImage, true)
+	pipelineOnPush := GeneratePipelineRun(component, buildBundle, false)
+	pipelineOnPR := GeneratePipelineRun(component, buildBundle, true)
 
 	gitProvider, _ := gitops.GetGitProvider(component)
 	isAppUsed := gitops.IsPaCApplicationConfigured(gitProvider, config)
@@ -553,7 +553,7 @@ func ConfigureRepositoryForPaC(component appstudiov1alpha1.Component, config map
 	}
 }
 
-func GeneratePipelineRun(name, namespace, bundle, image string, onPull bool) []byte {
+func GeneratePipelineRun(component appstudiov1alpha1.Component, bundle string, onPull bool) []byte {
 	var pipelineName string
 	annotations := map[string]string{
 		"pipelinesascode.tekton.dev/on-target-branch": "[main]",
@@ -562,18 +562,21 @@ func GeneratePipelineRun(name, namespace, bundle, image string, onPull bool) []b
 		"build.appstudio.redhat.com/target_branch":    "{{target_branch}}",
 	}
 	labels := map[string]string{
-		ComponentNameLabelName: name,
+		ComponentNameLabelName:                  component.Name,
+		"pipelines.appstudio.openshift.io/type": "build",
+		"appstudio.openshift.io/application":    component.Spec.Application,
+		"appstudio.openshift.io/component":      component.Name,
 	}
-	image_repo := strings.Split(image, ":")[0]
+	image_repo := strings.Split(component.Spec.ContainerImage, ":")[0]
 	var proposedImage string
 	if onPull {
 		annotations["pipelinesascode.tekton.dev/on-event"] = "[pull_request]"
 		annotations["build.appstudio.redhat.com/pull_request_number"] = "{{pull_request_number}}"
-		pipelineName = name + PipelineRunOnPRSuffix
+		pipelineName = component.Name + PipelineRunOnPRSuffix
 		proposedImage = image_repo + ":on-pr-{{revision}}"
 	} else {
 		annotations["pipelinesascode.tekton.dev/on-event"] = "[push]"
-		pipelineName = name + PipelineRunOnPushSuffix
+		pipelineName = component.Name + PipelineRunOnPushSuffix
 		proposedImage = image_repo + ":{{revision}}"
 	}
 
@@ -584,7 +587,7 @@ func GeneratePipelineRun(name, namespace, bundle, image string, onPull bool) []b
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        pipelineName,
-			Namespace:   namespace,
+			Namespace:   component.Namespace,
 			Labels:      labels,
 			Annotations: annotations,
 		},
