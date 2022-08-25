@@ -11,7 +11,7 @@ command -v kubectl >/dev/null 2>&1 || { echo "kubectl is not installed. Aborting
 export WORKSPACE BUILD_SERVICE_PR_OWNER BUILD_SERVICE_PR_SHA
 
 WORKSPACE=$(dirname "$(dirname "$(readlink -f "$0")")");
-export TEST_SUITE="build-service-suite"
+export TEST_SUITE_LABEL="build"
 
 # BUILD_SERVICE_IMAGE - build-service image built in openshift CI job workflow. More info about how image dependencies work in ci: https://github.com/openshift/ci-tools/blob/master/TEMPLATES.md#parameters-available-to-templates
 # Container env defined at: https://github.com/openshift/release/blob/master/ci-operator/config/redhat-appstudio/build-service/redhat-appstudio-build-service-main.yaml
@@ -38,7 +38,7 @@ function executeE2ETests() {
 
     # The bin will be installed in tmp folder after executing e2e-openshift-ci.sh script
     cd "${WORKSPACE}/tmp/e2e-tests"
-    ./bin/e2e-appstudio --ginkgo.junit-report="${ARTIFACT_DIR}"/e2e-report.xml --ginkgo.focus="${TEST_SUITE}" --ginkgo.progress --ginkgo.v --ginkgo.no-color
+    ./bin/e2e-appstudio --ginkgo.junit-report="${ARTIFACT_DIR}"/e2e-report.xml --ginkgo.label-filter="${TEST_SUITE_LABEL}" --ginkgo.progress --ginkgo.v --ginkgo.no-color
 }
 
 curl https://raw.githubusercontent.com/redhat-appstudio/e2e-tests/main/scripts/install-appstudio-e2e-mode.sh | bash -s install
