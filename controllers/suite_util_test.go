@@ -477,6 +477,14 @@ func ensureSecretCreated(resourceKey types.NamespacedName) {
 	}, timeout, interval).Should(BeTrue())
 }
 
+func ensureSecretNotCreated(resourceKey types.NamespacedName) {
+	secret := &corev1.Secret{}
+	Consistently(func() bool {
+		err := k8sClient.Get(ctx, resourceKey, secret)
+		return errors.IsNotFound(err)
+	}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
+}
+
 func createNamespace(name string) {
 	namespace := corev1.Namespace{
 		TypeMeta: metav1.TypeMeta{

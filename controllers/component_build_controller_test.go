@@ -31,6 +31,7 @@ import (
 	"github.com/redhat-appstudio/application-service/gitops"
 	gitopsprepare "github.com/redhat-appstudio/application-service/gitops/prepare"
 	"github.com/redhat-appstudio/build-service/pkg/github"
+	"github.com/redhat-appstudio/build-service/pkg/gitlab"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -73,10 +74,11 @@ var _ = Describe("Component initial build controller", func() {
 
 	var (
 		// All related to the component resources have the same key (but different type)
-		resourceKey      = types.NamespacedName{Name: HASCompName, Namespace: HASAppNamespace}
-		pacRouteKey      = types.NamespacedName{Name: pipelinesAsCodeRouteName, Namespace: pipelinesAsCodeNamespace}
-		pacSecretKey     = types.NamespacedName{Name: gitopsprepare.PipelinesAsCodeSecretName, Namespace: pipelinesAsCodeNamespace}
-		webhookSecretKey = types.NamespacedName{Name: gitops.PipelinesAsCodeWebhooksSecretName, Namespace: HASAppNamespace}
+		resourceKey           = types.NamespacedName{Name: HASCompName, Namespace: HASAppNamespace}
+		pacRouteKey           = types.NamespacedName{Name: pipelinesAsCodeRouteName, Namespace: pipelinesAsCodeNamespace}
+		pacSecretKey          = types.NamespacedName{Name: gitopsprepare.PipelinesAsCodeSecretName, Namespace: pipelinesAsCodeNamespace}
+		namespacePaCSecretKey = types.NamespacedName{Name: gitopsprepare.PipelinesAsCodeSecretName, Namespace: HASAppNamespace}
+		webhookSecretKey      = types.NamespacedName{Name: gitops.PipelinesAsCodeWebhooksSecretName, Namespace: HASAppNamespace}
 	)
 
 	Context("Test Pipelines as Code build preparation", func() {
@@ -100,6 +102,7 @@ var _ = Describe("Component initial build controller", func() {
 			deleteComponent(resourceKey)
 
 			deleteSecret(webhookSecretKey)
+			deleteSecret(namespacePaCSecretKey)
 
 			deleteSecret(pacSecretKey)
 			deleteRoute(pacRouteKey)
@@ -111,7 +114,7 @@ var _ = Describe("Component initial build controller", func() {
 				Expect(d.Repository).To(Equal("devfile-sample-java-springboot-basic"))
 				Expect(len(d.Files)).To(Equal(2))
 				for _, file := range d.Files {
-					Expect(strings.HasPrefix(file.Name, ".tekton/")).To(BeTrue())
+					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
 				}
 				Expect(d.CommitMessage).ToNot(BeEmpty())
 				Expect(d.Branch).ToNot(BeEmpty())
@@ -130,7 +133,6 @@ var _ = Describe("Component initial build controller", func() {
 			setComponentDevfileModel(resourceKey)
 
 			ensurePersistentStorageCreated(resourceKey)
-			ensureSecretCreated(pacSecretKey)
 			ensureSecretCreated(webhookSecretKey)
 			ensurePaCRepositoryCreated(resourceKey)
 
@@ -143,7 +145,7 @@ var _ = Describe("Component initial build controller", func() {
 				Expect(d.Repository).To(Equal("devfile-sample-java-springboot-basic"))
 				Expect(len(d.Files)).To(Equal(2))
 				for _, file := range d.Files {
-					Expect(strings.HasPrefix(file.Name, ".tekton/")).To(BeTrue())
+					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
 				}
 				Expect(d.CommitMessage).ToNot(BeEmpty())
 				Expect(d.Branch).ToNot(BeEmpty())
@@ -168,27 +170,93 @@ var _ = Describe("Component initial build controller", func() {
 			setComponentDevfileModel(resourceKey)
 
 			ensurePersistentStorageCreated(resourceKey)
-			ensureSecretCreated(pacSecretKey)
+			ensureSecretCreated(namespacePaCSecretKey)
 			ensureSecretCreated(webhookSecretKey)
 			ensurePaCRepositoryCreated(resourceKey)
 
 			ensureComponentInitialBuildAnnotationState(resourceKey, true)
 		})
 
-		It("should update pac secret in local namespace if global one updated", func() {
+		It("should successfully submit MR with PaC definitions using GitLab token and set initial build annotation", func() {
+			gitlab.EnsurePaCMergeRequest = func(c *gitlab.GitlabClient, d *gitlab.PaCMergeRequestData) (string, error) {
+				Expect(d.ProjectPath).To(Equal("devfile-samples/devfile-sample-go-basic"))
+				Expect(len(d.Files)).To(Equal(2))
+				for _, file := range d.Files {
+					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
+				}
+				Expect(d.CommitMessage).ToNot(BeEmpty())
+				Expect(d.Branch).ToNot(BeEmpty())
+				Expect(d.BaseBranch).ToNot(BeEmpty())
+				Expect(d.MrTitle).ToNot(BeEmpty())
+				Expect(d.MrText).ToNot(BeEmpty())
+				Expect(d.AuthorName).ToNot(BeEmpty())
+				Expect(d.AuthorEmail).ToNot(BeEmpty())
+				return "url", nil
+			}
+			gitlab.SetupPaCWebhook = func(g *gitlab.GitlabClient, projectPath, webhookUrl, webhookSecret string) error {
+				Expect(webhookUrl).To(Equal(pacWebhookUrl))
+				Expect(webhookSecret).ToNot(BeEmpty())
+				Expect(projectPath).To(Equal("devfile-samples/devfile-sample-go-basic"))
+				return nil
+			}
+
+			pacSecretData := map[string]string{"gitlab.token": "glpat-token"}
+			createSecret(pacSecretKey, pacSecretData)
+
+			deleteComponent(resourceKey)
+			component := &appstudiov1alpha1.Component{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "appstudio.redhat.com/v1alpha1",
+					Kind:       "Component",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      HASCompName,
+					Namespace: HASAppNamespace,
+					Annotations: map[string]string{
+						gitops.PaCAnnotation: "1",
+					},
+				},
+				Spec: appstudiov1alpha1.ComponentSpec{
+					ComponentName:  HASCompName,
+					Application:    HASAppName,
+					ContainerImage: ComponentContainerImage,
+					Source: appstudiov1alpha1.ComponentSource{
+						ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
+							GitSource: &appstudiov1alpha1.GitSource{
+								URL: "https://gitlab.com/devfile-samples/devfile-sample-go-basic",
+							},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
+
 			setComponentDevfileModel(resourceKey)
 
 			ensurePersistentStorageCreated(resourceKey)
-			ensureSecretCreated(pacSecretKey)
+			ensureSecretCreated(namespacePaCSecretKey)
+			ensureSecretCreated(webhookSecretKey)
+			ensurePaCRepositoryCreated(resourceKey)
+
+			ensureComponentInitialBuildAnnotationState(resourceKey, true)
+		})
+
+		It("should update PaC secret in local namespace if global one updated", func() {
+			pacSecretData := map[string]string{"github.token": "ghp_token"}
+			createSecret(pacSecretKey, pacSecretData)
+
+			setComponentDevfileModel(resourceKey)
+
+			ensurePersistentStorageCreated(resourceKey)
+			ensureSecretCreated(namespacePaCSecretKey)
 			ensureSecretCreated(webhookSecretKey)
 			ensurePaCRepositoryCreated(resourceKey)
 
 			deleteComponent(resourceKey)
 
 			pacSecretNewData := map[string]string{
-				"github-application-id": "98765",
-				"github-private-key":    githubAppPrivateKey,
-				"gitlab.token":          "token2222",
+				"github.token": "ghp_token22",
+				"gitlab.token": "glpat-token22",
 			}
 			createSecret(pacSecretKey, pacSecretNewData)
 
@@ -196,7 +264,7 @@ var _ = Describe("Component initial build controller", func() {
 			setComponentDevfileModel(resourceKey)
 
 			ensurePersistentStorageCreated(resourceKey)
-			ensureSecretCreated(pacSecretKey)
+			ensureSecretCreated(namespacePaCSecretKey)
 			ensureSecretCreated(webhookSecretKey)
 			ensurePaCRepositoryCreated(resourceKey)
 
@@ -204,10 +272,21 @@ var _ = Describe("Component initial build controller", func() {
 				secret := &corev1.Secret{}
 				err := k8sClient.Get(ctx, pacSecretKey, secret)
 				return err == nil && secret.ResourceVersion != "" &&
-					string(secret.Data["github-application-id"]) == pacSecretNewData["github-application-id"] &&
-					string(secret.Data["github-private-key"]) == pacSecretNewData["github-private-key"] &&
+					string(secret.Data["github.token"]) == pacSecretNewData["github.token"] &&
 					string(secret.Data["gitlab.token"]) == pacSecretNewData["gitlab.token"]
 			}, timeout, interval).Should(BeTrue())
+		})
+
+		It("should not copy PaC secret into local namespace if GitHub application is used", func() {
+			deleteSecret(namespacePaCSecretKey)
+
+			setComponentDevfileModel(resourceKey)
+
+			ensurePersistentStorageCreated(resourceKey)
+			ensureSecretCreated(webhookSecretKey)
+			ensurePaCRepositoryCreated(resourceKey)
+
+			ensureSecretNotCreated(namespacePaCSecretKey)
 		})
 
 		It("should reuse the same webhook secret for multicomponent repository", func() {
@@ -259,7 +338,7 @@ var _ = Describe("Component initial build controller", func() {
 			setComponentDevfileModel(component2Key)
 
 			ensurePersistentStorageCreated(resourceKey)
-			ensureSecretCreated(pacSecretKey)
+			ensureSecretCreated(namespacePaCSecretKey)
 			ensureSecretCreated(webhookSecretKey)
 
 			ensurePaCRepositoryCreated(resourceKey) // TODO one or two PaC repos?
@@ -322,7 +401,7 @@ var _ = Describe("Component initial build controller", func() {
 			setComponentDevfileModel(component2Key)
 
 			ensurePersistentStorageCreated(resourceKey)
-			ensureSecretCreated(pacSecretKey)
+			ensureSecretCreated(namespacePaCSecretKey)
 			ensureSecretCreated(webhookSecretKey)
 
 			ensurePaCRepositoryCreated(component1Key)
@@ -343,7 +422,6 @@ var _ = Describe("Component initial build controller", func() {
 			setComponentDevfileModel(resourceKey)
 
 			ensurePersistentStorageCreated(resourceKey)
-			ensureSecretCreated(pacSecretKey)
 			ensureSecretCreated(webhookSecretKey)
 			ensurePaCRepositoryCreated(resourceKey)
 

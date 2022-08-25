@@ -49,6 +49,7 @@ import (
 	"github.com/redhat-appstudio/application-service/gitops"
 	gitopsprepare "github.com/redhat-appstudio/application-service/gitops/prepare"
 	"github.com/redhat-appstudio/build-service/pkg/github"
+	"github.com/redhat-appstudio/build-service/pkg/gitlab"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 )
 
@@ -479,26 +480,21 @@ func ConfigureRepositoryForPaC(component appstudiov1alpha1.Component, config map
 		accessToken = strings.TrimSpace(string(config[gitops.GetProviderTokenKey(gitProvider)]))
 	}
 
+	// https://github.com/owner/repository
+	gitSourceUrlParts := strings.Split(component.Spec.Source.GitSource.URL, "/")
+
+	commitMessage := "Appstudio update " + component.Name
+	branch := "appstudio-" + component.Name
+	baseBranch := "main"
+	mrTitle := "Appstudio update " + component.Name
+	mrText := "Pipelines as Code configuration proposal"
+	authorName := "redhat-appstudio"
+	authorEmail := "appstudio@redhat.com"
+
 	switch gitProvider {
 	case "github":
-		// https://github.com/owner/repository
-		gitSourceUrlParts := strings.Split(component.Spec.Source.GitSource.URL, "/")
 		owner := gitSourceUrlParts[3]
-		prData := &github.PaCPullRequestData{
-			Owner:         owner,
-			Repository:    gitSourceUrlParts[4],
-			CommitMessage: "Appstudio update " + component.Name,
-			Branch:        "appstudio-" + component.Name,
-			BaseBranch:    "main",
-			PRTitle:       "Appstudio update " + component.Name,
-			PRText:        "Pipelines as Code configuration proposal",
-			AuthorName:    "redhat-appstudio",
-			AuthorEmail:   "appstudio@redhat.com",
-			Files: []github.File{
-				{Name: ".tekton/" + component.Name + "-" + PipelineRunOnPushFilename, Content: pipelineOnPush},
-				{Name: ".tekton/" + component.Name + "-" + PipelineRunOnPRFilename, Content: pipelineOnPR},
-			},
-		}
+		repository := gitSourceUrlParts[4]
 
 		var ghclient *github.GithubClient
 		if isAppUsed {
@@ -517,7 +513,7 @@ func ConfigureRepositoryForPaC(component appstudiov1alpha1.Component, config map
 			// Webhook
 			ghclient = github.NewGithubClient(accessToken)
 
-			err = github.SetupPaCWebhook(ghclient, webhookTargetUrl, webhookSecret, prData.Owner, prData.Repository)
+			err = github.SetupPaCWebhook(ghclient, webhookTargetUrl, webhookSecret, owner, repository)
 			if err != nil {
 				return "", fmt.Errorf("failed to configure Pipelines as Code webhook: %w", err)
 			} else {
@@ -525,13 +521,23 @@ func ConfigureRepositoryForPaC(component appstudiov1alpha1.Component, config map
 			}
 		}
 
+		prData := &github.PaCPullRequestData{
+			Owner:         owner,
+			Repository:    repository,
+			CommitMessage: commitMessage,
+			Branch:        branch,
+			BaseBranch:    baseBranch,
+			PRTitle:       mrTitle,
+			PRText:        mrText,
+			AuthorName:    authorName,
+			AuthorEmail:   authorEmail,
+			Files: []github.File{
+				{FullPath: ".tekton/" + component.Name + "-" + PipelineRunOnPushFilename, Content: pipelineOnPush},
+				{FullPath: ".tekton/" + component.Name + "-" + PipelineRunOnPRFilename, Content: pipelineOnPR},
+			},
+		}
 		prUrl, err = github.CreatePaCPullRequest(ghclient, prData)
 		if err != nil {
-			// Unfortunately, it's not possible to detect this error via an error code.
-			if strings.Contains(err.Error(), "pull request already exists") {
-				fmt.Printf("PaC integration PR already exists for %s component in %s namespace\n", component.GetName(), component.GetNamespace())
-				return "", nil
-			}
 			// Handle case when GitHub application is not installed for the component repository
 			if strings.Contains(err.Error(), "Resource not accessible by integration") {
 				return "", fmt.Errorf(" Pipelines as Code GitHub application with %s ID is not installed for %s repository",
@@ -543,8 +549,37 @@ func ConfigureRepositoryForPaC(component appstudiov1alpha1.Component, config map
 		return prUrl, nil
 
 	case "gitlab":
-		// TODO implement
-		return "", fmt.Errorf("git provider %s is not supported", gitProvider)
+		glclient, err := gitlab.NewGitlabClient(accessToken)
+		if err != nil {
+			return "", err
+		}
+
+		gitlabNamespace := gitSourceUrlParts[3]
+		gitlabProjectName := gitSourceUrlParts[4]
+		projectPath := gitlabNamespace + "/" + gitlabProjectName
+
+		err = gitlab.SetupPaCWebhook(glclient, projectPath, webhookTargetUrl, webhookSecret)
+		if err != nil {
+			return "", err
+		}
+
+		mrData := &gitlab.PaCMergeRequestData{
+			ProjectPath:   projectPath,
+			CommitMessage: commitMessage,
+			Branch:        branch,
+			BaseBranch:    baseBranch,
+			MrTitle:       mrTitle,
+			MrText:        mrText,
+			AuthorName:    authorName,
+			AuthorEmail:   authorEmail,
+			Files: []gitlab.File{
+				{FullPath: ".tekton/" + component.Name + "-" + PipelineRunOnPushFilename, Content: pipelineOnPush},
+				{FullPath: ".tekton/" + component.Name + "-" + PipelineRunOnPRFilename, Content: pipelineOnPR},
+			},
+		}
+		mrUrl, err := gitlab.EnsurePaCMergeRequest(glclient, mrData)
+		return mrUrl, err
+
 	case "bitbucket":
 		// TODO implement
 		return "", fmt.Errorf("git provider %s is not supported", gitProvider)
