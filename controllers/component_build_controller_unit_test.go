@@ -146,9 +146,10 @@ func TestUpdateServiceAccountIfSecretNotLinked(t *testing.T) {
 
 func TestGeneratePipelineRun(t *testing.T) {
 	tests := []struct {
-		name   string
-		onPull bool
-		want   string
+		name      string
+		onPull    bool
+		gitSource *appstudiov1alpha1.GitSource
+		want      string
 	}{
 		{
 			name:   "pull-request-test",
@@ -162,7 +163,7 @@ metadata:
     build.appstudio.redhat.com/target_branch: '{{target_branch}}'
     pipelinesascode.tekton.dev/max-keep-runs: "3"
     pipelinesascode.tekton.dev/on-event: '[pull_request]'
-    pipelinesascode.tekton.dev/on-target-branch: '[main]'
+    pipelinesascode.tekton.dev/on-target-branch: '[main,master]'
   creationTimestamp: null
   labels:
     appstudio.openshift.io/application: app
@@ -208,7 +209,7 @@ metadata:
     build.appstudio.redhat.com/target_branch: '{{target_branch}}'
     pipelinesascode.tekton.dev/max-keep-runs: "3"
     pipelinesascode.tekton.dev/on-event: '[push]'
-    pipelinesascode.tekton.dev/on-target-branch: '[main]'
+    pipelinesascode.tekton.dev/on-target-branch: '[main,master]'
   creationTimestamp: null
   labels:
     appstudio.openshift.io/application: app
@@ -243,6 +244,52 @@ spec:
 status: {}
 `,
 		},
+		{
+			name:      "custom-target-branch",
+			gitSource: &appstudiov1alpha1.GitSource{Revision: "test-revision"},
+			want: `apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  annotations:
+    build.appstudio.redhat.com/commit_sha: '{{revision}}'
+    build.appstudio.redhat.com/target_branch: '{{target_branch}}'
+    pipelinesascode.tekton.dev/max-keep-runs: "3"
+    pipelinesascode.tekton.dev/on-event: '[push]'
+    pipelinesascode.tekton.dev/on-target-branch: '[test-revision]'
+  creationTimestamp: null
+  labels:
+    appstudio.openshift.io/application: app
+    appstudio.openshift.io/component: custom-target-branch
+    build.appstudio.openshift.io/component: custom-target-branch
+    pipelines.appstudio.openshift.io/type: build
+  name: custom-target-branch-on-push
+  namespace: namespace
+spec:
+  params:
+  - name: git-url
+    value: '{{repo_url}}'
+  - name: revision
+    value: '{{revision}}'
+  - name: output-image
+    value: image:{{revision}}
+  - name: path-context
+    value: .
+  - name: dockerfile
+    value: Dockerfile
+  pipelineRef:
+    bundle: bundle
+    name: docker-build
+  workspaces:
+  - name: workspace
+    persistentVolumeClaim:
+      claimName: appstudio
+    subPath: custom-target-branch-on-push-{{revision}}
+  - name: registry-auth
+    secret:
+      secretName: redhat-appstudio-registry-pull-secret
+status: {}
+`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -258,6 +305,11 @@ status: {}
 				Spec: appstudiov1alpha1.ComponentSpec{
 					Application:    "app",
 					ContainerImage: "image",
+					Source: appstudiov1alpha1.ComponentSource{
+						ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
+							GitSource: tt.gitSource,
+						},
+					},
 				},
 			}
 			got := GeneratePipelineRun(component, "bundle", tt.onPull)
