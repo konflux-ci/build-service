@@ -93,7 +93,7 @@ var _ = Describe("Component initial build controller", func() {
 			github.NewGithubClientByApp = func(appId int64, privateKeyPem []byte, owner string) (*github.GithubClient, error) { return nil, nil }
 			github.NewGithubClient = func(accessToken string) *github.GithubClient { return nil }
 
-			createComponentForPaCBuild(resourceKey)
+			createComponentForPaCBuild(resourceKey, false)
 		}, 30)
 
 		_ = AfterEach(func() {
@@ -192,7 +192,7 @@ var _ = Describe("Component initial build controller", func() {
 			}
 			createSecret(pacSecretKey, pacSecretNewData)
 
-			createComponentForPaCBuild(resourceKey)
+			createComponentForPaCBuild(resourceKey, false)
 			setComponentDevfileModel(resourceKey)
 
 			ensurePersistentStorageCreated(resourceKey)
@@ -755,6 +755,44 @@ var _ = Describe("Component initial build controller", func() {
 
 			deleteComponent(componentKey)
 			deleteComponentInitialPipelineRuns(componentKey)
+		})
+	})
+
+	Context("Test skipping of Pipelines as Code resources generation", func() {
+		_ = BeforeEach(func() {
+			github.NewGithubClientByApp = func(appId int64, privateKeyPem []byte, owner string) (*github.GithubClient, error) { return nil, nil }
+			github.NewGithubClient = func(accessToken string) *github.GithubClient { return nil }
+
+			createNamespace(pipelinesAsCodeNamespace)
+			createRoute(pacRouteKey, "pac-host")
+			pacSecretData := map[string]string{
+				"github-application-id": "12345",
+				"github-private-key":    githubAppPrivateKey,
+			}
+			createSecret(pacSecretKey, pacSecretData)
+		}, 30)
+
+		_ = AfterEach(func() {
+			deleteComponent(resourceKey)
+			deleteSecret(pacSecretKey)
+			deleteRoute(pacRouteKey)
+		}, 30)
+
+		It("should skip the generation of Pipelines as Code resources if the annotation is set to 1", func() {
+			createComponentForPaCBuild(resourceKey, true)
+
+			github.CreatePaCPullRequest = func(g *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+				Fail("PR creation should not be invoked")
+				return "", nil
+			}
+
+			github.SetupPaCWebhook = func(g *github.GithubClient, webhookUrl, webhookSecret, owner, repository string) error {
+				Fail("Webhook setup should not be invoked")
+				return nil
+			}
+
+			setComponentDevfileModel(resourceKey)
+			ensurePaCRepositoryCreated(resourceKey)
 		})
 	})
 })

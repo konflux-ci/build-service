@@ -104,7 +104,7 @@ func deleteApplication(resourceKey types.NamespacedName) {
 }
 
 // createComponent creates sample component resource and verifies it was properly created
-func createComponentForPaCBuild(componentLookupKey types.NamespacedName) {
+func createComponentForPaCBuild(componentLookupKey types.NamespacedName, skipPacResourceGeneration bool) {
 	component := &appstudiov1alpha1.Component{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "appstudio.redhat.com/v1alpha1",
@@ -130,6 +130,11 @@ func createComponentForPaCBuild(componentLookupKey types.NamespacedName) {
 			},
 		},
 	}
+
+	if skipPacResourceGeneration {
+		component.ObjectMeta.Annotations[skipPacResourceGenerationAnnotation] = "1"
+	}
+
 	Expect(k8sClient.Create(ctx, component)).Should(Succeed())
 
 	getComponent(componentLookupKey)

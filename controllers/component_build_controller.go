@@ -63,6 +63,8 @@ const (
 
 	PartOfLabelName           = "app.kubernetes.io/part-of"
 	PartOfAppStudioLabelValue = "appstudio"
+
+	skipPacResourceGenerationAnnotation = "skip-pipelines-as-code-resource-generation"
 )
 
 // ComponentBuildReconciler watches AppStudio Component object in order to submit builds
@@ -216,21 +218,25 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 
 		// Manage merge request for Pipelines as Code configuration
-		bundle := gitopsprepare.PrepareGitopsConfig(ctx, r.NonCachingClient, component).BuildBundle
-		mrUrl, err := ConfigureRepositoryForPaC(component, pacSecret.Data, webhookTargetUrl, webhookSecretString, bundle)
-		if err != nil {
-			log.Error(err, "failed to setup repository for Pipelines as Code")
-			r.EventRecorder.Event(&component, "Warning", "ErrorConfiguringPaCForComponentRepository", err.Error())
-			return ctrl.Result{}, err
-		}
-		var mrMessage string
-		if mrUrl != "" {
-			mrMessage = fmt.Sprintf("Pipelines as Code configuration merge request: %s", mrUrl)
+		if val, ok := component.Annotations[skipPacResourceGenerationAnnotation]; ok && val == "1" {
+			r.EventRecorder.Event(&component, "Normal", "PipelinesAsCodeConfiguration", "Skipping the generation of .tekton resources")
 		} else {
-			mrMessage = "Pipelines as Code configuration is up to date"
+			bundle := gitopsprepare.PrepareGitopsConfig(ctx, r.NonCachingClient, component).BuildBundle
+			mrUrl, err := ConfigureRepositoryForPaC(component, pacSecret.Data, webhookTargetUrl, webhookSecretString, bundle)
+			if err != nil {
+				log.Error(err, "failed to setup repository for Pipelines as Code")
+				r.EventRecorder.Event(&component, "Warning", "ErrorConfiguringPaCForComponentRepository", err.Error())
+				return ctrl.Result{}, err
+			}
+			var mrMessage string
+			if mrUrl != "" {
+				mrMessage = fmt.Sprintf("Pipelines as Code configuration merge request: %s", mrUrl)
+			} else {
+				mrMessage = "Pipelines as Code configuration is up to date"
+			}
+			log.Info(mrMessage)
+			r.EventRecorder.Event(&component, "Normal", "PipelinesAsCodeConfiguration", mrMessage)
 		}
-		log.Info(mrMessage)
-		r.EventRecorder.Event(&component, "Normal", "PipelinesAsCodeConfiguration", mrMessage)
 
 		// Set initial build annotation to prevent recreation of the PaC integration PR
 		if err := r.Client.Get(ctx, req.NamespacedName, &component); err != nil {
