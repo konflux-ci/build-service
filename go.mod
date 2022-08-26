@@ -8,10 +8,10 @@ require (
 	github.com/onsi/gomega v1.19.0
 	github.com/openshift/api v3.9.0+incompatible
 	github.com/xanzy/go-gitlab v0.68.2
-	k8s.io/api v0.24.2
-	k8s.io/apiextensions-apiserver v0.24.2
-	k8s.io/apimachinery v0.24.2
-	k8s.io/client-go v0.24.2
+	k8s.io/api v0.24.3
+	k8s.io/apiextensions-apiserver v0.24.3
+	k8s.io/apimachinery v0.24.3
+	k8s.io/client-go v0.24.3
 	knative.dev/pkg v0.0.0-20220524202603-19adf798efb8
 	sigs.k8s.io/controller-runtime v0.12.2
 	sigs.k8s.io/yaml v1.3.0
@@ -20,7 +20,7 @@ require (
 // If you update dependencies below you must also update controllers/suite_test.go
 require (
 	github.com/openshift-pipelines/pipelines-as-code v0.11.0
-	github.com/redhat-appstudio/application-service v0.0.0-20220808180535-be837eb63845
+	github.com/redhat-appstudio/application-service v0.0.0-20220823150702-185455ea26c9
 	github.com/redhat-appstudio/managed-gitops/appstudio-shared v0.0.0-20220706140453-45b53e5f01fe
 	github.com/tektoncd/pipeline v0.37.0
 	github.com/tektoncd/triggers v0.19.1
@@ -94,6 +94,8 @@ require (
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
+	github.com/kcp-dev/apimachinery v0.0.0-20220803185518-868856d14e8a // indirect
+	github.com/kcp-dev/logicalcluster/v2 v2.0.0-alpha.1 // indirect
 	github.com/kevinburke/ssh_config v0.0.0-20201106050909-4977a11b4351 // indirect
 	github.com/klauspost/compress v1.14.4 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
@@ -152,7 +154,7 @@ require (
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/component-base v0.24.2 // indirect
+	k8s.io/component-base v0.24.3 // indirect
 	k8s.io/klog v1.0.0 // indirect
 	k8s.io/klog/v2 v2.60.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20220328201542-3ee0da9b0b42 // indirect
@@ -163,3 +165,5 @@ require (
 )
 
 replace github.com/antlr/antlr4 => github.com/antlr/antlr4 v0.0.0-20211106181442-e4c1a74c66bd
+
+replace sigs.k8s.io/controller-runtime => github.com/kcp-dev/controller-runtime v0.12.2-0.20220808200255-4b60fd66e5de
