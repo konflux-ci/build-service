@@ -20,7 +20,7 @@ require (
 // If you update dependencies below you must also update controllers/suite_test.go
 require (
 	github.com/openshift-pipelines/pipelines-as-code v0.11.0
-	github.com/redhat-appstudio/application-service v0.0.0-20220823150702-185455ea26c9
+	github.com/redhat-appstudio/application-service v0.0.0-20220829061053-b1a0d1dde65c
 	github.com/redhat-appstudio/managed-gitops/appstudio-shared v0.0.0-20220706140453-45b53e5f01fe
 	github.com/tektoncd/pipeline v0.37.0
 	github.com/tektoncd/triggers v0.19.1
