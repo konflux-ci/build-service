@@ -591,8 +591,19 @@ func ConfigureRepositoryForPaC(component appstudiov1alpha1.Component, config map
 
 func GeneratePipelineRun(component appstudiov1alpha1.Component, bundle string, onPull bool) []byte {
 	var pipelineName string
+	var targetBranches []string
+	var targetBranch string
+
+	if component.Spec.Source.GitSource != nil {
+		targetBranch = component.Spec.Source.GitSource.Revision
+	}
+	if targetBranch != "" {
+		targetBranches = []string{targetBranch}
+	} else {
+		targetBranches = []string{"main", "master"}
+	}
 	annotations := map[string]string{
-		"pipelinesascode.tekton.dev/on-target-branch": "[main]",
+		"pipelinesascode.tekton.dev/on-target-branch": "[" + strings.Join(targetBranches[:], ",") + "]",
 		"pipelinesascode.tekton.dev/max-keep-runs":    "3",
 		"build.appstudio.redhat.com/commit_sha":       "{{revision}}",
 		"build.appstudio.redhat.com/target_branch":    "{{target_branch}}",
