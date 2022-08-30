@@ -146,11 +146,11 @@ func TestUpdateServiceAccountIfSecretNotLinked(t *testing.T) {
 
 func TestGeneratePipelineRun(t *testing.T) {
 	tests := []struct {
-		name      string
-		onPull    bool
-    devfileString string
-		gitSource *appstudiov1alpha1.GitSource
-		want      string
+		name          string
+		onPull        bool
+		devfileString string
+		gitSource     *appstudiov1alpha1.GitSource
+		want          string
 	}{
 		{
 			name:   "pull-request-test",
@@ -281,10 +281,6 @@ spec:
     value: '{{revision}}'
   - name: output-image
     value: image:{{revision}}
-  - name: path-context
-    value: .
-  - name: dockerfile
-    value: Dockerfile
   pipelineRef:
     bundle: bundle
     name: docker-build

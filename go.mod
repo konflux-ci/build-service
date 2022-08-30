@@ -5,7 +5,7 @@ go 1.17
 require (
 	github.com/go-logr/logr v1.2.3
 	github.com/onsi/ginkgo v1.16.5
-	github.com/onsi/gomega v1.19.0
+	github.com/onsi/gomega v1.20.1
 	github.com/openshift/api v3.9.0+incompatible
 	github.com/xanzy/go-gitlab v0.68.2
 	k8s.io/api v0.24.3
@@ -17,10 +17,15 @@ require (
 	sigs.k8s.io/yaml v1.3.0
 )
 
+require (
+	github.com/go-task/slim-sprig v0.0.0-20210107165309-348f09dbbbc0 // indirect
+	golang.org/x/tools v0.1.10-0.20220218145154-897bd77cd717 // indirect
+)
+
 // If you update dependencies below you must also update controllers/suite_test.go
 require (
 	github.com/openshift-pipelines/pipelines-as-code v0.11.0
-	github.com/redhat-appstudio/application-service v0.0.0-20220829061053-b1a0d1dde65c
+	github.com/redhat-appstudio/application-service v0.0.0-20220829134154-e65d6d98b23a
 	github.com/redhat-appstudio/managed-gitops/appstudio-shared v0.0.0-20220706140453-45b53e5f01fe
 	github.com/tektoncd/pipeline v0.37.0
 	github.com/tektoncd/triggers v0.19.1

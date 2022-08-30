@@ -163,7 +163,8 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	if val, ok := component.Annotations[gitops.PaCAnnotation]; ok && val == "1" {
+	gitopsConfig := gitopsprepare.PrepareGitopsConfig(ctx, r.NonCachingClient, component)
+	if val, ok := component.Annotations[gitops.PaCAnnotation]; (ok && val == "1") || gitopsConfig.IsHACBS {
 		// Use pipelines as code build
 		log.Info("Pipelines as Code enabled")
 
@@ -218,7 +219,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 
 		// Manage merge request for Pipelines as Code configuration
-		bundle := gitopsprepare.PrepareGitopsConfig(ctx, r.NonCachingClient, component).BuildBundle
+		bundle := gitopsConfig.BuildBundle
 		mrUrl, err := ConfigureRepositoryForPaC(component, pacSecret.Data, webhookTargetUrl, webhookSecretString, bundle)
 		if err != nil {
 			log.Error(err, "failed to setup repository for Pipelines as Code")
