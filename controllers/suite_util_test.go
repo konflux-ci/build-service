@@ -193,7 +193,7 @@ func setComponentDevfileModel(componentKey types.NamespacedName) {
 	component := &appstudiov1alpha1.Component{}
 	Eventually(func() error {
 		Expect(k8sClient.Get(ctx, componentKey, component)).To(Succeed())
-		component.Status.Devfile = "version: 2.2.0"
+		component.Status.Devfile = "schemaVersion: 2.2.0"
 		return k8sClient.Status().Update(ctx, component)
 	}, timeout, interval).Should(Succeed())
 

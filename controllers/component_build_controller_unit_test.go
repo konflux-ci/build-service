@@ -148,12 +148,25 @@ func TestGeneratePipelineRun(t *testing.T) {
 	tests := []struct {
 		name      string
 		onPull    bool
+    devfileString string
 		gitSource *appstudiov1alpha1.GitSource
 		want      string
 	}{
 		{
 			name:   "pull-request-test",
 			onPull: true,
+			devfileString: `
+schemaVersion: 2.2.0
+metadata:
+  name: nodejs
+components:
+  - name: outerloop-build
+    image:
+      imageName: nodejs-image:latest
+      dockerfile:
+        uri: "test/Dockerfile"
+        buildContext: "."
+`,
 			want: `apiVersion: tekton.dev/v1beta1
 kind: PipelineRun
 metadata:
@@ -180,10 +193,10 @@ spec:
     value: '{{revision}}'
   - name: output-image
     value: image:on-pr-{{revision}}
+  - name: dockerfile
+    value: test/Dockerfile
   - name: path-context
     value: .
-  - name: dockerfile
-    value: Dockerfile
   pipelineRef:
     bundle: bundle
     name: docker-build
@@ -226,10 +239,6 @@ spec:
     value: '{{revision}}'
   - name: output-image
     value: image:{{revision}}
-  - name: path-context
-    value: .
-  - name: dockerfile
-    value: Dockerfile
   pipelineRef:
     bundle: bundle
     name: docker-build
@@ -311,6 +320,7 @@ status: {}
 						},
 					},
 				},
+				Status: appstudiov1alpha1.ComponentStatus{Devfile: tt.devfileString},
 			}
 			got := GeneratePipelineRun(component, "bundle", tt.onPull)
 			if string(got) != tt.want {

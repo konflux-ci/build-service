@@ -48,6 +48,7 @@ import (
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-service/api/v1alpha1"
 	"github.com/redhat-appstudio/application-service/gitops"
 	gitopsprepare "github.com/redhat-appstudio/application-service/gitops/prepare"
+	"github.com/redhat-appstudio/application-service/pkg/devfile"
 	"github.com/redhat-appstudio/build-service/pkg/github"
 	"github.com/redhat-appstudio/build-service/pkg/gitlab"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
@@ -626,6 +627,19 @@ func GeneratePipelineRun(component appstudiov1alpha1.Component, bundle string, o
 		proposedImage = image_repo + ":{{revision}}"
 	}
 
+	params := []tektonapi.Param{
+		{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "{{repo_url}}"}},
+		{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "{{revision}}"}},
+		{Name: "output-image", Value: tektonapi.ArrayOrString{Type: "string", StringVal: proposedImage}},
+	}
+	if dockerFile, err := devfile.SearchForDockerfile([]byte(component.Status.Devfile)); err == nil && dockerFile != nil {
+		if dockerFile.Uri != "" {
+			params = append(params, tektonapi.Param{Name: "dockerfile", Value: tektonapi.ArrayOrString{Type: "string", StringVal: dockerFile.Uri}})
+		}
+		if dockerFile.BuildContext != "" {
+			params = append(params, tektonapi.Param{Name: "path-context", Value: tektonapi.ArrayOrString{Type: "string", StringVal: dockerFile.BuildContext}})
+		}
+	}
 	pipelineRun := tektonapi.PipelineRun{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "PipelineRun",
@@ -642,13 +656,7 @@ func GeneratePipelineRun(component appstudiov1alpha1.Component, bundle string, o
 				Name:   "docker-build",
 				Bundle: bundle,
 			},
-			Params: []tektonapi.Param{
-				{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "{{repo_url}}"}},
-				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "{{revision}}"}},
-				{Name: "output-image", Value: tektonapi.ArrayOrString{Type: "string", StringVal: proposedImage}},
-				{Name: "path-context", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "."}},
-				{Name: "dockerfile", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "Dockerfile"}},
-			},
+			Params: params,
 			Workspaces: []tektonapi.WorkspaceBinding{
 				{
 					Name:                  "workspace",
