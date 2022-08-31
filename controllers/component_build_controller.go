@@ -687,7 +687,7 @@ func GeneratePipelineRun(component appstudiov1alpha1.Component, bundle string, o
 	yamlformat, err := yaml.Marshal(pipelineRun)
 	if err != nil {
 		// Should never happen because the function is covered by tests
-		panic(err)
+		return nil, err
 	}
 
 	return yamlformat, nil
