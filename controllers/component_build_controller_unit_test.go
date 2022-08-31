@@ -295,6 +295,21 @@ spec:
 status: {}
 `,
 		},
+		{
+			name:   "invalid-devfile-by-missing-schemaversion",
+			onPull: true,
+			devfileString: `
+metadata:
+  name: nodejs
+components:
+  - name: outerloop-build
+    image:
+      imageName: nodejs-image:latest
+      dockerfile:
+        uri: "test/Dockerfile"
+        buildContext: "."
+`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -318,8 +333,10 @@ status: {}
 				},
 				Status: appstudiov1alpha1.ComponentStatus{Devfile: tt.devfileString},
 			}
-			got := GeneratePipelineRun(component, "bundle", tt.onPull)
-			if string(got) != tt.want {
+			got, err := GeneratePipelineRun(component, "bundle", tt.onPull)
+			if tt.name == "invalid-devfile-by-missing-schemaversion" && err == nil {
+				t.Errorf("devfile is invalid, but GeneratePipelineRun does not return an error.")
+			} else if string(got) != tt.want {
 				output := string(got)
 				t.Errorf("TestGeneratePipelineRun() = %v, want %v", output, tt.want)
 			}
