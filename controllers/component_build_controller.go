@@ -471,8 +471,14 @@ func (r *ComponentBuildReconciler) EnsurePaCRepository(ctx context.Context, comp
 // ConfigureRepositoryForPaC creates a merge request with initial Pipelines as Code configuration
 // and configures a webhook to notify in-cluster PaC unless application (on the repository side) is used.
 func ConfigureRepositoryForPaC(component appstudiov1alpha1.Component, config map[string][]byte, webhookTargetUrl, webhookSecret, buildBundle string) (prUrl string, err error) {
-	pipelineOnPush := GeneratePipelineRun(component, buildBundle, false)
-	pipelineOnPR := GeneratePipelineRun(component, buildBundle, true)
+	pipelineOnPush, err := GeneratePipelineRun(component, buildBundle, false)
+	if err != nil {
+		return "", err
+	}
+	pipelineOnPR, err := GeneratePipelineRun(component, buildBundle, true)
+	if err != nil {
+		return "", err
+	}
 
 	gitProvider, _ := gitops.GetGitProvider(component)
 	isAppUsed := gitops.IsPaCApplicationConfigured(gitProvider, config)
@@ -590,7 +596,7 @@ func ConfigureRepositoryForPaC(component appstudiov1alpha1.Component, config map
 	}
 }
 
-func GeneratePipelineRun(component appstudiov1alpha1.Component, bundle string, onPull bool) []byte {
+func GeneratePipelineRun(component appstudiov1alpha1.Component, bundle string, onPull bool) ([]byte, error) {
 	var pipelineName string
 	var targetBranches []string
 	var targetBranch string
@@ -633,7 +639,12 @@ func GeneratePipelineRun(component appstudiov1alpha1.Component, bundle string, o
 		{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "{{revision}}"}},
 		{Name: "output-image", Value: tektonapi.ArrayOrString{Type: "string", StringVal: proposedImage}},
 	}
-	if dockerFile, err := devfile.SearchForDockerfile([]byte(component.Status.Devfile)); err == nil && dockerFile != nil {
+
+	dockerFile, err := devfile.SearchForDockerfile([]byte(component.Status.Devfile))
+	if err != nil {
+		return nil, err
+	}
+	if dockerFile != nil {
 		if dockerFile.Uri != "" {
 			params = append(params, tektonapi.Param{Name: "dockerfile", Value: tektonapi.ArrayOrString{Type: "string", StringVal: dockerFile.Uri}})
 		}
@@ -641,6 +652,7 @@ func GeneratePipelineRun(component appstudiov1alpha1.Component, bundle string, o
 			params = append(params, tektonapi.Param{Name: "path-context", Value: tektonapi.ArrayOrString{Type: "string", StringVal: dockerFile.BuildContext}})
 		}
 	}
+
 	pipelineRun := tektonapi.PipelineRun{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "PipelineRun",
@@ -675,10 +687,10 @@ func GeneratePipelineRun(component appstudiov1alpha1.Component, bundle string, o
 	yamlformat, err := yaml.Marshal(pipelineRun)
 	if err != nil {
 		// Should never happen because the function is covered by tests
-		panic(err)
+		return nil, err
 	}
 
-	return yamlformat
+	return yamlformat, nil
 }
 
 func (r *ComponentBuildReconciler) EnsurePersistentStorage(ctx context.Context, component appstudiov1alpha1.Component) error {
