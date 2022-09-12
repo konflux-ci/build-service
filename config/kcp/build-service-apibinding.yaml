@@ -1,0 +1,41 @@
+apiVersion: apis.kcp.dev/v1alpha1
+kind: APIBinding
+metadata:
+  name: build-service-apibinding
+spec:
+  reference:
+    workspace:
+      exportName: build-service-apiexport
+      path: root:appstudio:build-service
+  permissionClaims:
+  - group: ""
+    resource: configmaps
+    state: Accepted
+  - group: ""
+    resource: secrets
+    state: Accepted
+  - group:
+    resource: namespaces
+    state: Accepted
+  - group:
+    resource: events
+    state: Accepted
+  - group:
+    resource: serviceaccounts
+    state: Accepted
+  - group: tekton.dev
+    identityHash: pipelinesIdentityHash
+    resource: pipelineruns
+    state: Accepted
+  - group: tekton.dev
+    identityHash: pipelinesIdentityHash
+    resource: taskruns
+    state: Accepted  
+  - group: appstudio.redhat.com
+    identityHash: applicationServiceIdentityHash
+    resource: components
+    state: Accepted
+  - group: appstudio.redhat.com
+    identityHash: applicationServiceIdentityHash
+    resource: applications
+    state: Accepted

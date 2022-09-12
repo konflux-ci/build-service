@@ -3,29 +3,22 @@ module github.com/redhat-appstudio/build-service
 go 1.17
 
 require (
-	code.gitea.io/sdk/gitea v0.14.0 // indirect
-	github.com/bluekeyes/go-gitdiff v0.4.0 // indirect
 	github.com/go-logr/logr v1.2.3
-	github.com/hashicorp/go-version v1.4.0 // indirect
-	github.com/jenkins-x/go-scm v1.10.10 // indirect
-	github.com/mitchellh/copystructure v1.2.0 // indirect
+	github.com/kcp-dev/kcp/pkg/apis v0.7.0
+	github.com/kcp-dev/logicalcluster/v2 v2.0.0-alpha.1
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.20.1
 	github.com/openshift/api v3.9.0+incompatible
-	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/redhat-developer/gitops-generator v0.0.0-20220901170915-a4d650cac486 // indirect
-	github.com/shurcooL/githubv4 v0.0.0-20190718010115-4ba037080260 // indirect
-	github.com/shurcooL/graphql v0.0.0-20181231061246-d48a9a75455f // indirect
-	github.com/stretchr/testify v1.8.0 // indirect
 	github.com/xanzy/go-gitlab v0.68.2
-	k8s.io/apiextensions-apiserver v0.24.3
-	k8s.io/apimachinery v0.24.3
 	k8s.io/api v0.24.3
+	k8s.io/apimachinery v0.24.3
 	k8s.io/client-go v0.24.3
 	knative.dev/pkg v0.0.0-20220524202603-19adf798efb8
 	sigs.k8s.io/controller-runtime v0.12.2
 	sigs.k8s.io/yaml v1.3.0
 )
+
+require k8s.io/apiextensions-apiserver v0.24.3 // indirect
 
 // If you update dependencies below you must also update controllers/suite_test.go
 require (
@@ -38,6 +31,7 @@ require (
 
 require (
 	cloud.google.com/go/compute v1.5.0 // indirect
+	code.gitea.io/sdk/gitea v0.14.0 // indirect
 	contrib.go.opencensus.io/exporter/ocagent v0.7.1-0.20200907061046-05415f1de66d // indirect
 	contrib.go.opencensus.io/exporter/prometheus v0.4.0 // indirect
 	github.com/Azure/go-autorest v14.2.0+incompatible // indirect
@@ -54,6 +48,7 @@ require (
 	github.com/antlr/antlr4/runtime/Go/antlr v0.0.0-20220418222510-f25a4f6275ed // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blendle/zapdriver v1.3.1 // indirect
+	github.com/bluekeyes/go-gitdiff v0.4.0 // indirect
 	github.com/bradleyfalzon/ghinstallation/v2 v2.0.4
 	github.com/census-instrumentation/opencensus-proto v0.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
@@ -100,18 +95,20 @@ require (
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.1 // indirect
+	github.com/hashicorp/go-version v1.4.0 // indirect
 	github.com/imdario/mergo v0.3.12 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
+	github.com/jenkins-x/go-scm v1.10.10 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/kcp-dev/apimachinery v0.0.0-20220803185518-868856d14e8a // indirect
-	github.com/kcp-dev/logicalcluster/v2 v2.0.0-alpha.1 // indirect
 	github.com/kevinburke/ssh_config v0.0.0-20201106050909-4977a11b4351 // indirect
 	github.com/klauspost/compress v1.14.4 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.12 // indirect
 	github.com/mattn/go-isatty v0.0.14 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
+	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
 	github.com/moby/locker v1.0.1 // indirect
@@ -123,18 +120,23 @@ require (
 	github.com/opencontainers/image-spec v1.0.3-0.20220114050600-8b9d41f48198 // indirect
 	github.com/peterbourgon/diskv v2.0.1+incompatible // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_golang v1.12.1 // indirect
 	github.com/prometheus/client_model v0.2.0 // indirect
 	github.com/prometheus/common v0.32.1 // indirect
 	github.com/prometheus/procfs v0.7.3 // indirect
 	github.com/prometheus/statsd_exporter v0.21.0 // indirect
 	github.com/redhat-developer/alizer/go v0.0.0-20220704150640-ef50ead0b279 // indirect
+	github.com/redhat-developer/gitops-generator v0.0.0-20220901170915-a4d650cac486 // indirect
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06 // indirect
 	github.com/sergi/go-diff v1.1.0 // indirect
+	github.com/shurcooL/githubv4 v0.0.0-20190718010115-4ba037080260 // indirect
+	github.com/shurcooL/graphql v0.0.0-20181231061246-d48a9a75455f // indirect
 	github.com/sirupsen/logrus v1.8.1 // indirect
 	github.com/spf13/afero v1.8.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/stoewer/go-strcase v1.2.0 // indirect
+	github.com/stretchr/testify v1.8.0 // indirect
 	github.com/xanzy/ssh-agent v0.3.0 // indirect
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
 	github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 // indirect

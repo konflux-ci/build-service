@@ -1,0 +1,14 @@
+namespace: build-service-system
+
+bases:
+- ../manager
+
+patches:
+# Add APIExport flag to the operator arguments list
+- patch: |-
+    - op: add
+      path: /spec/template/spec/containers/0/args/-
+      value: --api-export-name=build-service-apiexport
+  target:
+    kind: Deployment
+    name: controller-manager
