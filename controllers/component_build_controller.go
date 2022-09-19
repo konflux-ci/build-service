@@ -29,7 +29,6 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -157,11 +156,6 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 	// The nitial build annotation is absent, onboarding of the component needed
-
-	// Persistent storage is required to do builds
-	if err = r.EnsurePersistentStorage(ctx, component); err != nil {
-		return ctrl.Result{}, err
-	}
 
 	gitopsConfig := gitopsprepare.PrepareGitopsConfig(ctx, r.NonCachingClient, component)
 	if val, ok := component.Annotations[gitops.PaCAnnotation]; (ok && val == "1") || gitopsConfig.IsHACBS {
@@ -672,9 +666,8 @@ func GeneratePipelineRun(component appstudiov1alpha1.Component, bundle string, o
 			Params: params,
 			Workspaces: []tektonapi.WorkspaceBinding{
 				{
-					Name:                  "workspace",
-					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "appstudio"},
-					SubPath:               pipelineName + "-{{revision}}",
+					Name:                "workspace",
+					VolumeClaimTemplate: gitops.GenerateVolumeClaimTemplate(),
 				},
 				{
 					Name:   "registry-auth",
@@ -691,58 +684,6 @@ func GeneratePipelineRun(component appstudiov1alpha1.Component, bundle string, o
 	}
 
 	return yamlformat, nil
-}
-
-func (r *ComponentBuildReconciler) EnsurePersistentStorage(ctx context.Context, component appstudiov1alpha1.Component) error {
-	log := r.Log.WithValues("Namespace", component.Namespace, "Application", component.Spec.Application, "Component", component.Name)
-
-	workspaceStorage := generateCommonStorage("appstudio", component.GetNamespace())
-	existingPvc := &corev1.PersistentVolumeClaim{}
-	if err := r.Client.Get(ctx, types.NamespacedName{Name: workspaceStorage.Name, Namespace: workspaceStorage.Namespace}, existingPvc); err != nil {
-		if errors.IsNotFound(err) {
-			// Patch PVC size to 1 Gi, because default 10 Mi is not enough
-			workspaceStorage.Spec.Resources.Requests["storage"] = resource.MustParse("1Gi")
-			// Create PVC (Argo CD will patch it later)
-			err = r.Client.Create(ctx, workspaceStorage)
-			if err != nil {
-				log.Error(err, fmt.Sprintf("Unable to create common storage %v", workspaceStorage))
-				return err
-			}
-			log.Info(fmt.Sprintf("PV is now present : %v", workspaceStorage.Name))
-		} else {
-			log.Error(err, fmt.Sprintf("Unable to get common storage %v", workspaceStorage))
-			return err
-		}
-	}
-	return nil
-}
-
-// generateCommonStorage returns the PVC that would be created per namespace for user's components builds.
-func generateCommonStorage(name, namespace string) *corev1.PersistentVolumeClaim {
-	fsMode := corev1.PersistentVolumeFilesystem
-
-	workspaceStorage := &corev1.PersistentVolumeClaim{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "PersistentVolumeClaim",
-			APIVersion: "v1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-		Spec: corev1.PersistentVolumeClaimSpec{
-			AccessModes: []corev1.PersistentVolumeAccessMode{
-				"ReadWriteOnce",
-			},
-			Resources: corev1.ResourceRequirements{
-				Requests: corev1.ResourceList{
-					"storage": resource.MustParse("1Gi"),
-				},
-			},
-			VolumeMode: &fsMode,
-		},
-	}
-	return workspaceStorage
 }
 
 // SubmitNewBuild creates a new PipelineRun to build a new image for the given component.
