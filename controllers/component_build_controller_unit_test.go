@@ -181,7 +181,6 @@ metadata:
   labels:
     appstudio.openshift.io/application: app
     appstudio.openshift.io/component: pull-request-test
-    build.appstudio.openshift.io/component: pull-request-test
     pipelines.appstudio.openshift.io/type: build
   name: pull-request-test-on-pull-request
   namespace: namespace
@@ -227,7 +226,6 @@ metadata:
   labels:
     appstudio.openshift.io/application: app
     appstudio.openshift.io/component: push-test
-    build.appstudio.openshift.io/component: push-test
     pipelines.appstudio.openshift.io/type: build
   name: push-test-on-push
   namespace: namespace
@@ -269,7 +267,6 @@ metadata:
   labels:
     appstudio.openshift.io/application: app
     appstudio.openshift.io/component: custom-target-branch
-    build.appstudio.openshift.io/component: custom-target-branch
     pipelines.appstudio.openshift.io/type: build
   name: custom-target-branch-on-push
   namespace: namespace

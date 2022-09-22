@@ -618,8 +618,7 @@ func GeneratePipelineRun(component appstudiov1alpha1.Component, bundle string, o
 	labels := map[string]string{
 		ComponentNameLabelName:                  component.Name,
 		"pipelines.appstudio.openshift.io/type": "build",
-		"appstudio.openshift.io/application":    component.Spec.Application,
-		"appstudio.openshift.io/component":      component.Name,
+		ApplicationNameLabelName:                component.Spec.Application,
 	}
 	image_repo := strings.Split(component.Spec.ContainerImage, ":")[0]
 	var proposedImage string

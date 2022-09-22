@@ -44,8 +44,8 @@ import (
 )
 
 const (
-	ComponentNameLabelName        = "build.appstudio.openshift.io/component"
-	ApplicationNameLabelName      = "build.appstudio.openshift.io/application"
+	ComponentNameLabelName        = "appstudio.openshift.io/component"
+	ApplicationNameLabelName      = "appstudio.openshift.io/application"
 	PipelineRunLabelName          = "tekton.dev/pipelineRun"
 	PipelineTaskLabelName         = "tekton.dev/pipelineTask"
 	UpdateComponentAnnotationName = "appstudio.redhat.com/updateComponentOnSuccess"
