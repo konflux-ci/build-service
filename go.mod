@@ -18,15 +18,33 @@ require (
 )
 
 require (
+	code.gitea.io/sdk/gitea v0.14.0 // indirect
+	github.com/bluekeyes/go-gitdiff v0.4.0 // indirect
+	github.com/brianvoe/gofakeit/v6 v6.9.0 // indirect
 	github.com/go-task/slim-sprig v0.0.0-20210107165309-348f09dbbbc0 // indirect
+	github.com/gorilla/mux v1.8.0 // indirect
+	github.com/hashicorp/go-version v1.4.0 // indirect
+	github.com/imroc/req v0.3.2 // indirect
+	github.com/jenkins-x/go-scm v1.10.10 // indirect
+	github.com/kcp-dev/kcp/pkg/apis v0.7.0 // indirect
+	github.com/migueleliasweb/go-github-mock v0.0.10 // indirect
+	github.com/mitchellh/copystructure v1.2.0 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/redhat-appstudio/service-provider-integration-operator v0.6.9 // indirect
+	github.com/redhat-appstudio/service-provider-integration-scm-file-retriever v0.6.10 // indirect
+	github.com/redhat-developer/gitops-generator v0.0.0-20220901170915-a4d650cac486 // indirect
+	github.com/shurcooL/githubv4 v0.0.0-20190718010115-4ba037080260 // indirect
+	github.com/shurcooL/graphql v0.0.0-20181231061246-d48a9a75455f // indirect
+	github.com/stretchr/objx v0.4.0 // indirect
+	github.com/stretchr/testify v1.8.0 // indirect
 	golang.org/x/tools v0.1.10-0.20220218145154-897bd77cd717 // indirect
 )
 
 // If you update dependencies below you must also update controllers/suite_test.go
 require (
 	github.com/openshift-pipelines/pipelines-as-code v0.11.0
-	github.com/redhat-appstudio/application-service v0.0.0-20220829134154-e65d6d98b23a
-	github.com/redhat-appstudio/managed-gitops/appstudio-shared v0.0.0-20220706140453-45b53e5f01fe
+	github.com/redhat-appstudio/application-service v0.0.0-20220923061143-aee6a0a99b36
+	github.com/redhat-appstudio/managed-gitops/appstudio-shared v0.0.0-20220826075641-33705d2bf7fa
 	github.com/tektoncd/pipeline v0.37.0
 	github.com/tektoncd/triggers v0.19.1
 )
