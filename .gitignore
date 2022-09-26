@@ -3,3 +3,4 @@ bin/*
 build-service
 *.out
 *.test
+.vscode/launch.json

@@ -161,6 +161,7 @@ func (r *ComponentImageReconciler) SetupWithManager(mgr ctrl.Manager) error {
 func (r *ComponentImageReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("PipelineRun", req.NamespacedName)
 
+	// Check if the operator runs on KCP cluster
 	if req.ClusterName != "" {
 		ctx = logicalcluster.WithCluster(ctx, logicalcluster.New(req.ClusterName))
 		log = log.WithValues("cluster", req.ClusterName)

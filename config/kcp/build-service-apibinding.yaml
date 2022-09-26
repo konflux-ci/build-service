@@ -14,13 +14,13 @@ spec:
   - group: ""
     resource: secrets
     state: Accepted
-  - group:
+  - group: ""
     resource: namespaces
     state: Accepted
-  - group:
+  - group: ""
     resource: events
     state: Accepted
-  - group:
+  - group: ""
     resource: serviceaccounts
     state: Accepted
   - group: tekton.dev
