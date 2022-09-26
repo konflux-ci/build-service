@@ -390,7 +390,6 @@ github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc/go.mod h1:paBW
 github.com/bradleyfalzon/ghinstallation/v2 v2.0.4 h1:tXKVfhE7FcSkhkv0UwkLvPDeZ4kz6OXd0PKPlFqf81M=
 github.com/bradleyfalzon/ghinstallation/v2 v2.0.4/go.mod h1:B40qPqJxWE0jDZgOR1JmaMy+4AY1eBP+IByOvqyAKp0=
 github.com/breml/bidichk v0.1.1/go.mod h1:zbfeitpevDUGI7V91Uzzuwrn4Vls8MoBMrwtt78jmso=
-github.com/brianvoe/gofakeit/v6 v6.9.0 h1:UCGhPCKLiqBc910TKS7LcOGf74NozftibFCbGIS6GZQ=
 github.com/brianvoe/gofakeit/v6 v6.9.0/go.mod h1:palrJUk4Fyw38zIFB/uBZqsgzW5VsNllhHKKwAebzew=
 github.com/bshuster-repo/logrus-logstash-hook v0.4.1 h1:pgAtgj+A31JBVtEHu2uHuEx0n+2ukqUJnS2vVe5pQNA=
 github.com/bshuster-repo/logrus-logstash-hook v0.4.1/go.mod h1:zsTqEiSzDgAa/8GZR7E1qaXrhYNDKBYy5/dWPTIflbk=
@@ -1337,7 +1336,6 @@ github.com/imdario/mergo v0.3.10/go.mod h1:jmQim1M+e3UYxmgPu/WyfjB3N3VflVyUjjjwH
 github.com/imdario/mergo v0.3.11/go.mod h1:jmQim1M+e3UYxmgPu/WyfjB3N3VflVyUjjjwH0dnCYA=
 github.com/imdario/mergo v0.3.12 h1:b6R2BslTbIEToALKP7LxUvijTsNI9TAe80pLWN2g/HU=
 github.com/imdario/mergo v0.3.12/go.mod h1:jmQim1M+e3UYxmgPu/WyfjB3N3VflVyUjjjwH0dnCYA=
-github.com/imroc/req v0.3.2 h1:M/JkeU6RPmX+WYvT2vaaOL0K+q8ufL5LxwvJc4xeB4o=
 github.com/imroc/req v0.3.2/go.mod h1:F+NZ+2EFSo6EFXdeIbpfE9hcC233id70kf0byW97Caw=
 github.com/inconshreveable/mousetrap v1.0.0 h1:Z8tu5sraLXCXIcARxBp/8cbvlwVa7Z1NHg9XEKhtSvM=
 github.com/inconshreveable/mousetrap v1.0.0/go.mod h1:PxqpIevigyE2G7u3NXJIT2ANytuPF1OarO4DADm73n8=
@@ -1456,11 +1454,7 @@ github.com/kcp-dev/apimachinery v0.0.0-20220803185518-868856d14e8a h1:lJyVMNywLl
 github.com/kcp-dev/apimachinery v0.0.0-20220803185518-868856d14e8a/go.mod h1:qnvUHkdxOrNzX17yX+z8r81CZEBuFdveNzWqFlwZ55w=
 github.com/kcp-dev/controller-runtime v0.12.2-0.20220808200255-4b60fd66e5de h1:IuXSIlIKJiR3ZsuO5PJ1yYdncsheX3A9rpuXQJ/TfQg=
 github.com/kcp-dev/controller-runtime v0.12.2-0.20220808200255-4b60fd66e5de/go.mod h1:OFkNQPsWPPz6qWrIY3FUjmSb0W7qKLK8aZC/xBIJwUE=
-github.com/kcp-dev/kcp/pkg/apis v0.5.0-alpha.1/go.mod h1:7MSnXcgGi9YpzeA0/ebqTkQka3KyfgYKfxD+e9z9GP4=
-github.com/kcp-dev/kcp/pkg/apis v0.7.0 h1:WFce+8OSM+86/1w52VhNsQ6wkvvTdl41gqSpsbDwSkU=
 github.com/kcp-dev/kcp/pkg/apis v0.7.0/go.mod h1:jwvDdhVuswpwqCriyr7frT3Ak23OzuFoVRjqSvfFiRk=
-github.com/kcp-dev/logicalcluster v1.0.0 h1:qCnoUNaqJ0Tgefkj3vXn17EC76AP44WZwnIuHLw6yGQ=
-github.com/kcp-dev/logicalcluster v1.0.0/go.mod h1:M0CBFkJTW29XtIP5XIkDfhYQ8LU6HrnseRb4zmgBltE=
 github.com/kcp-dev/logicalcluster/v2 v2.0.0-alpha.1 h1:6EMfOioekQNrpcHEK7k2ANBWogFMlf+3xTB3CC4k+2s=
 github.com/kcp-dev/logicalcluster/v2 v2.0.0-alpha.1/go.mod h1:lfWJL764jKFJxZWOGuFuT3PCCLPo6lV5Cl8P7u9T05g=
 github.com/kelseyhightower/envconfig v1.4.0 h1:Im6hONhd3pLkfDFsbRgu68RDNkGF1r3dvMUtDTo2cv8=
@@ -1605,7 +1599,6 @@ github.com/miekg/dns v1.1.35/go.mod h1:KNUDUusw/aVsxyTYZM1oqvCicbwhgbNgztCETuNZ7
 github.com/miekg/dns v1.1.41/go.mod h1:p6aan82bvRIyn+zDIv9xYNUpwa73JcSh9BKwknJysuI=
 github.com/miekg/pkcs11 v1.0.2/go.mod h1:XsNlhZGX73bx86s2hdc/FuaLm2CPZJemRLMA+WTFxgs=
 github.com/miekg/pkcs11 v1.0.3/go.mod h1:XsNlhZGX73bx86s2hdc/FuaLm2CPZJemRLMA+WTFxgs=
-github.com/migueleliasweb/go-github-mock v0.0.10 h1:VTaNa4eYzkRpnZ7Fqop7Jldgh7vsUsgnKWXDOnAvm3k=
 github.com/migueleliasweb/go-github-mock v0.0.10/go.mod h1:mD5w+9J3oBBMLr7uD6owEYlYBAL8tZd+BA7iGjI4EU8=
 github.com/mikesmitty/edkey v0.0.0-20170222072505-3356ea4e686a/go.mod h1:v8eSC2SMp9/7FTKUncp7fH9IwPfw+ysMObcEz5FWheQ=
 github.com/mistifyio/go-zfs v2.1.2-0.20190413222219-f784269be439+incompatible/go.mod h1:8AuVvqP/mXw1px98n46wfvcGfQ4ci2FwoAjKYxuo3Z4=
@@ -1934,18 +1927,11 @@ github.com/rboyer/safeio v0.2.1/go.mod h1:Cq/cEPK+YXFn622lsQ0K4KsPZSPtaptHHEldsy
 github.com/rcrowley/go-metrics v0.0.0-20181016184325-3113b8401b8a/go.mod h1:bCqnVzQkZxMG4s8nGwiZ5l3QUCyqpo9Y+/ZMZ9VjZe4=
 github.com/rcrowley/go-metrics v0.0.0-20190706150252-9beb055b7962/go.mod h1:bCqnVzQkZxMG4s8nGwiZ5l3QUCyqpo9Y+/ZMZ9VjZe4=
 github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475/go.mod h1:bCqnVzQkZxMG4s8nGwiZ5l3QUCyqpo9Y+/ZMZ9VjZe4=
-github.com/redhat-appstudio/application-service v0.0.0-20220829134154-e65d6d98b23a h1:tgVFsHEdB2NoQBHENOvrhOlxejiGtUGkcjpk0JFYRV0=
-github.com/redhat-appstudio/application-service v0.0.0-20220829134154-e65d6d98b23a/go.mod h1:M6DlvuVs90OIX6hZO7V7MRRMCIqMSxhiAvp/h1ufKCY=
 github.com/redhat-appstudio/application-service v0.0.0-20220923061143-aee6a0a99b36 h1:uixy12z2znq+GzsVb6+OJsMs968OW10d4z1XfZ6o14c=
 github.com/redhat-appstudio/application-service v0.0.0-20220923061143-aee6a0a99b36/go.mod h1:M7tcr090mFWu5FxbKXXZADDBEuVPJcdng4WY3tXAnfY=
-github.com/redhat-appstudio/managed-gitops/appstudio-shared v0.0.0-20220623041404-010a781bb3fb/go.mod h1:zI6l6177ZbAu4MNovCWinVq3Ii3qpD9svV7t9a58b/s=
-github.com/redhat-appstudio/managed-gitops/appstudio-shared v0.0.0-20220706140453-45b53e5f01fe h1:gJ+yvO60LpWLQODYbt7212CudQN/lw4dc4lJ/YM+pWc=
-github.com/redhat-appstudio/managed-gitops/appstudio-shared v0.0.0-20220706140453-45b53e5f01fe/go.mod h1:zI6l6177ZbAu4MNovCWinVq3Ii3qpD9svV7t9a58b/s=
 github.com/redhat-appstudio/managed-gitops/appstudio-shared v0.0.0-20220826075641-33705d2bf7fa h1:uiA9T0W+hHSBTroeAq1PIzxyw7Jn89i0oNppfpwnsJk=
 github.com/redhat-appstudio/managed-gitops/appstudio-shared v0.0.0-20220826075641-33705d2bf7fa/go.mod h1:zI6l6177ZbAu4MNovCWinVq3Ii3qpD9svV7t9a58b/s=
-github.com/redhat-appstudio/service-provider-integration-operator v0.6.9 h1:SKPMsROcJLfJMK3pc+SrjUxjfswomUGW5Z1N7V7wlgE=
 github.com/redhat-appstudio/service-provider-integration-operator v0.6.9/go.mod h1:hp1bIdqAzmMrqFH1CuuqWEs0D/PQ03sSzzQhvSt+MCQ=
-github.com/redhat-appstudio/service-provider-integration-scm-file-retriever v0.6.10 h1:EGeBp8ZRwzvvfjFN5GpWTus8MOGkMbABCP5Tj2Ori6o=
 github.com/redhat-appstudio/service-provider-integration-scm-file-retriever v0.6.10/go.mod h1:/id8d2MdgW1X5kKO3IMXiSQ/hrXv20iIopuIv/kmrzc=
 github.com/redhat-developer/alizer/go v0.0.0-20220704150640-ef50ead0b279 h1:+S8l0Q94mtvZjvYUICUltPEpH/8AEhzhcD+WqtdaDB8=
 github.com/redhat-developer/alizer/go v0.0.0-20220704150640-ef50ead0b279/go.mod h1:jzZFFoqYo3vQfo6dNNEv1biEZ1g55GPvvNPeP2gu43c=
@@ -2086,7 +2072,6 @@ github.com/stretchr/objx v0.0.0-20180129172003-8a3f7159479f/go.mod h1:HFkY916IF+
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/objx v0.1.1/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/objx v0.2.0/go.mod h1:qt09Ya8vawLte6SNmTgCsAVtYtaKzEcn8ATUoHMkEqE=
-github.com/stretchr/objx v0.4.0 h1:M2gUjqZET1qApGOWNSnZ49BAIMX4F/1plDv3+l31EJ4=
 github.com/stretchr/objx v0.4.0/go.mod h1:YvHI0jy2hoMjB+UWwv71VJQ9isScKT/TqJzVSSt89Yw=
 github.com/stretchr/testify v0.0.0-20170130113145-4d4bfba8f1d1/go.mod h1:a8OnRcib4nhh0OaRAV+Yts87kKdq0PP7pXfy6kDkUVs=
 github.com/stretchr/testify v0.0.0-20180303142811-b89eecf5ca5d/go.mod h1:a8OnRcib4nhh0OaRAV+Yts87kKdq0PP7pXfy6kDkUVs=
