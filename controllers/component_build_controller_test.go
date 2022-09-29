@@ -132,7 +132,6 @@ var _ = Describe("Component initial build controller", func() {
 
 			setComponentDevfileModel(resourceKey)
 
-			ensurePersistentStorageCreated(resourceKey)
 			ensureSecretCreated(webhookSecretKey)
 			ensurePaCRepositoryCreated(resourceKey)
 
@@ -169,7 +168,6 @@ var _ = Describe("Component initial build controller", func() {
 
 			setComponentDevfileModel(resourceKey)
 
-			ensurePersistentStorageCreated(resourceKey)
 			ensureSecretCreated(namespacePaCSecretKey)
 			ensureSecretCreated(webhookSecretKey)
 			ensurePaCRepositoryCreated(resourceKey)
@@ -233,7 +231,6 @@ var _ = Describe("Component initial build controller", func() {
 
 			setComponentDevfileModel(resourceKey)
 
-			ensurePersistentStorageCreated(resourceKey)
 			ensureSecretCreated(namespacePaCSecretKey)
 			ensureSecretCreated(webhookSecretKey)
 			ensurePaCRepositoryCreated(resourceKey)
@@ -247,7 +244,6 @@ var _ = Describe("Component initial build controller", func() {
 
 			setComponentDevfileModel(resourceKey)
 
-			ensurePersistentStorageCreated(resourceKey)
 			ensureSecretCreated(namespacePaCSecretKey)
 			ensureSecretCreated(webhookSecretKey)
 			ensurePaCRepositoryCreated(resourceKey)
@@ -263,7 +259,6 @@ var _ = Describe("Component initial build controller", func() {
 			createComponentForPaCBuild(resourceKey)
 			setComponentDevfileModel(resourceKey)
 
-			ensurePersistentStorageCreated(resourceKey)
 			ensureSecretCreated(namespacePaCSecretKey)
 			ensureSecretCreated(webhookSecretKey)
 			ensurePaCRepositoryCreated(resourceKey)
@@ -282,7 +277,6 @@ var _ = Describe("Component initial build controller", func() {
 
 			setComponentDevfileModel(resourceKey)
 
-			ensurePersistentStorageCreated(resourceKey)
 			ensureSecretCreated(webhookSecretKey)
 			ensurePaCRepositoryCreated(resourceKey)
 
@@ -337,7 +331,6 @@ var _ = Describe("Component initial build controller", func() {
 			setComponentDevfileModel(component1Key)
 			setComponentDevfileModel(component2Key)
 
-			ensurePersistentStorageCreated(resourceKey)
 			ensureSecretCreated(namespacePaCSecretKey)
 			ensureSecretCreated(webhookSecretKey)
 
@@ -400,7 +393,6 @@ var _ = Describe("Component initial build controller", func() {
 			setComponentDevfileModel(component1Key)
 			setComponentDevfileModel(component2Key)
 
-			ensurePersistentStorageCreated(resourceKey)
 			ensureSecretCreated(namespacePaCSecretKey)
 			ensureSecretCreated(webhookSecretKey)
 
@@ -421,7 +413,6 @@ var _ = Describe("Component initial build controller", func() {
 
 			setComponentDevfileModel(resourceKey)
 
-			ensurePersistentStorageCreated(resourceKey)
 			ensureSecretCreated(webhookSecretKey)
 			ensurePaCRepositoryCreated(resourceKey)
 
@@ -437,8 +428,6 @@ var _ = Describe("Component initial build controller", func() {
 			deleteSecret(pacSecretKey)
 
 			setComponentDevfileModel(resourceKey)
-
-			ensurePersistentStorageCreated(resourceKey)
 
 			ensureComponentInitialBuildAnnotationState(resourceKey, false)
 		})
@@ -710,8 +699,8 @@ var _ = Describe("Component initial build controller", func() {
 			for _, w := range pipelineRun.Spec.Workspaces {
 				Expect(w.Name).NotTo(Equal("registry-auth"))
 				if w.Name == "workspace" {
-					Expect(w.PersistentVolumeClaim.ClaimName).To(Equal("appstudio"))
-					Expect(w.SubPath).To(ContainSubstring("/initialbuild-"))
+					Expect(w.VolumeClaimTemplate).NotTo(
+						Equal(nil), "PipelineRun should have its own volumeClaimTemplate.")
 				}
 			}
 
@@ -768,8 +757,8 @@ var _ = Describe("Component initial build controller", func() {
 					Expect(w.Secret.SecretName).To(Equal(gitopsprepare.RegistrySecret))
 				}
 				if w.Name == "workspace" {
-					Expect(w.PersistentVolumeClaim.ClaimName).To(Equal("appstudio"))
-					Expect(w.SubPath).To(ContainSubstring("/initialbuild-"))
+					Expect(w.VolumeClaimTemplate).NotTo(
+						Equal(nil), "PipelineRun should have its own volumeClaimTemplate.")
 				}
 			}
 		})

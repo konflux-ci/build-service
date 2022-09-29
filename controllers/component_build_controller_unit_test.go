@@ -22,7 +22,6 @@ import (
 
 	"github.com/redhat-appstudio/application-service/gitops"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-service/api/v1alpha1"
@@ -181,7 +180,6 @@ metadata:
   labels:
     appstudio.openshift.io/application: app
     appstudio.openshift.io/component: pull-request-test
-    build.appstudio.openshift.io/component: pull-request-test
     pipelines.appstudio.openshift.io/type: build
   name: pull-request-test-on-pull-request
   namespace: namespace
@@ -202,9 +200,16 @@ spec:
     name: docker-build
   workspaces:
   - name: workspace
-    persistentVolumeClaim:
-      claimName: appstudio
-    subPath: pull-request-test-on-pull-request-{{revision}}
+    volumeClaimTemplate:
+      metadata:
+        creationTimestamp: null
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi
+      status: {}
   - name: registry-auth
     secret:
       secretName: redhat-appstudio-registry-pull-secret
@@ -227,7 +232,6 @@ metadata:
   labels:
     appstudio.openshift.io/application: app
     appstudio.openshift.io/component: push-test
-    build.appstudio.openshift.io/component: push-test
     pipelines.appstudio.openshift.io/type: build
   name: push-test-on-push
   namespace: namespace
@@ -244,9 +248,16 @@ spec:
     name: docker-build
   workspaces:
   - name: workspace
-    persistentVolumeClaim:
-      claimName: appstudio
-    subPath: push-test-on-push-{{revision}}
+    volumeClaimTemplate:
+      metadata:
+        creationTimestamp: null
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi
+      status: {}
   - name: registry-auth
     secret:
       secretName: redhat-appstudio-registry-pull-secret
@@ -269,7 +280,6 @@ metadata:
   labels:
     appstudio.openshift.io/application: app
     appstudio.openshift.io/component: custom-target-branch
-    build.appstudio.openshift.io/component: custom-target-branch
     pipelines.appstudio.openshift.io/type: build
   name: custom-target-branch-on-push
   namespace: namespace
@@ -286,9 +296,16 @@ spec:
     name: docker-build
   workspaces:
   - name: workspace
-    persistentVolumeClaim:
-      claimName: appstudio
-    subPath: custom-target-branch-on-push-{{revision}}
+    volumeClaimTemplate:
+      metadata:
+        creationTimestamp: null
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi
+      status: {}
   - name: registry-auth
     secret:
       secretName: redhat-appstudio-registry-pull-secret
@@ -342,37 +359,6 @@ components:
 			}
 		})
 	}
-}
-
-func TestGenerateCommonStorage(t *testing.T) {
-	t.Run("Must generate PVC for builds", func(t *testing.T) {
-		name := "appstudio"
-		namespace := "user-namespace"
-
-		pvc := generateCommonStorage(name, namespace)
-
-		if pvc.GetName() != name {
-			t.Errorf("pvc should have given name")
-		}
-		if pvc.GetNamespace() != namespace {
-			t.Errorf("pvc should be created in given namespace")
-		}
-
-		if len(pvc.Spec.AccessModes) != 1 {
-			t.Errorf("pvc should have access mode specified")
-		}
-		if pvc.Spec.AccessModes[0] != "ReadWriteOnce" {
-			t.Errorf("pvc access mode ReadWriteOnce expected")
-		}
-
-		if !pvc.Spec.Resources.Requests.Storage().Equal(resource.MustParse("1Gi")) {
-			t.Errorf("pvc storage size 1Gi expected")
-		}
-
-		if *pvc.Spec.VolumeMode != corev1.PersistentVolumeFilesystem {
-			t.Errorf("pvc volume mode PersistentVolumeFilesystem expected")
-		}
-	})
 }
 
 func TestValidatePaCConfiguration(t *testing.T) {

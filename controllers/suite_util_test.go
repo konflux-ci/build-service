@@ -501,15 +501,6 @@ func createNamespace(name string) {
 	}
 }
 
-func ensurePersistentStorageCreated(componentKey types.NamespacedName) {
-	pvc := &corev1.PersistentVolumeClaim{}
-	pvcKey := types.NamespacedName{Name: "appstudio", Namespace: componentKey.Namespace}
-	Eventually(func() bool {
-		err := k8sClient.Get(ctx, pvcKey, pvc)
-		return err == nil && pvc.ResourceVersion != ""
-	}, timeout, interval).Should(BeTrue())
-}
-
 func ensurePaCRepositoryCreated(resourceKey types.NamespacedName) {
 	pacRepository := &pacv1alpha1.Repository{}
 	Eventually(func() bool {

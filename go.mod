@@ -3,30 +3,35 @@ module github.com/redhat-appstudio/build-service
 go 1.17
 
 require (
+	code.gitea.io/sdk/gitea v0.14.0 // indirect
+	github.com/bluekeyes/go-gitdiff v0.4.0 // indirect
 	github.com/go-logr/logr v1.2.3
+	github.com/hashicorp/go-version v1.4.0 // indirect
+	github.com/jenkins-x/go-scm v1.10.10 // indirect
+	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.20.1
 	github.com/openshift/api v3.9.0+incompatible
+	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/redhat-developer/gitops-generator v0.0.0-20220901170915-a4d650cac486 // indirect
+	github.com/shurcooL/githubv4 v0.0.0-20190718010115-4ba037080260 // indirect
+	github.com/shurcooL/graphql v0.0.0-20181231061246-d48a9a75455f // indirect
+	github.com/stretchr/testify v1.8.0 // indirect
 	github.com/xanzy/go-gitlab v0.68.2
-	k8s.io/api v0.24.3
 	k8s.io/apiextensions-apiserver v0.24.3
 	k8s.io/apimachinery v0.24.3
+	k8s.io/api v0.24.3
 	k8s.io/client-go v0.24.3
 	knative.dev/pkg v0.0.0-20220524202603-19adf798efb8
 	sigs.k8s.io/controller-runtime v0.12.2
 	sigs.k8s.io/yaml v1.3.0
 )
 
-require (
-	github.com/go-task/slim-sprig v0.0.0-20210107165309-348f09dbbbc0 // indirect
-	golang.org/x/tools v0.1.10-0.20220218145154-897bd77cd717 // indirect
-)
-
 // If you update dependencies below you must also update controllers/suite_test.go
 require (
 	github.com/openshift-pipelines/pipelines-as-code v0.11.0
-	github.com/redhat-appstudio/application-service v0.0.0-20220829134154-e65d6d98b23a
-	github.com/redhat-appstudio/managed-gitops/appstudio-shared v0.0.0-20220706140453-45b53e5f01fe
+	github.com/redhat-appstudio/application-service v0.0.0-20220923061143-aee6a0a99b36
+	github.com/redhat-appstudio/managed-gitops/appstudio-shared v0.0.0-20220826075641-33705d2bf7fa
 	github.com/tektoncd/pipeline v0.37.0
 	github.com/tektoncd/triggers v0.19.1
 )
