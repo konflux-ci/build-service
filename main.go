@@ -21,19 +21,21 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
+	"k8s.io/client-go/discovery"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
+	"k8s.io/client-go/rest"
 
 	routev1 "github.com/openshift/api/route/v1"
 	corev1 "k8s.io/api/core/v1"
-	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/selection"
+	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -41,6 +43,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	"sigs.k8s.io/controller-runtime/pkg/kcp"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
@@ -49,6 +52,8 @@ import (
 	appstudiosharedv1alpha1 "github.com/redhat-appstudio/managed-gitops/appstudio-shared/apis/appstudio.redhat.com/v1alpha1"
 	taskrunapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	triggersapi "github.com/tektoncd/triggers/pkg/apis/triggers/v1alpha1"
+
+	apisv1alpha1 "github.com/kcp-dev/kcp/pkg/apis/apis/v1alpha1"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -64,17 +69,21 @@ func init() {
 	//+kubebuilder:scaffold:scheme
 }
 
-//+kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get
+// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get
+// +kubebuilder:rbac:groups="apis.kcp.dev",resources=apiexports,verbs=get;list;watch
+// +kubebuilder:rbac:groups="apis.kcp.dev",resources=apiexports/content,verbs=*
 
 func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
+	var apiExportName string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+	flag.StringVar(&apiExportName, "api-export-name", "build-service-apiexport", "The name of the APIExport.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -82,8 +91,6 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
-
-	makeSureTektonCRDsAreInstalled()
 
 	if err := routev1.AddToScheme(scheme); err != nil {
 		setupLog.Error(err, "unable to add openshift route api to the scheme")
@@ -110,29 +117,60 @@ func main() {
 		os.Exit(1)
 	}
 
-	cacheFunction, err := getCacheFunc()
-	if err != nil {
-		setupLog.Error(err, "failed to create cache function")
-		os.Exit(1)
-	}
+	// TODO manager fails to start on KCP if custom cache function is set.
+	// To make it work, it's needed to perform additional manipulations.
+	// See: https://github.com/redhat-appstudio/jvm-build-service/pull/236/files#diff-243ebed2765f75e6a54f57167212fefb08c3b2a85967ad2acbc0eb78919019c1R81-R90
+	var err error
+	// cacheFunction, err := getCacheFunc()
+	// if err != nil {
+	// 	setupLog.Error(err, "failed to create cache function")
+	// 	os.Exit(1)
+	// }
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	var mgr ctrl.Manager
+	options := ctrl.Options{
 		Scheme:                 scheme,
 		MetricsBindAddress:     metricsAddr,
 		Port:                   9443,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "5483be8f.redhat.com",
-		NewCache:               cacheFunction,
-	})
-	if err != nil {
-		setupLog.Error(err, "unable to start manager")
-		os.Exit(1)
+		// NewCache:               cacheFunction,
+	}
+	restConfig := ctrl.GetConfigOrDie()
+
+	ctx := ctrl.SetupSignalHandler()
+
+	if kcpAPIsGroupPresent(restConfig) {
+		setupLog.Info("Looking up virtual workspace URL")
+		cfg, err := restConfigForAPIExport(ctx, restConfig, apiExportName)
+		if err != nil {
+			setupLog.Error(err, "error looking up virtual workspace URL")
+		}
+
+		setupLog.Info("Using virtual workspace URL", "url", cfg.Host)
+
+		options.LeaderElectionConfig = restConfig
+		mgr, err = kcp.NewClusterAwareManager(cfg, options)
+		if err != nil {
+			setupLog.Error(err, "unable to start cluster aware manager")
+			os.Exit(1)
+		}
+	} else {
+		setupLog.Info("The apis.kcp.dev group is not present - creating standard manager")
+
+		ensureRequiredAPIGroupsAndResourcesExist(restConfig)
+
+		mgr, err = ctrl.NewManager(restConfig, options)
+		if err != nil {
+			setupLog.Error(err, "unable to start manager")
+			os.Exit(1)
+		}
 	}
 
 	nonCachingClient, err := client.New(mgr.GetConfig(), client.Options{Scheme: scheme})
 	if err != nil {
-		setupLog.Error(err, "unable to initialize non cached client")
+		setupLog.Error(err, "unable to initialize non caching client")
 		os.Exit(1)
 	}
 
@@ -147,15 +185,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controllers.ComponentImageReconciler{
-		Client:        mgr.GetClient(),
-		Scheme:        mgr.GetScheme(),
-		Log:           ctrl.Log.WithName("controllers").WithName("ComponentImage"),
-		EventRecorder: mgr.GetEventRecorderFor("ComponentImage"),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ComponentImage")
-		os.Exit(1)
-	}
+	// TODO
+	// Temporary disabling this reconciler as TaskRun is not synced on KCP,
+	// so not visible on KCP, however, it's required for the controller.
+	// if err = (&controllers.ComponentImageReconciler{
+	// 	Client:        mgr.GetClient(),
+	// 	Scheme:        mgr.GetScheme(),
+	// 	Log:           ctrl.Log.WithName("controllers").WithName("ComponentImage"),
+	// 	EventRecorder: mgr.GetEventRecorderFor("ComponentImage"),
+	// }).SetupWithManager(mgr); err != nil {
+	// 	setupLog.Error(err, "unable to create controller", "controller", "ComponentImage")
+	// 	os.Exit(1)
+	// }
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
@@ -168,27 +209,8 @@ func main() {
 	}
 
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
-		os.Exit(1)
-	}
-}
-
-func makeSureTektonCRDsAreInstalled() {
-	// we have seen in e2e testing that this controller can get started prior to the Tekton CRD definitions getting created,
-	// and controller-runtime does not retry on missing CRDs.
-	// so we are going to wait on a Tekton CRD existing before moving forward.
-	apiextensionsClient := apiextensionsclient.NewForConfigOrDie(ctrl.GetConfigOrDie())
-	if err := wait.PollImmediate(time.Second*5, time.Minute*5, func() (done bool, err error) {
-		_, err = apiextensionsClient.ApiextensionsV1().CustomResourceDefinitions().Get(context.TODO(), "taskruns.tekton.dev", metav1.GetOptions{})
-		if err != nil {
-			setupLog.Info(fmt.Sprintf("get of taskrun CRD failed with: %s", err.Error()))
-			return false, nil
-		}
-		setupLog.Info("get of taskrun CRD returned successfully")
-		return true, nil
-	}); err != nil {
-		setupLog.Error(err, "timed out waiting for taskrun CRD to be created")
 		os.Exit(1)
 	}
 }
@@ -218,4 +240,138 @@ func getCacheFunc() (cache.NewCacheFunc, error) {
 	return cache.BuilderWithOptions(cache.Options{
 		SelectorsByObject: selectors,
 	}), nil
+}
+
+// restConfigForAPIExport returns a *rest.Config properly configured to communicate with the endpoint for the
+// APIExport's virtual workspace.
+func restConfigForAPIExport(ctx context.Context, cfg *rest.Config, apiExportName string) (*rest.Config, error) {
+	scheme := runtime.NewScheme()
+	if err := apisv1alpha1.AddToScheme(scheme); err != nil {
+		return nil, fmt.Errorf("error adding apis.kcp.dev/v1alpha1 to scheme: %w", err)
+	}
+
+	apiExportClient, err := client.New(cfg, client.Options{Scheme: scheme})
+	if err != nil {
+		return nil, fmt.Errorf("error creating APIExport client: %w", err)
+	}
+
+	var apiExport apisv1alpha1.APIExport
+
+	if apiExportName != "" {
+		if err := apiExportClient.Get(ctx, types.NamespacedName{Name: apiExportName}, &apiExport); err != nil {
+			return nil, fmt.Errorf("error getting APIExport %q: %w", apiExportName, err)
+		}
+	} else {
+		setupLog.Info("api-export-name is empty - listing")
+		exports := &apisv1alpha1.APIExportList{}
+		if err := apiExportClient.List(ctx, exports); err != nil {
+			return nil, fmt.Errorf("error listing APIExports: %w", err)
+		}
+		if len(exports.Items) == 0 {
+			return nil, fmt.Errorf("no APIExport found")
+		}
+		if len(exports.Items) > 1 {
+			return nil, fmt.Errorf("more than one APIExport found")
+		}
+		apiExport = exports.Items[0]
+	}
+
+	if len(apiExport.Status.VirtualWorkspaces) < 1 {
+		return nil, fmt.Errorf("APIExport %q status.virtualWorkspaces is empty", apiExportName)
+	}
+
+	cfg = rest.CopyConfig(cfg)
+	cfg.Host = apiExport.Status.VirtualWorkspaces[0].URL
+
+	return cfg, nil
+}
+
+func kcpAPIsGroupPresent(restConfig *rest.Config) bool {
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(restConfig)
+	if err != nil {
+		setupLog.Error(err, "failed to create discovery client")
+		os.Exit(1)
+	}
+	apiGroupList, err := discoveryClient.ServerGroups()
+	if err != nil {
+		setupLog.Error(err, "failed to get server groups")
+		os.Exit(1)
+	}
+
+	for _, group := range apiGroupList.Groups {
+		if group.Name == apisv1alpha1.SchemeGroupVersion.Group {
+			for _, version := range group.Versions {
+				if version.Version == apisv1alpha1.SchemeGroupVersion.Version {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func ensureRequiredAPIGroupsAndResourcesExist(restConfig *rest.Config) {
+	// Do not start the operator until all of the below is available
+	requiredGroupsAndResources := map[string][]string{
+		"tekton.dev": {
+			"pipelineruns",
+			"taskruns",
+		},
+		"appstudio.redhat.com": {
+			"components",
+			"applications",
+		},
+	}
+
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(restConfig)
+	if err != nil {
+		setupLog.Error(err, "failed to create discovery client")
+		os.Exit(1)
+	}
+
+	if err := wait.PollImmediate(time.Second*5, time.Minute*5, func() (done bool, err error) {
+		apiGroups, apiResources, err := discoveryClient.ServerGroupsAndResources()
+		if err != nil {
+			setupLog.Error(err, "failed to get ServerGroups using discovery client")
+			return false, nil
+		}
+
+	NextGroup:
+		for requiredGroupName, requiredGroupResources := range requiredGroupsAndResources {
+			// Search for the given group in all groups list
+			for _, group := range apiGroups {
+				if group.Name == requiredGroupName {
+					// Required group exists
+					// Check for required resources of the group
+				NextResource:
+					for _, requiredGroupResource := range requiredGroupResources {
+						for _, apiResource := range apiResources {
+							groupName := strings.Split(apiResource.GroupVersion, "/")[0]
+							if groupName == requiredGroupName {
+								for _, apiResourceInGroup := range apiResource.APIResources {
+									if apiResourceInGroup.Name == requiredGroupResource {
+										continue NextResource
+									}
+								}
+								// The resource is not found in this version of the group
+							}
+						}
+						// Required API resource is not found in the list of available API resources
+						setupLog.Info(fmt.Sprintf("Waiting for %s API Resourse under %s API Group", requiredGroupResource, requiredGroupName))
+						return false, nil
+					}
+					// All API resources from the group is available
+					continue NextGroup
+				}
+			}
+			// Required group is not found in the list of available groups
+			setupLog.Info(fmt.Sprintf("Waiting for %s API Group", requiredGroupName))
+			return false, nil
+		}
+
+		return true, nil
+	}); err != nil {
+		setupLog.Error(err, "timed out waiting for required API Groups and Resources")
+		os.Exit(1)
+	}
 }

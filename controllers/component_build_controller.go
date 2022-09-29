@@ -43,6 +43,8 @@ import (
 
 	"github.com/go-logr/logr"
 
+	"github.com/kcp-dev/logicalcluster/v2"
+
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-service/api/v1alpha1"
 	"github.com/redhat-appstudio/application-service/gitops"
@@ -112,6 +114,12 @@ func (r *ComponentBuildReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.11.0/pkg/reconcile
 func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("ComponentOnboarding", req.NamespacedName)
+
+	// Check if the operator runs on KCP cluster
+	if req.ClusterName != "" {
+		ctx = logicalcluster.WithCluster(ctx, logicalcluster.New(req.ClusterName))
+		log = log.WithValues("cluster", req.ClusterName)
+	}
 
 	// Fetch the Component instance
 	var component appstudiov1alpha1.Component

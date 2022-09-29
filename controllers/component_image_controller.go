@@ -38,6 +38,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/go-logr/logr"
+	"github.com/kcp-dev/logicalcluster/v2"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-service/api/v1alpha1"
 	appstudiosharedv1alpha1 "github.com/redhat-appstudio/managed-gitops/appstudio-shared/apis/appstudio.redhat.com/v1alpha1"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
@@ -159,6 +160,12 @@ func (r *ComponentImageReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.11.0/pkg/reconcile
 func (r *ComponentImageReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("PipelineRun", req.NamespacedName)
+
+	// Check if the operator runs on KCP cluster
+	if req.ClusterName != "" {
+		ctx = logicalcluster.WithCluster(ctx, logicalcluster.New(req.ClusterName))
+		log = log.WithValues("cluster", req.ClusterName)
+	}
 
 	log.Info("PipelineRun succeeded, checking for a new image...")
 

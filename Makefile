@@ -58,6 +58,9 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
+# Location to install dependencies to
+LOCALBIN ?= $(shell pwd)/bin
+
 # Setting SHELL to bash allows bash commands to be executed by recipes.
 # This is a requirement for 'setup-envtest.sh' in the test target.
 # Options are set to exit when a recipe line exits non-zero or a piped command fails.
@@ -132,7 +135,7 @@ endif
 
 .PHONY: install
 install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build config/crd | kubectl apply -f -
+	$(KUSTOMIZE) build config/crd | kubectl apply -f - || true
 
 .PHONY: uninstall
 uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
@@ -142,6 +145,11 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build config/default | kubectl apply -f -
+
+.PHONY: kcp-deploy
+kcp-deploy: manifests kustomize ## Deploy controller to the KCP cluster specified in current kubeconfig.
+	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+	$(KUSTOMIZE) build config/kcp | kubectl apply -f -
 
 .PHONY: undeploy
 undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
@@ -155,14 +163,14 @@ controller-gen: ## Download controller-gen locally if necessary.
 KUSTOMIZE = $(shell pwd)/bin/kustomize
 .PHONY: kustomize
 kustomize: ## Download kustomize locally if necessary.
-	$(call go-get-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/v3@v3.8.7)
+	$(call go-get-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/v4@v4.5.2)
 
 ENVTEST = $(shell pwd)/bin/setup-envtest
 .PHONY: envtest
 envtest: ## Download envtest-setup locally if necessary.
 	$(call go-get-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest@latest)
 
-# go-get-tool will 'go get' any package $2 and install it to $1.
+# go-get-tool will 'go install' any package $2 and puts binary into $1.
 PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
 define go-get-tool
 @[ -f $(1) ] || { \
@@ -171,7 +179,7 @@ TMP_DIR=$$(mktemp -d) ;\
 cd $$TMP_DIR ;\
 go mod init tmp ;\
 echo "Downloading $(2)" ;\
-GOBIN=$(PROJECT_DIR)/bin go get $(2) ;\
+GOBIN=$(PROJECT_DIR)/bin go install $(2) ;\
 rm -rf $$TMP_DIR ;\
 }
 endef

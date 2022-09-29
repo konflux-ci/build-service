@@ -1455,6 +1455,8 @@ github.com/kcp-dev/apimachinery v0.0.0-20220803185518-868856d14e8a/go.mod h1:qnv
 github.com/kcp-dev/controller-runtime v0.12.2-0.20220808200255-4b60fd66e5de h1:IuXSIlIKJiR3ZsuO5PJ1yYdncsheX3A9rpuXQJ/TfQg=
 github.com/kcp-dev/controller-runtime v0.12.2-0.20220808200255-4b60fd66e5de/go.mod h1:OFkNQPsWPPz6qWrIY3FUjmSb0W7qKLK8aZC/xBIJwUE=
 github.com/kcp-dev/kcp/pkg/apis v0.7.0/go.mod h1:jwvDdhVuswpwqCriyr7frT3Ak23OzuFoVRjqSvfFiRk=
+github.com/kcp-dev/kcp/pkg/apis v0.8.2 h1:yGeI+wZvv32w2leVd354ELydOr2TZikywGf74M3QzL8=
+github.com/kcp-dev/kcp/pkg/apis v0.8.2/go.mod h1:jwvDdhVuswpwqCriyr7frT3Ak23OzuFoVRjqSvfFiRk=
 github.com/kcp-dev/logicalcluster/v2 v2.0.0-alpha.1 h1:6EMfOioekQNrpcHEK7k2ANBWogFMlf+3xTB3CC4k+2s=
 github.com/kcp-dev/logicalcluster/v2 v2.0.0-alpha.1/go.mod h1:lfWJL764jKFJxZWOGuFuT3PCCLPo6lV5Cl8P7u9T05g=
 github.com/kelseyhightower/envconfig v1.4.0 h1:Im6hONhd3pLkfDFsbRgu68RDNkGF1r3dvMUtDTo2cv8=

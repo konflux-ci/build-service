@@ -24,7 +24,6 @@ import (
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	routev1 "github.com/openshift/api/route/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -441,7 +440,7 @@ func createSecret(resourceKey types.NamespacedName, data map[string]string) {
 		StringData: data,
 	}
 	if err := k8sClient.Create(ctx, secret); err != nil {
-		if !errors.IsAlreadyExists(err) {
+		if !k8sErrors.IsAlreadyExists(err) {
 			Fail(err.Error())
 		}
 		deleteSecret(resourceKey)
@@ -465,7 +464,7 @@ func deleteSecret(resourceKey types.NamespacedName) {
 		return
 	}
 	Eventually(func() bool {
-		return errors.IsNotFound(k8sClient.Get(ctx, resourceKey, secret))
+		return k8sErrors.IsNotFound(k8sClient.Get(ctx, resourceKey, secret))
 	}, timeout, interval).Should(BeTrue())
 }
 
@@ -481,7 +480,7 @@ func ensureSecretNotCreated(resourceKey types.NamespacedName) {
 	secret := &corev1.Secret{}
 	Consistently(func() bool {
 		err := k8sClient.Get(ctx, resourceKey, secret)
-		return errors.IsNotFound(err)
+		return k8sErrors.IsNotFound(err)
 	}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 }
 
