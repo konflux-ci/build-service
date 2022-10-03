@@ -17,6 +17,7 @@ spec:
     - name: infra-deployment-update-script
       value: |
         sed -i -e 's|\(https://github.com/redhat-appstudio/build-service/.*?ref=\)\(.*\)|\1{{ revision }}|' -e 's/\(newTag: \).*/\1{{ revision }}/' components/build-service/base/kustomization.yaml
+        ./hack/generate-apiexport-overlays.sh components/build-service/
   pipelineRef:
     name: docker-build
     bundle: quay.io/redhat-appstudio/hacbs-core-service-templates-bundle:latest
