@@ -17,13 +17,13 @@ spec:
       resource: "serviceaccounts"
     - group: "tekton.dev"
       resource: "pipelineruns"
-      identityHash: pipelinesIdentityHash
-    - group: "tekton.dev"
-      resource: "taskruns"
-      identityHash: pipelinesIdentityHash
+      # Replace by pipeline-service identityHash
+      identityHash: pipeline-service
     - group: "appstudio.redhat.com"
       resource: "components"
-      identityHash: applicationServiceIdentityHash
+      # Replace by application-api identityHash
+      identityHash: application-api
     - group: "appstudio.redhat.com"
       resource: "applications"
-      identityHash: applicationServiceIdentityHash
+      # Replace by application-api identityHash
+      identityHash: application-api
