@@ -70,11 +70,10 @@ const (
 
 // ComponentBuildReconciler watches AppStudio Component object in order to submit builds
 type ComponentBuildReconciler struct {
-	Client           client.Client
-	NonCachingClient client.Client
-	Scheme           *runtime.Scheme
-	Log              logr.Logger
-	EventRecorder    record.EventRecorder
+	Client        client.Client
+	Scheme        *runtime.Scheme
+	Log           logr.Logger
+	EventRecorder record.EventRecorder
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -165,7 +164,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 	// The nitial build annotation is absent, onboarding of the component needed
 
-	gitopsConfig := gitopsprepare.PrepareGitopsConfig(ctx, r.NonCachingClient, component)
+	gitopsConfig := gitopsprepare.PrepareGitopsConfig(ctx, r.Client, component)
 	if val, ok := component.Annotations[gitops.PaCAnnotation]; (ok && val == "1") || gitopsConfig.IsHACBS {
 		// Use pipelines as code build
 		log.Info("Pipelines as Code enabled")
@@ -188,7 +187,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		// Also it can contain github-private-key and github-application-id
 		// in case GitHub Application is used instead of webhook.
 		pacSecret := corev1.Secret{}
-		if err := r.NonCachingClient.Get(ctx, types.NamespacedName{Namespace: pipelinesAsCodeNamespace, Name: gitopsprepare.PipelinesAsCodeSecretName}, &pacSecret); err != nil {
+		if err := r.Client.Get(ctx, types.NamespacedName{Namespace: pipelinesAsCodeNamespace, Name: gitopsprepare.PipelinesAsCodeSecretName}, &pacSecret); err != nil {
 			log.Error(err, "failed to get Pipelines as Code secret")
 			r.EventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
 			return ctrl.Result{}, err
@@ -701,7 +700,7 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 	// Make the Secret ready for consumption by Tekton.
 	if gitSecretName != "" {
 		gitSecret := corev1.Secret{}
-		err := r.NonCachingClient.Get(ctx, types.NamespacedName{Name: gitSecretName, Namespace: component.Namespace}, &gitSecret)
+		err := r.Client.Get(ctx, types.NamespacedName{Name: gitSecretName, Namespace: component.Namespace}, &gitSecret)
 		if err != nil {
 			log.Error(err, fmt.Sprintf("Secret %s is missing", gitSecretName))
 			return err
@@ -739,7 +738,7 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 		}
 	}
 
-	gitopsConfig := gitopsprepare.PrepareGitopsConfig(ctx, r.NonCachingClient, component)
+	gitopsConfig := gitopsprepare.PrepareGitopsConfig(ctx, r.Client, component)
 	initialBuild, err := gitops.GenerateInitialBuildPipelineRun(component, gitopsConfig)
 	if err != nil {
 		log.Error(err, "Unable to create PipelineRun")

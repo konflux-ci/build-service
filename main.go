@@ -135,6 +135,7 @@ func main() {
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "5483be8f.redhat.com",
+		ClientDisableCacheFor:  getCacheExcludedObjectsTypes(),
 		// NewCache:               cacheFunction,
 	}
 	restConfig := ctrl.GetConfigOrDie()
@@ -168,18 +169,11 @@ func main() {
 		}
 	}
 
-	nonCachingClient, err := client.New(mgr.GetConfig(), client.Options{Scheme: scheme})
-	if err != nil {
-		setupLog.Error(err, "unable to initialize non caching client")
-		os.Exit(1)
-	}
-
 	if err = (&controllers.ComponentBuildReconciler{
-		Client:           mgr.GetClient(),
-		NonCachingClient: nonCachingClient,
-		Scheme:           mgr.GetScheme(),
-		Log:              ctrl.Log.WithName("controllers").WithName("ComponentOnboarding"),
-		EventRecorder:    mgr.GetEventRecorderFor("ComponentOnboarding"),
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		Log:           ctrl.Log.WithName("controllers").WithName("ComponentOnboarding"),
+		EventRecorder: mgr.GetEventRecorderFor("ComponentOnboarding"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ComponentOnboarding")
 		os.Exit(1)
@@ -212,6 +206,13 @@ func main() {
 	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
+	}
+}
+
+func getCacheExcludedObjectsTypes() []client.Object {
+	return []client.Object{
+		&corev1.Secret{},
+		&corev1.ConfigMap{},
 	}
 }
 
