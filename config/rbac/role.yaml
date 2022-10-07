@@ -26,6 +26,7 @@ rules:
   resources:
   - serviceaccounts
   verbs:
+  - create
   - get
   - list
   - patch
