@@ -32,15 +32,12 @@ import (
 
 	routev1 "github.com/openshift/api/route/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/kcp"
@@ -117,15 +114,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// TODO manager fails to start on KCP if custom cache function is set.
-	// To make it work, it's needed to perform additional manipulations.
-	// See: https://github.com/redhat-appstudio/jvm-build-service/pull/236/files#diff-243ebed2765f75e6a54f57167212fefb08c3b2a85967ad2acbc0eb78919019c1R81-R90
 	var err error
-	// cacheFunction, err := getCacheFunc()
-	// if err != nil {
-	// 	setupLog.Error(err, "failed to create cache function")
-	// 	os.Exit(1)
-	// }
 
 	var mgr ctrl.Manager
 	options := ctrl.Options{
@@ -136,7 +125,6 @@ func main() {
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "5483be8f.redhat.com",
 		ClientDisableCacheFor:  getCacheExcludedObjectsTypes(),
-		// NewCache:               cacheFunction,
 	}
 	restConfig := ctrl.GetConfigOrDie()
 
@@ -214,33 +202,6 @@ func getCacheExcludedObjectsTypes() []client.Object {
 		&corev1.Secret{},
 		&corev1.ConfigMap{},
 	}
-}
-
-func getCacheFunc() (cache.NewCacheFunc, error) {
-	componentPipelineRunRequirement, err := labels.NewRequirement(controllers.ComponentNameLabelName, selection.Exists, []string{})
-	if err != nil {
-		return nil, err
-	}
-	appStudioComponentPipelineRunSelector := labels.NewSelector().Add(*componentPipelineRunRequirement)
-
-	partOfAppStudioRequirement, err := labels.NewRequirement(controllers.PartOfLabelName, selection.Equals, []string{controllers.PartOfAppStudioLabelValue})
-	if err != nil {
-		return nil, err
-	}
-	partOfAppStudioSelector := labels.NewSelector().Add(*partOfAppStudioRequirement)
-
-	selectors := cache.SelectorsByObject{
-		&taskrunapi.PipelineRun{}: {
-			Label: appStudioComponentPipelineRunSelector,
-		},
-		&corev1.Secret{}: {
-			Label: partOfAppStudioSelector,
-		},
-	}
-
-	return cache.BuilderWithOptions(cache.Options{
-		SelectorsByObject: selectors,
-	}), nil
 }
 
 // restConfigForAPIExport returns a *rest.Config properly configured to communicate with the endpoint for the
