@@ -64,6 +64,8 @@ const (
 	pipelinesAsCodeNamespace   = "pipelines-as-code"
 	pipelinesAsCodeRouteName   = "pipelines-as-code-controller"
 
+	buildPipelineServiceAccountName = "pipeline"
+
 	PartOfLabelName           = "app.kubernetes.io/part-of"
 	PartOfAppStudioLabelValue = "appstudio"
 )
@@ -102,7 +104,7 @@ func (r *ComponentBuildReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=pipelinesascode.tekton.dev,resources=repositories,verbs=get;list;watch;create;update;patch
 //+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch
 //+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;patch;update
-//+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;update;patch
+//+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch
 //+kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch
@@ -256,7 +258,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return ctrl.Result{}, err
 		}
 
-		if err := r.SubmitNewBuild(ctx, component); err != nil {
+		if err := r.SubmitNewBuild(ctx, component, gitopsConfig); err != nil {
 			// Try to revert the initial build annotation
 			if err := r.Client.Get(ctx, req.NamespacedName, &component); err == nil {
 				component.Annotations[InitialBuildAnnotationName] = "false"
@@ -693,7 +695,7 @@ func GeneratePipelineRun(component appstudiov1alpha1.Component, bundle string, o
 }
 
 // SubmitNewBuild creates a new PipelineRun to build a new image for the given component.
-func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component appstudiov1alpha1.Component) error {
+func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component appstudiov1alpha1.Component, gitopsConfig gitopsprepare.GitopsConfig) error {
 	log := r.Log.WithValues("Namespace", component.Namespace, "Application", component.Spec.Application, "Component", component.Name)
 
 	gitSecretName := component.Spec.Secret
@@ -724,8 +726,22 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 	pipelinesServiceAccount := corev1.ServiceAccount{}
 	err := r.Client.Get(ctx, types.NamespacedName{Name: "pipeline", Namespace: component.Namespace}, &pipelinesServiceAccount)
 	if err != nil {
-		log.Error(err, fmt.Sprintf("OpenShift Pipelines-created Service account 'pipeline' is missing in namespace %s", component.Namespace))
-		return err
+		if !errors.IsNotFound(err) {
+			log.Error(err, fmt.Sprintf("Failed to read service account %s in namespace %s", buildPipelineServiceAccountName, component.Namespace))
+			return err
+		}
+		// Create service account for the build pipeline
+		buildPipelineSA := corev1.ServiceAccount{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      buildPipelineServiceAccountName,
+				Namespace: component.Namespace,
+			},
+		}
+		if err := r.Client.Create(ctx, &buildPipelineSA); err != nil {
+			log.Error(err, fmt.Sprintf("Failed to create service account %s in namespace %s", buildPipelineServiceAccountName, component.Namespace))
+			return err
+		}
+		return r.SubmitNewBuild(ctx, component, gitopsConfig)
 	} else {
 		updateRequired := updateServiceAccountIfSecretNotLinked(gitSecretName, &pipelinesServiceAccount)
 		if updateRequired {
@@ -738,7 +754,6 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 		}
 	}
 
-	gitopsConfig := gitopsprepare.PrepareGitopsConfig(ctx, r.Client, component)
 	initialBuild, err := gitops.GenerateInitialBuildPipelineRun(component, gitopsConfig)
 	if err != nil {
 		log.Error(err, "Unable to create PipelineRun")
