@@ -51,11 +51,7 @@ var _ = Describe("New Component Image Controller", func() {
 
 		It("Should not update component image after initial build if image reference is the same", func() {
 			ensureOneInitialPipelineRunCreated(resourceKey)
-			initialBuildPipelineKey := types.NamespacedName{
-				Name:      listComponentInitialPipelineRuns(resourceKey).Items[0].Name,
-				Namespace: HASAppNamespace,
-			}
-			createBuildTaskRunWithImage(initialBuildPipelineKey, ComponentContainerImage)
+			addBuiltComponentImageToBuildPipelineResults(resourceKey, ComponentContainerImage, "")
 			succeedInitialPipelineRun(resourceKey)
 
 			component := getComponent(resourceKey)
@@ -66,11 +62,7 @@ var _ = Describe("New Component Image Controller", func() {
 			newImage := ComponentContainerImage + "-initial1234"
 
 			ensureOneInitialPipelineRunCreated(resourceKey)
-			initialBuildPipelineKey := types.NamespacedName{
-				Name:      listComponentInitialPipelineRuns(resourceKey).Items[0].Name,
-				Namespace: HASAppNamespace,
-			}
-			createBuildTaskRunWithImage(initialBuildPipelineKey, newImage)
+			addBuiltComponentImageToBuildPipelineResults(resourceKey, newImage, "")
 			succeedInitialPipelineRun(resourceKey)
 
 			Eventually(func() bool {
@@ -83,15 +75,11 @@ var _ = Describe("New Component Image Controller", func() {
 			newImage := ComponentContainerImage + "-commit1234"
 
 			ensureOneInitialPipelineRunCreated(resourceKey)
-			initialBuildPipelineKey := types.NamespacedName{
-				Name:      listComponentInitialPipelineRuns(resourceKey).Items[0].Name,
-				Namespace: HASAppNamespace,
-			}
-			createBuildTaskRunWithImage(initialBuildPipelineKey, ComponentContainerImage+"-initial")
+			addBuiltComponentImageToBuildPipelineResults(resourceKey, ComponentContainerImage+"-initial", "")
 			succeedInitialPipelineRun(resourceKey)
 
 			createWebhookPipelineRun(resourceKey)
-			createBuildTaskRunWithImage(resourceKey, newImage)
+			addBuiltComponentImageToBuildPipelineResults(resourceKey, newImage, "")
 			succeedWebhookPipelineRun(resourceKey)
 
 			Eventually(func() bool {
@@ -116,7 +104,7 @@ var _ = Describe("New Component Image Controller", func() {
 			succeedInitialPipelineRun(resourceKey)
 
 			createWebhookPipelineRun(resourceKey)
-			createBuildTaskRunWithImage(resourceKey, ComponentContainerImage+"-new")
+			addBuiltComponentImageToBuildPipelineResults(resourceKey, ComponentContainerImage+"-new", "")
 			failWebhookPipelineRun(resourceKey)
 
 			component := getComponent(resourceKey)
@@ -139,7 +127,7 @@ var _ = Describe("New Component Image Controller", func() {
 			}
 			Expect(k8sClient.Update(ctx, pipelineRun)).Should(Succeed())
 
-			createBuildTaskRunWithImage(resourceKey, ComponentContainerImage+"-new")
+			addBuiltComponentImageToBuildPipelineResults(resourceKey, ComponentContainerImage+"-new", "")
 			succeedWebhookPipelineRun(resourceKey)
 
 			component := getComponent(resourceKey)
@@ -151,7 +139,7 @@ var _ = Describe("New Component Image Controller", func() {
 			succeedInitialPipelineRun(resourceKey)
 
 			createWebhookPipelineRun(resourceKey)
-			// Add appstudio.redhat.com/updateComponentOnSuccess=false annotation to the Component
+			// Add appstudio.redhat.com/updateComponentOnSuccess=false annotation to the PipelineRun
 			pipelineRun := &tektonapi.PipelineRun{}
 			Expect(k8sClient.Get(ctx, resourceKey, pipelineRun)).Should(Succeed())
 			if pipelineRun.Annotations == nil {
@@ -160,7 +148,7 @@ var _ = Describe("New Component Image Controller", func() {
 			pipelineRun.Annotations[UpdateComponentAnnotationName] = "false"
 			Expect(k8sClient.Update(ctx, pipelineRun)).Should(Succeed())
 
-			createBuildTaskRunWithImage(resourceKey, ComponentContainerImage+"-new")
+			addBuiltComponentImageToBuildPipelineResults(resourceKey, ComponentContainerImage+"-new", "")
 			succeedWebhookPipelineRun(resourceKey)
 
 			Consistently(func() bool {
@@ -192,11 +180,7 @@ var _ = Describe("New Component Image Controller", func() {
 			Expect(len(listApplicationSnapshots(applicationKey))).To(Equal(0))
 
 			ensureOneInitialPipelineRunCreated(resourceKey)
-			initialBuildPipelineKey := types.NamespacedName{
-				Name:      listComponentInitialPipelineRuns(resourceKey).Items[0].Name,
-				Namespace: HASAppNamespace,
-			}
-			createBuildTaskRunWithImage(initialBuildPipelineKey, componentNewImage)
+			addBuiltComponentImageToBuildPipelineResults(resourceKey, componentNewImage, "")
 			succeedInitialPipelineRun(resourceKey)
 
 			var component *appstudiov1alpha1.Component
@@ -256,11 +240,7 @@ var _ = Describe("New Component Image Controller", func() {
 			Expect(len(listApplicationSnapshots(applicationKey))).To(Equal(0))
 
 			ensureOneInitialPipelineRunCreated(resourceKey)
-			initialBuildPipelineKey := types.NamespacedName{
-				Name:      listComponentInitialPipelineRuns(resourceKey).Items[0].Name,
-				Namespace: HASAppNamespace,
-			}
-			createBuildTaskRunWithImage(initialBuildPipelineKey, componentNewImage)
+			addBuiltComponentImageToBuildPipelineResults(resourceKey, componentNewImage, "")
 			succeedInitialPipelineRun(resourceKey)
 
 			var component *appstudiov1alpha1.Component
@@ -328,11 +308,7 @@ var _ = Describe("New Component Image Controller", func() {
 
 			// Component 1
 			ensureOneInitialPipelineRunCreated(resourceKey)
-			initialBuildPipelineKey := types.NamespacedName{
-				Name:      listComponentInitialPipelineRuns(resourceKey).Items[0].Name,
-				Namespace: HASAppNamespace,
-			}
-			createBuildTaskRunWithImage(initialBuildPipelineKey, component1NewImage)
+			addBuiltComponentImageToBuildPipelineResults(resourceKey, component1NewImage, "")
 			succeedInitialPipelineRun(resourceKey)
 
 			var component1 *appstudiov1alpha1.Component
@@ -348,11 +324,7 @@ var _ = Describe("New Component Image Controller", func() {
 
 			// Component 2
 			ensureOneInitialPipelineRunCreated(component2Key)
-			initialBuildPipeline2Key := types.NamespacedName{
-				Name:      listComponentInitialPipelineRuns(component2Key).Items[0].Name,
-				Namespace: HASAppNamespace,
-			}
-			createBuildTaskRunWithImage(initialBuildPipeline2Key, component2NewImage)
+			addBuiltComponentImageToBuildPipelineResults(component2Key, component2NewImage, "")
 			succeedInitialPipelineRun(component2Key)
 
 			Eventually(func() bool {

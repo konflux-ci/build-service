@@ -25,9 +25,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"knative.dev/pkg/apis"
@@ -206,49 +204,13 @@ func (r *ComponentImageReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	// Obtain newly built image
-
-	// Search for the build TaskRun
-	taskRunBelongsToPipelineRunRequirement, err := labels.NewRequirement(PipelineRunLabelName, selection.Equals, []string{pipelineRun.Name})
+	imageReference, err := getImageReferenceFromBuildPipeline(pipelineRun)
 	if err != nil {
-		return ctrl.Result{}, err
-	}
-	taskRunPipelineTaskNameRequirement, err := labels.NewRequirement(PipelineTaskLabelName, selection.Equals, []string{BuildImageTaskName})
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	componentBuildTaskRunSelector := labels.NewSelector().Add(*taskRunBelongsToPipelineRunRequirement).Add(*taskRunPipelineTaskNameRequirement)
-	var tasks tektonapi.TaskRunList
-	if err := r.Client.List(ctx, &tasks, &client.ListOptions{LabelSelector: componentBuildTaskRunSelector}); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	var taskrun *tektonapi.TaskRun
-	switch len(tasks.Items) {
-	case 0:
-		// Build task not found, it was skipped
-		log.Info(fmt.Sprintf("No new image built in '%v' PipelineRun for '%v' Comoponent", req.NamespacedName, componentKey))
+		// Build pipeline finished successfully, but information about new image is missing.
+		// This could happen when image is already built and the build step is skipped.
+		// There is no point in retrying, because finished pipeline doesn't have results set.
+		log.Info("No new image found in build PipelineRun")
 		return ctrl.Result{}, nil
-	case 1:
-		taskrun = &tasks.Items[0]
-	default:
-		// Should not happen
-		message := fmt.Sprintf("Found %d build tasks for %v PipelineRun", len(tasks.Items), pipelineRun)
-		log.Info(message)
-		r.EventRecorder.Event(&pipelineRun, "Warning", "TooManyBuildTasksForPipeline", message)
-		return ctrl.Result{}, nil
-	}
-
-	imageReference := ""
-	for _, taskRunResult := range taskrun.Status.TaskRunResults {
-		if taskRunResult.Name == "IMAGE_URL" {
-			imageReference = strings.TrimSpace(taskRunResult.Value.StringVal)
-			break
-		}
-	}
-	if imageReference == "" {
-		err := fmt.Errorf("failed to find build image in build TaskRun status of %v pipeline", req.NamespacedName)
-		log.Info(err.Error())
-		return ctrl.Result{}, err
 	}
 
 	// Update the image reference in the component
@@ -293,6 +255,41 @@ func (r *ComponentImageReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	log.Info(fmt.Sprintf("Created application snapshot %s", applicationSnapshot.GetName()))
 
 	return ctrl.Result{}, nil
+}
+
+func getImageReferenceFromBuildPipeline(buildPipelineRun tektonapi.PipelineRun) (string, error) {
+	pipelineResults := buildPipelineRun.Status.PipelineResults
+	if pipelineResults == nil {
+		return "", fmt.Errorf("PipelineRun.Status.PipelineResults is empty")
+	}
+
+	imageUrl := ""
+	for _, pipelineRunResult := range pipelineResults {
+		if pipelineRunResult.Name == "IMAGE_URL" {
+			imageUrl = pipelineRunResult.Value
+		}
+	}
+	if imageUrl == "" {
+		return "", fmt.Errorf("IMAGE_URL is empty in build pipeline result")
+	}
+
+	imageDigest := ""
+	for _, taskResult := range pipelineResults {
+		if taskResult.Name == "IMAGE_DIGEST" {
+			imageDigest = taskResult.Value
+		}
+	}
+
+	imageReference := imageUrl
+	if imageDigest != "" {
+		if strings.Contains(imageUrl, ":") {
+			// There is tag present, remove it
+			imageUrl = strings.Split(imageUrl, ":")[0]
+		}
+		imageReference = imageUrl + "@" + imageDigest
+	}
+
+	return imageReference, nil
 }
 
 func (r *ComponentImageReconciler) getApplicationComponents(ctx context.Context, application *appstudiov1alpha1.Application) ([]appstudiov1alpha1.Component, error) {

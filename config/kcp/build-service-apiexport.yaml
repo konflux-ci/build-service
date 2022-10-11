@@ -27,3 +27,7 @@ spec:
       resource: "applications"
       # Replace by application-api identityHash
       identityHash: application-api
+    - group: "appstudio.redhat.com"
+      resource: "applicationsnapshots"
+      # Replace by application-api identityHash
+      identityHash: application-api
