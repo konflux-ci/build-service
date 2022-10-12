@@ -39,3 +39,7 @@ spec:
     identityHash: applicationServiceIdentityHash
     resource: applications
     state: Accepted
+  - group: appstudio.redhat.com
+    identityHash: applicationServiceIdentityHash
+    resource: applicationsnapshots
+    state: Accepted

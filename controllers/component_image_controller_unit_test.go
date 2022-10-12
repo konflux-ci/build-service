@@ -21,8 +21,89 @@ import (
 	"testing"
 
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-service/api/v1alpha1"
+	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+func TestGetImageReferenceFromBuildPipeline(t *testing.T) {
+	getPipelineWithResults := func(image, digest string) tektonapi.PipelineRun {
+		var pipelineResults []tektonapi.PipelineRunResult
+		if image != "" {
+			pipelineResults = append(pipelineResults, tektonapi.PipelineRunResult{
+				Name:  "IMAGE_URL",
+				Value: image,
+			})
+		}
+		if digest != "" {
+			pipelineResults = append(pipelineResults, tektonapi.PipelineRunResult{
+				Name:  "IMAGE_DIGEST",
+				Value: digest,
+			})
+		}
+
+		return tektonapi.PipelineRun{
+			Status: tektonapi.PipelineRunStatus{
+				PipelineRunStatusFields: tektonapi.PipelineRunStatusFields{
+					PipelineResults: pipelineResults,
+				},
+			},
+		}
+	}
+
+	tests := []struct {
+		name                   string
+		buildPipelineRun       tektonapi.PipelineRun
+		expectedImageReference string
+		wantErr                bool
+	}{
+		{
+			name:                   "should use image and tag if no digest set",
+			buildPipelineRun:       getPipelineWithResults("registry.io/image:tag", ""),
+			expectedImageReference: "registry.io/image:tag",
+			wantErr:                false,
+		},
+		{
+			name:                   "should use image and digest",
+			buildPipelineRun:       getPipelineWithResults("registry.io/image", "sha256:abcd12345"),
+			expectedImageReference: "registry.io/image@sha256:abcd12345",
+			wantErr:                false,
+		},
+		{
+			name:                   "should use image and digest ignoring image tag",
+			buildPipelineRun:       getPipelineWithResults("registry.io/image:tag", "sha256:abcd12345"),
+			expectedImageReference: "registry.io/image@sha256:abcd12345",
+			wantErr:                false,
+		},
+		{
+			name:                   "should fail if both image and digest are not set",
+			buildPipelineRun:       getPipelineWithResults("", ""),
+			expectedImageReference: "",
+			wantErr:                true,
+		},
+		{
+			name:                   "should fail if image is not set",
+			buildPipelineRun:       getPipelineWithResults("", "sha256:abcd12345"),
+			expectedImageReference: "",
+			wantErr:                true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			imageReference, err := getImageReferenceFromBuildPipeline(tt.buildPipelineRun)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("extraction of image reference should fail")
+				}
+			} else {
+				if imageReference != tt.expectedImageReference {
+					t.Errorf("expected %s image reference, but got %s", tt.expectedImageReference, imageReference)
+				}
+			}
+		})
+	}
+}
 
 func TestGenerateApplicationSnapshot(t *testing.T) {
 	application := &appstudiov1alpha1.Application{

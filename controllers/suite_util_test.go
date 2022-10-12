@@ -344,48 +344,35 @@ func succeedInitialPipelineRun(componentKey types.NamespacedName) {
 	Expect(k8sClient.Status().Update(ctx, pipelineRun)).Should(Succeed())
 }
 
+// addBuiltComponentImageToBuildPipelineResults adds given image and digest into pipeline results of the latest pipeline run
+func addBuiltComponentImageToBuildPipelineResults(componentKey types.NamespacedName, image string, digest string) {
+	var buildPipelineResults []tektonapi.PipelineRunResult
+	if image != "" {
+		buildPipelineResults = append(buildPipelineResults, tektonapi.PipelineRunResult{
+			Name:  "IMAGE_URL",
+			Value: image,
+		})
+	}
+	if digest != "" {
+		buildPipelineResults = append(buildPipelineResults, tektonapi.PipelineRunResult{
+			Name:  "IMAGE_DIGEST",
+			Value: digest,
+		})
+	}
+
+	buildPipelineRuns := listComponentInitialPipelineRuns(componentKey)
+	Expect(len(buildPipelineRuns.Items) > 0).To(BeTrue())
+	buildPipelineRun := &buildPipelineRuns.Items[len(buildPipelineRuns.Items)-1]
+	buildPipelineRun.Status.PipelineResults = buildPipelineResults
+	Expect(k8sClient.Status().Update(ctx, buildPipelineRun)).Should(Succeed())
+}
+
 func deleteAllPipelineRuns() {
 	if err := k8sClient.DeleteAllOf(ctx, &tektonapi.PipelineRun{}, &client.DeleteAllOfOptions{
 		ListOptions: client.ListOptions{Namespace: HASAppNamespace},
 	}); err != nil {
 		Expect(k8sErrors.IsNotFound(err)).To(BeTrue())
 	}
-}
-
-func createBuildTaskRunWithImage(resourceKey types.NamespacedName, image string) {
-	taskRunKey := types.NamespacedName{
-		Name:      resourceKey.Name + "-" + BuildImageTaskName + "-random1234",
-		Namespace: resourceKey.Namespace,
-	}
-
-	taskRun := &tektonapi.TaskRun{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      taskRunKey.Name,
-			Namespace: taskRunKey.Namespace,
-			Labels: map[string]string{
-				PipelineRunLabelName:  resourceKey.Name,
-				PipelineTaskLabelName: BuildImageTaskName,
-			},
-		},
-	}
-	Expect(k8sClient.Create(ctx, taskRun)).Should(Succeed())
-
-	Expect(k8sClient.Get(ctx, taskRunKey, taskRun)).Should(Succeed())
-	taskRun.Status = tektonapi.TaskRunStatus{
-		TaskRunStatusFields: tektonapi.TaskRunStatusFields{
-			TaskRunResults: []tektonapi.TaskRunResult{
-				{
-					Name:  "IMAGE_DIGEST",
-					Value: *tektonapi.NewArrayOrString("sha256:71fd928246979eb68fbe12ee60159408f7535f6252335a4d13497e35eb81854f"),
-				},
-				{
-					Name:  "IMAGE_URL",
-					Value: *tektonapi.NewArrayOrString(image),
-				},
-			},
-		},
-	}
-	Expect(k8sClient.Status().Update(ctx, taskRun)).Should(Succeed())
 }
 
 func deleteAllTaskRuns() {
