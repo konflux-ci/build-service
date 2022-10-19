@@ -115,7 +115,7 @@ func main() {
 	}
 
 	var err error
-
+	var localClient client.Client
 	var mgr ctrl.Manager
 	options := ctrl.Options{
 		Scheme:                 scheme,
@@ -145,6 +145,16 @@ func main() {
 			setupLog.Error(err, "unable to start cluster aware manager")
 			os.Exit(1)
 		}
+
+		// Local client is needed to access the workspace where operator deployment is
+		localClientScheme := runtime.NewScheme()
+		if err := clientgoscheme.AddToScheme(localClientScheme); err != nil {
+			setupLog.Error(err, "error adding standard types local client sceme")
+		}
+		localClient, err = client.New(ctrl.GetConfigOrDie(), client.Options{Scheme: localClientScheme})
+		if err != nil {
+			setupLog.Error(err, "error creating local client")
+		}
 	} else {
 		setupLog.Info("The apis.kcp.dev group is not present - creating standard manager")
 
@@ -155,10 +165,13 @@ func main() {
 			setupLog.Error(err, "unable to start manager")
 			os.Exit(1)
 		}
+
+		localClient = mgr.GetClient()
 	}
 
 	if err = (&controllers.ComponentBuildReconciler{
 		Client:        mgr.GetClient(),
+		LocalClient:   localClient,
 		Scheme:        mgr.GetScheme(),
 		Log:           ctrl.Log.WithName("controllers").WithName("ComponentOnboarding"),
 		EventRecorder: mgr.GetEventRecorderFor("ComponentOnboarding"),

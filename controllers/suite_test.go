@@ -68,7 +68,7 @@ var _ = BeforeSuite(func() {
 	ctx, cancel = context.WithCancel(context.TODO())
 
 	By("bootstrapping test environment")
-	applicationServiceDepVersion := "v0.0.0-20220923061143-aee6a0a99b36"
+	applicationServiceDepVersion := "v0.0.0-20221019143904-8ca9a37a6b67"
 	appstudioSharedDepVersion := "v0.0.0-20220826075641-33705d2bf7fa"
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
@@ -124,6 +124,7 @@ var _ = BeforeSuite(func() {
 
 	err = (&ComponentBuildReconciler{
 		Client:        k8sManager.GetClient(),
+		LocalClient:   k8sManager.GetClient(),
 		Scheme:        k8sManager.GetScheme(),
 		Log:           ctrl.Log.WithName("controllers").WithName("ComponentOnboarding"),
 		EventRecorder: k8sManager.GetEventRecorderFor("ComponentOnboarding"),
