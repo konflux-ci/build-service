@@ -32,12 +32,15 @@ import (
 
 	routev1 "github.com/openshift/api/route/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/kcp"
@@ -114,9 +117,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	var err error
 	var localClient client.Client
 	var mgr ctrl.Manager
+
+	cacheOptions, err := getCacheFuncOptions()
+	if err != nil {
+		setupLog.Error(err, "unable to create cache options")
+		os.Exit(1)
+	}
+
 	options := ctrl.Options{
 		Scheme:                 scheme,
 		MetricsBindAddress:     metricsAddr,
@@ -139,6 +148,7 @@ func main() {
 
 		setupLog.Info("Using virtual workspace URL", "url", cfg.Host)
 
+		options.NewCache = kcp.ClusterAwareBuilderWithOptions(*cacheOptions)
 		options.LeaderElectionConfig = restConfig
 		mgr, err = kcp.NewClusterAwareManager(cfg, options)
 		if err != nil {
@@ -160,6 +170,7 @@ func main() {
 
 		ensureRequiredAPIGroupsAndResourcesExist(restConfig)
 
+		options.NewCache = cache.BuilderWithOptions(*cacheOptions)
 		mgr, err = ctrl.NewManager(restConfig, options)
 		if err != nil {
 			setupLog.Error(err, "unable to start manager")
@@ -213,6 +224,24 @@ func getCacheExcludedObjectsTypes() []client.Object {
 		&corev1.Secret{},
 		&corev1.ConfigMap{},
 	}
+}
+
+func getCacheFuncOptions() (*cache.Options, error) {
+	componentPipelineRunRequirement, err := labels.NewRequirement(controllers.ComponentNameLabelName, selection.Exists, []string{})
+	if err != nil {
+		return nil, err
+	}
+	appStudioComponentPipelineRunSelector := labels.NewSelector().Add(*componentPipelineRunRequirement)
+
+	selectors := cache.SelectorsByObject{
+		&taskrunapi.PipelineRun{}: {
+			Label: appStudioComponentPipelineRunSelector,
+		},
+	}
+
+	return &cache.Options{
+		SelectorsByObject: selectors,
+	}, nil
 }
 
 // restConfigForAPIExport returns a *rest.Config properly configured to communicate with the endpoint for the
