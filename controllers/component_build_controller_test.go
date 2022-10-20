@@ -693,7 +693,7 @@ var _ = Describe("Component initial build controller", func() {
 				}
 			}
 
-			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(gitopsprepare.FallbackBuildBundle))
+			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
 
 			Expect(pipelineRun.Spec.Workspaces).To(Not(BeEmpty()))
 			for _, w := range pipelineRun.Spec.Workspaces {
@@ -749,7 +749,7 @@ var _ = Describe("Component initial build controller", func() {
 				}
 			}
 
-			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(gitopsprepare.FallbackBuildBundle))
+			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
 
 			Expect(pipelineRun.Spec.Workspaces).To(Not(BeEmpty()))
 			for _, w := range pipelineRun.Spec.Workspaces {
@@ -818,7 +818,7 @@ var _ = Describe("Component initial build controller", func() {
 			ensureOneInitialPipelineRunCreated(componentKey)
 			pipelineRuns := listComponentInitialPipelineRuns(componentKey)
 
-			Expect(pipelineRuns.Items[0].Spec.PipelineRef.Bundle).To(Equal(gitopsprepare.FallbackBuildBundle))
+			Expect(pipelineRuns.Items[0].Spec.PipelineRef.Bundle).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
 
 			deleteComponent(componentKey)
 			deleteComponentInitialPipelineRuns(componentKey)

@@ -73,6 +73,7 @@ const (
 // ComponentBuildReconciler watches AppStudio Component object in order to submit builds
 type ComponentBuildReconciler struct {
 	Client        client.Client
+	LocalClient   client.Client
 	Scheme        *runtime.Scheme
 	Log           logr.Logger
 	EventRecorder record.EventRecorder
@@ -164,9 +165,9 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		// Initial build have already happend, nothing to do.
 		return ctrl.Result{}, nil
 	}
-	// The nitial build annotation is absent, onboarding of the component needed
+	// The initial build annotation is absent, onboarding of the component needed
 
-	gitopsConfig := gitopsprepare.PrepareGitopsConfig(ctx, r.Client, component)
+	gitopsConfig := gitopsprepare.PrepareGitopsConfig(ctx, r.LocalClient, r.Client, component)
 	if val, ok := component.Annotations[gitops.PaCAnnotation]; (ok && val == "1") || gitopsConfig.IsHACBS {
 		// Use pipelines as code build
 		log.Info("Pipelines as Code enabled")
