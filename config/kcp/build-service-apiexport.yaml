@@ -19,6 +19,10 @@ spec:
       resource: "pipelineruns"
       # Replace by pipeline-service identityHash
       identityHash: pipeline-service
+    - group: "pipelinesascode.tekton.dev"
+      resource: repositories
+      # Replace by pipeline-service identityHash
+      identityHash: pipeline-service
     - group: "appstudio.redhat.com"
       resource: "components"
       # Replace by application-api identityHash

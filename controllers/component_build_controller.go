@@ -23,6 +23,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 
@@ -63,6 +64,7 @@ const (
 	PipelineRunOnPRFilename    = "pull-request.yaml"
 	pipelinesAsCodeNamespace   = "pipelines-as-code"
 	pipelinesAsCodeRouteName   = "pipelines-as-code-controller"
+	pipelinesAsCodeRouteEnvVar = "PAC_WEBHOOK_URL"
 
 	buildPipelineServiceAccountName = "pipeline"
 
@@ -173,9 +175,21 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		log.Info("Pipelines as Code enabled")
 
 		// Obtain Pipelines as Code callback URL
-		webhookTargetUrl, err := r.getPaCRoutePublicUrl(ctx)
-		if err != nil {
-			return ctrl.Result{}, err
+		webhookTargetUrl := os.Getenv(pipelinesAsCodeRouteEnvVar)
+		if webhookTargetUrl == "" {
+			// The env variable is not set
+
+			if req.ClusterName != "" {
+				// Do not attempt to read Pipelines as Code route on KCP as it's set in different workspace
+				log.Info(fmt.Sprintf("%s environment variable must be set on KCP", pipelinesAsCodeRouteEnvVar))
+				// Do not requeue, the env variable must be provided on KCP
+				return ctrl.Result{}, nil
+			}
+
+			webhookTargetUrl, err = r.getPaCRoutePublicUrl(ctx)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
 		}
 
 		gitProvider, err := gitops.GetGitProvider(component)
@@ -203,19 +217,20 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return ctrl.Result{}, nil
 		}
 
+		var webhookSecretString string
 		if !gitops.IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
 			// Webhook is used. We need to reference access token in the component namespace.
 			// Copy or update global PaC configuration in component namespace
 			if err := r.propagatePaCConfigurationSecretToComponentNamespace(ctx, req.Namespace, pacSecret); err != nil {
 				return ctrl.Result{}, err
 			}
-		}
 
-		// Generate webhook secret for the component git repository if not yet generated
-		// and stores it in the corresponding k8s secret.
-		webhookSecretString, err := r.ensureWebhookSecret(ctx, component)
-		if err != nil {
-			return ctrl.Result{}, err
+			// Generate webhook secret for the component git repository if not yet generated
+			// and stores it in the corresponding k8s secret.
+			webhookSecretString, err = r.ensureWebhookSecret(ctx, component)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
 		}
 
 		if err := r.EnsurePaCRepository(ctx, component, pacSecret.Data); err != nil {

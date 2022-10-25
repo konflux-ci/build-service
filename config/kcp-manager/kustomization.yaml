@@ -12,3 +12,14 @@ patches:
   target:
     kind: Deployment
     name: controller-manager
+
+# Sets PaC Webhooks URL on KCP
+- patch: |-
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value:
+        name: PAC_WEBHOOK_URL
+        value: ""
+  target:
+    kind: Deployment
+    name: controller-manager
