@@ -132,7 +132,6 @@ var _ = Describe("Component initial build controller", func() {
 
 			setComponentDevfileModel(resourceKey)
 
-			ensureSecretCreated(webhookSecretKey)
 			ensurePaCRepositoryCreated(resourceKey)
 
 			ensureComponentInitialBuildAnnotationState(resourceKey, true)
@@ -277,7 +276,6 @@ var _ = Describe("Component initial build controller", func() {
 
 			setComponentDevfileModel(resourceKey)
 
-			ensureSecretCreated(webhookSecretKey)
 			ensurePaCRepositoryCreated(resourceKey)
 
 			ensureSecretNotCreated(namespacePaCSecretKey)
@@ -413,7 +411,6 @@ var _ = Describe("Component initial build controller", func() {
 
 			setComponentDevfileModel(resourceKey)
 
-			ensureSecretCreated(webhookSecretKey)
 			ensurePaCRepositoryCreated(resourceKey)
 
 			ensureComponentInitialBuildAnnotationState(resourceKey, false)

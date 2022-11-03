@@ -27,6 +27,10 @@ spec:
     identityHash: pipelinesIdentityHash
     resource: pipelineruns
     state: Accepted
+  - group: "pipelinesascode.tekton.dev"
+    resource: repositories
+    identityHash: pipelinesIdentityHash
+    state: Accepted
   - group: tekton.dev
     identityHash: pipelinesIdentityHash
     resource: taskruns
