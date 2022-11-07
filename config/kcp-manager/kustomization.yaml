@@ -4,22 +4,17 @@ bases:
 - ../manager
 
 patches:
-# Add APIExport flag to the operator arguments list
 - patch: |-
+    # Add APIExport flag to the operator arguments list
     - op: add
       path: /spec/template/spec/containers/0/args/-
       value: --api-export-name=build-service-apiexport
-  target:
-    kind: Deployment
-    name: controller-manager
-
-# Sets PaC Webhooks URL on KCP
-- patch: |-
+    # Sets PaC Webhooks URL on KCP
     - op: add
-      path: /spec/template/spec/containers/0/env/-
+      path: /spec/template/spec/containers/0/env
       value:
-        name: PAC_WEBHOOK_URL
-        value: ""
+        - name: PAC_WEBHOOK_URL
+          value: ""
   target:
     kind: Deployment
     name: controller-manager
