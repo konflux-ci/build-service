@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/redhat-appstudio/application-service/gitops"
+	"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -350,7 +351,7 @@ components:
 				},
 				Status: appstudiov1alpha1.ComponentStatus{Devfile: tt.devfileString},
 			}
-			got, err := GeneratePipelineRun(component, "bundle", tt.onPull)
+			got, err := GeneratePipelineRun(component, "bundle", v1beta1.PipelineSpec{}, tt.onPull)
 			if tt.name == "invalid-devfile-by-missing-schemaversion" && err == nil {
 				t.Errorf("devfile is invalid, but GeneratePipelineRun does not return an error.")
 			} else if string(got) != tt.want {
