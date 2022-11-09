@@ -47,9 +47,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
-	appstudiov1alpha1 "github.com/redhat-appstudio/application-service/api/v1alpha1"
+	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	"github.com/redhat-appstudio/build-service/controllers"
-	appstudiosharedv1alpha1 "github.com/redhat-appstudio/managed-gitops/appstudio-shared/apis/appstudio.redhat.com/v1alpha1"
 	taskrunapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	triggersapi "github.com/tektoncd/triggers/pkg/apis/triggers/v1alpha1"
 
@@ -109,11 +108,6 @@ func main() {
 
 	if err := pacv1alpha1.AddToScheme(scheme); err != nil {
 		setupLog.Error(err, "unable to add pipelinesascode api to the scheme")
-		os.Exit(1)
-	}
-
-	if err := appstudiosharedv1alpha1.AddToScheme(scheme); err != nil {
-		setupLog.Error(err, "unable to add applicationsnapshot api to the scheme")
 		os.Exit(1)
 	}
 

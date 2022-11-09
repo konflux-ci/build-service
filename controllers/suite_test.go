@@ -39,8 +39,7 @@ import (
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	taskrunapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 
-	appstudiov1alpha1 "github.com/redhat-appstudio/application-service/api/v1alpha1"
-	appstudiosharedv1alpha1 "github.com/redhat-appstudio/managed-gitops/appstudio-shared/apis/appstudio.redhat.com/v1alpha1"
+	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -68,13 +67,12 @@ var _ = BeforeSuite(func() {
 	ctx, cancel = context.WithCancel(context.TODO())
 
 	By("bootstrapping test environment")
-	applicationServiceDepVersion := "v0.0.0-20221019143904-8ca9a37a6b67"
-	appstudioSharedDepVersion := "v0.0.0-20220826075641-33705d2bf7fa"
+	applicationServiceDepVersion := "v0.0.0-20221108224914-93fff4169f30"
+	applicationApiDepVersion := "v0.0.0-20221108172336-c9e003808d1f"
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
-			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "redhat-appstudio", "application-service@"+applicationServiceDepVersion, "config", "crd", "bases"),
+			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "redhat-appstudio", "application-api@"+applicationApiDepVersion, "config", "crd", "bases"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "redhat-appstudio", "application-service@"+applicationServiceDepVersion, "hack", "routecrd", "route.yaml"),
-			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "redhat-appstudio", "managed-gitops", "appstudio-shared@"+appstudioSharedDepVersion, "config", "crd", "bases"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "tektoncd", "triggers@v0.19.1", "config"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "tektoncd", "pipeline@v0.37.0", "config"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "openshift-pipelines", "pipelines-as-code@v0.11.0", "config"),
@@ -97,9 +95,6 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 
 	err = pacv1alpha1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = appstudiosharedv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	//+kubebuilder:scaffold:scheme
