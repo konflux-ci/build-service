@@ -33,9 +33,8 @@ import (
 
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 
-	appstudiov1alpha1 "github.com/redhat-appstudio/application-service/api/v1alpha1"
+	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	"github.com/redhat-appstudio/application-service/gitops"
-	appstudiosharedv1alpha1 "github.com/redhat-appstudio/managed-gitops/appstudio-shared/apis/appstudio.redhat.com/v1alpha1"
 )
 
 const (
@@ -200,8 +199,8 @@ func setComponentDevfileModel(componentKey types.NamespacedName) {
 	Expect(component.Status.Devfile).Should(Not(Equal("")))
 }
 
-func listApplicationSnapshots(resourceKey types.NamespacedName) []appstudiosharedv1alpha1.ApplicationSnapshot {
-	applicationSnapshots := &appstudiosharedv1alpha1.ApplicationSnapshotList{}
+func listApplicationSnapshots(resourceKey types.NamespacedName) []appstudiov1alpha1.Snapshot {
+	applicationSnapshots := &appstudiov1alpha1.SnapshotList{}
 	labelSelectors := client.ListOptions{Raw: &metav1.ListOptions{
 		LabelSelector: ApplicationNameLabelName + "=" + resourceKey.Name,
 	}}
@@ -211,7 +210,7 @@ func listApplicationSnapshots(resourceKey types.NamespacedName) []appstudioshare
 }
 
 func deleteAllApplicationSnapshots() {
-	if err := k8sClient.DeleteAllOf(ctx, &appstudiosharedv1alpha1.ApplicationSnapshot{}, &client.DeleteAllOfOptions{
+	if err := k8sClient.DeleteAllOf(ctx, &appstudiov1alpha1.Snapshot{}, &client.DeleteAllOfOptions{
 		ListOptions: client.ListOptions{Namespace: HASAppNamespace},
 	}); err != nil {
 		Expect(k8sErrors.IsNotFound(err)).To(BeTrue())

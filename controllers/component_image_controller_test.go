@@ -19,8 +19,7 @@ package controllers
 import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	appstudiov1alpha1 "github.com/redhat-appstudio/application-service/api/v1alpha1"
-	appstudiosharedv1alpha1 "github.com/redhat-appstudio/managed-gitops/appstudio-shared/apis/appstudio.redhat.com/v1alpha1"
+	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -338,7 +337,7 @@ var _ = Describe("New Component Image Controller", func() {
 			}, timeout, interval).Should(BeTrue())
 			applicationSnaphots := listApplicationSnapshots(applicationKey)
 
-			var applicationSnaphot2 appstudiosharedv1alpha1.ApplicationSnapshot
+			var applicationSnaphot2 appstudiov1alpha1.Snapshot
 			if applicationSnaphots[0].GetName() == applicationSnaphot1.GetName() {
 				applicationSnaphot2 = applicationSnaphots[1]
 			} else {

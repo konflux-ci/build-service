@@ -37,8 +37,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/kcp-dev/logicalcluster/v2"
-	appstudiov1alpha1 "github.com/redhat-appstudio/application-service/api/v1alpha1"
-	appstudiosharedv1alpha1 "github.com/redhat-appstudio/managed-gitops/appstudio-shared/apis/appstudio.redhat.com/v1alpha1"
+	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 )
 
@@ -314,15 +313,15 @@ func (r *ComponentImageReconciler) getApplicationComponents(ctx context.Context,
 	return applicationComponents, nil
 }
 
-func generateApplicationSnapshot(application *appstudiov1alpha1.Application, components []appstudiov1alpha1.Component) (*appstudiosharedv1alpha1.ApplicationSnapshot, error) {
+func generateApplicationSnapshot(application *appstudiov1alpha1.Application, components []appstudiov1alpha1.Component) (*appstudiov1alpha1.Snapshot, error) {
 	if len(components) < 1 {
 		return nil, fmt.Errorf("application must contain at least one component")
 	}
 
 	var imagesList []string
-	var applicationSnapshotComponents []appstudiosharedv1alpha1.ApplicationSnapshotComponent
+	var applicationSnapshotComponents []appstudiov1alpha1.SnapshotComponent
 	for _, component := range components {
-		applicationSnapshotComponents = append(applicationSnapshotComponents, appstudiosharedv1alpha1.ApplicationSnapshotComponent{
+		applicationSnapshotComponents = append(applicationSnapshotComponents, appstudiov1alpha1.SnapshotComponent{
 			Name:           component.GetName(),
 			ContainerImage: component.Spec.ContainerImage,
 		})
@@ -336,7 +335,7 @@ func generateApplicationSnapshot(application *appstudiov1alpha1.Application, com
 	displayDescription := fmt.Sprintf("Snapshot of \"%s\" application created at %s. Component images: %s",
 		applicationName, time.Now().Format("2006 Jan 02 Monday 15:04:05"), strings.Join(imagesList, " "))
 
-	applicationSnapshot := &appstudiosharedv1alpha1.ApplicationSnapshot{
+	applicationSnapshot := &appstudiov1alpha1.Snapshot{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      snapshotName,
 			Namespace: application.GetNamespace(),
@@ -344,7 +343,7 @@ func generateApplicationSnapshot(application *appstudiov1alpha1.Application, com
 				ApplicationNameLabelName: applicationName,
 			},
 		},
-		Spec: appstudiosharedv1alpha1.ApplicationSnapshotSpec{
+		Spec: appstudiov1alpha1.SnapshotSpec{
 			Application:        applicationName,
 			DisplayName:        displayName,
 			DisplayDescription: displayDescription,
