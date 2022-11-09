@@ -175,24 +175,6 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		// Use pipelines as code build
 		log.Info("Pipelines as Code enabled")
 
-		// Obtain Pipelines as Code callback URL
-		webhookTargetUrl := os.Getenv(pipelinesAsCodeRouteEnvVar)
-		if webhookTargetUrl == "" {
-			// The env variable is not set
-
-			if req.ClusterName != "" {
-				// Do not attempt to read Pipelines as Code route on KCP as it's set in different workspace
-				log.Info(fmt.Sprintf("%s environment variable must be set on KCP", pipelinesAsCodeRouteEnvVar))
-				// Do not requeue, the env variable must be provided on KCP
-				return ctrl.Result{}, nil
-			}
-
-			webhookTargetUrl, err = r.getPaCRoutePublicUrl(ctx)
-			if err != nil {
-				return ctrl.Result{}, err
-			}
-		}
-
 		gitProvider, err := gitops.GetGitProvider(component)
 		if err != nil {
 			log.Error(err, "error detecting git provider")
@@ -218,7 +200,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return ctrl.Result{}, nil
 		}
 
-		var webhookSecretString string
+		var webhookSecretString, webhookTargetUrl string
 		if !gitops.IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
 			// Webhook is used. We need to reference access token in the component namespace.
 			// Copy or update global PaC configuration in component namespace
@@ -231,6 +213,24 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			webhookSecretString, err = r.ensureWebhookSecret(ctx, component)
 			if err != nil {
 				return ctrl.Result{}, err
+			}
+
+			// Obtain Pipelines as Code callback URL
+			webhookTargetUrl = os.Getenv(pipelinesAsCodeRouteEnvVar)
+			if webhookTargetUrl == "" {
+				// The env variable is not set
+
+				if req.ClusterName != "" {
+					// Do not attempt to read Pipelines as Code route on KCP as it's set in different workspace
+					log.Info(fmt.Sprintf("%s environment variable must be set on KCP", pipelinesAsCodeRouteEnvVar))
+					// Do not requeue, the env variable must be provided on KCP
+					return ctrl.Result{}, nil
+				}
+
+				webhookTargetUrl, err = r.getPaCRoutePublicUrl(ctx)
+				if err != nil {
+					return ctrl.Result{}, err
+				}
 			}
 		}
 
