@@ -27,6 +27,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/go-containerregistry/pkg/authn"
 	routev1 "github.com/openshift/api/route/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -54,6 +55,7 @@ import (
 	"github.com/redhat-appstudio/build-service/pkg/github"
 	"github.com/redhat-appstudio/build-service/pkg/gitlab"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	oci "github.com/tektoncd/pipeline/pkg/remote/oci"
 )
 
 const (
@@ -67,6 +69,7 @@ const (
 	pipelinesAsCodeRouteEnvVar = "PAC_WEBHOOK_URL"
 
 	buildPipelineServiceAccountName = "pipeline"
+	defaultPipelineName             = "docker-build"
 
 	PartOfLabelName           = "app.kubernetes.io/part-of"
 	PartOfAppStudioLabelValue = "appstudio"
@@ -238,9 +241,21 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return ctrl.Result{}, err
 		}
 
-		// Manage merge request for Pipelines as Code configuration
 		bundle := gitopsConfig.BuildBundle
-		mrUrl, err := ConfigureRepositoryForPaC(component, pacSecret.Data, webhookTargetUrl, webhookSecretString, bundle)
+
+		// Get PipelineSpec from bundle for HACBS workflow
+		var pipelineSpec tektonapi.PipelineSpec
+		if gitopsConfig.IsHACBS {
+			// Get Pipeline from the bundle to be expanded to the PipelineRun
+			if pipelineSpec, err = resolvePipelineSpec(bundle, defaultPipelineName); err != nil {
+				r.EventRecorder.Event(&component, "Warning", "ErrorGettingPipelineFromBundle", err.Error())
+				return ctrl.Result{}, err
+			}
+			bundle = ""
+		}
+
+		// Manage merge request for Pipelines as Code configuration
+		mrUrl, err := ConfigureRepositoryForPaC(component, pacSecret.Data, webhookTargetUrl, webhookSecretString, bundle, pipelineSpec)
 		if err != nil {
 			log.Error(err, "failed to setup repository for Pipelines as Code")
 			r.EventRecorder.Event(&component, "Warning", "ErrorConfiguringPaCForComponentRepository", err.Error())
@@ -301,6 +316,21 @@ func (r *ComponentBuildReconciler) getPaCRoutePublicUrl(ctx context.Context) (st
 		return "", err
 	}
 	return "https://" + pacWebhookRoute.Spec.Host, nil
+}
+
+func resolvePipelineSpec(bundleUri, pipelineName string) (tektonapi.PipelineSpec, error) {
+	var obj runtime.Object
+	var err error
+	resolver := oci.NewResolver(bundleUri, authn.DefaultKeychain)
+
+	if obj, err = resolver.Get(context.TODO(), "pipeline", pipelineName); err != nil {
+		return tektonapi.PipelineSpec{}, err
+	}
+	pipelineSpecObj, ok := obj.(tektonapi.PipelineObject)
+	if !ok {
+		return tektonapi.PipelineSpec{}, fmt.Errorf("failed to extract pipeline %s from bundle %s", bundleUri, pipelineName)
+	}
+	return pipelineSpecObj.PipelineSpec(), nil
 }
 
 // validatePaCConfiguration detects checks that all required fields is set for whatever method is used.
@@ -490,12 +520,12 @@ func (r *ComponentBuildReconciler) EnsurePaCRepository(ctx context.Context, comp
 
 // ConfigureRepositoryForPaC creates a merge request with initial Pipelines as Code configuration
 // and configures a webhook to notify in-cluster PaC unless application (on the repository side) is used.
-func ConfigureRepositoryForPaC(component appstudiov1alpha1.Component, config map[string][]byte, webhookTargetUrl, webhookSecret, buildBundle string) (prUrl string, err error) {
-	pipelineOnPush, err := GeneratePipelineRun(component, buildBundle, false)
+func ConfigureRepositoryForPaC(component appstudiov1alpha1.Component, config map[string][]byte, webhookTargetUrl, webhookSecret, buildBundle string, pipelineSpec tektonapi.PipelineSpec) (prUrl string, err error) {
+	pipelineOnPush, err := GeneratePipelineRun(component, buildBundle, pipelineSpec, false)
 	if err != nil {
 		return "", err
 	}
-	pipelineOnPR, err := GeneratePipelineRun(component, buildBundle, true)
+	pipelineOnPR, err := GeneratePipelineRun(component, buildBundle, pipelineSpec, true)
 	if err != nil {
 		return "", err
 	}
@@ -616,7 +646,7 @@ func ConfigureRepositoryForPaC(component appstudiov1alpha1.Component, config map
 	}
 }
 
-func GeneratePipelineRun(component appstudiov1alpha1.Component, bundle string, onPull bool) ([]byte, error) {
+func GeneratePipelineRun(component appstudiov1alpha1.Component, bundle string, pipelineSpec tektonapi.PipelineSpec, onPull bool) ([]byte, error) {
 	var pipelineName string
 	var targetBranches []string
 	var targetBranch string
@@ -671,7 +701,16 @@ func GeneratePipelineRun(component appstudiov1alpha1.Component, bundle string, o
 			params = append(params, tektonapi.Param{Name: "path-context", Value: tektonapi.ArrayOrString{Type: "string", StringVal: dockerFile.BuildContext}})
 		}
 	}
-
+	var pipelineRefPtr *tektonapi.PipelineRef
+	var pipelineSpecPtr *tektonapi.PipelineSpec
+	if bundle != "" {
+		pipelineRefPtr = &tektonapi.PipelineRef{
+			Name:   defaultPipelineName,
+			Bundle: bundle,
+		}
+	} else {
+		pipelineSpecPtr = &pipelineSpec
+	}
 	pipelineRun := tektonapi.PipelineRun{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "PipelineRun",
@@ -684,11 +723,9 @@ func GeneratePipelineRun(component appstudiov1alpha1.Component, bundle string, o
 			Annotations: annotations,
 		},
 		Spec: tektonapi.PipelineRunSpec{
-			PipelineRef: &tektonapi.PipelineRef{
-				Name:   "docker-build",
-				Bundle: bundle,
-			},
-			Params: params,
+			PipelineRef:  pipelineRefPtr,
+			PipelineSpec: pipelineSpecPtr,
+			Params:       params,
 			Workspaces: []tektonapi.WorkspaceBinding{
 				{
 					Name:                "workspace",
