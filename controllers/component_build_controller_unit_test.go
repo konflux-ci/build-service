@@ -363,7 +363,7 @@ components:
 }
 
 func TestValidatePaCConfiguration(t *testing.T) {
-	ghAppPrivateKeyStub := "-----BEGIN RSA PRIVATE KEY-----_key-content_-----END RSA PRIVATE KEY-----"
+	const ghAppPrivateKeyStub = "-----BEGIN RSA PRIVATE KEY-----_key-content_-----END RSA PRIVATE KEY-----"
 
 	tests := []struct {
 		name        string

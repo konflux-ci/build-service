@@ -228,7 +228,7 @@ func getCacheFuncOptions() (*cache.Options, error) {
 	appStudioComponentPipelineRunSelector := labels.NewSelector().Add(*componentPipelineRunRequirement)
 
 	selectors := cache.SelectorsByObject{
-		&taskrunapi.PipelineRun{}: {
+		&taskrunapi.PipelineRun{}: cache.ObjectSelector{
 			Label: appStudioComponentPipelineRunSelector,
 		},
 	}
