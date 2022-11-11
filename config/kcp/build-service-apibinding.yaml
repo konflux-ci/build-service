@@ -45,5 +45,5 @@ spec:
     state: Accepted
   - group: appstudio.redhat.com
     identityHash: applicationServiceIdentityHash
-    resource: applicationsnapshots
+    resource: snapshots
     state: Accepted
