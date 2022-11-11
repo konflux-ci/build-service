@@ -76,7 +76,7 @@ var _ = Describe("Component initial build controller", func() {
 		// All related to the component resources have the same key (but different type)
 		resourceKey           = types.NamespacedName{Name: HASCompName, Namespace: HASAppNamespace}
 		pacRouteKey           = types.NamespacedName{Name: pipelinesAsCodeRouteName, Namespace: pipelinesAsCodeNamespace}
-		pacSecretKey          = types.NamespacedName{Name: gitopsprepare.PipelinesAsCodeSecretName, Namespace: pipelinesAsCodeNamespace}
+		pacSecretKey          = types.NamespacedName{Name: gitopsprepare.PipelinesAsCodeSecretName, Namespace: buildServiceNamespaceName}
 		namespacePaCSecretKey = types.NamespacedName{Name: gitopsprepare.PipelinesAsCodeSecretName, Namespace: HASAppNamespace}
 		webhookSecretKey      = types.NamespacedName{Name: gitops.PipelinesAsCodeWebhooksSecretName, Namespace: HASAppNamespace}
 	)
@@ -86,6 +86,7 @@ var _ = Describe("Component initial build controller", func() {
 		_ = BeforeEach(func() {
 			createNamespace(pipelinesAsCodeNamespace)
 			createRoute(pacRouteKey, "pac-host")
+			createNamespace(buildServiceNamespaceName)
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",
 				"github-private-key":    githubAppPrivateKey,

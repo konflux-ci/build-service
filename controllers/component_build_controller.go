@@ -17,7 +17,6 @@ limitations under the License.
 package controllers
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -69,6 +68,7 @@ const (
 	pipelinesAsCodeRouteEnvVar = "PAC_WEBHOOK_URL"
 
 	buildPipelineServiceAccountName = "pipeline"
+	buildServiceNamespaceName       = "build-service"
 	defaultPipelineName             = "docker-build"
 
 	PartOfLabelName           = "app.kubernetes.io/part-of"
@@ -190,10 +190,44 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		// Also it can contain github-private-key and github-application-id
 		// in case GitHub Application is used instead of webhook.
 		pacSecret := corev1.Secret{}
-		if err := r.Client.Get(ctx, types.NamespacedName{Namespace: pipelinesAsCodeNamespace, Name: gitopsprepare.PipelinesAsCodeSecretName}, &pacSecret); err != nil {
-			log.Error(err, "failed to get Pipelines as Code secret")
-			r.EventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
-			return ctrl.Result{}, err
+		localPaCSecretKey := types.NamespacedName{Namespace: component.Namespace, Name: gitopsprepare.PipelinesAsCodeSecretName}
+		if err := r.Client.Get(ctx, localPaCSecretKey, &pacSecret); err != nil {
+			if !errors.IsNotFound(err) {
+				log.Error(err, fmt.Sprintf("failed to get Pipelines as Code secret in %s namespace", component.Namespace))
+				r.EventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
+				return ctrl.Result{}, err
+			}
+
+			// Fallback to the global configuration
+			if err := r.LocalClient.Get(ctx, types.NamespacedName{Namespace: buildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}, &pacSecret); err != nil {
+				log.Error(err, fmt.Sprintf("failed to get Pipelines as Code secret in %s namespace", buildServiceNamespaceName))
+				r.EventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
+				if errors.IsNotFound(err) {
+					// Do not trigger a new reconciole. The PaC secret must be created first.
+					return ctrl.Result{}, nil
+				}
+				return ctrl.Result{}, err
+			}
+
+			if !gitops.IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
+				// Webhook is used. We need to reference access token in the component namespace.
+				// Copy global PaC configuration in component namespace
+				localPaCSecret := &corev1.Secret{
+					TypeMeta: pacSecret.TypeMeta,
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      localPaCSecretKey.Name,
+						Namespace: localPaCSecretKey.Namespace,
+						Labels: map[string]string{
+							PartOfLabelName: PartOfAppStudioLabelValue,
+						},
+					},
+					Data: pacSecret.Data,
+				}
+				if err := r.Client.Create(ctx, localPaCSecret); err != nil {
+					r.Log.Error(err, "failed to create local PaC configuration secret")
+					return ctrl.Result{}, err
+				}
+			}
 		}
 
 		if err := validatePaCConfiguration(gitProvider, pacSecret.Data); err != nil {
@@ -205,12 +239,6 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 		var webhookSecretString, webhookTargetUrl string
 		if !gitops.IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
-			// Webhook is used. We need to reference access token in the component namespace.
-			// Copy or update global PaC configuration in component namespace
-			if err := r.propagatePaCConfigurationSecretToComponentNamespace(ctx, req.Namespace, pacSecret); err != nil {
-				return ctrl.Result{}, err
-			}
-
 			// Generate webhook secret for the component git repository if not yet generated
 			// and stores it in the corresponding k8s secret.
 			webhookSecretString, err = r.ensureWebhookSecret(ctx, component)
@@ -391,50 +419,6 @@ func checkMandatoryFieldsNotEmpty(config map[string][]byte, mandatoryFields []st
 	for _, field := range mandatoryFields {
 		if len(config[field]) == 0 {
 			return fmt.Errorf(" Pipelines as Code secret: %s field is not configured", field)
-		}
-	}
-	return nil
-}
-
-func (r *ComponentBuildReconciler) propagatePaCConfigurationSecretToComponentNamespace(ctx context.Context, namespace string, pacSecret corev1.Secret) error {
-	isUpdateNeeded := false
-	localPaCSecret := corev1.Secret{}
-	localPaCSecretKey := types.NamespacedName{Namespace: namespace, Name: gitopsprepare.PipelinesAsCodeSecretName}
-	if err := r.Client.Get(ctx, localPaCSecretKey, &localPaCSecret); err != nil {
-		if errors.IsNotFound(err) {
-			// Create a copy of PaC secret in local namespace
-			isUpdateNeeded = false
-			localPaCSecret = corev1.Secret{
-				TypeMeta: pacSecret.TypeMeta,
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      localPaCSecretKey.Name,
-					Namespace: localPaCSecretKey.Namespace,
-					Labels: map[string]string{
-						PartOfLabelName: PartOfAppStudioLabelValue,
-					},
-				},
-				Data: pacSecret.Data,
-			}
-			if err := r.Client.Create(ctx, &localPaCSecret); err != nil {
-				r.Log.Error(err, "failed to create local PaC configuration secret")
-				return err
-			}
-		} else {
-			r.Log.Error(err, "failed to get local PaC configuration secret")
-			return err
-		}
-	} else {
-		for key := range pacSecret.Data {
-			if !bytes.Equal(localPaCSecret.Data[key], pacSecret.Data[key]) {
-				isUpdateNeeded = true
-				localPaCSecret.Data[key] = pacSecret.Data[key]
-			}
-		}
-	}
-	if isUpdateNeeded {
-		if err := r.Client.Update(ctx, &localPaCSecret); err != nil {
-			r.Log.Error(err, "failed to update local PaC configuration secret")
-			return err
 		}
 	}
 	return nil

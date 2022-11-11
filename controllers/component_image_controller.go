@@ -230,7 +230,7 @@ func (r *ComponentImageReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	application := &appstudiov1alpha1.Application{}
 	applicationKey := types.NamespacedName{Name: applicationName, Namespace: req.Namespace}
-	if err := r.Get(ctx, applicationKey, application); err != nil {
+	if err := r.Client.Get(ctx, applicationKey, application); err != nil {
 		log.Error(err, fmt.Sprintf("Failed to get application \"%s\"", applicationName))
 		return ctrl.Result{}, err
 	}
