@@ -238,40 +238,6 @@ var _ = Describe("Component initial build controller", func() {
 			ensureComponentInitialBuildAnnotationState(resourceKey, true)
 		})
 
-		It("should update PaC secret in local namespace if global one updated", func() {
-			pacSecretData := map[string]string{"github.token": "ghp_token"}
-			createSecret(pacSecretKey, pacSecretData)
-
-			setComponentDevfileModel(resourceKey)
-
-			ensureSecretCreated(namespacePaCSecretKey)
-			ensureSecretCreated(webhookSecretKey)
-			ensurePaCRepositoryCreated(resourceKey)
-
-			deleteComponent(resourceKey)
-
-			pacSecretNewData := map[string]string{
-				"github.token": "ghp_token22",
-				"gitlab.token": "glpat-token22",
-			}
-			createSecret(pacSecretKey, pacSecretNewData)
-
-			createComponentForPaCBuild(resourceKey)
-			setComponentDevfileModel(resourceKey)
-
-			ensureSecretCreated(namespacePaCSecretKey)
-			ensureSecretCreated(webhookSecretKey)
-			ensurePaCRepositoryCreated(resourceKey)
-
-			Eventually(func() bool {
-				secret := &corev1.Secret{}
-				err := k8sClient.Get(ctx, pacSecretKey, secret)
-				return err == nil && secret.ResourceVersion != "" &&
-					string(secret.Data["github.token"]) == pacSecretNewData["github.token"] &&
-					string(secret.Data["gitlab.token"]) == pacSecretNewData["gitlab.token"]
-			}, timeout, interval).Should(BeTrue())
-		})
-
 		It("should not copy PaC secret into local namespace if GitHub application is used", func() {
 			deleteSecret(namespacePaCSecretKey)
 

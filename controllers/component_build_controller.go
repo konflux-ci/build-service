@@ -44,8 +44,6 @@ import (
 
 	"github.com/go-logr/logr"
 
-	"github.com/kcp-dev/logicalcluster/v2"
-
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	"github.com/redhat-appstudio/application-service/gitops"
@@ -78,7 +76,6 @@ const (
 // ComponentBuildReconciler watches AppStudio Component object in order to submit builds
 type ComponentBuildReconciler struct {
 	Client        client.Client
-	LocalClient   client.Client
 	Scheme        *runtime.Scheme
 	Log           logr.Logger
 	EventRecorder record.EventRecorder
@@ -114,7 +111,6 @@ func (r *ComponentBuildReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch
-//+kubebuilder:rbac:groups=apis.kcp.dev,resources=apibindings,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -122,12 +118,6 @@ func (r *ComponentBuildReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.11.0/pkg/reconcile
 func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("ComponentOnboarding", req.NamespacedName)
-
-	// Check if the operator runs on KCP cluster
-	if req.ClusterName != "" {
-		ctx = logicalcluster.WithCluster(ctx, logicalcluster.New(req.ClusterName))
-		log = log.WithValues("cluster", req.ClusterName)
-	}
 
 	// Fetch the Component instance
 	var component appstudiov1alpha1.Component
@@ -173,7 +163,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 	// The initial build annotation is absent, onboarding of the component needed
 
-	gitopsConfig := gitopsprepare.PrepareGitopsConfig(ctx, r.LocalClient, r.Client, component)
+	gitopsConfig := gitopsprepare.PrepareGitopsConfig(ctx, r.Client, component)
 	if val, ok := component.Annotations[gitops.PaCAnnotation]; (ok && val == "1") || gitopsConfig.IsHACBS {
 		// Use pipelines as code build
 		log.Info("Pipelines as Code enabled")
@@ -190,8 +180,8 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		// Also it can contain github-private-key and github-application-id
 		// in case GitHub Application is used instead of webhook.
 		pacSecret := corev1.Secret{}
-		localPaCSecretKey := types.NamespacedName{Namespace: component.Namespace, Name: gitopsprepare.PipelinesAsCodeSecretName}
-		if err := r.Client.Get(ctx, localPaCSecretKey, &pacSecret); err != nil {
+		pacSecretKey := types.NamespacedName{Namespace: component.Namespace, Name: gitopsprepare.PipelinesAsCodeSecretName}
+		if err := r.Client.Get(ctx, pacSecretKey, &pacSecret); err != nil {
 			if !errors.IsNotFound(err) {
 				log.Error(err, fmt.Sprintf("failed to get Pipelines as Code secret in %s namespace", component.Namespace))
 				r.EventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
@@ -199,14 +189,17 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			}
 
 			// Fallback to the global configuration
-			if err := r.LocalClient.Get(ctx, types.NamespacedName{Namespace: buildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}, &pacSecret); err != nil {
-				log.Error(err, fmt.Sprintf("failed to get Pipelines as Code secret in %s namespace", buildServiceNamespaceName))
-				r.EventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
-				if errors.IsNotFound(err) {
-					// Do not trigger a new reconciole. The PaC secret must be created first.
-					return ctrl.Result{}, nil
+			globalPaCSecretKey := types.NamespacedName{Namespace: buildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}
+			if err := r.Client.Get(ctx, globalPaCSecretKey, &pacSecret); err != nil {
+				if !errors.IsNotFound(err) {
+					log.Error(err, fmt.Sprintf("failed to get Pipelines as Code secret in %s namespace", globalPaCSecretKey.Namespace))
+					r.EventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
+					return ctrl.Result{}, err
 				}
-				return ctrl.Result{}, err
+				log.Error(err, fmt.Sprintf("Pipelines as Code secret not found in %s namespace nor in %s", pacSecretKey.Namespace, globalPaCSecretKey.Namespace))
+				r.EventRecorder.Event(&pacSecret, "Warning", "PaCSecretNotFound", err.Error())
+				// Do not trigger a new reconcile. The PaC secret must be created first.
+				return ctrl.Result{}, nil
 			}
 
 			if !gitops.IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
@@ -215,8 +208,8 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				localPaCSecret := &corev1.Secret{
 					TypeMeta: pacSecret.TypeMeta,
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      localPaCSecretKey.Name,
-						Namespace: localPaCSecretKey.Namespace,
+						Name:      pacSecretKey.Name,
+						Namespace: pacSecretKey.Namespace,
 						Labels: map[string]string{
 							PartOfLabelName: PartOfAppStudioLabelValue,
 						},
@@ -250,14 +243,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			webhookTargetUrl = os.Getenv(pipelinesAsCodeRouteEnvVar)
 			if webhookTargetUrl == "" {
 				// The env variable is not set
-
-				if req.ClusterName != "" {
-					// Do not attempt to read Pipelines as Code route on KCP as it's set in different workspace
-					log.Info(fmt.Sprintf("%s environment variable must be set on KCP", pipelinesAsCodeRouteEnvVar))
-					// Do not requeue, the env variable must be provided on KCP
-					return ctrl.Result{}, nil
-				}
-
+				// Use the installed on the cluster Pipelines as Code
 				webhookTargetUrl, err = r.getPaCRoutePublicUrl(ctx)
 				if err != nil {
 					return ctrl.Result{}, err

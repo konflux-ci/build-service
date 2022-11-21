@@ -39,28 +39,6 @@ rules:
   verbs:
   - get
 - apiGroups:
-  - apis.kcp.dev
-  resources:
-  - apibindings
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - apis.kcp.dev
-  resources:
-  - apiexports
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - apis.kcp.dev
-  resources:
-  - apiexports/content
-  verbs:
-  - '*'
-- apiGroups:
   - appstudio.redhat.com
   resources:
   - applications
@@ -79,12 +57,6 @@ rules:
 - apiGroups:
   - appstudio.redhat.com
   resources:
-  - snapshots
-  verbs:
-  - create
-- apiGroups:
-  - appstudio.redhat.com
-  resources:
   - components
   verbs:
   - get
@@ -100,6 +72,12 @@ rules:
   - get
   - list
   - watch
+- apiGroups:
+  - appstudio.redhat.com
+  resources:
+  - snapshots
+  verbs:
+  - create
 - apiGroups:
   - ""
   resources:

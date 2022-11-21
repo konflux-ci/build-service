@@ -1,9 +1,0 @@
-namespace: build-service-system
-namePrefix: build-service-
-
-bases:
-- ../rbac
-- ../kcp-manager
-
-resources:
-- build-service-apiexport.yaml
