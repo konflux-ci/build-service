@@ -17,7 +17,6 @@ limitations under the License.
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -35,7 +34,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/selection"
-	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -43,7 +41,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
-	"sigs.k8s.io/controller-runtime/pkg/kcp"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
@@ -51,8 +48,6 @@ import (
 	"github.com/redhat-appstudio/build-service/controllers"
 	taskrunapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	triggersapi "github.com/tektoncd/triggers/pkg/apis/triggers/v1alpha1"
-
-	apisv1alpha1 "github.com/kcp-dev/kcp/pkg/apis/apis/v1alpha1"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -69,8 +64,6 @@ func init() {
 }
 
 // +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get
-// +kubebuilder:rbac:groups="apis.kcp.dev",resources=apiexports,verbs=get;list;watch
-// +kubebuilder:rbac:groups="apis.kcp.dev",resources=apiexports/content,verbs=*
 
 func main() {
 	var metricsAddr string
@@ -111,9 +104,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	var localClient client.Client
-	var mgr ctrl.Manager
-
 	cacheOptions, err := getCacheFuncOptions()
 	if err != nil {
 		setupLog.Error(err, "unable to create cache options")
@@ -128,55 +118,20 @@ func main() {
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "5483be8f.redhat.com",
 		ClientDisableCacheFor:  getCacheExcludedObjectsTypes(),
+		NewCache:               cache.BuilderWithOptions(*cacheOptions),
 	}
 	restConfig := ctrl.GetConfigOrDie()
 
-	ctx := ctrl.SetupSignalHandler()
+	ensureRequiredAPIGroupsAndResourcesExist(restConfig)
 
-	if kcpAPIsGroupPresent(restConfig) {
-		setupLog.Info("Looking up virtual workspace URL")
-		cfg, err := restConfigForAPIExport(ctx, restConfig, apiExportName)
-		if err != nil {
-			setupLog.Error(err, "error looking up virtual workspace URL")
-		}
-
-		setupLog.Info("Using virtual workspace URL", "url", cfg.Host)
-
-		options.NewCache = kcp.ClusterAwareBuilderWithOptions(*cacheOptions)
-		options.LeaderElectionConfig = restConfig
-		mgr, err = kcp.NewClusterAwareManager(cfg, options)
-		if err != nil {
-			setupLog.Error(err, "unable to start cluster aware manager")
-			os.Exit(1)
-		}
-
-		// Local client is needed to access the workspace where operator deployment is
-		localClientScheme := runtime.NewScheme()
-		if err := clientgoscheme.AddToScheme(localClientScheme); err != nil {
-			setupLog.Error(err, "error adding standard types local client sceme")
-		}
-		localClient, err = client.New(ctrl.GetConfigOrDie(), client.Options{Scheme: localClientScheme})
-		if err != nil {
-			setupLog.Error(err, "error creating local client")
-		}
-	} else {
-		setupLog.Info("The apis.kcp.dev group is not present - creating standard manager")
-
-		ensureRequiredAPIGroupsAndResourcesExist(restConfig)
-
-		options.NewCache = cache.BuilderWithOptions(*cacheOptions)
-		mgr, err = ctrl.NewManager(restConfig, options)
-		if err != nil {
-			setupLog.Error(err, "unable to start manager")
-			os.Exit(1)
-		}
-
-		localClient = mgr.GetClient()
+	mgr, err := ctrl.NewManager(restConfig, options)
+	if err != nil {
+		setupLog.Error(err, "unable to start manager")
+		os.Exit(1)
 	}
 
 	if err = (&controllers.ComponentBuildReconciler{
 		Client:        mgr.GetClient(),
-		LocalClient:   localClient,
 		Scheme:        mgr.GetScheme(),
 		Log:           ctrl.Log.WithName("controllers").WithName("ComponentOnboarding"),
 		EventRecorder: mgr.GetEventRecorderFor("ComponentOnboarding"),
@@ -207,7 +162,7 @@ func main() {
 	}
 
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctx); err != nil {
+	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
@@ -236,74 +191,6 @@ func getCacheFuncOptions() (*cache.Options, error) {
 	return &cache.Options{
 		SelectorsByObject: selectors,
 	}, nil
-}
-
-// restConfigForAPIExport returns a *rest.Config properly configured to communicate with the endpoint for the
-// APIExport's virtual workspace.
-func restConfigForAPIExport(ctx context.Context, cfg *rest.Config, apiExportName string) (*rest.Config, error) {
-	scheme := runtime.NewScheme()
-	if err := apisv1alpha1.AddToScheme(scheme); err != nil {
-		return nil, fmt.Errorf("error adding apis.kcp.dev/v1alpha1 to scheme: %w", err)
-	}
-
-	apiExportClient, err := client.New(cfg, client.Options{Scheme: scheme})
-	if err != nil {
-		return nil, fmt.Errorf("error creating APIExport client: %w", err)
-	}
-
-	var apiExport apisv1alpha1.APIExport
-
-	if apiExportName != "" {
-		if err := apiExportClient.Get(ctx, types.NamespacedName{Name: apiExportName}, &apiExport); err != nil {
-			return nil, fmt.Errorf("error getting APIExport %q: %w", apiExportName, err)
-		}
-	} else {
-		setupLog.Info("api-export-name is empty - listing")
-		exports := &apisv1alpha1.APIExportList{}
-		if err := apiExportClient.List(ctx, exports); err != nil {
-			return nil, fmt.Errorf("error listing APIExports: %w", err)
-		}
-		if len(exports.Items) == 0 {
-			return nil, fmt.Errorf("no APIExport found")
-		}
-		if len(exports.Items) > 1 {
-			return nil, fmt.Errorf("more than one APIExport found")
-		}
-		apiExport = exports.Items[0]
-	}
-
-	if len(apiExport.Status.VirtualWorkspaces) < 1 {
-		return nil, fmt.Errorf("APIExport %q status.virtualWorkspaces is empty", apiExportName)
-	}
-
-	cfg = rest.CopyConfig(cfg)
-	cfg.Host = apiExport.Status.VirtualWorkspaces[0].URL
-
-	return cfg, nil
-}
-
-func kcpAPIsGroupPresent(restConfig *rest.Config) bool {
-	discoveryClient, err := discovery.NewDiscoveryClientForConfig(restConfig)
-	if err != nil {
-		setupLog.Error(err, "failed to create discovery client")
-		os.Exit(1)
-	}
-	apiGroupList, err := discoveryClient.ServerGroups()
-	if err != nil {
-		setupLog.Error(err, "failed to get server groups")
-		os.Exit(1)
-	}
-
-	for _, group := range apiGroupList.Groups {
-		if group.Name == apisv1alpha1.SchemeGroupVersion.Group {
-			for _, version := range group.Versions {
-				if version.Version == apisv1alpha1.SchemeGroupVersion.Version {
-					return true
-				}
-			}
-		}
-	}
-	return false
 }
 
 func ensureRequiredAPIGroupsAndResourcesExist(restConfig *rest.Config) {

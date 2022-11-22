@@ -4,8 +4,6 @@ go 1.18
 
 require (
 	github.com/go-logr/logr v1.2.3
-	github.com/kcp-dev/kcp/pkg/apis v0.8.2
-	github.com/kcp-dev/logicalcluster/v2 v2.0.0-alpha.3
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.20.1
 	github.com/openshift/api v3.9.0+incompatible
@@ -21,8 +19,8 @@ require (
 // If you update dependencies below you must also update controllers/suite_test.go
 require (
 	github.com/openshift-pipelines/pipelines-as-code v0.11.0
-	github.com/redhat-appstudio/application-api v0.0.0-20221108172336-c9e003808d1f
-	github.com/redhat-appstudio/application-service v0.0.0-20221108224914-93fff4169f30
+	github.com/redhat-appstudio/application-api v0.0.0-20221114151952-77cba9006505
+	github.com/redhat-appstudio/application-service v0.0.0-20221121223032-8694598eb523
 	github.com/tektoncd/pipeline v0.37.0
 	github.com/tektoncd/triggers v0.19.1
 )
@@ -95,7 +93,7 @@ require (
 	github.com/jenkins-x/go-scm v1.10.10 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/kcp-dev/apimachinery v0.0.0-20220922165458-607ac5e87531 // indirect
+	github.com/kcp-dev/kcp/pkg/apis v0.7.0 // indirect
 	github.com/klauspost/compress v1.14.4 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.12 // indirect
@@ -120,7 +118,7 @@ require (
 	github.com/prometheus/procfs v0.7.3 // indirect
 	github.com/prometheus/statsd_exporter v0.21.0 // indirect
 	github.com/redhat-developer/alizer/go v0.0.0-20220704150640-ef50ead0b279 // indirect
-	github.com/redhat-developer/gitops-generator v0.0.0-20221019171158-4833b032e3f9 // indirect
+	github.com/redhat-developer/gitops-generator v0.0.0-20221117222854-240399c18bc0 // indirect
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06 // indirect
 	github.com/shurcooL/githubv4 v0.0.0-20190718010115-4ba037080260 // indirect
 	github.com/shurcooL/graphql v0.0.0-20181231061246-d48a9a75455f // indirect
@@ -166,7 +164,3 @@ require (
 	sigs.k8s.io/json v0.0.0-20220713155537-f223a00ba0e2 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.3 // indirect
 )
-
-replace github.com/antlr/antlr4 => github.com/antlr/antlr4 v0.0.0-20211106181442-e4c1a74c66bd
-
-replace sigs.k8s.io/controller-runtime => github.com/kcp-dev/controller-runtime v0.12.2-0.20221010150959-3288e75fd847

@@ -67,8 +67,8 @@ var _ = BeforeSuite(func() {
 	ctx, cancel = context.WithCancel(context.TODO())
 
 	By("bootstrapping test environment")
-	applicationServiceDepVersion := "v0.0.0-20221108224914-93fff4169f30"
-	applicationApiDepVersion := "v0.0.0-20221108172336-c9e003808d1f"
+	applicationServiceDepVersion := "v0.0.0-20221121223032-8694598eb523"
+	applicationApiDepVersion := "v0.0.0-20221114151952-77cba9006505"
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "redhat-appstudio", "application-api@"+applicationApiDepVersion, "config", "crd", "bases"),
@@ -119,7 +119,6 @@ var _ = BeforeSuite(func() {
 
 	err = (&ComponentBuildReconciler{
 		Client:        k8sManager.GetClient(),
-		LocalClient:   k8sManager.GetClient(),
 		Scheme:        k8sManager.GetScheme(),
 		Log:           ctrl.Log.WithName("controllers").WithName("ComponentOnboarding"),
 		EventRecorder: k8sManager.GetEventRecorderFor("ComponentOnboarding"),
