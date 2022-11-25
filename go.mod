@@ -20,7 +20,7 @@ require (
 require (
 	github.com/openshift-pipelines/pipelines-as-code v0.11.0
 	github.com/redhat-appstudio/application-api v0.0.0-20221114151952-77cba9006505
-	github.com/redhat-appstudio/application-service v0.0.0-20221121223032-8694598eb523
+	github.com/redhat-appstudio/application-service v0.0.0-20221129172232-763cbbe1992e
 	github.com/tektoncd/pipeline v0.37.0
 	github.com/tektoncd/triggers v0.19.1
 )
