@@ -25,6 +25,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	routev1 "github.com/openshift/api/route/v1"
@@ -49,8 +50,10 @@ import (
 	"github.com/redhat-appstudio/application-service/gitops"
 	gitopsprepare "github.com/redhat-appstudio/application-service/gitops/prepare"
 	"github.com/redhat-appstudio/application-service/pkg/devfile"
+	buildappstudiov1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
 	"github.com/redhat-appstudio/build-service/pkg/github"
 	"github.com/redhat-appstudio/build-service/pkg/gitlab"
+	pipelineselector "github.com/redhat-appstudio/build-service/pkg/pipeline-selector"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	oci "github.com/tektoncd/pipeline/pkg/remote/oci"
 )
@@ -65,9 +68,10 @@ const (
 	pipelinesAsCodeRouteName   = "pipelines-as-code-controller"
 	pipelinesAsCodeRouteEnvVar = "PAC_WEBHOOK_URL"
 
-	buildPipelineServiceAccountName = "pipeline"
-	buildServiceNamespaceName       = "build-service"
-	defaultPipelineName             = "docker-build"
+	buildPipelineServiceAccountName   = "pipeline"
+	buildServiceNamespaceName         = "build-service"
+	buildPipelineSelectorResourceName = "build-pipeline-selector"
+	defaultPipelineName               = "docker-build"
 
 	PartOfLabelName           = "app.kubernetes.io/part-of"
 	PartOfAppStudioLabelValue = "appstudio"
@@ -103,6 +107,7 @@ func (r *ComponentBuildReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=components,verbs=get;list;watch;update;patch
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=components/status,verbs=get;list;watch
+//+kubebuilder:rbac:groups="appstudio.redhat.com",resources=buildpipelineselectors,verbs=get;list;watch;create;update;patch
 //+kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns,verbs=create
 //+kubebuilder:rbac:groups=pipelinesascode.tekton.dev,resources=repositories,verbs=get;list;watch;create;update;patch
 //+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch
@@ -255,21 +260,8 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return ctrl.Result{}, err
 		}
 
-		bundle := gitopsConfig.BuildBundle
-
-		// Get PipelineSpec from bundle for HACBS workflow
-		var pipelineSpec tektonapi.PipelineSpec
-		if gitopsConfig.IsHACBS {
-			// Get Pipeline from the bundle to be expanded to the PipelineRun
-			if pipelineSpec, err = resolvePipelineSpec(bundle, defaultPipelineName); err != nil {
-				r.EventRecorder.Event(&component, "Warning", "ErrorGettingPipelineFromBundle", err.Error())
-				return ctrl.Result{}, err
-			}
-			bundle = ""
-		}
-
 		// Manage merge request for Pipelines as Code configuration
-		mrUrl, err := ConfigureRepositoryForPaC(component, pacSecret.Data, webhookTargetUrl, webhookSecretString, bundle, pipelineSpec)
+		mrUrl, err := r.ConfigureRepositoryForPaC(ctx, &component, pacSecret.Data, webhookTargetUrl, webhookSecretString)
 		if err != nil {
 			log.Error(err, "failed to setup repository for Pipelines as Code")
 			r.EventRecorder.Event(&component, "Warning", "ErrorConfiguringPaCForComponentRepository", err.Error())
@@ -304,7 +296,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return ctrl.Result{}, err
 		}
 
-		if err := r.SubmitNewBuild(ctx, component, gitopsConfig); err != nil {
+		if err := r.SubmitNewBuild(ctx, component); err != nil {
 			// Try to revert the initial build annotation
 			if err := r.Client.Get(ctx, req.NamespacedName, &component); err == nil {
 				component.Annotations[InitialBuildAnnotationName] = "false"
@@ -330,21 +322,6 @@ func (r *ComponentBuildReconciler) getPaCRoutePublicUrl(ctx context.Context) (st
 		return "", err
 	}
 	return "https://" + pacWebhookRoute.Spec.Host, nil
-}
-
-func resolvePipelineSpec(bundleUri, pipelineName string) (tektonapi.PipelineSpec, error) {
-	var obj runtime.Object
-	var err error
-	resolver := oci.NewResolver(bundleUri, authn.DefaultKeychain)
-
-	if obj, err = resolver.Get(context.TODO(), "pipeline", pipelineName); err != nil {
-		return tektonapi.PipelineSpec{}, err
-	}
-	pipelineSpecObj, ok := obj.(tektonapi.PipelineObject)
-	if !ok {
-		return tektonapi.PipelineSpec{}, fmt.Errorf("failed to extract pipeline %s from bundle %s", bundleUri, pipelineName)
-	}
-	return pipelineSpecObj.PipelineSpec(), nil
 }
 
 // validatePaCConfiguration detects checks that all required fields is set for whatever method is used.
@@ -490,17 +467,41 @@ func (r *ComponentBuildReconciler) EnsurePaCRepository(ctx context.Context, comp
 
 // ConfigureRepositoryForPaC creates a merge request with initial Pipelines as Code configuration
 // and configures a webhook to notify in-cluster PaC unless application (on the repository side) is used.
-func ConfigureRepositoryForPaC(component appstudiov1alpha1.Component, config map[string][]byte, webhookTargetUrl, webhookSecret, buildBundle string, pipelineSpec tektonapi.PipelineSpec) (prUrl string, err error) {
-	pipelineOnPush, err := GeneratePipelineRun(component, buildBundle, pipelineSpec, false)
+func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context, component *appstudiov1alpha1.Component, config map[string][]byte, webhookTargetUrl, webhookSecret string) (prUrl string, err error) {
+	log := r.Log.WithValues("Repository", component.Spec.Source.GitSource.URL)
+
+	pipelineRef, additionalPipelineParams, err := r.GetPipelineForComponent(ctx, component)
 	if err != nil {
 		return "", err
 	}
-	pipelineOnPR, err := GeneratePipelineRun(component, buildBundle, pipelineSpec, true)
+	log.Info(fmt.Sprintf("Selected %s pipeline from %s bundle for %s component", pipelineRef.Name, pipelineRef.Bundle, component.Name))
+
+	// Get pipeline from the bundle to be expanded to the PipelineRun
+	pipelineSpec, err := retrievePipelineSpec(pipelineRef.Bundle, pipelineRef.Name)
+	if err != nil {
+		r.EventRecorder.Event(component, "Warning", "ErrorGettingPipelineFromBundle", err.Error())
+		return "", err
+	}
+
+	pipelineOnPush, err := r.generatePipelineRunForComponent(component, pipelineSpec, additionalPipelineParams, false)
+	if err != nil {
+		return "", err
+	}
+	pipelineOnPushYaml, err := yaml.Marshal(pipelineOnPush)
 	if err != nil {
 		return "", err
 	}
 
-	gitProvider, _ := gitops.GetGitProvider(component)
+	pipelineOnPR, err := r.generatePipelineRunForComponent(component, pipelineSpec, additionalPipelineParams, true)
+	if err != nil {
+		return "", err
+	}
+	pipelineOnPRYaml, err := yaml.Marshal(pipelineOnPR)
+	if err != nil {
+		return "", err
+	}
+
+	gitProvider, _ := gitops.GetGitProvider(*component)
 	isAppUsed := gitops.IsPaCApplicationConfigured(gitProvider, config)
 
 	var accessToken string
@@ -560,8 +561,8 @@ func ConfigureRepositoryForPaC(component appstudiov1alpha1.Component, config map
 			AuthorName:    authorName,
 			AuthorEmail:   authorEmail,
 			Files: []github.File{
-				{FullPath: ".tekton/" + component.Name + "-" + PipelineRunOnPushFilename, Content: pipelineOnPush},
-				{FullPath: ".tekton/" + component.Name + "-" + PipelineRunOnPRFilename, Content: pipelineOnPR},
+				{FullPath: ".tekton/" + component.Name + "-" + PipelineRunOnPushFilename, Content: pipelineOnPushYaml},
+				{FullPath: ".tekton/" + component.Name + "-" + PipelineRunOnPRFilename, Content: pipelineOnPRYaml},
 			},
 		}
 		prUrl, err = github.CreatePaCPullRequest(ghclient, prData)
@@ -601,8 +602,8 @@ func ConfigureRepositoryForPaC(component appstudiov1alpha1.Component, config map
 			AuthorName:    authorName,
 			AuthorEmail:   authorEmail,
 			Files: []gitlab.File{
-				{FullPath: ".tekton/" + component.Name + "-" + PipelineRunOnPushFilename, Content: pipelineOnPush},
-				{FullPath: ".tekton/" + component.Name + "-" + PipelineRunOnPRFilename, Content: pipelineOnPR},
+				{FullPath: ".tekton/" + component.Name + "-" + PipelineRunOnPushFilename, Content: pipelineOnPushYaml},
+				{FullPath: ".tekton/" + component.Name + "-" + PipelineRunOnPRFilename, Content: pipelineOnPRYaml},
 			},
 		}
 		mrUrl, err := gitlab.EnsurePaCMergeRequest(glclient, mrData)
@@ -616,19 +617,15 @@ func ConfigureRepositoryForPaC(component appstudiov1alpha1.Component, config map
 	}
 }
 
-func GeneratePipelineRun(component appstudiov1alpha1.Component, bundle string, pipelineSpec tektonapi.PipelineSpec, onPull bool) ([]byte, error) {
-	var pipelineName string
+// generatePipelineRunForComponent returns pipeline run definition to build component source with.
+func (r *ComponentBuildReconciler) generatePipelineRunForComponent(component *appstudiov1alpha1.Component, pipelineSpec *tektonapi.PipelineSpec, additionalPipelineParams []tektonapi.Param, onPull bool) (*tektonapi.PipelineRun, error) {
 	var targetBranches []string
-	var targetBranch string
-
-	if component.Spec.Source.GitSource != nil {
-		targetBranch = component.Spec.Source.GitSource.Revision
-	}
-	if targetBranch != "" {
-		targetBranches = []string{targetBranch}
+	if component.Spec.Source.GitSource != nil && component.Spec.Source.GitSource.Revision != "" {
+		targetBranches = []string{component.Spec.Source.GitSource.Revision}
 	} else {
 		targetBranches = []string{"main", "master"}
 	}
+
 	annotations := map[string]string{
 		"pipelinesascode.tekton.dev/on-target-branch": "[" + strings.Join(targetBranches[:], ",") + "]",
 		"pipelinesascode.tekton.dev/max-keep-runs":    "3",
@@ -640,17 +637,19 @@ func GeneratePipelineRun(component appstudiov1alpha1.Component, bundle string, p
 		ComponentNameLabelName:                  component.Name,
 		"pipelines.appstudio.openshift.io/type": "build",
 	}
-	image_repo := strings.Split(component.Spec.ContainerImage, ":")[0]
+
+	imageRepo := strings.Split(component.Spec.ContainerImage, ":")[0]
+	var pipelineName string
 	var proposedImage string
 	if onPull {
 		annotations["pipelinesascode.tekton.dev/on-event"] = "[pull_request]"
 		annotations["build.appstudio.redhat.com/pull_request_number"] = "{{pull_request_number}}"
 		pipelineName = component.Name + PipelineRunOnPRSuffix
-		proposedImage = image_repo + ":on-pr-{{revision}}"
+		proposedImage = imageRepo + ":on-pr-{{revision}}"
 	} else {
 		annotations["pipelinesascode.tekton.dev/on-event"] = "[push]"
 		pipelineName = component.Name + PipelineRunOnPushSuffix
-		proposedImage = image_repo + ":{{revision}}"
+		proposedImage = imageRepo + ":{{revision}}"
 	}
 
 	params := []tektonapi.Param{
@@ -658,6 +657,7 @@ func GeneratePipelineRun(component appstudiov1alpha1.Component, bundle string, p
 		{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "{{revision}}"}},
 		{Name: "output-image", Value: tektonapi.ArrayOrString{Type: "string", StringVal: proposedImage}},
 	}
+	params = append(params, additionalPipelineParams...)
 
 	dockerFile, err := devfile.SearchForDockerfile([]byte(component.Status.Devfile))
 	if err != nil {
@@ -671,17 +671,8 @@ func GeneratePipelineRun(component appstudiov1alpha1.Component, bundle string, p
 			params = append(params, tektonapi.Param{Name: "path-context", Value: tektonapi.ArrayOrString{Type: "string", StringVal: dockerFile.BuildContext}})
 		}
 	}
-	var pipelineRefPtr *tektonapi.PipelineRef
-	var pipelineSpecPtr *tektonapi.PipelineSpec
-	if bundle != "" {
-		pipelineRefPtr = &tektonapi.PipelineRef{
-			Name:   defaultPipelineName,
-			Bundle: bundle,
-		}
-	} else {
-		pipelineSpecPtr = &pipelineSpec
-	}
-	pipelineRun := tektonapi.PipelineRun{
+
+	pipelineRun := &tektonapi.PipelineRun{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "PipelineRun",
 			APIVersion: "tekton.dev/v1beta1",
@@ -693,8 +684,7 @@ func GeneratePipelineRun(component appstudiov1alpha1.Component, bundle string, p
 			Annotations: annotations,
 		},
 		Spec: tektonapi.PipelineRunSpec{
-			PipelineRef:  pipelineRefPtr,
-			PipelineSpec: pipelineSpecPtr,
+			PipelineSpec: pipelineSpec,
 			Params:       params,
 			Workspaces: []tektonapi.WorkspaceBinding{
 				{
@@ -703,23 +693,78 @@ func GeneratePipelineRun(component appstudiov1alpha1.Component, bundle string, p
 				},
 				{
 					Name:   "registry-auth",
-					Secret: &corev1.SecretVolumeSource{SecretName: "redhat-appstudio-registry-pull-secret"},
+					Secret: &corev1.SecretVolumeSource{SecretName: gitopsprepare.RegistrySecret},
 				},
 			},
 		},
 	}
 
-	yamlformat, err := yaml.Marshal(pipelineRun)
-	if err != nil {
-		// Should never happen because the function is covered by tests
-		return nil, err
+	return pipelineRun, nil
+}
+
+// GetPipelineForComponent searches for the build pipeline to use on the component.
+func (r *ComponentBuildReconciler) GetPipelineForComponent(ctx context.Context, component *appstudiov1alpha1.Component) (*tektonapi.PipelineRef, []tektonapi.Param, error) {
+	var pipelineSelectors []buildappstudiov1alpha1.BuildPipelineSelector
+	pipelineSelector := &buildappstudiov1alpha1.BuildPipelineSelector{}
+
+	pipelineSelectorKeys := []types.NamespacedName{
+		// First try specific config for the application
+		{Namespace: component.Namespace, Name: component.Spec.Application},
+		// Second try namespaced config
+		{Namespace: component.Namespace, Name: buildPipelineSelectorResourceName},
+		// Finally try global config
+		{Namespace: buildServiceNamespaceName, Name: buildPipelineSelectorResourceName},
 	}
 
-	return yamlformat, nil
+	for _, pipelineSelectorKey := range pipelineSelectorKeys {
+		if err := r.Client.Get(ctx, pipelineSelectorKey, pipelineSelector); err != nil {
+			if !errors.IsNotFound(err) {
+				return nil, nil, err
+			}
+			// The config is not found, try the next one in the hierarchy
+		} else {
+			pipelineSelectors = append(pipelineSelectors, *pipelineSelector)
+		}
+	}
+
+	if len(pipelineSelectors) > 0 {
+		pipelineRef, pipelineParams, err := pipelineselector.SelectPipelineForComponent(component, pipelineSelectors)
+		if err != nil {
+			return nil, nil, err
+		}
+		if pipelineRef != nil {
+			return pipelineRef, pipelineParams, nil
+		}
+	}
+
+	// Fallback to the default pipeline
+	return &tektonapi.PipelineRef{
+		Name:   defaultPipelineName,
+		Bundle: gitopsprepare.AppStudioFallbackBuildBundle,
+	}, nil, nil
+}
+
+// retrievePipelineSpec retrieves pipeline definition with given name from the given bundle.
+func retrievePipelineSpec(bundleUri, pipelineName string) (*tektonapi.PipelineSpec, error) {
+	var obj runtime.Object
+	var err error
+	resolver := oci.NewResolver(bundleUri, authn.DefaultKeychain)
+
+	if obj, err = resolver.Get(context.TODO(), "pipeline", pipelineName); err != nil {
+		return nil, err
+	}
+	pipelineSpecObj, ok := obj.(tektonapi.PipelineObject)
+	if !ok {
+		return nil, fmt.Errorf("failed to extract pipeline %s from bundle %s", bundleUri, pipelineName)
+	}
+	pipelineSpec := pipelineSpecObj.PipelineSpec()
+	return &pipelineSpec, nil
 }
 
 // SubmitNewBuild creates a new PipelineRun to build a new image for the given component.
-func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component appstudiov1alpha1.Component, gitopsConfig gitopsprepare.GitopsConfig) error {
+// Is called only once on component creation if Pipelines as Code is not configured,
+// otherwise the build is handled by PaC.
+func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component appstudiov1alpha1.Component) error {
 	log := r.Log.WithValues("Namespace", component.Namespace, "Application", component.Spec.Application, "Component", component.Name)
 
 	gitSecretName := component.Spec.Secret
@@ -765,7 +810,7 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 			log.Error(err, fmt.Sprintf("Failed to create service account %s in namespace %s", buildPipelineServiceAccountName, component.Namespace))
 			return err
 		}
-		return r.SubmitNewBuild(ctx, component, gitopsConfig)
+		return r.SubmitNewBuild(ctx, component)
 	} else {
 		updateRequired := updateServiceAccountIfSecretNotLinked(gitSecretName, &pipelinesServiceAccount)
 		if updateRequired {
@@ -778,19 +823,72 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 		}
 	}
 
-	initialBuild, err := gitops.GenerateInitialBuildPipelineRun(component, gitopsConfig)
+	// Construct initial build pipeline
+
+	pipelineRef, additionalPipelineParams, err := r.GetPipelineForComponent(ctx, &component)
 	if err != nil {
-		log.Error(err, "Unable to create PipelineRun")
-		// Return nil to avoid retries
-		return nil
+		return err
 	}
-	err = controllerutil.SetOwnerReference(&component, &initialBuild, r.Scheme)
+
+	pipelineSpec, err := retrievePipelineSpec(pipelineRef.Bundle, pipelineRef.Name)
 	if err != nil {
-		log.Error(err, fmt.Sprintf("Unable to set owner reference for %v", initialBuild))
+		r.EventRecorder.Event(&component, "Warning", "ErrorGettingPipelineFromBundle", err.Error())
+		return err
 	}
-	err = r.Client.Create(ctx, &initialBuild)
+
+	log.Info(fmt.Sprintf("Using %s pipeline from %s bundle for %s component initial build", pipelineRef.Name, pipelineRef.Bundle, component.Name))
+
+	initialBuildPipelineRun, err := r.generatePipelineRunForComponent(&component, pipelineSpec, additionalPipelineParams, false)
 	if err != nil {
-		log.Error(err, fmt.Sprintf("Unable to create the build PipelineRun %v", initialBuild))
+		log.Error(err, fmt.Sprintf("Unable to generate PipelineRun to build %s component in %s namespace", component.Name, component.Namespace))
+		return err
+	}
+
+	// The Pipeline run object above is primarily generated for Pipilines as Code.
+	// Make the generated pipeline run standalone.
+	timestamp := time.Now().Unix()
+	revision := "main"
+	if component.Spec.Source.GitSource != nil && component.Spec.Source.GitSource.Revision != "" {
+		revision = component.Spec.Source.GitSource.Revision
+	}
+
+	initialBuildPipelineRun.Name = fmt.Sprintf("%s-initial-build-%d", component.GetName(), timestamp)
+
+	initialBuildPipelineRun.Annotations = map[string]string{
+		"build.appstudio.redhat.com/target_branch": revision,
+	}
+
+	for i := range initialBuildPipelineRun.Spec.Params {
+		param := initialBuildPipelineRun.Spec.Params[i]
+		switch param.Name {
+		case "git-url":
+			if param.Value.StringVal == "{{repo_url}}" {
+				if component.Spec.Source.GitSource != nil {
+					param.Value = *tektonapi.NewArrayOrString(component.Spec.Source.GitSource.URL)
+				} else {
+					param.Value = *tektonapi.NewArrayOrString("")
+				}
+			}
+		case "revision":
+			if param.Value.StringVal == "{{revision}}" {
+				param.Value = *tektonapi.NewArrayOrString(revision)
+
+			}
+		case "output-image":
+			param.Value = *tektonapi.NewArrayOrString(
+				fmt.Sprintf("%s:initial-build-%d", strings.Split(component.Spec.ContainerImage, ":")[0], timestamp))
+		}
+		initialBuildPipelineRun.Spec.Params[i] = param
+	}
+
+	err = controllerutil.SetOwnerReference(&component, initialBuildPipelineRun, r.Scheme)
+	if err != nil {
+		log.Error(err, fmt.Sprintf("Unable to set owner reference for %v", initialBuildPipelineRun))
+	}
+
+	err = r.Client.Create(ctx, initialBuildPipelineRun)
+	if err != nil {
+		log.Error(err, fmt.Sprintf("Unable to create the build PipelineRun %v", initialBuildPipelineRun))
 		return err
 	}
 	log.Info(fmt.Sprintf("Initial build pipeline created for component %s in %s namespace", component.Name, component.Namespace))
