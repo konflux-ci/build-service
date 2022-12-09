@@ -509,7 +509,7 @@ func ConfigureRepositoryForPaC(component appstudiov1alpha1.Component, config map
 	}
 
 	// https://github.com/owner/repository
-	gitSourceUrlParts := strings.Split(strings.TrimRight(component.Spec.Source.GitSource.URL, ".git"), "/")
+	gitSourceUrlParts := strings.Split(strings.TrimSuffix(component.Spec.Source.GitSource.URL, ".git"), "/")
 
 	commitMessage := "Appstudio update " + component.Name
 	branch := "appstudio-" + component.Name
