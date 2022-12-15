@@ -390,6 +390,7 @@ var _ = Describe("Component initial build controller", func() {
 			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
 				return "", nil
 			}
+			deleteComponent(resourceKey)
 			// Wait a bit to not to spoil the next tests.
 			// The reason for this is that the test operator could be in the middle of reconcile loop
 			// and it's needed to wait until execution reaches the end of the reconcile loop.
@@ -627,6 +628,9 @@ var _ = Describe("Component initial build controller", func() {
 						},
 					},
 				},
+				Status: appstudiov1alpha1.ComponentStatus{
+					Devfile: getMinimalDevfile(),
+				},
 			}
 			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
 		})
@@ -666,6 +670,18 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(len(pipelineRuns.Items)).To(Equal(1))
 			pipelineRun := pipelineRuns.Items[0]
 
+			Expect(pipelineRun.Labels[ApplicationNameLabelName]).To(Equal(HASAppName))
+			Expect(pipelineRun.Labels[ComponentNameLabelName]).To(Equal(HASCompName))
+
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/pipeline_name"]).To(Equal(defaultPipelineName))
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
+
+			Expect(pipelineRun.Spec.PipelineSpec).To(BeNil())
+
+			Expect(pipelineRun.Spec.PipelineRef).ToNot(BeNil())
+			Expect(pipelineRun.Spec.PipelineRef.Name).To(Equal(defaultPipelineName))
+			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
+
 			Expect(pipelineRun.Spec.Params).ToNot(BeEmpty())
 			for _, p := range pipelineRun.Spec.Params {
 				switch p.Name {
@@ -678,8 +694,6 @@ var _ = Describe("Component initial build controller", func() {
 					Expect(p.Value.StringVal).To(Equal("main"))
 				}
 			}
-
-			Expect(pipelineRun.Spec.PipelineSpec).ToNot(BeNil())
 
 			Expect(pipelineRun.Spec.Workspaces).To(Not(BeEmpty()))
 			for _, w := range pipelineRun.Spec.Workspaces {
@@ -723,6 +737,18 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(len(pipelineRuns.Items)).To(Equal(1))
 			pipelineRun := pipelineRuns.Items[0]
 
+			Expect(pipelineRun.Labels[ApplicationNameLabelName]).To(Equal(HASAppName))
+			Expect(pipelineRun.Labels[ComponentNameLabelName]).To(Equal(HASCompName))
+
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/pipeline_name"]).To(Equal(defaultPipelineName))
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
+
+			Expect(pipelineRun.Spec.PipelineSpec).To(BeNil())
+
+			Expect(pipelineRun.Spec.PipelineRef).ToNot(BeNil())
+			Expect(pipelineRun.Spec.PipelineRef.Name).To(Equal(defaultPipelineName))
+			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
+
 			Expect(pipelineRun.Spec.Params).ToNot(BeEmpty())
 			for _, p := range pipelineRun.Spec.Params {
 				switch p.Name {
@@ -735,8 +761,6 @@ var _ = Describe("Component initial build controller", func() {
 					Expect(p.Value.StringVal).To(Equal("main"))
 				}
 			}
-
-			Expect(pipelineRun.Spec.PipelineSpec).ToNot(BeNil())
 
 			Expect(pipelineRun.Spec.Workspaces).To(Not(BeEmpty()))
 			for _, w := range pipelineRun.Spec.Workspaces {
@@ -810,16 +834,18 @@ var _ = Describe("Component initial build controller", func() {
 
 			ensureOneInitialPipelineRunCreated(resourceKey)
 			pipelineRun := listComponentInitialPipelineRuns(resourceKey).Items[0]
-			Expect(pipelineRun.Spec.PipelineRef).To(BeNil())
 
-			pipelineSpec := pipelineRun.Spec.PipelineSpec
-			Expect(pipelineSpec).ToNot(BeNil())
-			for _, task := range pipelineSpec.Tasks {
-				if task.Name == "build-container" {
-					Expect(task.TaskRef.Name).To(Equal("s2i-nodejs"))
-					break
-				}
-			}
+			Expect(pipelineRun.Labels[ApplicationNameLabelName]).To(Equal(HASAppName))
+			Expect(pipelineRun.Labels[ComponentNameLabelName]).To(Equal(HASCompName))
+
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/pipeline_name"]).To(Equal("nodejs-builder"))
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
+
+			Expect(pipelineRun.Spec.PipelineSpec).To(BeNil())
+
+			Expect(pipelineRun.Spec.PipelineRef).ToNot(BeNil())
+			Expect(pipelineRun.Spec.PipelineRef.Name).To(Equal("nodejs-builder"))
+			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
 
 			Expect(pipelineRun.Spec.Params).ToNot(BeNil())
 			additionalPipelineParameterFound := false
@@ -881,16 +907,18 @@ var _ = Describe("Component initial build controller", func() {
 
 			ensureOneInitialPipelineRunCreated(resourceKey)
 			pipelineRun := listComponentInitialPipelineRuns(resourceKey).Items[0]
-			Expect(pipelineRun.Spec.PipelineRef).To(BeNil())
 
-			pipelineSpec := pipelineRun.Spec.PipelineSpec
-			Expect(pipelineSpec).ToNot(BeNil())
-			for _, task := range pipelineSpec.Tasks {
-				if task.Name == "build-container" {
-					Expect(task.TaskRef.Name).To(Equal("s2i-nodejs"))
-					break
-				}
-			}
+			Expect(pipelineRun.Labels[ApplicationNameLabelName]).To(Equal(HASAppName))
+			Expect(pipelineRun.Labels[ComponentNameLabelName]).To(Equal(HASCompName))
+
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/pipeline_name"]).To(Equal("nodejs-builder"))
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
+
+			Expect(pipelineRun.Spec.PipelineSpec).To(BeNil())
+
+			Expect(pipelineRun.Spec.PipelineRef).ToNot(BeNil())
+			Expect(pipelineRun.Spec.PipelineRef.Name).To(Equal("nodejs-builder"))
+			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
 
 			Expect(pipelineRun.Spec.Params).ToNot(BeNil())
 			additionalPipelineParameterFound := false
@@ -952,16 +980,18 @@ var _ = Describe("Component initial build controller", func() {
 
 			ensureOneInitialPipelineRunCreated(resourceKey)
 			pipelineRun := listComponentInitialPipelineRuns(resourceKey).Items[0]
-			Expect(pipelineRun.Spec.PipelineRef).To(BeNil())
 
-			pipelineSpec := pipelineRun.Spec.PipelineSpec
-			Expect(pipelineSpec).ToNot(BeNil())
-			for _, task := range pipelineSpec.Tasks {
-				if task.Name == "build-container" {
-					Expect(task.TaskRef.Name).To(Equal("s2i-java"))
-					break
-				}
-			}
+			Expect(pipelineRun.Labels[ApplicationNameLabelName]).To(Equal(HASAppName))
+			Expect(pipelineRun.Labels[ComponentNameLabelName]).To(Equal(HASCompName))
+
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/pipeline_name"]).To(Equal("java-builder"))
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
+
+			Expect(pipelineRun.Spec.PipelineSpec).To(BeNil())
+
+			Expect(pipelineRun.Spec.PipelineRef).ToNot(BeNil())
+			Expect(pipelineRun.Spec.PipelineRef.Name).To(Equal("java-builder"))
+			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
 
 			Expect(pipelineRun.Spec.Params).ToNot(BeNil())
 			additionalPipelineParameterFound := false

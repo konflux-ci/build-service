@@ -483,7 +483,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 		return "", err
 	}
 
-	pipelineOnPush, err := r.generatePipelineRunForComponent(component, pipelineSpec, additionalPipelineParams, false)
+	pipelineOnPush, err := generatePaCPipelineRunForComponent(component, pipelineSpec, additionalPipelineParams, false)
 	if err != nil {
 		return "", err
 	}
@@ -492,7 +492,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 		return "", err
 	}
 
-	pipelineOnPR, err := r.generatePipelineRunForComponent(component, pipelineSpec, additionalPipelineParams, true)
+	pipelineOnPR, err := generatePaCPipelineRunForComponent(component, pipelineSpec, additionalPipelineParams, true)
 	if err != nil {
 		return "", err
 	}
@@ -617,8 +617,9 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 	}
 }
 
-// generatePipelineRunForComponent returns pipeline run definition to build component source with.
-func (r *ComponentBuildReconciler) generatePipelineRunForComponent(component *appstudiov1alpha1.Component, pipelineSpec *tektonapi.PipelineSpec, additionalPipelineParams []tektonapi.Param, onPull bool) (*tektonapi.PipelineRun, error) {
+// generatePaCPipelineRunForComponent returns pipeline run definition to build component source with.
+// Generated pipeline run contains placeholders that are expanded by Pipeline-as-Code.
+func generatePaCPipelineRunForComponent(component *appstudiov1alpha1.Component, pipelineSpec *tektonapi.PipelineSpec, additionalPipelineParams []tektonapi.Param, onPull bool) (*tektonapi.PipelineRun, error) {
 	var targetBranches []string
 	if component.Spec.Source.GitSource != nil && component.Spec.Source.GitSource.Revision != "" {
 		targetBranches = []string{component.Spec.Source.GitSource.Revision}
@@ -657,7 +658,6 @@ func (r *ComponentBuildReconciler) generatePipelineRunForComponent(component *ap
 		{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "{{revision}}"}},
 		{Name: "output-image", Value: tektonapi.ArrayOrString{Type: "string", StringVal: proposedImage}},
 	}
-	params = append(params, additionalPipelineParams...)
 
 	dockerFile, err := devfile.SearchForDockerfile([]byte(component.Status.Devfile))
 	if err != nil {
@@ -671,6 +671,8 @@ func (r *ComponentBuildReconciler) generatePipelineRunForComponent(component *ap
 			params = append(params, tektonapi.Param{Name: "path-context", Value: tektonapi.ArrayOrString{Type: "string", StringVal: dockerFile.BuildContext}})
 		}
 	}
+
+	params = mergeTektonParams(params, additionalPipelineParams)
 
 	pipelineRun := &tektonapi.PipelineRun{
 		TypeMeta: metav1.TypeMeta{
@@ -700,6 +702,22 @@ func (r *ComponentBuildReconciler) generatePipelineRunForComponent(component *ap
 	}
 
 	return pipelineRun, nil
+}
+
+// mergeTektonParams merges additional params into existing params by adding new or replacing existing values.
+func mergeTektonParams(existedParams, additionalParams []tektonapi.Param) []tektonapi.Param {
+	var params []tektonapi.Param
+	paramsMap := make(map[string]tektonapi.Param)
+	for _, p := range existedParams {
+		paramsMap[p.Name] = p
+	}
+	for _, p := range additionalParams {
+		paramsMap[p.Name] = p
+	}
+	for _, v := range paramsMap {
+		params = append(params, v)
+	}
+	return params
 }
 
 // GetPipelineForComponent searches for the build pipeline to use on the component.
@@ -823,62 +841,17 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 		}
 	}
 
-	// Construct initial build pipeline
+	// Create initial build pipeline
 
 	pipelineRef, additionalPipelineParams, err := r.GetPipelineForComponent(ctx, &component)
 	if err != nil {
 		return err
 	}
 
-	pipelineSpec, err := retrievePipelineSpec(pipelineRef.Bundle, pipelineRef.Name)
-	if err != nil {
-		r.EventRecorder.Event(&component, "Warning", "ErrorGettingPipelineFromBundle", err.Error())
-		return err
-	}
-
-	log.Info(fmt.Sprintf("Using %s pipeline from %s bundle for %s component initial build", pipelineRef.Name, pipelineRef.Bundle, component.Name))
-
-	initialBuildPipelineRun, err := r.generatePipelineRunForComponent(&component, pipelineSpec, additionalPipelineParams, false)
+	initialBuildPipelineRun, err := generateInitialPipelineRunForComponent(&component, pipelineRef, additionalPipelineParams)
 	if err != nil {
 		log.Error(err, fmt.Sprintf("Unable to generate PipelineRun to build %s component in %s namespace", component.Name, component.Namespace))
 		return err
-	}
-
-	// The Pipeline run object above is primarily generated for Pipilines as Code.
-	// Make the generated pipeline run standalone.
-	timestamp := time.Now().Unix()
-	revision := "main"
-	if component.Spec.Source.GitSource != nil && component.Spec.Source.GitSource.Revision != "" {
-		revision = component.Spec.Source.GitSource.Revision
-	}
-
-	initialBuildPipelineRun.Name = fmt.Sprintf("%s-initial-build-%d", component.GetName(), timestamp)
-
-	initialBuildPipelineRun.Annotations = map[string]string{
-		"build.appstudio.redhat.com/target_branch": revision,
-	}
-
-	for i := range initialBuildPipelineRun.Spec.Params {
-		param := initialBuildPipelineRun.Spec.Params[i]
-		switch param.Name {
-		case "git-url":
-			if param.Value.StringVal == "{{repo_url}}" {
-				if component.Spec.Source.GitSource != nil {
-					param.Value = *tektonapi.NewArrayOrString(component.Spec.Source.GitSource.URL)
-				} else {
-					param.Value = *tektonapi.NewArrayOrString("")
-				}
-			}
-		case "revision":
-			if param.Value.StringVal == "{{revision}}" {
-				param.Value = *tektonapi.NewArrayOrString(revision)
-
-			}
-		case "output-image":
-			param.Value = *tektonapi.NewArrayOrString(
-				fmt.Sprintf("%s:initial-build-%d", strings.Split(component.Spec.ContainerImage, ":")[0], timestamp))
-		}
-		initialBuildPipelineRun.Spec.Params[i] = param
 	}
 
 	err = controllerutil.SetOwnerReference(&component, initialBuildPipelineRun, r.Scheme)
@@ -891,9 +864,79 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 		log.Error(err, fmt.Sprintf("Unable to create the build PipelineRun %v", initialBuildPipelineRun))
 		return err
 	}
-	log.Info(fmt.Sprintf("Initial build pipeline created for component %s in %s namespace", component.Name, component.Namespace))
+
+	log.Info(fmt.Sprintf("Initial build pipeline %s created for component %s in %s namespace using %s pipeline from %s bundle",
+		initialBuildPipelineRun.Name, component.Name, component.Namespace, pipelineRef.Name, pipelineRef.Bundle))
 
 	return nil
+}
+
+func generateInitialPipelineRunForComponent(component *appstudiov1alpha1.Component, pipelineRef *tektonapi.PipelineRef, additionalPipelineParams []tektonapi.Param) (*tektonapi.PipelineRun, error) {
+	timestamp := time.Now().Unix()
+	pipelineName := fmt.Sprintf("%s-initial-build-%d", component.Name, timestamp)
+	revision := "main"
+	if component.Spec.Source.GitSource != nil && component.Spec.Source.GitSource.Revision != "" {
+		revision = component.Spec.Source.GitSource.Revision
+	}
+	image := fmt.Sprintf("%s:initial-build-%d", strings.Split(component.Spec.ContainerImage, ":")[0], timestamp)
+
+	params := []tektonapi.Param{
+		{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: component.Spec.Source.GitSource.URL}},
+		{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: revision}},
+		{Name: "output-image", Value: tektonapi.ArrayOrString{Type: "string", StringVal: image}},
+	}
+
+	dockerFile, err := devfile.SearchForDockerfile([]byte(component.Status.Devfile))
+	if err != nil {
+		return nil, err
+	}
+	if dockerFile != nil {
+		if dockerFile.Uri != "" {
+			params = append(params, tektonapi.Param{Name: "dockerfile", Value: tektonapi.ArrayOrString{Type: "string", StringVal: dockerFile.Uri}})
+		}
+		if dockerFile.BuildContext != "" {
+			params = append(params, tektonapi.Param{Name: "path-context", Value: tektonapi.ArrayOrString{Type: "string", StringVal: dockerFile.BuildContext}})
+		}
+	}
+
+	params = mergeTektonParams(params, additionalPipelineParams)
+
+	pipelineRun := &tektonapi.PipelineRun{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "PipelineRun",
+			APIVersion: "tekton.dev/v1beta1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pipelineName,
+			Namespace: component.Namespace,
+			Labels: map[string]string{
+				ApplicationNameLabelName:                component.Spec.Application,
+				ComponentNameLabelName:                  component.Name,
+				"pipelines.appstudio.openshift.io/type": "build",
+			},
+			Annotations: map[string]string{
+				"build.appstudio.redhat.com/target_branch": revision,
+				"build.appstudio.redhat.com/pipeline_name": pipelineRef.Name,
+				"build.appstudio.redhat.com/bundle":        pipelineRef.Bundle,
+			},
+		},
+		Spec: tektonapi.PipelineRunSpec{
+			PipelineRef: pipelineRef,
+			Params:      params,
+			Workspaces: []tektonapi.WorkspaceBinding{
+				{
+					Name:                "workspace",
+					VolumeClaimTemplate: gitops.GenerateVolumeClaimTemplate(),
+				},
+				{
+					Name:   "registry-auth",
+					Secret: &corev1.SecretVolumeSource{SecretName: gitopsprepare.RegistrySecret},
+				},
+			},
+		},
+	}
+
+	return pipelineRun, nil
 }
 
 // getGitProviderUrl takes a Git URL of the format https://github.com/foo/bar and returns https://github.com

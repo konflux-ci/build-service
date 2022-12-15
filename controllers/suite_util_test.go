@@ -68,6 +68,14 @@ func isOwnedBy(resource []metav1.OwnerReference, component appstudiov1alpha1.Com
 	return false
 }
 
+func getMinimalDevfile() string {
+	return `        
+        schemaVersion: 2.2.0
+        metadata:
+            name: minimal-devfile
+    `
+}
+
 func createApplication(resourceKey types.NamespacedName) {
 	application := &appstudiov1alpha1.Application{
 		TypeMeta: metav1.TypeMeta{
@@ -174,6 +182,12 @@ func getComponent(componentKey types.NamespacedName) *appstudiov1alpha1.Componen
 // deleteComponent deletes the specified component resource and verifies it was properly deleted
 func deleteComponent(componentKey types.NamespacedName) {
 	component := &appstudiov1alpha1.Component{}
+
+	// Check if the component exists
+	if err := k8sClient.Get(ctx, componentKey, component); k8sErrors.IsNotFound(err) {
+		return
+	}
+
 	// Delete
 	Eventually(func() error {
 		Expect(k8sClient.Get(ctx, componentKey, component)).To(Succeed())
@@ -199,7 +213,7 @@ func setComponentDevfile(componentKey types.NamespacedName, devfile string) {
 }
 
 func setComponentDevfileModel(componentKey types.NamespacedName) {
-	devfile := "schemaVersion: 2.2.0"
+	devfile := getMinimalDevfile()
 	setComponentDevfile(componentKey, devfile)
 }
 
