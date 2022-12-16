@@ -68,6 +68,14 @@ func isOwnedBy(resource []metav1.OwnerReference, component appstudiov1alpha1.Com
 	return false
 }
 
+func getMinimalDevfile() string {
+	return `        
+        schemaVersion: 2.2.0
+        metadata:
+            name: minimal-devfile
+    `
+}
+
 func createApplication(resourceKey types.NamespacedName) {
 	application := &appstudiov1alpha1.Application{
 		TypeMeta: metav1.TypeMeta{
@@ -173,30 +181,40 @@ func getComponent(componentKey types.NamespacedName) *appstudiov1alpha1.Componen
 
 // deleteComponent deletes the specified component resource and verifies it was properly deleted
 func deleteComponent(componentKey types.NamespacedName) {
+	component := &appstudiov1alpha1.Component{}
+
+	// Check if the component exists
+	if err := k8sClient.Get(ctx, componentKey, component); k8sErrors.IsNotFound(err) {
+		return
+	}
+
 	// Delete
 	Eventually(func() error {
-		f := &appstudiov1alpha1.Component{}
-		Expect(k8sClient.Get(ctx, componentKey, f)).To(Succeed())
-		return k8sClient.Delete(ctx, f)
+		Expect(k8sClient.Get(ctx, componentKey, component)).To(Succeed())
+		return k8sClient.Delete(ctx, component)
 	}, timeout, interval).Should(Succeed())
 
 	// Wait for delete to finish
-	Eventually(func() error {
-		f := &appstudiov1alpha1.Component{}
-		return k8sClient.Get(ctx, componentKey, f)
-	}, timeout, interval).ShouldNot(Succeed())
+	Eventually(func() bool {
+		return k8sErrors.IsNotFound(k8sClient.Get(ctx, componentKey, component))
+	}, timeout, interval).Should(BeTrue())
 }
 
-func setComponentDevfileModel(componentKey types.NamespacedName) {
+func setComponentDevfile(componentKey types.NamespacedName, devfile string) {
 	component := &appstudiov1alpha1.Component{}
 	Eventually(func() error {
 		Expect(k8sClient.Get(ctx, componentKey, component)).To(Succeed())
-		component.Status.Devfile = "schemaVersion: 2.2.0"
+		component.Status.Devfile = devfile
 		return k8sClient.Status().Update(ctx, component)
 	}, timeout, interval).Should(Succeed())
 
 	component = getComponent(componentKey)
 	Expect(component.Status.Devfile).Should(Not(Equal("")))
+}
+
+func setComponentDevfileModel(componentKey types.NamespacedName) {
+	devfile := getMinimalDevfile()
+	setComponentDevfile(componentKey, devfile)
 }
 
 func listApplicationSnapshots(resourceKey types.NamespacedName) []appstudiov1alpha1.Snapshot {
@@ -380,37 +398,6 @@ func deleteAllTaskRuns() {
 	}); err != nil {
 		Expect(k8sErrors.IsNotFound(err)).To(BeTrue())
 	}
-}
-
-func createConfigMap(resourceKey types.NamespacedName, data map[string]string) {
-	configMap := corev1.ConfigMap{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "v1",
-			Kind:       "ConfigMap",
-		},
-		Data: data,
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      resourceKey.Name,
-			Namespace: resourceKey.Namespace,
-		},
-	}
-
-	Expect(k8sClient.Create(ctx, &configMap)).Should(Succeed())
-}
-
-func deleteConfigMap(resourceKey types.NamespacedName) {
-	configMap := corev1.ConfigMap{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "v1",
-			Kind:       "ConfigMap",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      resourceKey.Name,
-			Namespace: resourceKey.Namespace,
-		},
-	}
-
-	Expect(k8sClient.Delete(ctx, &configMap)).Should(Succeed())
 }
 
 func createSecret(resourceKey types.NamespacedName, data map[string]string) {

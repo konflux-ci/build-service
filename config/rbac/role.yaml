@@ -57,6 +57,17 @@ rules:
 - apiGroups:
   - appstudio.redhat.com
   resources:
+  - buildpipelineselectors
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - appstudio.redhat.com
+  resources:
   - components
   verbs:
   - get

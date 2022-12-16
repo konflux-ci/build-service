@@ -18,15 +18,219 @@ package controllers
 
 import (
 	"context"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/redhat-appstudio/application-service/gitops"
-	"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
+	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 )
+
+func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
+	component := &appstudiov1alpha1.Component{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-component",
+			Namespace: "my-namespace",
+		},
+		Spec: appstudiov1alpha1.ComponentSpec{
+			Application:    "my-application",
+			ContainerImage: "registry.io/username/image:tag",
+			Source: appstudiov1alpha1.ComponentSource{
+				ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
+					GitSource: &appstudiov1alpha1.GitSource{
+						URL:      "https://githost.com/user/repo.git",
+						Revision: "custom-branch",
+					},
+				},
+			},
+		},
+		Status: appstudiov1alpha1.ComponentStatus{
+			Devfile: getMinimalDevfile(),
+		},
+	}
+	pipelineRef := &tektonapi.PipelineRef{
+		Name:   "pipeline-name",
+		Bundle: "pipeline-bundle",
+	}
+	additionalParams := []tektonapi.Param{
+		{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
+		{Name: "rebuild", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}},
+	}
+
+	pipelineRun, err := generateInitialPipelineRunForComponent(component, pipelineRef, additionalParams)
+	if err != nil {
+		t.Error("generateInitialPipelineRunForComponent(): Failed to genertate pipeline run")
+	}
+
+	if pipelineRun.Name == "" {
+		t.Error("generateInitialPipelineRunForComponent(): pipeline name must not be empty")
+	}
+	if pipelineRun.Namespace != "my-namespace" {
+		t.Error("generateInitialPipelineRunForComponent(): pipeline namespace doesn't match")
+	}
+
+	if pipelineRun.Labels[ApplicationNameLabelName] != "my-application" {
+		t.Errorf("generateInitialPipelineRunForComponent(): wrong %s label value", ApplicationNameLabelName)
+	}
+	if pipelineRun.Labels[ComponentNameLabelName] != "my-component" {
+		t.Errorf("generateInitialPipelineRunForComponent(): wrong %s label value", ComponentNameLabelName)
+	}
+	if pipelineRun.Labels["pipelines.appstudio.openshift.io/type"] != "build" {
+		t.Error("generateInitialPipelineRunForComponent(): wrong pipelines.appstudio.openshift.io/type label value")
+	}
+
+	if pipelineRun.Annotations["build.appstudio.redhat.com/target_branch"] != "custom-branch" {
+		t.Error("generateInitialPipelineRunForComponent(): wrong build.appstudio.redhat.com/target_branch annotation value")
+	}
+	if pipelineRun.Annotations["build.appstudio.redhat.com/pipeline_name"] != "pipeline-name" {
+		t.Error("generateInitialPipelineRunForComponent(): wrong build.appstudio.redhat.com/pipeline_name annotation value")
+	}
+	if pipelineRun.Annotations["build.appstudio.redhat.com/bundle"] != "pipeline-bundle" {
+		t.Error("generateInitialPipelineRunForComponent(): wrong build.appstudio.redhat.com/bundle annotation value")
+	}
+
+	if pipelineRun.Spec.PipelineRef.Name != "pipeline-name" {
+		t.Error("generateInitialPipelineRunForComponent(): wrong pipeline name in pipeline reference")
+	}
+	if pipelineRun.Spec.PipelineRef.Bundle != "pipeline-bundle" {
+		t.Error("generateInitialPipelineRunForComponent(): wrong pipeline bundle in pipeline reference")
+	}
+
+	if len(pipelineRun.Spec.Params) != 4 {
+		t.Error("generateInitialPipelineRunForComponent(): wrong number of pipeline params")
+	}
+	for _, param := range pipelineRun.Spec.Params {
+		switch param.Name {
+		case "git-url":
+			if param.Value.StringVal != "https://githost.com/user/repo.git" {
+				t.Errorf("generateInitialPipelineRunForComponent(): wrong pipeline parameter %s", param.Name)
+			}
+		case "revision":
+			if param.Value.StringVal != "2378a064bf6b66a8ffc650ad88d404cca24ade29" {
+				t.Errorf("generateInitialPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
+			}
+		case "output-image":
+			if !strings.HasPrefix(param.Value.StringVal, "registry.io/username/image:initial-build-") {
+				t.Errorf("generateInitialPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
+			}
+		case "rebuild":
+			if param.Value.StringVal != "true" {
+				t.Errorf("generateInitialPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
+			}
+		default:
+			t.Errorf("generateInitialPipelineRunForComponent(): unexpected pipeline parameter %v", param)
+		}
+	}
+
+	if len(pipelineRun.Spec.Workspaces) != 2 {
+		t.Error("generateInitialPipelineRunForComponent(): wrong number of pipeline workspaces")
+	}
+	for _, workspace := range pipelineRun.Spec.Workspaces {
+		if workspace.Name == "workspace" {
+			continue
+		}
+		if workspace.Name == "registry-auth" {
+			continue
+		}
+		t.Errorf("generateInitialPipelineRunForComponent(): unexpected pipeline workspaces %v", workspace)
+	}
+}
+
+func TestMergeTektonParams(t *testing.T) {
+	tests := []struct {
+		name       string
+		existing   []tektonapi.Param
+		additional []tektonapi.Param
+		want       []tektonapi.Param
+	}{
+		{
+			name: "should merge two different parameters lists",
+			existing: []tektonapi.Param{
+				{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
+				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "main"}},
+			},
+			additional: []tektonapi.Param{
+				{Name: "dockerfile", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "docker/Dockerfile"}},
+				{Name: "rebuild", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}},
+			},
+			want: []tektonapi.Param{
+				{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
+				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "main"}},
+				{Name: "dockerfile", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "docker/Dockerfile"}},
+				{Name: "rebuild", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}},
+			},
+		},
+		{
+			name: "should append empty parameters list",
+			existing: []tektonapi.Param{
+				{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
+				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "main"}},
+			},
+			additional: []tektonapi.Param{},
+			want: []tektonapi.Param{
+				{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
+				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "main"}},
+			},
+		},
+		{
+			name: "should override existing parameters",
+			existing: []tektonapi.Param{
+				{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
+				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "main"}},
+				{Name: "rebuild", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "false"}},
+			},
+			additional: []tektonapi.Param{
+				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
+				{Name: "rebuild", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}},
+			},
+			want: []tektonapi.Param{
+				{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
+				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
+				{Name: "rebuild", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}},
+			},
+		},
+		{
+			name: "should append and override parameters",
+			existing: []tektonapi.Param{
+				{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
+				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "main"}},
+			},
+			additional: []tektonapi.Param{
+				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
+				{Name: "rebuild", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}},
+			},
+			want: []tektonapi.Param{
+				{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
+				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
+				{Name: "rebuild", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := mergeTektonParams(tt.existing, tt.additional)
+			if len(got) != len(tt.want) {
+				t.Errorf("mergeTektonParams(): got %v, want %v", got, tt.want)
+			}
+		wantParamLoop:
+			for _, wantParam := range tt.want {
+				for _, gotParam := range got {
+					if wantParam.Name == gotParam.Name {
+						if !reflect.DeepEqual(gotParam, wantParam) {
+							t.Errorf("mergeTektonParams(): got %v, want %v", got, tt.want)
+						}
+						continue wantParamLoop
+					}
+				}
+				t.Errorf("mergeTektonParams(): expected param %v not found in got list %v", wantParam, got)
+			}
+		})
+	}
+}
 
 func TestGetGitProvider(t *testing.T) {
 	type args struct {
@@ -139,224 +343,6 @@ func TestUpdateServiceAccountIfSecretNotLinked(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := updateServiceAccountIfSecretNotLinked(tt.args.gitSecretName, tt.args.serviceAccount); got != tt.want {
 				t.Errorf("UpdateServiceAccountIfSecretNotLinked() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestGeneratePipelineRun(t *testing.T) {
-	tests := []struct {
-		name          string
-		onPull        bool
-		devfileString string
-		gitSource     *appstudiov1alpha1.GitSource
-		want          string
-	}{
-		{
-			name:   "pull-request-test",
-			onPull: true,
-			devfileString: `
-schemaVersion: 2.2.0
-metadata:
-  name: nodejs
-components:
-  - name: outerloop-build
-    image:
-      imageName: nodejs-image:latest
-      dockerfile:
-        uri: "test/Dockerfile"
-        buildContext: "."
-`,
-			want: `apiVersion: tekton.dev/v1beta1
-kind: PipelineRun
-metadata:
-  annotations:
-    build.appstudio.redhat.com/commit_sha: '{{revision}}'
-    build.appstudio.redhat.com/pull_request_number: '{{pull_request_number}}'
-    build.appstudio.redhat.com/target_branch: '{{target_branch}}'
-    pipelinesascode.tekton.dev/max-keep-runs: "3"
-    pipelinesascode.tekton.dev/on-event: '[pull_request]'
-    pipelinesascode.tekton.dev/on-target-branch: '[main,master]'
-  creationTimestamp: null
-  labels:
-    appstudio.openshift.io/application: app
-    appstudio.openshift.io/component: pull-request-test
-    pipelines.appstudio.openshift.io/type: build
-  name: pull-request-test-on-pull-request
-  namespace: namespace
-spec:
-  params:
-  - name: git-url
-    value: '{{repo_url}}'
-  - name: revision
-    value: '{{revision}}'
-  - name: output-image
-    value: image:on-pr-{{revision}}
-  - name: dockerfile
-    value: test/Dockerfile
-  - name: path-context
-    value: .
-  pipelineRef:
-    bundle: bundle
-    name: docker-build
-  workspaces:
-  - name: workspace
-    volumeClaimTemplate:
-      metadata:
-        creationTimestamp: null
-      spec:
-        accessModes:
-        - ReadWriteOnce
-        resources:
-          requests:
-            storage: 1Gi
-      status: {}
-  - name: registry-auth
-    secret:
-      secretName: redhat-appstudio-registry-pull-secret
-status: {}
-`,
-		},
-		{
-			name:   "push-test",
-			onPull: false,
-			want: `apiVersion: tekton.dev/v1beta1
-kind: PipelineRun
-metadata:
-  annotations:
-    build.appstudio.redhat.com/commit_sha: '{{revision}}'
-    build.appstudio.redhat.com/target_branch: '{{target_branch}}'
-    pipelinesascode.tekton.dev/max-keep-runs: "3"
-    pipelinesascode.tekton.dev/on-event: '[push]'
-    pipelinesascode.tekton.dev/on-target-branch: '[main,master]'
-  creationTimestamp: null
-  labels:
-    appstudio.openshift.io/application: app
-    appstudio.openshift.io/component: push-test
-    pipelines.appstudio.openshift.io/type: build
-  name: push-test-on-push
-  namespace: namespace
-spec:
-  params:
-  - name: git-url
-    value: '{{repo_url}}'
-  - name: revision
-    value: '{{revision}}'
-  - name: output-image
-    value: image:{{revision}}
-  pipelineRef:
-    bundle: bundle
-    name: docker-build
-  workspaces:
-  - name: workspace
-    volumeClaimTemplate:
-      metadata:
-        creationTimestamp: null
-      spec:
-        accessModes:
-        - ReadWriteOnce
-        resources:
-          requests:
-            storage: 1Gi
-      status: {}
-  - name: registry-auth
-    secret:
-      secretName: redhat-appstudio-registry-pull-secret
-status: {}
-`,
-		},
-		{
-			name:      "custom-target-branch",
-			gitSource: &appstudiov1alpha1.GitSource{Revision: "test-revision"},
-			want: `apiVersion: tekton.dev/v1beta1
-kind: PipelineRun
-metadata:
-  annotations:
-    build.appstudio.redhat.com/commit_sha: '{{revision}}'
-    build.appstudio.redhat.com/target_branch: '{{target_branch}}'
-    pipelinesascode.tekton.dev/max-keep-runs: "3"
-    pipelinesascode.tekton.dev/on-event: '[push]'
-    pipelinesascode.tekton.dev/on-target-branch: '[test-revision]'
-  creationTimestamp: null
-  labels:
-    appstudio.openshift.io/application: app
-    appstudio.openshift.io/component: custom-target-branch
-    pipelines.appstudio.openshift.io/type: build
-  name: custom-target-branch-on-push
-  namespace: namespace
-spec:
-  params:
-  - name: git-url
-    value: '{{repo_url}}'
-  - name: revision
-    value: '{{revision}}'
-  - name: output-image
-    value: image:{{revision}}
-  pipelineRef:
-    bundle: bundle
-    name: docker-build
-  workspaces:
-  - name: workspace
-    volumeClaimTemplate:
-      metadata:
-        creationTimestamp: null
-      spec:
-        accessModes:
-        - ReadWriteOnce
-        resources:
-          requests:
-            storage: 1Gi
-      status: {}
-  - name: registry-auth
-    secret:
-      secretName: redhat-appstudio-registry-pull-secret
-status: {}
-`,
-		},
-		{
-			name:   "invalid-devfile-by-missing-schemaversion",
-			onPull: true,
-			devfileString: `
-metadata:
-  name: nodejs
-components:
-  - name: outerloop-build
-    image:
-      imageName: nodejs-image:latest
-      dockerfile:
-        uri: "test/Dockerfile"
-        buildContext: "."
-`,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			component := appstudiov1alpha1.Component{
-				TypeMeta: v1.TypeMeta{
-					Kind:       "Component",
-					APIVersion: "appstudio.redhat.com/v1alpha1",
-				},
-				ObjectMeta: v1.ObjectMeta{
-					Name:      tt.name,
-					Namespace: "namespace",
-				},
-				Spec: appstudiov1alpha1.ComponentSpec{
-					Application:    "app",
-					ContainerImage: "image",
-					Source: appstudiov1alpha1.ComponentSource{
-						ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
-							GitSource: tt.gitSource,
-						},
-					},
-				},
-				Status: appstudiov1alpha1.ComponentStatus{Devfile: tt.devfileString},
-			}
-			got, err := GeneratePipelineRun(component, "bundle", v1beta1.PipelineSpec{}, tt.onPull)
-			if tt.name == "invalid-devfile-by-missing-schemaversion" && err == nil {
-				t.Errorf("devfile is invalid, but GeneratePipelineRun does not return an error.")
-			} else if string(got) != tt.want {
-				output := string(got)
-				t.Errorf("TestGeneratePipelineRun() = %v, want %v", output, tt.want)
 			}
 		})
 	}

@@ -17,7 +17,7 @@ limitations under the License.
 package controllers
 
 import (
-	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -30,8 +30,10 @@ import (
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	"github.com/redhat-appstudio/application-service/gitops"
 	gitopsprepare "github.com/redhat-appstudio/application-service/gitops/prepare"
+	buildappstudiov1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
 	"github.com/redhat-appstudio/build-service/pkg/github"
 	"github.com/redhat-appstudio/build-service/pkg/gitlab"
+	"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -95,6 +97,7 @@ var _ = Describe("Component initial build controller", func() {
 
 			github.NewGithubClientByApp = func(appId int64, privateKeyPem []byte, owner string) (*github.GithubClient, error) { return nil, nil }
 			github.NewGithubClient = func(accessToken string) *github.GithubClient { return nil }
+			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) { return "", nil }
 
 			createComponentForPaCBuild(resourceKey)
 		}, 30)
@@ -127,6 +130,7 @@ var _ = Describe("Component initial build controller", func() {
 				return "url", nil
 			}
 			github.SetupPaCWebhook = func(g *github.GithubClient, webhookUrl, webhookSecret, owner, repository string) error {
+				defer GinkgoRecover()
 				Fail("Should not create webhook if GitHub application is used")
 				return nil
 			}
@@ -373,7 +377,7 @@ var _ = Describe("Component initial build controller", func() {
 
 		It("should not set initial build annotation if PaC definitions PR submition failed", func() {
 			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
-				return "", errors.New("Failed to submit PaC definitions PR")
+				return "", fmt.Errorf("Failed to submit PaC definitions PR")
 			}
 
 			setComponentDevfileModel(resourceKey)
@@ -381,15 +385,27 @@ var _ = Describe("Component initial build controller", func() {
 			ensurePaCRepositoryCreated(resourceKey)
 
 			ensureComponentInitialBuildAnnotationState(resourceKey, false)
+
+			// Clean up after the test
+			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+				return "", nil
+			}
+			deleteComponent(resourceKey)
+			// Wait a bit to not to spoil the next tests.
+			// The reason for this is that the test operator could be in the middle of reconcile loop
+			// and it's needed to wait until execution reaches the end of the reconcile loop.
+			time.Sleep(time.Second)
 		})
 
 		It("should not submit PaC definitions PR if PaC secret is missing", func() {
 			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+				defer GinkgoRecover()
 				Fail("PR creation should not be invoked")
 				return "", nil
 			}
 
 			deleteSecret(pacSecretKey)
+			deleteSecret(namespacePaCSecretKey)
 
 			setComponentDevfileModel(resourceKey)
 
@@ -398,6 +414,7 @@ var _ = Describe("Component initial build controller", func() {
 
 		It("should do nothing if the component devfile model is not set", func() {
 			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+				defer GinkgoRecover()
 				Fail("PR creation should not be invoked")
 				return "", nil
 			}
@@ -407,6 +424,7 @@ var _ = Describe("Component initial build controller", func() {
 
 		It("should do nothing if initial build annotation is already set", func() {
 			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+				defer GinkgoRecover()
 				Fail("PR creation should not be invoked")
 				return "", nil
 			}
@@ -423,6 +441,7 @@ var _ = Describe("Component initial build controller", func() {
 
 		It("should do nothing if a container image source is specified in component", func() {
 			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+				defer GinkgoRecover()
 				Fail("PR creation should not be invoked")
 				return "", nil
 			}
@@ -507,6 +526,7 @@ var _ = Describe("Component initial build controller", func() {
 
 			ensureNoInitialPipelineRunsCreated(resourceKey)
 		})
+
 		It("should submit initial build if a container image is set to default repo and starting with namespace tag", func() {
 			deleteComponent(resourceKey)
 
@@ -538,6 +558,7 @@ var _ = Describe("Component initial build controller", func() {
 
 			ensureOneInitialPipelineRunCreated(resourceKey)
 		})
+
 		It("should not submit initial build if a container image is set to default repo not starting with namespace tag", func() {
 			deleteComponent(resourceKey)
 
@@ -571,7 +592,7 @@ var _ = Describe("Component initial build controller", func() {
 		})
 	})
 
-	Context("Check if build objects are created", func() {
+	Context("Check if initial build objects are created", func() {
 
 		var gitSecret *corev1.Secret
 
@@ -607,18 +628,20 @@ var _ = Describe("Component initial build controller", func() {
 						},
 					},
 				},
+				Status: appstudiov1alpha1.ComponentStatus{
+					Devfile: getMinimalDevfile(),
+				},
 			}
 			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
 		})
+
 		AfterEach(func() {
-			// Clean up
 			deleteComponentInitialPipelineRuns(resourceKey)
 			deleteComponent(resourceKey)
 			Expect(k8sClient.Delete(ctx, gitSecret)).Should(Succeed())
 		})
 
-		It("should create build objects when secret missing", func() {
-
+		It("should create build objects when image registry secret missing", func() {
 			setComponentDevfileModel(resourceKey)
 
 			// Wait until all resources created
@@ -647,21 +670,33 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(len(pipelineRuns.Items)).To(Equal(1))
 			pipelineRun := pipelineRuns.Items[0]
 
+			Expect(pipelineRun.Labels[ApplicationNameLabelName]).To(Equal(HASAppName))
+			Expect(pipelineRun.Labels[ComponentNameLabelName]).To(Equal(HASCompName))
+
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/pipeline_name"]).To(Equal(defaultPipelineName))
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
+
+			Expect(pipelineRun.Spec.PipelineSpec).To(BeNil())
+
+			Expect(pipelineRun.Spec.PipelineRef).ToNot(BeNil())
+			Expect(pipelineRun.Spec.PipelineRef.Name).To(Equal(defaultPipelineName))
+			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
+
 			Expect(pipelineRun.Spec.Params).ToNot(BeEmpty())
 			for _, p := range pipelineRun.Spec.Params {
-				if p.Name == "output-image" {
-					Expect(p.Value.StringVal).To(Equal("docker.io/foo/customized:default-test-component"))
-				}
-				if p.Name == "git-url" {
+				switch p.Name {
+				case "output-image":
+					Expect(p.Value.StringVal).ToNot(BeEmpty())
+					Expect(strings.HasPrefix(p.Value.StringVal, "docker.io/foo/customized:"+HASCompName+"-initial-build-"))
+				case "git-url":
 					Expect(p.Value.StringVal).To(Equal(SampleRepoLink))
+				case "revision":
+					Expect(p.Value.StringVal).To(Equal("main"))
 				}
 			}
 
-			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
-
 			Expect(pipelineRun.Spec.Workspaces).To(Not(BeEmpty()))
 			for _, w := range pipelineRun.Spec.Workspaces {
-				Expect(w.Name).NotTo(Equal("registry-auth"))
 				if w.Name == "workspace" {
 					Expect(w.VolumeClaimTemplate).NotTo(
 						Equal(nil), "PipelineRun should have its own volumeClaimTemplate.")
@@ -670,8 +705,7 @@ var _ = Describe("Component initial build controller", func() {
 
 		})
 
-		It("should create build objects when secrets exists", func() {
-
+		It("should create build objects when image registry secrets exists", func() {
 			// Setup registry secret in local namespace
 			registrySecretKey := types.NamespacedName{Name: gitopsprepare.RegistrySecret, Namespace: HASAppNamespace}
 			createSecret(registrySecretKey, nil)
@@ -703,17 +737,30 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(len(pipelineRuns.Items)).To(Equal(1))
 			pipelineRun := pipelineRuns.Items[0]
 
+			Expect(pipelineRun.Labels[ApplicationNameLabelName]).To(Equal(HASAppName))
+			Expect(pipelineRun.Labels[ComponentNameLabelName]).To(Equal(HASCompName))
+
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/pipeline_name"]).To(Equal(defaultPipelineName))
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
+
+			Expect(pipelineRun.Spec.PipelineSpec).To(BeNil())
+
+			Expect(pipelineRun.Spec.PipelineRef).ToNot(BeNil())
+			Expect(pipelineRun.Spec.PipelineRef.Name).To(Equal(defaultPipelineName))
+			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
+
 			Expect(pipelineRun.Spec.Params).ToNot(BeEmpty())
 			for _, p := range pipelineRun.Spec.Params {
-				if p.Name == "output-image" {
-					Expect(p.Value.StringVal).To(Equal("docker.io/foo/customized:default-test-component"))
-				}
-				if p.Name == "git-url" {
+				switch p.Name {
+				case "output-image":
+					Expect(p.Value.StringVal).ToNot(BeEmpty())
+					Expect(strings.HasPrefix(p.Value.StringVal, "docker.io/foo/customized:"+HASCompName+"-initial-build-"))
+				case "git-url":
 					Expect(p.Value.StringVal).To(Equal(SampleRepoLink))
+				case "revision":
+					Expect(p.Value.StringVal).To(Equal("main"))
 				}
 			}
-
-			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
 
 			Expect(pipelineRun.Spec.Workspaces).To(Not(BeEmpty()))
 			for _, w := range pipelineRun.Spec.Workspaces {
@@ -729,63 +776,235 @@ var _ = Describe("Component initial build controller", func() {
 	})
 
 	Context("Resolve the correct build bundle during the component's creation", func() {
-		It("should use the build bundle specified if a configmap is set in the current namespace", func() {
-			buildBundle := "quay.io/some-repo/some-bundle:0.0.1"
 
-			componentKey := types.NamespacedName{Name: HASCompName, Namespace: HASAppNamespace}
-			configMapKey := types.NamespacedName{Name: gitopsprepare.BuildBundleConfigMapName, Namespace: HASAppNamespace}
+		BeforeEach(func() {
+			createNamespace(buildServiceNamespaceName)
 
-			createConfigMap(configMapKey, map[string]string{
-				gitopsprepare.BuildBundleConfigMapKey: buildBundle,
-			})
-			createComponent(componentKey)
-			setComponentDevfileModel(componentKey)
-
-			ensureOneInitialPipelineRunCreated(componentKey)
-			pipelineRuns := listComponentInitialPipelineRuns(componentKey)
-
-			Expect(pipelineRuns.Items[0].Spec.PipelineRef.Bundle).To(Equal(buildBundle))
-
-			deleteComponent(componentKey)
-			deleteComponentInitialPipelineRuns(componentKey)
-			deleteConfigMap(configMapKey)
+			createComponent(resourceKey)
 		})
 
-		It("should use the build bundle specified if a configmap is set in the default bundle namespace", func() {
-			buildBundle := "quay.io/some-repo/some-bundle:0.0.2"
-
-			componentKey := types.NamespacedName{Name: HASCompName, Namespace: HASAppNamespace}
-			configMapKey := types.NamespacedName{Name: gitopsprepare.BuildBundleConfigMapName, Namespace: gitopsprepare.BuildBundleDefaultNamespace}
-
-			createNamespace(gitopsprepare.BuildBundleDefaultNamespace)
-			createConfigMap(configMapKey, map[string]string{
-				gitopsprepare.BuildBundleConfigMapKey: buildBundle,
-			})
-			createComponent(componentKey)
-			setComponentDevfileModel(componentKey)
-
-			ensureOneInitialPipelineRunCreated(componentKey)
-			pipelineRuns := listComponentInitialPipelineRuns(componentKey)
-
-			Expect(pipelineRuns.Items[0].Spec.PipelineRef.Bundle).To(Equal(buildBundle))
-
-			deleteComponent(componentKey)
-			deleteComponentInitialPipelineRuns(componentKey)
-			deleteConfigMap(configMapKey)
+		AfterEach(func() {
+			deleteComponent(resourceKey)
+			deleteComponentInitialPipelineRuns(resourceKey)
 		})
 
-		It("should use the fallback build bundle in case no configmap is found", func() {
-			componentKey := types.NamespacedName{Name: HASCompName, Namespace: HASAppNamespace}
-			createComponent(componentKey)
-			setComponentDevfileModel(componentKey)
+		It("should use the build bundle specified for application", func() {
+			selectors := &buildappstudiov1alpha1.BuildPipelineSelector{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      HASAppName,
+					Namespace: HASAppNamespace,
+				},
+				Spec: buildappstudiov1alpha1.BuildPipelineSelectorSpec{
+					Selectors: []buildappstudiov1alpha1.PipelineSelector{
+						{
+							Name: "nodejs",
+							PipelineRef: v1beta1.PipelineRef{
+								Name:   "nodejs-builder",
+								Bundle: gitopsprepare.AppStudioFallbackBuildBundle,
+							},
+							PipelineParams: []buildappstudiov1alpha1.PipelineParam{
+								{
+									Name:  "additional-param",
+									Value: "additional-param-value-application",
+								},
+							},
+							WhenConditions: buildappstudiov1alpha1.WhenCondition{
+								Language: "nodejs",
+							},
+						},
+						{
+							Name: "Fallback",
+							PipelineRef: v1beta1.PipelineRef{
+								Name:   "noop",
+								Bundle: gitopsprepare.AppStudioFallbackBuildBundle,
+							},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, selectors)).To(Succeed())
 
-			ensureOneInitialPipelineRunCreated(componentKey)
-			pipelineRuns := listComponentInitialPipelineRuns(componentKey)
+			devfile := `
+                schemaVersion: 2.2.0
+                metadata:
+                    name: devfile-nodejs
+                    language: nodejs
+            `
+			setComponentDevfile(resourceKey, devfile)
 
-			Expect(pipelineRuns.Items[0].Spec.PipelineRef.Bundle).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
+			ensureOneInitialPipelineRunCreated(resourceKey)
+			pipelineRun := listComponentInitialPipelineRuns(resourceKey).Items[0]
 
-			deleteComponent(componentKey)
-			deleteComponentInitialPipelineRuns(componentKey)
+			Expect(pipelineRun.Labels[ApplicationNameLabelName]).To(Equal(HASAppName))
+			Expect(pipelineRun.Labels[ComponentNameLabelName]).To(Equal(HASCompName))
+
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/pipeline_name"]).To(Equal("nodejs-builder"))
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
+
+			Expect(pipelineRun.Spec.PipelineSpec).To(BeNil())
+
+			Expect(pipelineRun.Spec.PipelineRef).ToNot(BeNil())
+			Expect(pipelineRun.Spec.PipelineRef.Name).To(Equal("nodejs-builder"))
+			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
+
+			Expect(pipelineRun.Spec.Params).ToNot(BeNil())
+			additionalPipelineParameterFound := false
+			for _, param := range pipelineRun.Spec.Params {
+				if param.Name == "additional-param" {
+					Expect(param.Value.StringVal).To(Equal("additional-param-value-application"))
+					additionalPipelineParameterFound = true
+					break
+				}
+			}
+			Expect(additionalPipelineParameterFound).To(BeTrue(), "additional pipeline parameter not found")
+
+			Expect(k8sClient.Delete(ctx, selectors)).Should(Succeed())
+		})
+
+		It("should use the build bundle specified for the namespace", func() {
+			selectors := &buildappstudiov1alpha1.BuildPipelineSelector{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      buildPipelineSelectorResourceName,
+					Namespace: HASAppNamespace,
+				},
+				Spec: buildappstudiov1alpha1.BuildPipelineSelectorSpec{
+					Selectors: []buildappstudiov1alpha1.PipelineSelector{
+						{
+							Name: "nodejs",
+							PipelineRef: v1beta1.PipelineRef{
+								Name:   "nodejs-builder",
+								Bundle: gitopsprepare.AppStudioFallbackBuildBundle,
+							},
+							PipelineParams: []buildappstudiov1alpha1.PipelineParam{
+								{
+									Name:  "additional-param",
+									Value: "additional-param-value-namespace",
+								},
+							},
+							WhenConditions: buildappstudiov1alpha1.WhenCondition{
+								Language: "nodejs",
+							},
+						},
+						{
+							Name: "Fallback",
+							PipelineRef: v1beta1.PipelineRef{
+								Name:   "noop",
+								Bundle: gitopsprepare.AppStudioFallbackBuildBundle,
+							},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, selectors)).To(Succeed())
+
+			devfile := `
+                schemaVersion: 2.2.0
+                metadata:
+                    name: devfile-nodejs
+                    language: nodejs
+            `
+			setComponentDevfile(resourceKey, devfile)
+
+			ensureOneInitialPipelineRunCreated(resourceKey)
+			pipelineRun := listComponentInitialPipelineRuns(resourceKey).Items[0]
+
+			Expect(pipelineRun.Labels[ApplicationNameLabelName]).To(Equal(HASAppName))
+			Expect(pipelineRun.Labels[ComponentNameLabelName]).To(Equal(HASCompName))
+
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/pipeline_name"]).To(Equal("nodejs-builder"))
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
+
+			Expect(pipelineRun.Spec.PipelineSpec).To(BeNil())
+
+			Expect(pipelineRun.Spec.PipelineRef).ToNot(BeNil())
+			Expect(pipelineRun.Spec.PipelineRef.Name).To(Equal("nodejs-builder"))
+			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
+
+			Expect(pipelineRun.Spec.Params).ToNot(BeNil())
+			additionalPipelineParameterFound := false
+			for _, param := range pipelineRun.Spec.Params {
+				if param.Name == "additional-param" {
+					Expect(param.Value.StringVal).To(Equal("additional-param-value-namespace"))
+					additionalPipelineParameterFound = true
+					break
+				}
+			}
+			Expect(additionalPipelineParameterFound).To(BeTrue(), "additional pipeline parameter not found")
+
+			Expect(k8sClient.Delete(ctx, selectors)).Should(Succeed())
+		})
+
+		It("should use the global build bundle", func() {
+			selectors := &buildappstudiov1alpha1.BuildPipelineSelector{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      buildPipelineSelectorResourceName,
+					Namespace: buildServiceNamespaceName,
+				},
+				Spec: buildappstudiov1alpha1.BuildPipelineSelectorSpec{
+					Selectors: []buildappstudiov1alpha1.PipelineSelector{
+						{
+							Name: "java",
+							PipelineRef: v1beta1.PipelineRef{
+								Name:   "java-builder",
+								Bundle: gitopsprepare.AppStudioFallbackBuildBundle,
+							},
+							PipelineParams: []buildappstudiov1alpha1.PipelineParam{
+								{
+									Name:  "additional-param",
+									Value: "additional-param-value-global",
+								},
+							},
+							WhenConditions: buildappstudiov1alpha1.WhenCondition{
+								Language: "java",
+							},
+						},
+						{
+							Name: "Fallback",
+							PipelineRef: v1beta1.PipelineRef{
+								Name:   "noop",
+								Bundle: gitopsprepare.AppStudioFallbackBuildBundle,
+							},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, selectors)).To(Succeed())
+
+			devfile := `
+                schemaVersion: 2.2.0
+                metadata:
+                    name: devfile-java
+                    language: java
+            `
+			setComponentDevfile(resourceKey, devfile)
+
+			ensureOneInitialPipelineRunCreated(resourceKey)
+			pipelineRun := listComponentInitialPipelineRuns(resourceKey).Items[0]
+
+			Expect(pipelineRun.Labels[ApplicationNameLabelName]).To(Equal(HASAppName))
+			Expect(pipelineRun.Labels[ComponentNameLabelName]).To(Equal(HASCompName))
+
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/pipeline_name"]).To(Equal("java-builder"))
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
+
+			Expect(pipelineRun.Spec.PipelineSpec).To(BeNil())
+
+			Expect(pipelineRun.Spec.PipelineRef).ToNot(BeNil())
+			Expect(pipelineRun.Spec.PipelineRef.Name).To(Equal("java-builder"))
+			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
+
+			Expect(pipelineRun.Spec.Params).ToNot(BeNil())
+			additionalPipelineParameterFound := false
+			for _, param := range pipelineRun.Spec.Params {
+				if param.Name == "additional-param" {
+					Expect(param.Value.StringVal).To(Equal("additional-param-value-global"))
+					additionalPipelineParameterFound = true
+					break
+				}
+			}
+			Expect(additionalPipelineParameterFound).To(BeTrue(), "additional pipeline parameter not found")
+
+			Expect(k8sClient.Delete(ctx, selectors)).Should(Succeed())
 		})
 	})
 })
