@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -672,7 +673,7 @@ func generatePaCPipelineRunForComponent(component *appstudiov1alpha1.Component, 
 		}
 	}
 
-	params = mergeTektonParams(params, additionalPipelineParams)
+	params = mergeAndSortTektonParams(params, additionalPipelineParams)
 
 	pipelineRun := &tektonapi.PipelineRun{
 		TypeMeta: metav1.TypeMeta{
@@ -704,8 +705,8 @@ func generatePaCPipelineRunForComponent(component *appstudiov1alpha1.Component, 
 	return pipelineRun, nil
 }
 
-// mergeTektonParams merges additional params into existing params by adding new or replacing existing values.
-func mergeTektonParams(existedParams, additionalParams []tektonapi.Param) []tektonapi.Param {
+// mergeAndSortTektonParams merges additional params into existing params by adding new or replacing existing values.
+func mergeAndSortTektonParams(existedParams, additionalParams []tektonapi.Param) []tektonapi.Param {
 	var params []tektonapi.Param
 	paramsMap := make(map[string]tektonapi.Param)
 	for _, p := range existedParams {
@@ -717,6 +718,9 @@ func mergeTektonParams(existedParams, additionalParams []tektonapi.Param) []tekt
 	for _, v := range paramsMap {
 		params = append(params, v)
 	}
+	sort.Slice(params, func(i, j int) bool {
+		return params[i].Name < params[j].Name
+	})
 	return params
 }
 
@@ -899,7 +903,7 @@ func generateInitialPipelineRunForComponent(component *appstudiov1alpha1.Compone
 		}
 	}
 
-	params = mergeTektonParams(params, additionalPipelineParams)
+	params = mergeAndSortTektonParams(params, additionalPipelineParams)
 
 	pipelineRun := &tektonapi.PipelineRun{
 		TypeMeta: metav1.TypeMeta{

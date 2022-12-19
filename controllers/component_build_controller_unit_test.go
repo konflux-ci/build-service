@@ -140,7 +140,7 @@ func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 	}
 }
 
-func TestMergeTektonParams(t *testing.T) {
+func TestMergeAndSortTektonParams(t *testing.T) {
 	tests := []struct {
 		name       string
 		existing   []tektonapi.Param
@@ -158,10 +158,10 @@ func TestMergeTektonParams(t *testing.T) {
 				{Name: "rebuild", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}},
 			},
 			want: []tektonapi.Param{
-				{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
-				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "main"}},
 				{Name: "dockerfile", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "docker/Dockerfile"}},
+				{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
 				{Name: "rebuild", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}},
+				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "main"}},
 			},
 		},
 		{
@@ -173,6 +173,22 @@ func TestMergeTektonParams(t *testing.T) {
 			additional: []tektonapi.Param{},
 			want: []tektonapi.Param{
 				{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
+				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "main"}},
+			},
+		},
+		{
+			name: "should sort parameters list",
+			existing: []tektonapi.Param{
+				{Name: "rebuild", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}},
+				{Name: "dockerfile", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "docker/Dockerfile"}},
+				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "main"}},
+				{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
+			},
+			additional: []tektonapi.Param{},
+			want: []tektonapi.Param{
+				{Name: "dockerfile", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "docker/Dockerfile"}},
+				{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
+				{Name: "rebuild", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}},
 				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "main"}},
 			},
 		},
@@ -189,8 +205,8 @@ func TestMergeTektonParams(t *testing.T) {
 			},
 			want: []tektonapi.Param{
 				{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
-				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
 				{Name: "rebuild", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}},
+				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
 			},
 		},
 		{
@@ -205,28 +221,21 @@ func TestMergeTektonParams(t *testing.T) {
 			},
 			want: []tektonapi.Param{
 				{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
-				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
 				{Name: "rebuild", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}},
+				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := mergeTektonParams(tt.existing, tt.additional)
+			got := mergeAndSortTektonParams(tt.existing, tt.additional)
 			if len(got) != len(tt.want) {
-				t.Errorf("mergeTektonParams(): got %v, want %v", got, tt.want)
+				t.Errorf("mergeAndSortTektonParams(): got %v, want %v", got, tt.want)
 			}
-		wantParamLoop:
-			for _, wantParam := range tt.want {
-				for _, gotParam := range got {
-					if wantParam.Name == gotParam.Name {
-						if !reflect.DeepEqual(gotParam, wantParam) {
-							t.Errorf("mergeTektonParams(): got %v, want %v", got, tt.want)
-						}
-						continue wantParamLoop
-					}
+			for i := range got {
+				if !reflect.DeepEqual(got[i], tt.want[i]) {
+					t.Errorf("mergeAndSortTektonParams(): got %v, want %v", got, tt.want)
 				}
-				t.Errorf("mergeTektonParams(): expected param %v not found in got list %v", wantParam, got)
 			}
 		})
 	}
