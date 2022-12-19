@@ -66,8 +66,8 @@ func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 		t.Error("generateInitialPipelineRunForComponent(): Failed to genertate pipeline run")
 	}
 
-	if pipelineRun.Name == "" {
-		t.Error("generateInitialPipelineRunForComponent(): pipeline name must not be empty")
+	if pipelineRun.GenerateName == "" {
+		t.Error("generateInitialPipelineRunForComponent(): pipeline generatename must not be empty")
 	}
 	if pipelineRun.Namespace != "my-namespace" {
 		t.Error("generateInitialPipelineRunForComponent(): pipeline namespace doesn't match")
