@@ -873,7 +873,7 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 
 func generateInitialPipelineRunForComponent(component *appstudiov1alpha1.Component, pipelineRef *tektonapi.PipelineRef, additionalPipelineParams []tektonapi.Param) (*tektonapi.PipelineRun, error) {
 	timestamp := time.Now().Unix()
-	pipelineName := fmt.Sprintf("%s-initial-build-%d", component.Name, timestamp)
+	pipelineGenerateName := fmt.Sprintf("%s-", component.Name)
 	revision := "main"
 	if component.Spec.Source.GitSource != nil && component.Spec.Source.GitSource.Revision != "" {
 		revision = component.Spec.Source.GitSource.Revision
@@ -907,8 +907,8 @@ func generateInitialPipelineRunForComponent(component *appstudiov1alpha1.Compone
 			APIVersion: "tekton.dev/v1beta1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      pipelineName,
-			Namespace: component.Namespace,
+			GenerateName: pipelineGenerateName,
+			Namespace:    component.Namespace,
 			Labels: map[string]string{
 				ApplicationNameLabelName:                component.Spec.Application,
 				ComponentNameLabelName:                  component.Name,
