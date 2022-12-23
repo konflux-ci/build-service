@@ -35,6 +35,9 @@ func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "my-component",
 			Namespace: "my-namespace",
+			Annotations: map[string]string{
+				"skip-initials-checks": "true",
+			},
 		},
 		Spec: appstudiov1alpha1.ComponentSpec{
 			Application:    "my-application",
@@ -100,7 +103,7 @@ func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 		t.Error("generateInitialPipelineRunForComponent(): wrong pipeline bundle in pipeline reference")
 	}
 
-	if len(pipelineRun.Spec.Params) != 4 {
+	if len(pipelineRun.Spec.Params) != 5 {
 		t.Error("generateInitialPipelineRunForComponent(): wrong number of pipeline params")
 	}
 	for _, param := range pipelineRun.Spec.Params {
@@ -118,6 +121,10 @@ func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 				t.Errorf("generateInitialPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
 			}
 		case "rebuild":
+			if param.Value.StringVal != "true" {
+				t.Errorf("generateInitialPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
+			}
+		case "skip-checks":
 			if param.Value.StringVal != "true" {
 				t.Errorf("generateInitialPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
 			}
