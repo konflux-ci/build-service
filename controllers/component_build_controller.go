@@ -945,8 +945,17 @@ func generateInitialPipelineRunForComponent(component *appstudiov1alpha1.Compone
 	return pipelineRun, nil
 }
 
-// getGitProviderUrl takes a Git URL of the format https://github.com/foo/bar and returns https://github.com
+// getGitProviderUrl takes a Git URL and returns git provider host.
+// Examples:
+//
+//	For https://github.com/foo/bar returns https://github.com
+//	For git@github.com:foo/bar returns https://github.com
 func getGitProviderUrl(gitURL string) (string, error) {
+	if strings.HasPrefix(gitURL, "git@") {
+		host := strings.Split(strings.TrimPrefix(gitURL, "git@"), ":")[0]
+		return "https://" + host, nil
+	}
+
 	u, err := url.Parse(gitURL)
 
 	// We really need the format of the string to be correct.

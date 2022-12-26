@@ -260,13 +260,31 @@ func TestGetGitProvider(t *testing.T) {
 		wantString string
 	}{
 		{
-			name: "github",
+			name: "github ssh",
 			args: args{
 				ctx:    context.Background(),
 				gitURL: "git@github.com:redhat-appstudio/application-service.git",
 			},
-			wantErr:    true, //unsupported
-			wantString: "",
+			wantErr:    false,
+			wantString: "https://github.com",
+		},
+		{
+			name: "gitlab ssh",
+			args: args{
+				ctx:    context.Background(),
+				gitURL: "git@gitlab.com:namespace/project-name.git",
+			},
+			wantErr:    false,
+			wantString: "https://gitlab.com",
+		},
+		{
+			name: "bitbucket ssh",
+			args: args{
+				ctx:    context.Background(),
+				gitURL: "git@bitbucket.org:organization/project-name.git",
+			},
+			wantErr:    false,
+			wantString: "https://bitbucket.org",
 		},
 		{
 			name: "github https",
