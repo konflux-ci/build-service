@@ -760,12 +760,6 @@ func createWorkspaceBinding(pipelineWorkspaces []tektonapi.PipelineWorkspaceDecl
 					Name:                workspace.Name,
 					VolumeClaimTemplate: gitops.GenerateVolumeClaimTemplate(),
 				})
-		case "registry-auth":
-			pipelineRunWorkspaces = append(pipelineRunWorkspaces,
-				tektonapi.WorkspaceBinding{
-					Name:   workspace.Name,
-					Secret: &corev1.SecretVolumeSource{SecretName: gitopsprepare.RegistrySecret},
-				})
 		case "git-auth":
 			pipelineRunWorkspaces = append(pipelineRunWorkspaces,
 				tektonapi.WorkspaceBinding{
@@ -1008,10 +1002,6 @@ func generateInitialPipelineRunForComponent(component *appstudiov1alpha1.Compone
 				{
 					Name:                "workspace",
 					VolumeClaimTemplate: gitops.GenerateVolumeClaimTemplate(),
-				},
-				{
-					Name:   "registry-auth",
-					Secret: &corev1.SecretVolumeSource{SecretName: gitopsprepare.RegistrySecret},
 				},
 			},
 		},

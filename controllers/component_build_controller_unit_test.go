@@ -143,14 +143,11 @@ func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 		}
 	}
 
-	if len(pipelineRun.Spec.Workspaces) != 2 {
+	if len(pipelineRun.Spec.Workspaces) != 1 {
 		t.Error("generateInitialPipelineRunForComponent(): wrong number of pipeline workspaces")
 	}
 	for _, workspace := range pipelineRun.Spec.Workspaces {
 		if workspace.Name == "workspace" {
-			continue
-		}
-		if workspace.Name == "registry-auth" {
 			continue
 		}
 		t.Errorf("generateInitialPipelineRunForComponent(): unexpected pipeline workspaces %v", workspace)

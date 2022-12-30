@@ -764,9 +764,6 @@ var _ = Describe("Component initial build controller", func() {
 
 			Expect(pipelineRun.Spec.Workspaces).To(Not(BeEmpty()))
 			for _, w := range pipelineRun.Spec.Workspaces {
-				if w.Name == "registry-auth" {
-					Expect(w.Secret.SecretName).To(Equal(gitopsprepare.RegistrySecret))
-				}
 				if w.Name == "workspace" {
 					Expect(w.VolumeClaimTemplate).NotTo(
 						Equal(nil), "PipelineRun should have its own volumeClaimTemplate.")
