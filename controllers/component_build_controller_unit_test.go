@@ -36,7 +36,7 @@ func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 			Name:      "my-component",
 			Namespace: "my-namespace",
 			Annotations: map[string]string{
-				"skip-initials-checks": "true",
+				"skip-initial-checks": "true",
 			},
 		},
 		Spec: appstudiov1alpha1.ComponentSpec{
