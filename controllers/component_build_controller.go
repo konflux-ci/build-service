@@ -888,7 +888,7 @@ func generateInitialPipelineRunForComponent(component *appstudiov1alpha1.Compone
 		{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: revision}},
 		{Name: "output-image", Value: tektonapi.ArrayOrString{Type: "string", StringVal: image}},
 	}
-	if value, exists := component.Annotations["skip-initials-checks"]; exists && (value == "1" || strings.ToLower(value) == "true") {
+	if value, exists := component.Annotations["skip-initial-checks"]; exists && (value == "1" || strings.ToLower(value) == "true") {
 		params = append(params, tektonapi.Param{Name: "skip-checks", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}})
 	}
 
