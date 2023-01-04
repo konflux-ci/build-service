@@ -674,6 +674,8 @@ func generatePaCPipelineRunForComponent(component *appstudiov1alpha1.Component, 
 
 	params = mergeAndSortTektonParams(params, additionalPipelineParams)
 
+	pipelineRunWorkspaces := createWorkspaceBinding(pipelineSpec.Workspaces)
+
 	pipelineRun := &tektonapi.PipelineRun{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "PipelineRun",
@@ -688,20 +690,38 @@ func generatePaCPipelineRunForComponent(component *appstudiov1alpha1.Component, 
 		Spec: tektonapi.PipelineRunSpec{
 			PipelineSpec: pipelineSpec,
 			Params:       params,
-			Workspaces: []tektonapi.WorkspaceBinding{
-				{
-					Name:                "workspace",
-					VolumeClaimTemplate: gitops.GenerateVolumeClaimTemplate(),
-				},
-				{
-					Name:   "registry-auth",
-					Secret: &corev1.SecretVolumeSource{SecretName: gitopsprepare.RegistrySecret},
-				},
-			},
+			Workspaces:   pipelineRunWorkspaces,
 		},
 	}
 
 	return pipelineRun, nil
+}
+
+func createWorkspaceBinding(pipelineWorkspaces []tektonapi.PipelineWorkspaceDeclaration) []tektonapi.WorkspaceBinding {
+	pipelineRunWorkspaces := []tektonapi.WorkspaceBinding{}
+	for _, workspace := range pipelineWorkspaces {
+		switch workspace.Name {
+		case "workspace":
+			pipelineRunWorkspaces = append(pipelineRunWorkspaces,
+				tektonapi.WorkspaceBinding{
+					Name:                workspace.Name,
+					VolumeClaimTemplate: gitops.GenerateVolumeClaimTemplate(),
+				})
+		case "registry-auth":
+			pipelineRunWorkspaces = append(pipelineRunWorkspaces,
+				tektonapi.WorkspaceBinding{
+					Name:   workspace.Name,
+					Secret: &corev1.SecretVolumeSource{SecretName: gitopsprepare.RegistrySecret},
+				})
+		case "git-auth":
+			pipelineRunWorkspaces = append(pipelineRunWorkspaces,
+				tektonapi.WorkspaceBinding{
+					Name:   workspace.Name,
+					Secret: &corev1.SecretVolumeSource{SecretName: "{{ git_auth_secret }}"},
+				})
+		}
+	}
+	return pipelineRunWorkspaces
 }
 
 // mergeAndSortTektonParams merges additional params into existing params by adding new or replacing existing values.
