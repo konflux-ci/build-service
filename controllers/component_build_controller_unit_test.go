@@ -30,6 +30,16 @@ import (
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 )
 
+func TestGetProvisionTimeMetricsBuckets(t *testing.T) {
+	buckets := getProvisionTimeMetricsBuckets()
+	for i := 1; i < len(buckets); i++ {
+		if buckets[i] <= buckets[i-1] {
+			t.Errorf("Buckets must be in increasing order, but got: %v", buckets)
+		}
+	}
+
+}
+
 func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 	component := &appstudiov1alpha1.Component{
 		ObjectMeta: metav1.ObjectMeta{
