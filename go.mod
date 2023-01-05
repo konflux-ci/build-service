@@ -6,7 +6,7 @@ require (
 	github.com/go-logr/logr v1.2.3
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.20.1
-	github.com/openshift/api v3.9.0+incompatible
+	github.com/openshift/api v0.0.0-20221013123534-96eec44e1979
 	github.com/xanzy/go-gitlab v0.68.2
 	k8s.io/api v0.24.3
 	k8s.io/apimachinery v0.24.3
