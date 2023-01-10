@@ -41,12 +41,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/yaml"
 
 	"github.com/go-logr/logr"
 
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
+	"github.com/prometheus/client_golang/prometheus"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	"github.com/redhat-appstudio/application-service/gitops"
 	gitopsprepare "github.com/redhat-appstudio/application-service/gitops/prepare"
@@ -76,7 +78,47 @@ const (
 
 	PartOfLabelName           = "app.kubernetes.io/part-of"
 	PartOfAppStudioLabelValue = "appstudio"
+
+	metricsNamespace = "redhat_appstudio"
+	metricsSubsystem = "buildservice"
 )
+
+var (
+	initialBuildPipelineCreationTimeMetric      prometheus.Histogram
+	pipelinesAsCodeComponentProvisionTimeMetric prometheus.Histogram
+)
+
+func initMetrics() error {
+	buckets := getProvisionTimeMetricsBuckets()
+
+	initialBuildPipelineCreationTimeMetric = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Namespace: metricsNamespace,
+		Subsystem: metricsSubsystem,
+		Buckets:   buckets,
+		Name:      "initial_build_pipeline_creation_time",
+		Help:      "The time in seconds spent from the moment of Component creation till the initial build pipeline submition.",
+	})
+	pipelinesAsCodeComponentProvisionTimeMetric = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Namespace: metricsNamespace,
+		Subsystem: metricsSubsystem,
+		Buckets:   buckets,
+		Name:      "PaC_configuration_time",
+		Help:      "The time in seconds spent from the moment of Component creation till Pipelines-as-Code configuration done in the Component source repository.",
+	})
+
+	if err := metrics.Registry.Register(initialBuildPipelineCreationTimeMetric); err != nil {
+		return fmt.Errorf("failed to register the initial_build_pipeline_creation_time metric: %w", err)
+	}
+	if err := metrics.Registry.Register(pipelinesAsCodeComponentProvisionTimeMetric); err != nil {
+		return fmt.Errorf("failed to register the PaC_configuration_time metric: %w", err)
+	}
+
+	return nil
+}
+
+func getProvisionTimeMetricsBuckets() []float64 {
+	return []float64{5, 10, 15, 20, 30, 60, 120, 300}
+}
 
 // ComponentBuildReconciler watches AppStudio Component object in order to submit builds
 type ComponentBuildReconciler struct {
@@ -88,6 +130,10 @@ type ComponentBuildReconciler struct {
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ComponentBuildReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if err := initMetrics(); err != nil {
+		return err
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&appstudiov1alpha1.Component{}, builder.WithPredicates(predicate.Funcs{
 			CreateFunc: func(e event.CreateEvent) bool {
@@ -275,6 +321,11 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 		log.Info(mrMessage)
 		r.EventRecorder.Event(&component, "Normal", "PipelinesAsCodeConfiguration", mrMessage)
+
+		if mrUrl != "" {
+			// PaC PR has been just created
+			pipelinesAsCodeComponentProvisionTimeMetric.Observe(time.Since(component.CreationTimestamp.Time).Seconds())
+		}
 
 		// Set initial build annotation to prevent recreation of the PaC integration PR
 		if err := r.Client.Get(ctx, req.NamespacedName, &component); err != nil {
@@ -867,6 +918,8 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 		log.Error(err, fmt.Sprintf("Unable to create the build PipelineRun %v", initialBuildPipelineRun))
 		return err
 	}
+
+	initialBuildPipelineCreationTimeMetric.Observe(time.Since(component.CreationTimestamp.Time).Seconds())
 
 	log.Info(fmt.Sprintf("Initial build pipeline %s created for component %s in %s namespace using %s pipeline from %s bundle",
 		initialBuildPipelineRun.Name, component.Name, component.Namespace, pipelineRef.Name, pipelineRef.Bundle))

@@ -33,6 +33,7 @@ spec:
         - /manager
         args:
         - --leader-elect
+        - "--metrics-bind-address=127.0.0.1:8080"
         image: controller:latest
         name: manager
         securityContext:
