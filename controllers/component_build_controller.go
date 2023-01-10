@@ -117,40 +117,7 @@ func initMetrics() error {
 }
 
 func getProvisionTimeMetricsBuckets() []float64 {
-	// The map key is the bucket width, the value is the number of such buckets.
-	// 0 point is added separately.
-	bucketsRanges := map[int]int{
-		1:  15, // 15 * 1  sec = 15 sec, total 15 sec
-		5:  9,  //  9 * 5  sec = 45 sec, total 1 min
-		10: 6,  //  6 * 10 sec = 60 sec, total 2 min
-		15: 12, // 12 * 15 sec =  3 min, total 5 min
-	}
-	// 0,  1, 2, 3, ... 15, 20, 25, ... 60, 70, 80, ... 120, 135, 150, ... 300,  Inf
-
-	points := 0
-	for _, v := range bucketsRanges {
-		points += v
-	}
-	points++ // add point 0
-
-	buckets := make([]float64, points)
-
-	currentPoint := float64(0)
-	currentPointIndex := 0
-
-	// Add 0 point
-	buckets[currentPointIndex] = currentPoint
-
-	for width, n := range bucketsRanges {
-		for i := 0; i < n; i++ {
-			currentPointIndex++
-			currentPoint += float64(width)
-			buckets[currentPointIndex] = float64(currentPoint)
-		}
-	}
-	// The last bucket with Inf upper boundary will be added by metrics automatically.
-
-	return buckets
+	return []float64{5, 10, 15, 20, 30, 60, 120, 300}
 }
 
 // ComponentBuildReconciler watches AppStudio Component object in order to submit builds
