@@ -141,16 +141,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controllers.ComponentImageReconciler{
-		Client:        mgr.GetClient(),
-		Scheme:        mgr.GetScheme(),
-		Log:           ctrl.Log.WithName("controllers").WithName("ComponentImage"),
-		EventRecorder: mgr.GetEventRecorderFor("ComponentImage"),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ComponentImage")
-		os.Exit(1)
-	}
-
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
@@ -199,7 +189,6 @@ func ensureRequiredAPIGroupsAndResourcesExist(restConfig *rest.Config) {
 	requiredGroupsAndResources := map[string][]string{
 		"tekton.dev": {
 			"pipelineruns",
-			"taskruns",
 		},
 		"appstudio.redhat.com": {
 			"components",

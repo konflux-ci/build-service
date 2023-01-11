@@ -27,8 +27,6 @@ import (
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"knative.dev/pkg/apis"
-	"knative.dev/pkg/apis/duck/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
@@ -74,39 +72,6 @@ func getMinimalDevfile() string {
         metadata:
             name: minimal-devfile
     `
-}
-
-func createApplication(resourceKey types.NamespacedName) {
-	application := &appstudiov1alpha1.Application{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "appstudio.redhat.com/v1alpha1",
-			Kind:       "Application",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      resourceKey.Name,
-			Namespace: resourceKey.Namespace,
-		},
-		Spec: appstudiov1alpha1.ApplicationSpec{
-			DisplayName: "test-app",
-		},
-	}
-
-	Expect(k8sClient.Create(ctx, application)).Should(Succeed())
-}
-
-func deleteApplication(resourceKey types.NamespacedName) {
-	// Delete
-	Eventually(func() error {
-		f := &appstudiov1alpha1.Application{}
-		Expect(k8sClient.Get(ctx, resourceKey, f)).To(Succeed())
-		return k8sClient.Delete(ctx, f)
-	}, timeout, interval).Should(Succeed())
-
-	// Wait for delete to finish
-	Eventually(func() error {
-		f := &appstudiov1alpha1.Component{}
-		return k8sClient.Get(ctx, resourceKey, f)
-	}, timeout, interval).ShouldNot(Succeed())
 }
 
 // createComponent creates sample component resource and verifies it was properly created
@@ -217,24 +182,6 @@ func setComponentDevfileModel(componentKey types.NamespacedName) {
 	setComponentDevfile(componentKey, devfile)
 }
 
-func listApplicationSnapshots(resourceKey types.NamespacedName) []appstudiov1alpha1.Snapshot {
-	applicationSnapshots := &appstudiov1alpha1.SnapshotList{}
-	labelSelectors := client.ListOptions{Raw: &metav1.ListOptions{
-		LabelSelector: ApplicationNameLabelName + "=" + resourceKey.Name,
-	}}
-	err := k8sClient.List(ctx, applicationSnapshots, &labelSelectors)
-	Expect(err).ToNot(HaveOccurred())
-	return applicationSnapshots.Items
-}
-
-func deleteAllApplicationSnapshots() {
-	if err := k8sClient.DeleteAllOf(ctx, &appstudiov1alpha1.Snapshot{}, &client.DeleteAllOfOptions{
-		ListOptions: client.ListOptions{Namespace: HASAppNamespace},
-	}); err != nil {
-		Expect(k8sErrors.IsNotFound(err)).To(BeTrue())
-	}
-}
-
 func listComponentInitialPipelineRuns(componentKey types.NamespacedName) *tektonapi.PipelineRunList {
 	pipelineRuns := &tektonapi.PipelineRunList{}
 	labelSelectors := client.ListOptions{Raw: &metav1.ListOptions{
@@ -274,130 +221,6 @@ func ensureNoInitialPipelineRunsCreated(componentLookupKey types.NamespacedName)
 		Expect(k8sClient.List(ctx, pipelineRuns, &labelSelectors)).To(Succeed())
 		return len(pipelineRuns.Items) == 0
 	}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
-}
-
-func createWebhookPipelineRun(resourceKey types.NamespacedName) {
-	pipelineRun := &tektonapi.PipelineRun{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      resourceKey.Name,
-			Namespace: resourceKey.Namespace,
-			Labels: map[string]string{
-				ComponentNameLabelName: resourceKey.Name,
-			},
-		},
-	}
-	Expect(k8sClient.Create(ctx, pipelineRun)).Should(Succeed())
-
-	Expect(k8sClient.Get(ctx, resourceKey, pipelineRun)).Should(Succeed())
-	pipelineRun.Status = tektonapi.PipelineRunStatus{
-		Status: v1beta1.Status{
-			Conditions: v1beta1.Conditions{
-				apis.Condition{
-					Reason: "Running",
-					Status: "Unknown",
-					Type:   apis.ConditionSucceeded,
-				},
-			},
-		},
-		PipelineRunStatusFields: tektonapi.PipelineRunStatusFields{
-			StartTime: &metav1.Time{
-				Time: time.Now(),
-			},
-		},
-	}
-	Expect(k8sClient.Status().Update(ctx, pipelineRun)).Should(Succeed())
-}
-
-func succeedWebhookPipelineRun(resourceKey types.NamespacedName) {
-	pipelineRun := &tektonapi.PipelineRun{}
-	Expect(k8sClient.Get(ctx, resourceKey, pipelineRun)).Should(Succeed())
-	pipelineRun.Status.CompletionTime = &metav1.Time{Time: time.Now()}
-	pipelineRun.Status.Conditions = v1beta1.Conditions{
-		apis.Condition{
-			Reason: "Completed",
-			Status: "True",
-			Type:   apis.ConditionSucceeded,
-		},
-	}
-	Expect(k8sClient.Status().Update(ctx, pipelineRun)).Should(Succeed())
-}
-
-func failWebhookPipelineRun(resourceKey types.NamespacedName) {
-	pipelineRun := &tektonapi.PipelineRun{}
-	Expect(k8sClient.Get(ctx, resourceKey, pipelineRun)).Should(Succeed())
-	pipelineRun.Status.CompletionTime = &metav1.Time{Time: time.Now()}
-	pipelineRun.Status.Conditions = v1beta1.Conditions{
-		apis.Condition{
-			Reason: "Failed",
-			Status: "False",
-			Type:   apis.ConditionSucceeded,
-		},
-	}
-	Expect(k8sClient.Status().Update(ctx, pipelineRun)).Should(Succeed())
-}
-
-func succeedInitialPipelineRun(componentKey types.NamespacedName) {
-	// Put the PipelineRun in runnning state
-	pipelineRun := &listComponentInitialPipelineRuns(componentKey).Items[0]
-	pipelineRun.Status.StartTime = &metav1.Time{Time: time.Now()}
-	pipelineRun.Status.Conditions = v1beta1.Conditions{
-		apis.Condition{
-			Reason: "Running",
-			Status: "Unknown",
-			Type:   apis.ConditionSucceeded,
-		}}
-	Expect(k8sClient.Status().Update(ctx, pipelineRun)).Should(Succeed())
-
-	// Succeed the PipelineRun
-	pipelineRun = &listComponentInitialPipelineRuns(componentKey).Items[0]
-	pipelineRun.Status.CompletionTime = &metav1.Time{Time: time.Now()}
-	pipelineRun.Status.Conditions = v1beta1.Conditions{
-		apis.Condition{
-			Reason: "Completed",
-			Status: "True",
-			Type:   apis.ConditionSucceeded,
-		},
-	}
-	Expect(k8sClient.Status().Update(ctx, pipelineRun)).Should(Succeed())
-}
-
-// addBuiltComponentImageToBuildPipelineResults adds given image and digest into pipeline results of the latest pipeline run
-func addBuiltComponentImageToBuildPipelineResults(componentKey types.NamespacedName, image string, digest string) {
-	var buildPipelineResults []tektonapi.PipelineRunResult
-	if image != "" {
-		buildPipelineResults = append(buildPipelineResults, tektonapi.PipelineRunResult{
-			Name:  "IMAGE_URL",
-			Value: image,
-		})
-	}
-	if digest != "" {
-		buildPipelineResults = append(buildPipelineResults, tektonapi.PipelineRunResult{
-			Name:  "IMAGE_DIGEST",
-			Value: digest,
-		})
-	}
-
-	buildPipelineRuns := listComponentInitialPipelineRuns(componentKey)
-	Expect(len(buildPipelineRuns.Items) > 0).To(BeTrue())
-	buildPipelineRun := &buildPipelineRuns.Items[len(buildPipelineRuns.Items)-1]
-	buildPipelineRun.Status.PipelineResults = buildPipelineResults
-	Expect(k8sClient.Status().Update(ctx, buildPipelineRun)).Should(Succeed())
-}
-
-func deleteAllPipelineRuns() {
-	if err := k8sClient.DeleteAllOf(ctx, &tektonapi.PipelineRun{}, &client.DeleteAllOfOptions{
-		ListOptions: client.ListOptions{Namespace: HASAppNamespace},
-	}); err != nil {
-		Expect(k8sErrors.IsNotFound(err)).To(BeTrue())
-	}
-}
-
-func deleteAllTaskRuns() {
-	if err := k8sClient.DeleteAllOf(ctx, &tektonapi.TaskRun{}, &client.DeleteAllOfOptions{
-		ListOptions: client.ListOptions{Namespace: HASAppNamespace},
-	}); err != nil {
-		Expect(k8sErrors.IsNotFound(err)).To(BeTrue())
-	}
 }
 
 func createSecret(resourceKey types.NamespacedName, data map[string]string) {
