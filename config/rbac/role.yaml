@@ -15,15 +15,6 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - persistentvolumeclaims
-  verbs:
-  - create
-  - get
-  - list
-  - watch
-- apiGroups:
-  - ""
-  resources:
   - serviceaccounts
   verbs:
   - create
@@ -38,22 +29,6 @@ rules:
   - customresourcedefinitions
   verbs:
   - get
-- apiGroups:
-  - appstudio.redhat.com
-  resources:
-  - applications
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - appstudio.redhat.com
-  resources:
-  - applications/status
-  verbs:
-  - get
-  - list
-  - watch
 - apiGroups:
   - appstudio.redhat.com
   resources:
@@ -83,12 +58,6 @@ rules:
   - get
   - list
   - watch
-- apiGroups:
-  - appstudio.redhat.com
-  resources:
-  - snapshots
-  verbs:
-  - create
 - apiGroups:
   - ""
   resources:
@@ -133,30 +102,3 @@ rules:
   - pipelineruns
   verbs:
   - create
-  - get
-  - list
-  - watch
-- apiGroups:
-  - tekton.dev
-  resources:
-  - pipelineruns/status
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - tekton.dev
-  resources:
-  - taskruns
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - tekton.dev
-  resources:
-  - taskruns/status
-  verbs:
-  - get
-  - list
-  - watch

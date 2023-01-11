@@ -63,6 +63,11 @@ import (
 
 const (
 	InitialBuildAnnotationName = "com.redhat.appstudio/component-initial-build-processed"
+	ApplicationNameLabelName   = "appstudio.openshift.io/application"
+	ComponentNameLabelName     = "appstudio.openshift.io/component"
+	PartOfLabelName            = "app.kubernetes.io/part-of"
+	PartOfAppStudioLabelValue  = "appstudio"
+
 	PipelineRunOnPushSuffix    = "-on-push"
 	PipelineRunOnPRSuffix      = "-on-pull-request"
 	PipelineRunOnPushFilename  = "push.yaml"
@@ -75,9 +80,6 @@ const (
 	buildServiceNamespaceName         = "build-service"
 	buildPipelineSelectorResourceName = "build-pipeline-selector"
 	defaultPipelineName               = "docker-build"
-
-	PartOfLabelName           = "app.kubernetes.io/part-of"
-	PartOfAppStudioLabelValue = "appstudio"
 
 	metricsNamespace = "redhat_appstudio"
 	metricsSubsystem = "buildservice"
