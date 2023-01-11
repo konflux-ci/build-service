@@ -691,7 +691,7 @@ var _ = Describe("Component initial build controller", func() {
 				case "git-url":
 					Expect(p.Value.StringVal).To(Equal(SampleRepoLink))
 				case "revision":
-					Expect(p.Value.StringVal).To(Equal("main"))
+					Expect(p.Value.StringVal).To(Equal(""))
 				}
 			}
 
@@ -758,7 +758,7 @@ var _ = Describe("Component initial build controller", func() {
 				case "git-url":
 					Expect(p.Value.StringVal).To(Equal(SampleRepoLink))
 				case "revision":
-					Expect(p.Value.StringVal).To(Equal("main"))
+					Expect(p.Value.StringVal).To(Equal(""))
 				}
 			}
 
