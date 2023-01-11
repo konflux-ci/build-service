@@ -547,11 +547,11 @@ func TestValidatePaCConfiguration(t *testing.T) {
 			err := validatePaCConfiguration(tt.gitProvider, tt.config)
 			if err != nil {
 				if !tt.expectError {
-					t.Errorf("Expected that the configuration %#v fro provider %s shoould be valid", tt.config, tt.gitProvider)
+					t.Errorf("Expected that the configuration %#v from provider %s should be valid", tt.config, tt.gitProvider)
 				}
 			} else {
 				if tt.expectError {
-					t.Errorf("Expected that the configuration %#v fro provider %s fails", tt.config, tt.gitProvider)
+					t.Errorf("Expected that the configuration %#v from provider %s fails", tt.config, tt.gitProvider)
 				}
 			}
 		})
@@ -582,4 +582,72 @@ func TestGeneratePaCWebhookSecretString(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestCreateWorkspaceBinding(t *testing.T) {
+	tests := []struct {
+		name                      string
+		pipelineWorkspaces        []tektonapi.PipelineWorkspaceDeclaration
+		expectedWorkspaceBindings []tektonapi.WorkspaceBinding
+	}{
+		{
+			name: "should not bind unknown workspaces",
+			pipelineWorkspaces: []tektonapi.PipelineWorkspaceDeclaration{
+				{
+					Name: "unknown1",
+				},
+				{
+					Name: "unknown2",
+				},
+			},
+			expectedWorkspaceBindings: []tektonapi.WorkspaceBinding{},
+		},
+		{
+			name: "should bind git-auth",
+			pipelineWorkspaces: []tektonapi.PipelineWorkspaceDeclaration{
+				{
+					Name: "git-auth",
+				},
+			},
+			expectedWorkspaceBindings: []tektonapi.WorkspaceBinding{
+				{
+					Name:   "git-auth",
+					Secret: &corev1.SecretVolumeSource{SecretName: "{{ git_auth_secret }}"},
+				},
+			},
+		},
+		{
+			name: "should bind git-auth and workspace, should not bind unknown",
+			pipelineWorkspaces: []tektonapi.PipelineWorkspaceDeclaration{
+				{
+					Name: "git-auth",
+				},
+				{
+					Name: "unknown",
+				},
+				{
+					Name: "workspace",
+				},
+			},
+			expectedWorkspaceBindings: []tektonapi.WorkspaceBinding{
+				{
+					Name:   "git-auth",
+					Secret: &corev1.SecretVolumeSource{SecretName: "{{ git_auth_secret }}"},
+				},
+				{
+					Name:                "workspace",
+					VolumeClaimTemplate: gitops.GenerateVolumeClaimTemplate(),
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := createWorkspaceBinding(tt.pipelineWorkspaces)
+			if !reflect.DeepEqual(got, tt.expectedWorkspaceBindings) {
+				t.Errorf("Expected %#v, but received %#v", tt.expectedWorkspaceBindings, got)
+			}
+		})
+	}
 }
