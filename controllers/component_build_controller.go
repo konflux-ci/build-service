@@ -573,6 +573,10 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 	authorName := "redhat-appstudio"
 	authorEmail := "appstudio@redhat.com"
 
+	if component.Spec.Source.GitSource != nil && component.Spec.Source.GitSource.Revision != "" {
+		baseBranch = component.Spec.Source.GitSource.Revision
+	}
+
 	switch gitProvider {
 	case "github":
 		owner := gitSourceUrlParts[3]
