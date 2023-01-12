@@ -952,7 +952,7 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 func generateInitialPipelineRunForComponent(component *appstudiov1alpha1.Component, pipelineRef *tektonapi.PipelineRef, additionalPipelineParams []tektonapi.Param) (*tektonapi.PipelineRun, error) {
 	timestamp := time.Now().Unix()
 	pipelineGenerateName := fmt.Sprintf("%s-", component.Name)
-	revision := "main"
+	revision := ""
 	if component.Spec.Source.GitSource != nil && component.Spec.Source.GitSource.Revision != "" {
 		revision = component.Spec.Source.GitSource.Revision
 	}
