@@ -102,3 +102,8 @@ rules:
   - pipelineruns
   verbs:
   - create
+  - delete
+  - deletecollection
+  - get
+  - list
+  - watch

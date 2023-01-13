@@ -12,10 +12,11 @@ require (
 	k8s.io/api v0.24.3
 	k8s.io/apimachinery v0.24.3
 	k8s.io/client-go v0.24.3
-	knative.dev/pkg v0.0.0-20220524202603-19adf798efb8
 	sigs.k8s.io/controller-runtime v0.12.2
 	sigs.k8s.io/yaml v1.3.0
 )
+
+require knative.dev/pkg v0.0.0-20220524202603-19adf798efb8 // indirect
 
 // If you update dependencies below you must also update controllers/suite_test.go
 require (
