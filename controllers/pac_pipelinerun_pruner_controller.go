@@ -90,7 +90,7 @@ func (r *PaCPipelineRunPrunerReconciler) Reconcile(ctx context.Context, req ctrl
 	return ctrl.Result{}, nil
 }
 
-// PrunePipelineRuns deletes running PipelineRuns, if any, assocoated with the given Component.
+// PrunePipelineRuns deletes PipelineRuns, if any, assocoated with the given Component.
 func (r *PaCPipelineRunPrunerReconciler) PrunePipelineRuns(ctx context.Context, req ctrl.Request) error {
 	log := r.Log.WithValues("PaCPipelineRunPruner", req.NamespacedName)
 

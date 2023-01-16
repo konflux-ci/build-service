@@ -16,8 +16,6 @@ require (
 	sigs.k8s.io/yaml v1.3.0
 )
 
-require knative.dev/pkg v0.0.0-20220524202603-19adf798efb8 // indirect
-
 // If you update dependencies below you must also update controllers/suite_test.go
 require (
 	github.com/openshift-pipelines/pipelines-as-code v0.11.0
@@ -161,6 +159,7 @@ require (
 	k8s.io/klog/v2 v2.70.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20220803162953-67bda5d908f1 // indirect
 	k8s.io/utils v0.0.0-20220728103510-ee6ede2d64ed // indirect
+	knative.dev/pkg v0.0.0-20220524202603-19adf798efb8 // indirect
 	oras.land/oras-go v0.4.0 // indirect
 	sigs.k8s.io/json v0.0.0-20220713155537-f223a00ba0e2 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.3 // indirect
