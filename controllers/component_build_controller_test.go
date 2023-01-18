@@ -1,5 +1,5 @@
 /*
-Copyright 2021-2022 Red Hat, Inc.
+Copyright 2021-2023 Red Hat, Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -477,7 +477,7 @@ var _ = Describe("Component initial build controller", func() {
 		}, 30)
 
 		_ = AfterEach(func() {
-			deleteComponentInitialPipelineRuns(resourceKey)
+			deleteComponentPipelineRuns(resourceKey)
 			deleteComponent(resourceKey)
 		}, 30)
 
@@ -488,7 +488,7 @@ var _ = Describe("Component initial build controller", func() {
 		})
 
 		It("should not submit initial build if the component devfile model is not set", func() {
-			ensureNoInitialPipelineRunsCreated(resourceKey)
+			ensureNoPipelineRunsCreated(resourceKey)
 		})
 
 		It("should not submit initial build if initial build annotation exists on the component", func() {
@@ -499,7 +499,7 @@ var _ = Describe("Component initial build controller", func() {
 
 			setComponentDevfileModel(resourceKey)
 
-			ensureNoInitialPipelineRunsCreated(resourceKey)
+			ensureNoPipelineRunsCreated(resourceKey)
 		})
 
 		It("should not submit initial build if a container image source is specified in component", func() {
@@ -524,7 +524,7 @@ var _ = Describe("Component initial build controller", func() {
 
 			setComponentDevfileModel(resourceKey)
 
-			ensureNoInitialPipelineRunsCreated(resourceKey)
+			ensureNoPipelineRunsCreated(resourceKey)
 		})
 
 		It("should submit initial build if a container image is set to default repo and starting with namespace tag", func() {
@@ -559,37 +559,6 @@ var _ = Describe("Component initial build controller", func() {
 			ensureOneInitialPipelineRunCreated(resourceKey)
 		})
 
-		It("should not submit initial build if a container image is set to default repo not starting with namespace tag", func() {
-			deleteComponent(resourceKey)
-
-			component := &appstudiov1alpha1.Component{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "appstudio.redhat.com/v1alpha1",
-					Kind:       "Component",
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      HASCompName,
-					Namespace: HASAppNamespace,
-				},
-				Spec: appstudiov1alpha1.ComponentSpec{
-					ComponentName:  HASCompName,
-					Application:    HASAppName,
-					ContainerImage: gitops.GetDefaultImageRepo() + ":test-tag",
-					Source: appstudiov1alpha1.ComponentSource{
-						ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
-							GitSource: &appstudiov1alpha1.GitSource{
-								URL: SampleRepoLink,
-							},
-						},
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
-
-			setComponentDevfileModel(resourceKey)
-
-			ensureNoInitialPipelineRunsCreated(resourceKey)
-		})
 	})
 
 	Context("Check if initial build objects are created", func() {
@@ -636,7 +605,7 @@ var _ = Describe("Component initial build controller", func() {
 		})
 
 		AfterEach(func() {
-			deleteComponentInitialPipelineRuns(resourceKey)
+			deleteComponentPipelineRuns(resourceKey)
 			deleteComponent(resourceKey)
 			Expect(k8sClient.Delete(ctx, gitSecret)).Should(Succeed())
 		})
@@ -666,9 +635,9 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(secretFound).To(BeTrue())
 
 			// Check the pipeline run and its resources
-			pipelineRuns := listComponentInitialPipelineRuns(resourceKey)
-			Expect(len(pipelineRuns.Items)).To(Equal(1))
-			pipelineRun := pipelineRuns.Items[0]
+			pipelineRuns := listComponentPipelineRuns(resourceKey)
+			Expect(len(pipelineRuns)).To(Equal(1))
+			pipelineRun := pipelineRuns[0]
 
 			Expect(pipelineRun.Labels[ApplicationNameLabelName]).To(Equal(HASAppName))
 			Expect(pipelineRun.Labels[ComponentNameLabelName]).To(Equal(HASCompName))
@@ -733,9 +702,9 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(secretFound).To(BeTrue())
 
 			// Check the pipeline run and its resources
-			pipelineRuns := listComponentInitialPipelineRuns(resourceKey)
-			Expect(len(pipelineRuns.Items)).To(Equal(1))
-			pipelineRun := pipelineRuns.Items[0]
+			pipelineRuns := listComponentPipelineRuns(resourceKey)
+			Expect(len(pipelineRuns)).To(Equal(1))
+			pipelineRun := pipelineRuns[0]
 
 			Expect(pipelineRun.Labels[ApplicationNameLabelName]).To(Equal(HASAppName))
 			Expect(pipelineRun.Labels[ComponentNameLabelName]).To(Equal(HASCompName))
@@ -785,7 +754,7 @@ var _ = Describe("Component initial build controller", func() {
 
 		AfterEach(func() {
 			deleteComponent(resourceKey)
-			deleteComponentInitialPipelineRuns(resourceKey)
+			deleteComponentPipelineRuns(resourceKey)
 		})
 
 		It("should use the build bundle specified for application", func() {
@@ -833,7 +802,7 @@ var _ = Describe("Component initial build controller", func() {
 			setComponentDevfile(resourceKey, devfile)
 
 			ensureOneInitialPipelineRunCreated(resourceKey)
-			pipelineRun := listComponentInitialPipelineRuns(resourceKey).Items[0]
+			pipelineRun := listComponentPipelineRuns(resourceKey)[0]
 
 			Expect(pipelineRun.Labels[ApplicationNameLabelName]).To(Equal(HASAppName))
 			Expect(pipelineRun.Labels[ComponentNameLabelName]).To(Equal(HASCompName))
@@ -906,7 +875,7 @@ var _ = Describe("Component initial build controller", func() {
 			setComponentDevfile(resourceKey, devfile)
 
 			ensureOneInitialPipelineRunCreated(resourceKey)
-			pipelineRun := listComponentInitialPipelineRuns(resourceKey).Items[0]
+			pipelineRun := listComponentPipelineRuns(resourceKey)[0]
 
 			Expect(pipelineRun.Labels[ApplicationNameLabelName]).To(Equal(HASAppName))
 			Expect(pipelineRun.Labels[ComponentNameLabelName]).To(Equal(HASCompName))
@@ -979,7 +948,7 @@ var _ = Describe("Component initial build controller", func() {
 			setComponentDevfile(resourceKey, devfile)
 
 			ensureOneInitialPipelineRunCreated(resourceKey)
-			pipelineRun := listComponentInitialPipelineRuns(resourceKey).Items[0]
+			pipelineRun := listComponentPipelineRuns(resourceKey)[0]
 
 			Expect(pipelineRun.Labels[ApplicationNameLabelName]).To(Equal(HASAppName))
 			Expect(pipelineRun.Labels[ComponentNameLabelName]).To(Equal(HASCompName))

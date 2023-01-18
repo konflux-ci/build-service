@@ -74,19 +74,15 @@ func getMinimalDevfile() string {
     `
 }
 
-// createComponent creates sample component resource and verifies it was properly created
-func createComponentForPaCBuild(componentLookupKey types.NamespacedName) {
-	component := &appstudiov1alpha1.Component{
+func getSampleComponentData(componentKey types.NamespacedName) *appstudiov1alpha1.Component {
+	return &appstudiov1alpha1.Component{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "appstudio.redhat.com/v1alpha1",
 			Kind:       "Component",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      HASCompName,
-			Namespace: HASAppNamespace,
-			Annotations: map[string]string{
-				gitops.PaCAnnotation: "1",
-			},
+			Name:      componentKey.Name,
+			Namespace: componentKey.Namespace,
 		},
 		Spec: appstudiov1alpha1.ComponentSpec{
 			ComponentName:  HASCompName,
@@ -101,6 +97,15 @@ func createComponentForPaCBuild(componentLookupKey types.NamespacedName) {
 			},
 		},
 	}
+}
+
+// createComponent creates sample component resource and verifies it was properly created
+func createComponentForPaCBuild(componentLookupKey types.NamespacedName) {
+	component := getSampleComponentData(componentLookupKey)
+	component.Annotations = map[string]string{
+		gitops.PaCAnnotation: "1",
+	}
+
 	Expect(k8sClient.Create(ctx, component)).Should(Succeed())
 
 	getComponent(componentLookupKey)
@@ -108,28 +113,8 @@ func createComponentForPaCBuild(componentLookupKey types.NamespacedName) {
 
 // createComponent creates sample component resource and verifies it was properly created
 func createComponent(componentLookupKey types.NamespacedName) {
-	component := &appstudiov1alpha1.Component{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "appstudio.redhat.com/v1alpha1",
-			Kind:       "Component",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      HASCompName,
-			Namespace: HASAppNamespace,
-		},
-		Spec: appstudiov1alpha1.ComponentSpec{
-			ComponentName:  HASCompName,
-			Application:    HASAppName,
-			ContainerImage: ComponentContainerImage,
-			Source: appstudiov1alpha1.ComponentSource{
-				ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
-					GitSource: &appstudiov1alpha1.GitSource{
-						URL: SampleRepoLink,
-					},
-				},
-			},
-		},
-	}
+	component := getSampleComponentData(componentLookupKey)
+
 	Expect(k8sClient.Create(ctx, component)).Should(Succeed())
 
 	getComponent(componentLookupKey)
@@ -182,26 +167,50 @@ func setComponentDevfileModel(componentKey types.NamespacedName) {
 	setComponentDevfile(componentKey, devfile)
 }
 
-func listComponentInitialPipelineRuns(componentKey types.NamespacedName) *tektonapi.PipelineRunList {
+func listComponentPipelineRuns(componentKey types.NamespacedName) []tektonapi.PipelineRun {
 	pipelineRuns := &tektonapi.PipelineRunList{}
-	labelSelectors := client.ListOptions{Raw: &metav1.ListOptions{
-		LabelSelector: ComponentNameLabelName + "=" + componentKey.Name,
-	}}
+	labelSelectors := client.ListOptions{
+		Raw:       &metav1.ListOptions{LabelSelector: ComponentNameLabelName + "=" + componentKey.Name},
+		Namespace: componentKey.Namespace,
+	}
 	err := k8sClient.List(ctx, pipelineRuns, &labelSelectors)
 	Expect(err).ToNot(HaveOccurred())
-	return pipelineRuns
+	return pipelineRuns.Items
 }
 
-func deleteComponentInitialPipelineRuns(componentKey types.NamespacedName) {
-	for _, pipelineRun := range listComponentInitialPipelineRuns(componentKey).Items {
-		Expect(k8sClient.Delete(ctx, &pipelineRun)).Should(Succeed())
+func deleteComponentPipelineRuns(componentKey types.NamespacedName) {
+	for _, pipelineRun := range listComponentPipelineRuns(componentKey) {
+		if err := k8sClient.Delete(ctx, &pipelineRun); err != nil {
+			if !k8sErrors.IsNotFound(err) {
+				Fail(err.Error())
+			}
+		}
 	}
+}
+
+func createPaCPipelineRunWithName(resourceKey types.NamespacedName, pipelineRunName string) {
+	pipelineRun := &tektonapi.PipelineRun{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pipelineRunName,
+			Namespace: resourceKey.Namespace,
+			Labels: map[string]string{
+				ComponentNameLabelName: resourceKey.Name,
+			},
+		},
+	}
+	Expect(k8sClient.Create(ctx, pipelineRun)).Should(Succeed())
+
+	pipelineRunKey := types.NamespacedName{Namespace: pipelineRun.Namespace, Name: pipelineRun.Name}
+	Eventually(func() bool {
+		err := k8sClient.Get(ctx, pipelineRunKey, pipelineRun)
+		return err == nil
+	}, timeout, interval).Should(BeTrue())
 }
 
 func ensureOneInitialPipelineRunCreated(componentKey types.NamespacedName) {
 	component := getComponent(componentKey)
 	Eventually(func() bool {
-		pipelineRuns := listComponentInitialPipelineRuns(componentKey).Items
+		pipelineRuns := listComponentPipelineRuns(componentKey)
 		if len(pipelineRuns) != 1 {
 			return false
 		}
@@ -210,14 +219,25 @@ func ensureOneInitialPipelineRunCreated(componentKey types.NamespacedName) {
 	}, timeout, interval).Should(BeTrue())
 }
 
-func ensureNoInitialPipelineRunsCreated(componentLookupKey types.NamespacedName) {
-	component := getComponent(componentLookupKey)
-
+func ensureNoPipelineRunsCreated(componentLookupKey types.NamespacedName) {
 	pipelineRuns := &tektonapi.PipelineRunList{}
 	Consistently(func() bool {
-		labelSelectors := client.ListOptions{Raw: &metav1.ListOptions{
-			LabelSelector: "build.appstudio.openshift.io/component=" + component.Name,
-		}}
+		labelSelectors := client.ListOptions{
+			Raw:       &metav1.ListOptions{LabelSelector: ComponentNameLabelName + "=" + componentLookupKey.Name},
+			Namespace: componentLookupKey.Namespace,
+		}
+		Expect(k8sClient.List(ctx, pipelineRuns, &labelSelectors)).To(Succeed())
+		return len(pipelineRuns.Items) == 0
+	}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
+}
+
+func waitNoPipelineRunsForComponent(componentLookupKey types.NamespacedName) {
+	pipelineRuns := &tektonapi.PipelineRunList{}
+	Eventually(func() bool {
+		labelSelectors := client.ListOptions{
+			Raw:       &metav1.ListOptions{LabelSelector: ComponentNameLabelName + "=" + componentLookupKey.Name},
+			Namespace: componentLookupKey.Namespace,
+		}
 		Expect(k8sClient.List(ctx, pipelineRuns, &labelSelectors)).To(Succeed())
 		return len(pipelineRuns.Items) == 0
 	}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
@@ -292,6 +312,22 @@ func createNamespace(name string) {
 	}
 
 	if err := k8sClient.Create(ctx, &namespace); err != nil && !k8sErrors.IsAlreadyExists(err) {
+		Fail(err.Error())
+	}
+}
+
+func deleteNamespace(name string) {
+	namespace := corev1.Namespace{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "Namespace",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+	}
+
+	if err := k8sClient.Delete(ctx, &namespace); err != nil && !k8sErrors.IsNotFound(err) {
 		Fail(err.Error())
 	}
 }
