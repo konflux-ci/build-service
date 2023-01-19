@@ -32,7 +32,6 @@ import (
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
-	"github.com/redhat-appstudio/application-service/gitops"
 )
 
 const (
@@ -85,7 +84,7 @@ func getSampleComponentData(componentKey types.NamespacedName) *appstudiov1alpha
 			Namespace: componentKey.Namespace,
 		},
 		Spec: appstudiov1alpha1.ComponentSpec{
-			ComponentName:  HASCompName,
+			ComponentName:  componentKey.Name,
 			Application:    HASAppName,
 			ContainerImage: ComponentContainerImage,
 			Source: appstudiov1alpha1.ComponentSource{
@@ -103,7 +102,7 @@ func getSampleComponentData(componentKey types.NamespacedName) *appstudiov1alpha
 func createComponentForPaCBuild(componentLookupKey types.NamespacedName) {
 	component := getSampleComponentData(componentLookupKey)
 	component.Annotations = map[string]string{
-		gitops.PaCAnnotation: "1",
+		PaCProvisionAnnotationName: PaCProvisionRequestedAnnotationValue,
 	}
 
 	Expect(k8sClient.Create(ctx, component)).Should(Succeed())
@@ -207,7 +206,7 @@ func createPaCPipelineRunWithName(resourceKey types.NamespacedName, pipelineRunN
 	}, timeout, interval).Should(BeTrue())
 }
 
-func ensureOneInitialPipelineRunCreated(componentKey types.NamespacedName) {
+func waitOneInitialPipelineRunCreated(componentKey types.NamespacedName) {
 	component := getComponent(componentKey)
 	Eventually(func() bool {
 		pipelineRuns := listComponentPipelineRuns(componentKey)
@@ -284,7 +283,7 @@ func deleteSecret(resourceKey types.NamespacedName) {
 	}, timeout, interval).Should(BeTrue())
 }
 
-func ensureSecretCreated(resourceKey types.NamespacedName) {
+func waitSecretCreated(resourceKey types.NamespacedName) {
 	secret := &corev1.Secret{}
 	Eventually(func() bool {
 		err := k8sClient.Get(ctx, resourceKey, secret)
@@ -332,7 +331,7 @@ func deleteNamespace(name string) {
 	}
 }
 
-func ensurePaCRepositoryCreated(resourceKey types.NamespacedName) {
+func waitPaCRepositoryCreated(resourceKey types.NamespacedName) {
 	pacRepository := &pacv1alpha1.Repository{}
 	Eventually(func() bool {
 		err := k8sClient.Get(ctx, resourceKey, pacRepository)
@@ -340,12 +339,28 @@ func ensurePaCRepositoryCreated(resourceKey types.NamespacedName) {
 	}, timeout, interval).Should(BeTrue())
 }
 
+func waitComponentAnnotationValue(componentKey types.NamespacedName, annotationName string, annotationValue string) {
+	Eventually(func() bool {
+		component := getComponent(componentKey)
+		annotations := component.GetAnnotations()
+		return annotations != nil && annotations[annotationName] == annotationValue
+	}, timeout, interval).Should(BeTrue())
+}
+
+func ensureComponentAnnotationValue(componentKey types.NamespacedName, annotationName string, annotationValue string) {
+	Consistently(func() bool {
+		component := getComponent(componentKey)
+		annotations := component.GetAnnotations()
+		return annotations != nil && annotations[annotationName] == annotationValue
+	}, ensureTimeout, interval).Should(BeTrue())
+}
+
 func ensureComponentInitialBuildAnnotationState(componentKey types.NamespacedName, initialBuildAnnotation bool) {
 	if initialBuildAnnotation {
 		Eventually(func() bool {
 			component := getComponent(componentKey)
 			annotations := component.GetAnnotations()
-			return annotations != nil && annotations[InitialBuildAnnotationName] == "true"
+			return annotations != nil && annotations[InitialBuildAnnotationName] != ""
 		}, timeout, interval).Should(BeTrue())
 	} else {
 		Consistently(func() bool {
@@ -354,7 +369,8 @@ func ensureComponentInitialBuildAnnotationState(componentKey types.NamespacedNam
 			if annotations == nil {
 				return true
 			}
-			return annotations[InitialBuildAnnotationName] != "true"
+			_, exists := annotations[InitialBuildAnnotationName]
+			return !exists
 		}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 	}
 }
