@@ -62,11 +62,14 @@ import (
 )
 
 const (
-	InitialBuildAnnotationName = "com.redhat.appstudio/component-initial-build-processed"
-	ApplicationNameLabelName   = "appstudio.openshift.io/application"
-	ComponentNameLabelName     = "appstudio.openshift.io/component"
-	PartOfLabelName            = "app.kubernetes.io/part-of"
-	PartOfAppStudioLabelValue  = "appstudio"
+	InitialBuildAnnotationName           = "appstudio.openshift.io/component-initial-build"
+	PaCProvisionAnnotationName           = "appstudio.openshift.io/pac-provision"
+	PaCProvisionRequestedAnnotationValue = "request"
+	PaCProvisionDoneAnnotationValue      = "done"
+	ApplicationNameLabelName             = "appstudio.openshift.io/application"
+	ComponentNameLabelName               = "appstudio.openshift.io/component"
+	PartOfLabelName                      = "app.kubernetes.io/part-of"
+	PartOfAppStudioLabelValue            = "appstudio"
 
 	PipelineRunOnPushSuffix    = "-on-push"
 	PipelineRunOnPRSuffix      = "-on-pull-request"
@@ -122,7 +125,9 @@ func getProvisionTimeMetricsBuckets() []float64 {
 	return []float64{5, 10, 15, 20, 30, 60, 120, 300}
 }
 
-// ComponentBuildReconciler watches AppStudio Component object in order to submit builds
+// ComponentBuildReconciler watches AppStudio Component objects in order to
+// provision Pipelines as Code configuration for the Component or
+// submit initial builds and dependent resources if PaC is not configured.
 type ComponentBuildReconciler struct {
 	Client        client.Client
 	Scheme        *runtime.Scheme
@@ -165,10 +170,6 @@ func (r *ComponentBuildReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.11.0/pkg/reconcile
 func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("ComponentOnboarding", req.NamespacedName)
 
@@ -194,142 +195,47 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	// Do not run any builds for any container-image components
 	if component.Spec.ContainerImage != "" && (component.Spec.Source.GitSource == nil || component.Spec.Source.GitSource.URL == "") {
-		log.Info(fmt.Sprintf("Nothing to do for container image component: %v", req.NamespacedName))
+		log.Info("Nothing to do for container image component")
 		return ctrl.Result{}, nil
 	}
 
 	if component.Status.Devfile == "" {
-		// The component has been just created.
-		// Component controller must set devfile model, wait for it.
-		log.Info(fmt.Sprintf("Waiting for devfile model in component: %v", req.NamespacedName))
+		// The Component has been just created.
+		// Component controller (from Application Service) must set devfile model, wait for it.
+		log.Info("Waiting for devfile model in component")
 		// Do not requeue as after model update a new update event will trigger a new reconcile
 		return ctrl.Result{}, nil
 	}
 
-	// Check initial build annotation to know if any work should be done for the component
-	if len(component.Annotations) == 0 {
-		component.Annotations = make(map[string]string)
-	}
-	if component.Annotations[InitialBuildAnnotationName] == "true" {
-		// Initial build have already happend, nothing to do.
-		return ctrl.Result{}, nil
-	}
-	// The initial build annotation is absent, onboarding of the component needed
-
-	gitopsConfig := gitopsprepare.PrepareGitopsConfig(ctx, r.Client, component)
-	if val, ok := component.Annotations[gitops.PaCAnnotation]; (ok && val == "1") || gitopsConfig.IsHACBS {
-		// Use pipelines as code build
-		log.Info("Pipelines as Code enabled")
-
-		gitProvider, err := gitops.GetGitProvider(component)
-		if err != nil {
-			log.Error(err, "error detecting git provider")
-			// Do not reconcile, because configuration must be fixed before it is possible to proceed.
+	// Check if Pipelines as Code workflow enabled
+	if val, exists := component.Annotations[PaCProvisionAnnotationName]; exists {
+		if val != PaCProvisionRequestedAnnotationValue {
+			if val != PaCProvisionDoneAnnotationValue {
+				message := fmt.Sprintf(
+					"Unexpected value \"%s\" for \"%s\" annotation. Use \"%s\" value to do Pipeline as Code provision for the Component",
+					val, PaCProvisionAnnotationName, PaCProvisionRequestedAnnotationValue)
+				log.Info(message)
+			}
+			// Nothing to do
 			return ctrl.Result{}, nil
 		}
 
-		// Expect that the secret contains token for Pipelines as Code webhook configuration,
-		// but under <git-provider>.token field. For example: github.token
-		// Also it can contain github-private-key and github-application-id
-		// in case GitHub Application is used instead of webhook.
-		pacSecret := corev1.Secret{}
-		pacSecretKey := types.NamespacedName{Namespace: component.Namespace, Name: gitopsprepare.PipelinesAsCodeSecretName}
-		if err := r.Client.Get(ctx, pacSecretKey, &pacSecret); err != nil {
-			if !errors.IsNotFound(err) {
-				log.Error(err, fmt.Sprintf("failed to get Pipelines as Code secret in %s namespace", component.Namespace))
-				r.EventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
-				return ctrl.Result{}, err
-			}
+		log.Info("Starting Pipelines as Code provision for the Component")
 
-			// Fallback to the global configuration
-			globalPaCSecretKey := types.NamespacedName{Namespace: buildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}
-			if err := r.Client.Get(ctx, globalPaCSecretKey, &pacSecret); err != nil {
-				if !errors.IsNotFound(err) {
-					log.Error(err, fmt.Sprintf("failed to get Pipelines as Code secret in %s namespace", globalPaCSecretKey.Namespace))
-					r.EventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
-					return ctrl.Result{}, err
-				}
-				log.Error(err, fmt.Sprintf("Pipelines as Code secret not found in %s namespace nor in %s", pacSecretKey.Namespace, globalPaCSecretKey.Namespace))
-				r.EventRecorder.Event(&pacSecret, "Warning", "PaCSecretNotFound", err.Error())
-				// Do not trigger a new reconcile. The PaC secret must be created first.
-				return ctrl.Result{}, nil
-			}
-
-			if !gitops.IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
-				// Webhook is used. We need to reference access token in the component namespace.
-				// Copy global PaC configuration in component namespace
-				localPaCSecret := &corev1.Secret{
-					TypeMeta: pacSecret.TypeMeta,
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      pacSecretKey.Name,
-						Namespace: pacSecretKey.Namespace,
-						Labels: map[string]string{
-							PartOfLabelName: PartOfAppStudioLabelValue,
-						},
-					},
-					Data: pacSecret.Data,
-				}
-				if err := r.Client.Create(ctx, localPaCSecret); err != nil {
-					r.Log.Error(err, "failed to create local PaC configuration secret")
-					return ctrl.Result{}, err
-				}
-			}
-		}
-
-		if err := validatePaCConfiguration(gitProvider, pacSecret.Data); err != nil {
-			log.Error(err, "Invalid configuration in Pipelines as Code secret")
-			r.EventRecorder.Event(&pacSecret, "Warning", "ErrorValidatingPaCSecret", err.Error())
-			// Do not reconcile, because configuration must be fixed before it is possible to proceed.
-			return ctrl.Result{}, nil
-		}
-
-		var webhookSecretString, webhookTargetUrl string
-		if !gitops.IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
-			// Generate webhook secret for the component git repository if not yet generated
-			// and stores it in the corresponding k8s secret.
-			webhookSecretString, err = r.ensureWebhookSecret(ctx, component)
-			if err != nil {
-				return ctrl.Result{}, err
-			}
-
-			// Obtain Pipelines as Code callback URL
-			webhookTargetUrl = os.Getenv(pipelinesAsCodeRouteEnvVar)
-			if webhookTargetUrl == "" {
-				// The env variable is not set
-				// Use the installed on the cluster Pipelines as Code
-				webhookTargetUrl, err = r.getPaCRoutePublicUrl(ctx)
-				if err != nil {
-					return ctrl.Result{}, err
-				}
-			}
-		}
-
-		if err := r.EnsurePaCRepository(ctx, component, pacSecret.Data); err != nil {
-			return ctrl.Result{}, err
-		}
-
-		// Manage merge request for Pipelines as Code configuration
-		mrUrl, err := r.ConfigureRepositoryForPaC(ctx, &component, pacSecret.Data, webhookTargetUrl, webhookSecretString)
+		done, err := r.ProvisionPaCForComponent(ctx, &component)
 		if err != nil {
-			log.Error(err, "failed to setup repository for Pipelines as Code")
-			r.EventRecorder.Event(&component, "Warning", "ErrorConfiguringPaCForComponentRepository", err.Error())
 			return ctrl.Result{}, err
 		}
-		var mrMessage string
-		if mrUrl != "" {
-			mrMessage = fmt.Sprintf("Pipelines as Code configuration merge request: %s", mrUrl)
+		var pacAnnotationValue string
+		if done {
+			pacAnnotationValue = PaCProvisionDoneAnnotationValue
+			log.Info("Pipelines as Code provision for the Component finished successfully")
 		} else {
-			mrMessage = "Pipelines as Code configuration is up to date"
-		}
-		log.Info(mrMessage)
-		r.EventRecorder.Event(&component, "Normal", "PipelinesAsCodeConfiguration", mrMessage)
-
-		if mrUrl != "" {
-			// PaC PR has been just created
-			pipelinesAsCodeComponentProvisionTimeMetric.Observe(time.Since(component.CreationTimestamp.Time).Seconds())
+			pacAnnotationValue = "error"
+			log.Error(err, "Pipelines as Code provision for the Component failed")
 		}
 
-		// Set initial build annotation to prevent recreation of the PaC integration PR
+		// Update PaC annotation to show that PaC provision is done
 		if err := r.Client.Get(ctx, req.NamespacedName, &component); err != nil {
 			log.Error(err, "failed to get Component")
 			return ctrl.Result{}, err
@@ -337,34 +243,166 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if len(component.Annotations) == 0 {
 			component.Annotations = make(map[string]string)
 		}
-		component.Annotations[InitialBuildAnnotationName] = "true"
-		if err := r.Client.Update(ctx, &component); err != nil {
-			return ctrl.Result{}, err
-		}
-	} else {
-		// Use trigger build
-		// Set initial build annotation to prevent next builds
-		component.Annotations[InitialBuildAnnotationName] = "true"
+		component.Annotations[PaCProvisionAnnotationName] = pacAnnotationValue
 		if err := r.Client.Update(ctx, &component); err != nil {
 			return ctrl.Result{}, err
 		}
 
-		if err := r.SubmitNewBuild(ctx, component); err != nil {
-			// Try to revert the initial build annotation
-			if err := r.Client.Get(ctx, req.NamespacedName, &component); err == nil {
-				component.Annotations[InitialBuildAnnotationName] = "false"
+		return ctrl.Result{}, nil
+	}
+
+	// Pipelines as Code workflow is not enabled, use plain builds.
+
+	// Check initial build annotation to know if any work should be done for the Component
+	if len(component.Annotations) == 0 {
+		component.Annotations = make(map[string]string)
+	}
+	if _, exists := component.Annotations[InitialBuildAnnotationName]; exists {
+		// Initial build have already happend, nothing to do.
+		return ctrl.Result{}, nil
+	}
+	// The initial build is needed for the Component
+
+	// Set initial build annotation to prevent next builds
+	component.Annotations[InitialBuildAnnotationName] = "processed"
+	if err := r.Client.Update(ctx, &component); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if err := r.SubmitNewBuild(ctx, component); err != nil {
+		// Try to revert the initial build annotation
+		if err := r.Client.Get(ctx, req.NamespacedName, &component); err == nil {
+			if len(component.Annotations) > 0 {
+				delete(component.Annotations, InitialBuildAnnotationName)
 				if err := r.Client.Update(ctx, &component); err != nil {
-					log.Error(err, fmt.Sprintf("Failed to schedule initial build for component: %v", req.NamespacedName))
+					log.Error(err, "failed to reschedule initial build for the Component")
+					return ctrl.Result{}, err
 				}
-			} else {
-				log.Error(err, fmt.Sprintf("Failed to schedule initial build for component: %v", req.NamespacedName))
 			}
-
+		} else {
+			log.Error(err, "failed to reschedule initial build for the Component")
 			return ctrl.Result{}, err
 		}
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// ProvisionPaCForComponent does Pipelines as Code provision for the given component.
+// Mainly, it creates PaC configuration merge request into the component source repositotiry.
+// If GitHub PaC application is not configured, creates a webhook for PaC.
+func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context, component *appstudiov1alpha1.Component) (bool, error) {
+	log := r.Log.WithValues("ComponentOnboardingForPaC", types.NamespacedName{Namespace: component.Namespace, Name: component.Name})
+
+	gitProvider, err := gitops.GetGitProvider(*component)
+	if err != nil {
+		log.Error(err, "error detecting git provider")
+		// Do not reconcile, because configuration must be fixed before it is possible to proceed.
+		return false, nil
+	}
+
+	// Expect that the secret contains token for Pipelines as Code webhook configuration,
+	// but under <git-provider>.token field. For example: github.token
+	// Also it can contain github-private-key and github-application-id
+	// in case GitHub Application is used instead of webhook.
+	pacSecret := corev1.Secret{}
+	pacSecretKey := types.NamespacedName{Namespace: component.Namespace, Name: gitopsprepare.PipelinesAsCodeSecretName}
+	if err := r.Client.Get(ctx, pacSecretKey, &pacSecret); err != nil {
+		if !errors.IsNotFound(err) {
+			log.Error(err, fmt.Sprintf("failed to get Pipelines as Code secret in %s namespace", component.Namespace))
+			r.EventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
+			return false, err
+		}
+
+		// Fallback to the global configuration
+		globalPaCSecretKey := types.NamespacedName{Namespace: buildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}
+		if err := r.Client.Get(ctx, globalPaCSecretKey, &pacSecret); err != nil {
+			if !errors.IsNotFound(err) {
+				log.Error(err, fmt.Sprintf("failed to get Pipelines as Code secret in %s namespace", globalPaCSecretKey.Namespace))
+				r.EventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
+				return false, err
+			}
+			log.Error(err, fmt.Sprintf("Pipelines as Code secret not found in %s namespace nor in %s", pacSecretKey.Namespace, globalPaCSecretKey.Namespace))
+			r.EventRecorder.Event(&pacSecret, "Warning", "PaCSecretNotFound", err.Error())
+			// Do not trigger a new reconcile. The PaC secret must be created first.
+			return false, nil
+		}
+
+		if !gitops.IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
+			// Webhook is used. We need to reference access token in the component namespace.
+			// Copy global PaC configuration in component namespace
+			localPaCSecret := &corev1.Secret{
+				TypeMeta: pacSecret.TypeMeta,
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      pacSecretKey.Name,
+					Namespace: pacSecretKey.Namespace,
+					Labels: map[string]string{
+						PartOfLabelName: PartOfAppStudioLabelValue,
+					},
+				},
+				Data: pacSecret.Data,
+			}
+			if err := r.Client.Create(ctx, localPaCSecret); err != nil {
+				r.Log.Error(err, "failed to create local PaC configuration secret")
+				return false, err
+			}
+		}
+	}
+
+	if err := validatePaCConfiguration(gitProvider, pacSecret.Data); err != nil {
+		log.Error(err, "Invalid configuration in Pipelines as Code secret")
+		r.EventRecorder.Event(&pacSecret, "Warning", "ErrorValidatingPaCSecret", err.Error())
+		// Do not reconcile, because configuration must be fixed before it is possible to proceed.
+		return false, nil
+	}
+
+	var webhookSecretString, webhookTargetUrl string
+	if !gitops.IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
+		// Generate webhook secret for the component git repository if not yet generated
+		// and stores it in the corresponding k8s secret.
+		webhookSecretString, err = r.ensureWebhookSecret(ctx, component)
+		if err != nil {
+			return false, err
+		}
+
+		// Obtain Pipelines as Code callback URL
+		webhookTargetUrl = os.Getenv(pipelinesAsCodeRouteEnvVar)
+		if webhookTargetUrl == "" {
+			// The env variable is not set
+			// Use the installed on the cluster Pipelines as Code
+			webhookTargetUrl, err = r.getPaCRoutePublicUrl(ctx)
+			if err != nil {
+				return false, err
+			}
+		}
+	}
+
+	if err := r.EnsurePaCRepository(ctx, component, pacSecret.Data); err != nil {
+		return false, err
+	}
+
+	// Manage merge request for Pipelines as Code configuration
+	mrUrl, err := r.ConfigureRepositoryForPaC(ctx, component, pacSecret.Data, webhookTargetUrl, webhookSecretString)
+	if err != nil {
+		log.Error(err, "failed to configure Component source repository for Pipelines as Code")
+		r.EventRecorder.Event(component, "Warning", "ErrorConfiguringPaCForComponentRepository", err.Error())
+		return false, err
+	}
+	var mrMessage string
+	if mrUrl != "" {
+		mrMessage = fmt.Sprintf("Pipelines as Code configuration merge request: %s", mrUrl)
+	} else {
+		mrMessage = "Pipelines as Code configuration is up to date"
+	}
+	log.Info(mrMessage)
+	r.EventRecorder.Event(component, "Normal", "PipelinesAsCodeConfiguration", mrMessage)
+
+	if mrUrl != "" {
+		// PaC PR has been just created
+		pipelinesAsCodeComponentProvisionTimeMetric.Observe(time.Since(component.CreationTimestamp.Time).Seconds())
+	}
+
+	return true, nil
 }
 
 func (r *ComponentBuildReconciler) getPaCRoutePublicUrl(ctx context.Context) (string, error) {
@@ -442,7 +480,7 @@ func checkMandatoryFieldsNotEmpty(config map[string][]byte, mandatoryFields []st
 
 // Returns webhook secret for given component.
 // Generates the webhook secret and saves it the k8s secret if doesn't exist.
-func (r *ComponentBuildReconciler) ensureWebhookSecret(ctx context.Context, component appstudiov1alpha1.Component) (string, error) {
+func (r *ComponentBuildReconciler) ensureWebhookSecret(ctx context.Context, component *appstudiov1alpha1.Component) (string, error) {
 	webhookSecretsSecret := &corev1.Secret{}
 	if err := r.Client.Get(ctx, types.NamespacedName{Name: gitops.PipelinesAsCodeWebhooksSecretName, Namespace: component.GetNamespace()}, webhookSecretsSecret); err != nil {
 		if errors.IsNotFound(err) {
@@ -466,7 +504,7 @@ func (r *ComponentBuildReconciler) ensureWebhookSecret(ctx context.Context, comp
 		return "", err
 	}
 
-	componentWebhookSecretKey := gitops.GetWebhookSecretKeyForComponent(component)
+	componentWebhookSecretKey := gitops.GetWebhookSecretKeyForComponent(*component)
 	if _, exists := webhookSecretsSecret.Data[componentWebhookSecretKey]; exists {
 		// The webhook secret already exists. Use single secret for the same repository.
 		return string(webhookSecretsSecret.Data[componentWebhookSecretKey]), nil
@@ -496,8 +534,8 @@ func generatePaCWebhookSecretString() string {
 	return hex.EncodeToString(tokenBytes)
 }
 
-func (r *ComponentBuildReconciler) EnsurePaCRepository(ctx context.Context, component appstudiov1alpha1.Component, config map[string][]byte) error {
-	repository, err := gitops.GeneratePACRepository(component, config)
+func (r *ComponentBuildReconciler) EnsurePaCRepository(ctx context.Context, component *appstudiov1alpha1.Component, config map[string][]byte) error {
+	repository, err := gitops.GeneratePACRepository(*component, config)
 	if err != nil {
 		return err
 	}
@@ -505,7 +543,7 @@ func (r *ComponentBuildReconciler) EnsurePaCRepository(ctx context.Context, comp
 	existingRepository := &pacv1alpha1.Repository{}
 	if err := r.Client.Get(ctx, types.NamespacedName{Name: repository.Name, Namespace: repository.Namespace}, existingRepository); err != nil {
 		if errors.IsNotFound(err) {
-			if err := controllerutil.SetOwnerReference(&component, repository, r.Scheme); err != nil {
+			if err := controllerutil.SetOwnerReference(component, repository, r.Scheme); err != nil {
 				return err
 			}
 			if err := r.Client.Create(ctx, repository); err != nil {
@@ -1059,7 +1097,7 @@ func updateServiceAccountIfSecretNotLinked(gitSecretName string, serviceAccount 
 }
 
 func getRandomString(length int) string {
-	bytes := make([]byte, length)
+	bytes := make([]byte, length/2+1)
 	if _, err := rand.Read(bytes); err != nil {
 		panic("Failed to read from random generator")
 	}

@@ -112,8 +112,10 @@ var _ = Describe("Component initial build controller", func() {
 			deleteRoute(pacRouteKey)
 		}, 30)
 
-		It("should successfully submit PR with PaC definitions using GitHub application and set initial build annotation", func() {
+		It("should successfully submit PR with PaC definitions using GitHub application and set PaC annotation", func() {
+			isCreatePaCPullRequestInvoked := false
 			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+				isCreatePaCPullRequestInvoked = true
 				Expect(d.Owner).To(Equal("devfile-samples"))
 				Expect(d.Repository).To(Equal("devfile-sample-java-springboot-basic"))
 				Expect(len(d.Files)).To(Equal(2))
@@ -137,13 +139,17 @@ var _ = Describe("Component initial build controller", func() {
 
 			setComponentDevfileModel(resourceKey)
 
-			ensurePaCRepositoryCreated(resourceKey)
-
-			ensureComponentInitialBuildAnnotationState(resourceKey, true)
+			waitPaCRepositoryCreated(resourceKey)
+			Eventually(func() bool {
+				return isCreatePaCPullRequestInvoked == true
+			}, timeout, interval).Should(BeTrue())
+			waitComponentAnnotationValue(resourceKey, PaCProvisionAnnotationName, PaCProvisionDoneAnnotationValue)
 		})
 
-		It("should successfully submit PR with PaC definitions using GitHub token and set initial build annotation", func() {
+		It("should successfully submit PR with PaC definitions using GitHub token and set PaC annotation", func() {
+			isCreatePaCPullRequestInvoked := false
 			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+				isCreatePaCPullRequestInvoked = true
 				Expect(d.Owner).To(Equal("devfile-samples"))
 				Expect(d.Repository).To(Equal("devfile-sample-java-springboot-basic"))
 				Expect(len(d.Files)).To(Equal(2))
@@ -159,7 +165,9 @@ var _ = Describe("Component initial build controller", func() {
 				Expect(d.AuthorEmail).ToNot(BeEmpty())
 				return "url", nil
 			}
+			isSetupPaCWebhookInvoked := false
 			github.SetupPaCWebhook = func(g *github.GithubClient, webhookUrl, webhookSecret, owner, repository string) error {
+				isSetupPaCWebhookInvoked = true
 				Expect(webhookUrl).To(Equal(pacWebhookUrl))
 				Expect(webhookSecret).ToNot(BeEmpty())
 				Expect(owner).To(Equal("devfile-samples"))
@@ -172,15 +180,19 @@ var _ = Describe("Component initial build controller", func() {
 
 			setComponentDevfileModel(resourceKey)
 
-			ensureSecretCreated(namespacePaCSecretKey)
-			ensureSecretCreated(webhookSecretKey)
-			ensurePaCRepositoryCreated(resourceKey)
-
-			ensureComponentInitialBuildAnnotationState(resourceKey, true)
+			waitSecretCreated(namespacePaCSecretKey)
+			waitSecretCreated(webhookSecretKey)
+			waitPaCRepositoryCreated(resourceKey)
+			Eventually(func() bool {
+				return isCreatePaCPullRequestInvoked == true && isSetupPaCWebhookInvoked == true
+			}, timeout, interval).Should(BeTrue())
+			waitComponentAnnotationValue(resourceKey, PaCProvisionAnnotationName, PaCProvisionDoneAnnotationValue)
 		})
 
-		It("should successfully submit MR with PaC definitions using GitLab token and set initial build annotation", func() {
+		It("should successfully submit MR with PaC definitions using GitLab token and set PaC annotation", func() {
+			isCreatePaCPullRequestInvoked := false
 			gitlab.EnsurePaCMergeRequest = func(c *gitlab.GitlabClient, d *gitlab.PaCMergeRequestData) (string, error) {
+				isCreatePaCPullRequestInvoked = true
 				Expect(d.ProjectPath).To(Equal("devfile-samples/devfile-sample-go-basic"))
 				Expect(len(d.Files)).To(Equal(2))
 				for _, file := range d.Files {
@@ -195,7 +207,9 @@ var _ = Describe("Component initial build controller", func() {
 				Expect(d.AuthorEmail).ToNot(BeEmpty())
 				return "url", nil
 			}
+			isSetupPaCWebhookInvoked := false
 			gitlab.SetupPaCWebhook = func(g *gitlab.GitlabClient, projectPath, webhookUrl, webhookSecret string) error {
+				isSetupPaCWebhookInvoked = true
 				Expect(webhookUrl).To(Equal(pacWebhookUrl))
 				Expect(webhookSecret).ToNot(BeEmpty())
 				Expect(projectPath).To(Equal("devfile-samples/devfile-sample-go-basic"))
@@ -206,40 +220,57 @@ var _ = Describe("Component initial build controller", func() {
 			createSecret(pacSecretKey, pacSecretData)
 
 			deleteComponent(resourceKey)
-			component := &appstudiov1alpha1.Component{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "appstudio.redhat.com/v1alpha1",
-					Kind:       "Component",
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      HASCompName,
-					Namespace: HASAppNamespace,
-					Annotations: map[string]string{
-						gitops.PaCAnnotation: "1",
-					},
-				},
-				Spec: appstudiov1alpha1.ComponentSpec{
-					ComponentName:  HASCompName,
-					Application:    HASAppName,
-					ContainerImage: ComponentContainerImage,
-					Source: appstudiov1alpha1.ComponentSource{
-						ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
-							GitSource: &appstudiov1alpha1.GitSource{
-								URL: "https://gitlab.com/devfile-samples/devfile-sample-go-basic",
-							},
-						},
-					},
-				},
+
+			component := getSampleComponentData(resourceKey)
+			component.Annotations = map[string]string{
+				PaCProvisionAnnotationName: PaCProvisionRequestedAnnotationValue,
 			}
+			component.Spec.Source.GitSource.URL = "https://gitlab.com/devfile-samples/devfile-sample-go-basic"
 			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
 
 			setComponentDevfileModel(resourceKey)
 
-			ensureSecretCreated(namespacePaCSecretKey)
-			ensureSecretCreated(webhookSecretKey)
-			ensurePaCRepositoryCreated(resourceKey)
+			waitSecretCreated(namespacePaCSecretKey)
+			waitSecretCreated(webhookSecretKey)
+			waitPaCRepositoryCreated(resourceKey)
+			Eventually(func() bool {
+				return isCreatePaCPullRequestInvoked == true && isSetupPaCWebhookInvoked == true
+			}, timeout, interval).Should(BeTrue())
+			waitComponentAnnotationValue(resourceKey, PaCProvisionAnnotationName, PaCProvisionDoneAnnotationValue)
+		})
 
+		It("should provision PaC definitions after initial build if PaC annotation added", func() {
+			isCreatePaCPullRequestInvoked := false
+			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+				isCreatePaCPullRequestInvoked = true
+				return "url", nil
+			}
+			github.SetupPaCWebhook = func(g *github.GithubClient, webhookUrl, webhookSecret, owner, repository string) error {
+				defer GinkgoRecover()
+				Fail("Should not create webhook if GitHub application is used")
+				return nil
+			}
+
+			deleteComponent(resourceKey)
+
+			createComponent(resourceKey)
+			setComponentDevfileModel(resourceKey)
+			waitOneInitialPipelineRunCreated(resourceKey)
 			ensureComponentInitialBuildAnnotationState(resourceKey, true)
+
+			// Add PaC annotation
+			component := getComponent(resourceKey)
+			if len(component.Annotations) == 0 {
+				component.Annotations = make(map[string]string)
+			}
+			component.Annotations[PaCProvisionAnnotationName] = PaCProvisionRequestedAnnotationValue
+			Expect(k8sClient.Update(ctx, component)).To(Succeed())
+
+			waitPaCRepositoryCreated(resourceKey)
+			Eventually(func() bool {
+				return isCreatePaCPullRequestInvoked == true
+			}, timeout, interval).Should(BeTrue())
+			waitComponentAnnotationValue(resourceKey, PaCProvisionAnnotationName, PaCProvisionDoneAnnotationValue)
 		})
 
 		It("should not copy PaC secret into local namespace if GitHub application is used", func() {
@@ -247,7 +278,7 @@ var _ = Describe("Component initial build controller", func() {
 
 			setComponentDevfileModel(resourceKey)
 
-			ensurePaCRepositoryCreated(resourceKey)
+			waitPaCRepositoryCreated(resourceKey)
 
 			ensureSecretNotCreated(namespacePaCSecretKey)
 		})
@@ -269,44 +300,25 @@ var _ = Describe("Component initial build controller", func() {
 			component1Key := resourceKey
 
 			component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
-			component2 := &appstudiov1alpha1.Component{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "appstudio.redhat.com/v1alpha1",
-					Kind:       "Component",
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      component2Key.Name,
-					Namespace: component2Key.Namespace,
-					Annotations: map[string]string{
-						gitops.PaCAnnotation: "1",
-					},
-				},
-				Spec: appstudiov1alpha1.ComponentSpec{
-					ComponentName:  component2Key.Name,
-					Application:    HASAppName,
-					ContainerImage: "registry.io/username/image2:tag2",
-					Source: appstudiov1alpha1.ComponentSource{
-						ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
-							GitSource: &appstudiov1alpha1.GitSource{
-								URL: SampleRepoLink,
-							},
-						},
-					},
-				},
+			component2 := getSampleComponentData(component2Key)
+			component2.Annotations = map[string]string{
+				PaCProvisionAnnotationName: PaCProvisionRequestedAnnotationValue,
 			}
+			component2.Spec.ContainerImage = "registry.io/username/image2:tag2"
 			Expect(k8sClient.Create(ctx, component2)).Should(Succeed())
 			defer deleteComponent(component2Key)
 
 			setComponentDevfileModel(component1Key)
 			setComponentDevfileModel(component2Key)
 
-			ensureSecretCreated(namespacePaCSecretKey)
-			ensureSecretCreated(webhookSecretKey)
+			waitSecretCreated(namespacePaCSecretKey)
+			waitSecretCreated(webhookSecretKey)
 
-			ensurePaCRepositoryCreated(resourceKey) // TODO one or two PaC repos?
+			waitPaCRepositoryCreated(component1Key)
+			waitPaCRepositoryCreated(component2Key)
 
-			ensureComponentInitialBuildAnnotationState(component1Key, true)
-			ensureComponentInitialBuildAnnotationState(component2Key, true)
+			waitComponentAnnotationValue(component1Key, PaCProvisionAnnotationName, PaCProvisionDoneAnnotationValue)
+			waitComponentAnnotationValue(component2Key, PaCProvisionAnnotationName, PaCProvisionDoneAnnotationValue)
 
 			Expect(len(webhookSecretStrings) > 0).To(BeTrue())
 			for _, webhookSecret := range webhookSecretStrings {
@@ -331,60 +343,41 @@ var _ = Describe("Component initial build controller", func() {
 			component1Key := resourceKey
 
 			component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
-			component2 := &appstudiov1alpha1.Component{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "appstudio.redhat.com/v1alpha1",
-					Kind:       "Component",
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      component2Key.Name,
-					Namespace: component2Key.Namespace,
-					Annotations: map[string]string{
-						gitops.PaCAnnotation: "1",
-					},
-				},
-				Spec: appstudiov1alpha1.ComponentSpec{
-					ComponentName:  component2Key.Name,
-					Application:    HASAppName,
-					ContainerImage: "registry.io/username/image2:tag2",
-					Source: appstudiov1alpha1.ComponentSource{
-						ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
-							GitSource: &appstudiov1alpha1.GitSource{
-								URL: "https://github.com/devfile-samples/devfile-sample-go-basic",
-							},
-						},
-					},
-				},
+			component2 := getSampleComponentData(component2Key)
+			component2.Annotations = map[string]string{
+				PaCProvisionAnnotationName: PaCProvisionRequestedAnnotationValue,
 			}
+			component2.Spec.ContainerImage = "registry.io/username/image2:tag2"
+			component2.Spec.Source.GitSource.URL = "https://github.com/devfile-samples/devfile-sample-go-basic"
 			Expect(k8sClient.Create(ctx, component2)).Should(Succeed())
 			defer deleteComponent(component2Key)
 
 			setComponentDevfileModel(component1Key)
 			setComponentDevfileModel(component2Key)
 
-			ensureSecretCreated(namespacePaCSecretKey)
-			ensureSecretCreated(webhookSecretKey)
+			waitSecretCreated(namespacePaCSecretKey)
+			waitSecretCreated(webhookSecretKey)
 
-			ensurePaCRepositoryCreated(component1Key)
-			ensurePaCRepositoryCreated(component2Key)
+			waitPaCRepositoryCreated(component1Key)
+			waitPaCRepositoryCreated(component2Key)
 
-			ensureComponentInitialBuildAnnotationState(component1Key, true)
-			ensureComponentInitialBuildAnnotationState(component2Key, true)
+			waitComponentAnnotationValue(component1Key, PaCProvisionAnnotationName, PaCProvisionDoneAnnotationValue)
+			waitComponentAnnotationValue(component2Key, PaCProvisionAnnotationName, PaCProvisionDoneAnnotationValue)
 
 			Expect(len(webhookSecretStrings)).To(Equal(2))
 			Expect(webhookSecretStrings[0]).ToNot(Equal(webhookSecretStrings[1]))
 		})
 
-		It("should not set initial build annotation if PaC definitions PR submition failed", func() {
+		It("should not set PaC annotation if PaC definitions PR submition failed", func() {
 			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
 				return "", fmt.Errorf("Failed to submit PaC definitions PR")
 			}
 
 			setComponentDevfileModel(resourceKey)
 
-			ensurePaCRepositoryCreated(resourceKey)
+			waitPaCRepositoryCreated(resourceKey)
 
-			ensureComponentInitialBuildAnnotationState(resourceKey, false)
+			ensureComponentAnnotationValue(resourceKey, PaCProvisionAnnotationName, PaCProvisionRequestedAnnotationValue)
 
 			// Clean up after the test
 			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
@@ -409,7 +402,7 @@ var _ = Describe("Component initial build controller", func() {
 
 			setComponentDevfileModel(resourceKey)
 
-			ensureComponentInitialBuildAnnotationState(resourceKey, false)
+			waitComponentAnnotationValue(resourceKey, PaCProvisionAnnotationName, "error")
 		})
 
 		It("should do nothing if the component devfile model is not set", func() {
@@ -484,17 +477,18 @@ var _ = Describe("Component initial build controller", func() {
 		It("should submit initial build", func() {
 			setComponentDevfileModel(resourceKey)
 
-			ensureOneInitialPipelineRunCreated(resourceKey)
+			waitOneInitialPipelineRunCreated(resourceKey)
+			ensureComponentInitialBuildAnnotationState(resourceKey, true)
 		})
 
 		It("should not submit initial build if the component devfile model is not set", func() {
 			ensureNoPipelineRunsCreated(resourceKey)
 		})
 
-		It("should not submit initial build if initial build annotation exists on the component", func() {
+		It("should not submit initial build if initial build annotation on the component is set", func() {
 			component := getComponent(resourceKey)
 			component.Annotations = make(map[string]string)
-			component.Annotations[InitialBuildAnnotationName] = "true"
+			component.Annotations[InitialBuildAnnotationName] = "processed"
 			Expect(k8sClient.Update(ctx, component)).Should(Succeed())
 
 			setComponentDevfileModel(resourceKey)
@@ -556,7 +550,8 @@ var _ = Describe("Component initial build controller", func() {
 
 			setComponentDevfileModel(resourceKey)
 
-			ensureOneInitialPipelineRunCreated(resourceKey)
+			waitOneInitialPipelineRunCreated(resourceKey)
+			ensureComponentInitialBuildAnnotationState(resourceKey, true)
 		})
 
 	})
@@ -614,7 +609,7 @@ var _ = Describe("Component initial build controller", func() {
 			setComponentDevfileModel(resourceKey)
 
 			// Wait until all resources created
-			ensureOneInitialPipelineRunCreated(resourceKey)
+			waitOneInitialPipelineRunCreated(resourceKey)
 
 			// Check that git credentials secret is annotated
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: GitSecretName, Namespace: HASAppNamespace}, gitSecret)).Should(Succeed())
@@ -732,7 +727,7 @@ var _ = Describe("Component initial build controller", func() {
             `
 			setComponentDevfile(resourceKey, devfile)
 
-			ensureOneInitialPipelineRunCreated(resourceKey)
+			waitOneInitialPipelineRunCreated(resourceKey)
 			pipelineRun := listComponentPipelineRuns(resourceKey)[0]
 
 			Expect(pipelineRun.Labels[ApplicationNameLabelName]).To(Equal(HASAppName))
@@ -805,7 +800,7 @@ var _ = Describe("Component initial build controller", func() {
             `
 			setComponentDevfile(resourceKey, devfile)
 
-			ensureOneInitialPipelineRunCreated(resourceKey)
+			waitOneInitialPipelineRunCreated(resourceKey)
 			pipelineRun := listComponentPipelineRuns(resourceKey)[0]
 
 			Expect(pipelineRun.Labels[ApplicationNameLabelName]).To(Equal(HASAppName))
@@ -878,7 +873,7 @@ var _ = Describe("Component initial build controller", func() {
             `
 			setComponentDevfile(resourceKey, devfile)
 
-			ensureOneInitialPipelineRunCreated(resourceKey)
+			waitOneInitialPipelineRunCreated(resourceKey)
 			pipelineRun := listComponentPipelineRuns(resourceKey)[0]
 
 			Expect(pipelineRun.Labels[ApplicationNameLabelName]).To(Equal(HASAppName))

@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	routev1 "github.com/openshift/api/route/v1"
@@ -53,6 +54,7 @@ var (
 	testEnv   *envtest.Environment
 	ctx       context.Context
 	cancel    context.CancelFunc
+	log       logr.Logger
 )
 
 func TestAPIs(t *testing.T) {
@@ -67,6 +69,7 @@ var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	ctx, cancel = context.WithCancel(context.TODO())
+	log = ctrl.Log.WithName("testdebug")
 
 	By("bootstrapping test environment")
 	applicationServiceDepVersion := "v0.0.0-20221129172232-763cbbe1992e"
