@@ -696,7 +696,7 @@ func generatePaCPipelineRunForComponent(component *appstudiov1alpha1.Component, 
 		"pipelines.appstudio.openshift.io/type": "build",
 	}
 
-	imageRepo := strings.Split(component.Spec.ContainerImage, ":")[0]
+	imageRepo := getContainerImageRepository(component.Spec.ContainerImage)
 	var pipelineName string
 	var proposedImage string
 	if onPull {
@@ -752,6 +752,16 @@ func generatePaCPipelineRunForComponent(component *appstudiov1alpha1.Component, 
 	}
 
 	return pipelineRun, nil
+}
+
+// getContainerImageRepository removes tag or SHA has from container image reference
+func getContainerImageRepository(image string) string {
+	if strings.Contains(image, "@") {
+		// registry.io/user/image@sha256:586ab...d59a
+		return strings.Split(image, "@")[0]
+	}
+	// registry.io/user/image:tag
+	return strings.Split(image, ":")[0]
 }
 
 func createWorkspaceBinding(pipelineWorkspaces []tektonapi.PipelineWorkspaceDeclaration) []tektonapi.WorkspaceBinding {
@@ -954,7 +964,7 @@ func generateInitialPipelineRunForComponent(component *appstudiov1alpha1.Compone
 	if component.Spec.Source.GitSource != nil && component.Spec.Source.GitSource.Revision != "" {
 		revision = component.Spec.Source.GitSource.Revision
 	}
-	image := fmt.Sprintf("%s:initial-build-%d", strings.Split(component.Spec.ContainerImage, ":")[0], timestamp)
+	image := fmt.Sprintf("%s:initial-build-%s-%d", getContainerImageRepository(component.Spec.ContainerImage), getRandomString(5), timestamp)
 
 	params := []tektonapi.Param{
 		{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: component.Spec.Source.GitSource.URL}},
@@ -1046,4 +1056,12 @@ func updateServiceAccountIfSecretNotLinked(gitSecretName string, serviceAccount 
 	// Add the secret to secret account and return that update is needed
 	serviceAccount.Secrets = append(serviceAccount.Secrets, corev1.ObjectReference{Name: gitSecretName})
 	return true
+}
+
+func getRandomString(length int) string {
+	bytes := make([]byte, length)
+	if _, err := rand.Read(bytes); err != nil {
+		panic("Failed to read from random generator")
+	}
+	return hex.EncodeToString(bytes)[0:length]
 }

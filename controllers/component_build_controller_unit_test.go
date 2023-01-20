@@ -154,6 +154,48 @@ func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 	}
 }
 
+func TestGetContainerImageRepository(t *testing.T) {
+	tests := []struct {
+		name  string
+		image string
+		want  string
+	}{
+		{
+			name:  "should not change image",
+			image: "image-name",
+			want:  "image-name",
+		},
+		{
+			name:  "should not change /user/image",
+			image: "user/image",
+			want:  "user/image",
+		},
+		{
+			name:  "should not change repository.io/user/image",
+			image: "repository.io/user/image",
+			want:  "repository.io/user/image",
+		},
+		{
+			name:  "should delete tag",
+			image: "repository.io/user/image:tag",
+			want:  "repository.io/user/image",
+		},
+		{
+			name:  "should delete sha",
+			image: "repository.io/user/image@sha256:586ab46b9d6d906b2df3dad12751e807bd0f0632d5a2ab3991bdac78bdccd59a",
+			want:  "repository.io/user/image",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := getContainerImageRepository(tt.image)
+			if got != tt.want {
+				t.Errorf("getContainerImageRepository(): got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestMergeAndSortTektonParams(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -644,6 +686,34 @@ func TestCreateWorkspaceBinding(t *testing.T) {
 			got := createWorkspaceBinding(tt.pipelineWorkspaces)
 			if !reflect.DeepEqual(got, tt.expectedWorkspaceBindings) {
 				t.Errorf("Expected %#v, but received %#v", tt.expectedWorkspaceBindings, got)
+			}
+		})
+	}
+}
+
+func TestGetRandomString(t *testing.T) {
+	tests := []struct {
+		name   string
+		length int
+	}{
+		{
+			name:   "should be able to generate one symbol rangom string",
+			length: 1,
+		},
+		{
+			name:   "should be able to generate rangom string",
+			length: 5,
+		},
+		{
+			name:   "should be able to generate long rangom string",
+			length: 100,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := getRandomString(tt.length)
+			if len(got) != tt.length {
+				t.Errorf("Got string %s has lenght %d but expected length is %d", got, len(got), tt.length)
 			}
 		})
 	}
