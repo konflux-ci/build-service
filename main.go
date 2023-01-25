@@ -45,8 +45,7 @@ import (
 
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
-	taskrunapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
-	triggersapi "github.com/tektoncd/triggers/pkg/apis/triggers/v1alpha1"
+	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 
 	appstudioredhatcomv1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
 	"github.com/redhat-appstudio/build-service/controllers"
@@ -90,13 +89,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := triggersapi.AddToScheme(scheme); err != nil {
-		setupLog.Error(err, "unable to add triggers api to the scheme")
-		os.Exit(1)
-	}
-
-	if err := taskrunapi.AddToScheme(scheme); err != nil {
-		setupLog.Error(err, "unable to add triggers api to the scheme")
+	if err := tektonapi.AddToScheme(scheme); err != nil {
+		setupLog.Error(err, "unable to add tekton api to the scheme")
 		os.Exit(1)
 	}
 
@@ -184,7 +178,7 @@ func getCacheFuncOptions() (*cache.Options, error) {
 	appStudioComponentPipelineRunSelector := labels.NewSelector().Add(*componentPipelineRunRequirement)
 
 	selectors := cache.SelectorsByObject{
-		&taskrunapi.PipelineRun{}: cache.ObjectSelector{
+		&tektonapi.PipelineRun{}: cache.ObjectSelector{
 			Label: appStudioComponentPipelineRunSelector,
 		},
 	}

@@ -32,6 +32,7 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -82,7 +83,9 @@ const (
 	buildPipelineServiceAccountName   = "pipeline"
 	buildServiceNamespaceName         = "build-service"
 	buildPipelineSelectorResourceName = "build-pipeline-selector"
-	defaultPipelineName               = "docker-build"
+
+	defaultPipelineName   = "docker-build"
+	defaultPipelineBundle = "quay.io/redhat-appstudio-tekton-catalog/pipeline-docker-build:8cf8982d58a841922b687b7166f0cfdc1cc3fc72"
 
 	metricsNamespace = "redhat_appstudio"
 	metricsSubsystem = "buildservice"
@@ -810,7 +813,7 @@ func createWorkspaceBinding(pipelineWorkspaces []tektonapi.PipelineWorkspaceDecl
 			pipelineRunWorkspaces = append(pipelineRunWorkspaces,
 				tektonapi.WorkspaceBinding{
 					Name:                workspace.Name,
-					VolumeClaimTemplate: gitops.GenerateVolumeClaimTemplate(),
+					VolumeClaimTemplate: generateVolumeClaimTemplate(),
 				})
 		case "git-auth":
 			pipelineRunWorkspaces = append(pipelineRunWorkspaces,
@@ -821,6 +824,21 @@ func createWorkspaceBinding(pipelineWorkspaces []tektonapi.PipelineWorkspaceDecl
 		}
 	}
 	return pipelineRunWorkspaces
+}
+
+func generateVolumeClaimTemplate() *corev1.PersistentVolumeClaim {
+	return &corev1.PersistentVolumeClaim{
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{
+				"ReadWriteOnce",
+			},
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					"storage": resource.MustParse("1Gi"),
+				},
+			},
+		},
+	}
 }
 
 // mergeAndSortTektonParams merges additional params into existing params by adding new or replacing existing values.
@@ -880,7 +898,7 @@ func (r *ComponentBuildReconciler) GetPipelineForComponent(ctx context.Context, 
 	// Fallback to the default pipeline
 	return &tektonapi.PipelineRef{
 		Name:   defaultPipelineName,
-		Bundle: gitopsprepare.AppStudioFallbackBuildBundle,
+		Bundle: defaultPipelineBundle,
 	}, nil, nil
 }
 
@@ -890,7 +908,7 @@ func retrievePipelineSpec(bundleUri, pipelineName string) (*tektonapi.PipelineSp
 	var err error
 	resolver := oci.NewResolver(bundleUri, authn.DefaultKeychain)
 
-	if obj, err = resolver.Get(context.TODO(), "pipeline", pipelineName); err != nil {
+	if obj, _, err = resolver.Get(context.TODO(), "pipeline", pipelineName); err != nil {
 		return nil, err
 	}
 	pipelineSpecObj, ok := obj.(tektonapi.PipelineObject)
@@ -1053,7 +1071,7 @@ func generateInitialPipelineRunForComponent(component *appstudiov1alpha1.Compone
 			Workspaces: []tektonapi.WorkspaceBinding{
 				{
 					Name:                "workspace",
-					VolumeClaimTemplate: gitops.GenerateVolumeClaimTemplate(),
+					VolumeClaimTemplate: generateVolumeClaimTemplate(),
 				},
 			},
 		},

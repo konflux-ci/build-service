@@ -675,7 +675,7 @@ func TestCreateWorkspaceBinding(t *testing.T) {
 				},
 				{
 					Name:                "workspace",
-					VolumeClaimTemplate: gitops.GenerateVolumeClaimTemplate(),
+					VolumeClaimTemplate: generateVolumeClaimTemplate(),
 				},
 			},
 		},

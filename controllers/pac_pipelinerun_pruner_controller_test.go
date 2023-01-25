@@ -19,7 +19,7 @@ package controllers
 import (
 	"fmt"
 
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"k8s.io/apimachinery/pkg/types"
@@ -36,7 +36,7 @@ var _ = Describe("Component PipelineRuns pruner controller", func() {
 
 		_ = BeforeEach(func() {
 			createComponentForPaCBuild(resourceKey)
-		}, 30)
+		})
 
 		It("should not fail if nothing to prune", func() {
 			Expect(len(listComponentPipelineRuns(resourceKey))).To(Equal(0))
