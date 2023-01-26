@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	routev1 "github.com/openshift/api/route/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -33,12 +33,11 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	"sigs.k8s.io/controller-runtime/pkg/envtest/printer"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
-	taskrunapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 
@@ -60,9 +59,7 @@ var (
 func TestAPIs(t *testing.T) {
 	RegisterFailHandler(Fail)
 
-	RunSpecsWithDefaultAndCustomReporters(t,
-		"Controller Suite",
-		[]Reporter{printer.NewlineReporter{}})
+	RunSpecs(t, "Controller Suite")
 }
 
 var _ = BeforeSuite(func() {
@@ -72,16 +69,15 @@ var _ = BeforeSuite(func() {
 	log = ctrl.Log.WithName("testdebug")
 
 	By("bootstrapping test environment")
-	applicationServiceDepVersion := "v0.0.0-20221129172232-763cbbe1992e"
-	applicationApiDepVersion := "v0.0.0-20221114151952-77cba9006505"
+	applicationServiceDepVersion := "v0.0.0-20230123220308-51958ae630fe"
+	applicationApiDepVersion := "v0.0.0-20230116150710-8ead4c6952d3"
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
 			filepath.Join("..", "config", "crd", "bases"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "redhat-appstudio", "application-api@"+applicationApiDepVersion, "config", "crd", "bases"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "redhat-appstudio", "application-service@"+applicationServiceDepVersion, "hack", "routecrd", "route.yaml"),
-			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "tektoncd", "triggers@v0.19.1", "config"),
-			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "tektoncd", "pipeline@v0.37.0", "config"),
-			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "openshift-pipelines", "pipelines-as-code@v0.11.0", "config"),
+			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "tektoncd", "pipeline@v0.44.0", "config"),
+			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "openshift-pipelines", "pipelines-as-code@v0.15.3", "config"),
 		},
 		ErrorIfCRDPathMissing: true,
 	}
@@ -97,7 +93,7 @@ var _ = BeforeSuite(func() {
 	err = appstudiov1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
-	err = taskrunapi.AddToScheme(scheme.Scheme)
+	err = tektonapi.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	err = pacv1alpha1.AddToScheme(scheme.Scheme)
@@ -147,7 +143,7 @@ var _ = BeforeSuite(func() {
 		err = k8sManager.Start(ctx)
 		Expect(err).ToNot(HaveOccurred(), "failed to run manager")
 	}()
-}, 60)
+})
 
 var _ = AfterSuite(func() {
 	cancel()

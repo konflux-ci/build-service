@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -100,7 +100,7 @@ var _ = Describe("Component initial build controller", func() {
 			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) { return "", nil }
 
 			createComponentForPaCBuild(resourceKey)
-		}, 30)
+		})
 
 		_ = AfterEach(func() {
 			deleteComponent(resourceKey)
@@ -110,7 +110,7 @@ var _ = Describe("Component initial build controller", func() {
 
 			deleteSecret(pacSecretKey)
 			deleteRoute(pacRouteKey)
-		}, 30)
+		})
 
 		It("should successfully submit PR with PaC definitions using GitHub application and set PaC annotation", func() {
 			isCreatePaCPullRequestInvoked := false
@@ -467,12 +467,12 @@ var _ = Describe("Component initial build controller", func() {
 
 		_ = BeforeEach(func() {
 			createComponent(resourceKey)
-		}, 30)
+		})
 
 		_ = AfterEach(func() {
 			deleteComponentPipelineRuns(resourceKey)
 			deleteComponent(resourceKey)
-		}, 30)
+		})
 
 		It("should submit initial build", func() {
 			setComponentDevfileModel(resourceKey)
@@ -638,13 +638,13 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(pipelineRun.Labels[ComponentNameLabelName]).To(Equal(HASCompName))
 
 			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/pipeline_name"]).To(Equal(defaultPipelineName))
-			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(defaultPipelineBundle))
 
 			Expect(pipelineRun.Spec.PipelineSpec).To(BeNil())
 
 			Expect(pipelineRun.Spec.PipelineRef).ToNot(BeNil())
 			Expect(pipelineRun.Spec.PipelineRef.Name).To(Equal(defaultPipelineName))
-			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
+			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(defaultPipelineBundle))
 
 			Expect(pipelineRun.Spec.Params).ToNot(BeEmpty())
 			for _, p := range pipelineRun.Spec.Params {
@@ -695,7 +695,7 @@ var _ = Describe("Component initial build controller", func() {
 							Name: "nodejs",
 							PipelineRef: v1beta1.PipelineRef{
 								Name:   "nodejs-builder",
-								Bundle: gitopsprepare.AppStudioFallbackBuildBundle,
+								Bundle: defaultPipelineBundle,
 							},
 							PipelineParams: []buildappstudiov1alpha1.PipelineParam{
 								{
@@ -711,7 +711,7 @@ var _ = Describe("Component initial build controller", func() {
 							Name: "Fallback",
 							PipelineRef: v1beta1.PipelineRef{
 								Name:   "noop",
-								Bundle: gitopsprepare.AppStudioFallbackBuildBundle,
+								Bundle: defaultPipelineBundle,
 							},
 						},
 					},
@@ -734,13 +734,13 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(pipelineRun.Labels[ComponentNameLabelName]).To(Equal(HASCompName))
 
 			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/pipeline_name"]).To(Equal("nodejs-builder"))
-			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(defaultPipelineBundle))
 
 			Expect(pipelineRun.Spec.PipelineSpec).To(BeNil())
 
 			Expect(pipelineRun.Spec.PipelineRef).ToNot(BeNil())
 			Expect(pipelineRun.Spec.PipelineRef.Name).To(Equal("nodejs-builder"))
-			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
+			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(defaultPipelineBundle))
 
 			Expect(pipelineRun.Spec.Params).ToNot(BeNil())
 			additionalPipelineParameterFound := false
@@ -768,7 +768,7 @@ var _ = Describe("Component initial build controller", func() {
 							Name: "nodejs",
 							PipelineRef: v1beta1.PipelineRef{
 								Name:   "nodejs-builder",
-								Bundle: gitopsprepare.AppStudioFallbackBuildBundle,
+								Bundle: defaultPipelineBundle,
 							},
 							PipelineParams: []buildappstudiov1alpha1.PipelineParam{
 								{
@@ -784,7 +784,7 @@ var _ = Describe("Component initial build controller", func() {
 							Name: "Fallback",
 							PipelineRef: v1beta1.PipelineRef{
 								Name:   "noop",
-								Bundle: gitopsprepare.AppStudioFallbackBuildBundle,
+								Bundle: defaultPipelineBundle,
 							},
 						},
 					},
@@ -807,13 +807,13 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(pipelineRun.Labels[ComponentNameLabelName]).To(Equal(HASCompName))
 
 			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/pipeline_name"]).To(Equal("nodejs-builder"))
-			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(defaultPipelineBundle))
 
 			Expect(pipelineRun.Spec.PipelineSpec).To(BeNil())
 
 			Expect(pipelineRun.Spec.PipelineRef).ToNot(BeNil())
 			Expect(pipelineRun.Spec.PipelineRef.Name).To(Equal("nodejs-builder"))
-			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
+			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(defaultPipelineBundle))
 
 			Expect(pipelineRun.Spec.Params).ToNot(BeNil())
 			additionalPipelineParameterFound := false
@@ -841,7 +841,7 @@ var _ = Describe("Component initial build controller", func() {
 							Name: "java",
 							PipelineRef: v1beta1.PipelineRef{
 								Name:   "java-builder",
-								Bundle: gitopsprepare.AppStudioFallbackBuildBundle,
+								Bundle: defaultPipelineBundle,
 							},
 							PipelineParams: []buildappstudiov1alpha1.PipelineParam{
 								{
@@ -857,7 +857,7 @@ var _ = Describe("Component initial build controller", func() {
 							Name: "Fallback",
 							PipelineRef: v1beta1.PipelineRef{
 								Name:   "noop",
-								Bundle: gitopsprepare.AppStudioFallbackBuildBundle,
+								Bundle: defaultPipelineBundle,
 							},
 						},
 					},
@@ -880,13 +880,13 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(pipelineRun.Labels[ComponentNameLabelName]).To(Equal(HASCompName))
 
 			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/pipeline_name"]).To(Equal("java-builder"))
-			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(defaultPipelineBundle))
 
 			Expect(pipelineRun.Spec.PipelineSpec).To(BeNil())
 
 			Expect(pipelineRun.Spec.PipelineRef).ToNot(BeNil())
 			Expect(pipelineRun.Spec.PipelineRef.Name).To(Equal("java-builder"))
-			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(gitopsprepare.AppStudioFallbackBuildBundle))
+			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(defaultPipelineBundle))
 
 			Expect(pipelineRun.Spec.Params).ToNot(BeNil())
 			additionalPipelineParameterFound := false

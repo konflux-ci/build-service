@@ -72,39 +72,62 @@ spec:
                           description: API version of the referent
                           type: string
                         bundle:
-                          description: Bundle url reference to a Tekton Bundle.
+                          description: 'Bundle url reference to a Tekton Bundle. Deprecated:
+                            Please use ResolverRef with the bundles resolver instead.'
                           type: string
                         name:
                           description: 'Name of the referent; More info: http://kubernetes.io/docs/user-guide/identifiers#names'
                           type: string
-                        resolver:
-                          description: Resolver is the name of the resolver that should
-                            perform resolution of the referenced Tekton resource,
-                            such as "git".
-                          type: string
-                        resource:
-                          description: Resource contains the parameters used to identify
+                        params:
+                          description: Params contains the parameters used to identify
                             the referenced Tekton resource. Example entries might
                             include "repo" or "path" but the set of params ultimately
                             depends on the chosen resolver.
                           items:
-                            description: ResolverParam is a single parameter passed
-                              to a resolver.
+                            description: Param declares an ParamValues to use for
+                              the parameter called name.
                             properties:
                               name:
-                                description: Name is the name of the parameter that
-                                  will be passed to the resolver.
                                 type: string
                               value:
-                                description: Value is the string value of the parameter
-                                  that will be passed to the resolver.
-                                type: string
+                                description: ParamValue is a type that can hold a
+                                  single string or string array. Used in JSON unmarshalling
+                                  so that a single JSON field can accept either an
+                                  individual string or an array of strings.
+                                properties:
+                                  arrayVal:
+                                    items:
+                                      type: string
+                                    type: array
+                                    x-kubernetes-list-type: atomic
+                                  objectVal:
+                                    additionalProperties:
+                                      type: string
+                                    type: object
+                                  stringVal:
+                                    type: string
+                                  type:
+                                    description: ParamType indicates the type of an
+                                      input parameter; Used to distinguish between
+                                      a single string and an array of strings.
+                                    type: string
+                                required:
+                                - arrayVal
+                                - objectVal
+                                - stringVal
+                                - type
+                                type: object
                             required:
                             - name
                             - value
                             type: object
                           type: array
                           x-kubernetes-list-type: atomic
+                        resolver:
+                          description: Resolver is the name of the resolver that should
+                            perform resolution of the referenced Tekton resource,
+                            such as "git".
+                          type: string
                       type: object
                     when:
                       description: Defines the selector conditions when given build
