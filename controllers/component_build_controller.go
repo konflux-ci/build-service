@@ -1102,6 +1102,10 @@ func getGitProviderUrl(gitURL string) (string, error) {
 }
 
 func updateServiceAccountIfSecretNotLinked(gitSecretName string, serviceAccount *corev1.ServiceAccount) bool {
+	if gitSecretName == "" {
+		// The secret is empty, no updates needed
+		return false
+	}
 	for _, credentialSecret := range serviceAccount.Secrets {
 		if credentialSecret.Name == gitSecretName {
 			// The secret is present in the service account, no updates needed

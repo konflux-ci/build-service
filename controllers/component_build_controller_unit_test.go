@@ -421,6 +421,20 @@ func TestUpdateServiceAccountIfSecretNotLinked(t *testing.T) {
 			},
 			want: true, // since it wasn't present, this implies the SA was updated.
 		},
+		{
+			name: "secretname is empty string",
+			args: args{
+				gitSecretName: "",
+				serviceAccount: &corev1.ServiceAccount{
+					Secrets: []corev1.ObjectReference{
+						{
+							Name: "present",
+						},
+					},
+				},
+			},
+			want: false, // since it wasn't present, this implies the SA was updated.
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
