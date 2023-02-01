@@ -368,7 +368,7 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(webhookSecretStrings[0]).ToNot(Equal(webhookSecretStrings[1]))
 		})
 
-		It("should not set PaC annotation if PaC definitions PR submition failed", func() {
+		It("should not set PaC annotation if PaC definitions PR submission failed", func() {
 			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
 				return "", fmt.Errorf("Failed to submit PaC definitions PR")
 			}

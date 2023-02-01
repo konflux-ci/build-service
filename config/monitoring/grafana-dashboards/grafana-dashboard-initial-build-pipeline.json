@@ -45,10 +45,6 @@
               {
                 "color": "green",
                 "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
               }
             ]
           }
@@ -101,7 +97,7 @@
         "type": "prometheus",
         "uid": "PF224BEF3374A25F8"
       },
-      "description": "Time spent from the Component creation till initial build pipeline run creation.\nEach bar shows how many pipeline runs were submitted in the time range. For example, number on \"15\" bar shows the number of initial build pipeline runs preparation of which took from 10 to 15 seconds.",
+      "description": "Each bar shows how many pipeline runs were prepared in the time range. For example, \"15\" bar shows the number of initial build pipeline runs preparations that took from 10 to 15 seconds.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -161,7 +157,7 @@
           "refId": "A"
         }
       ],
-      "title": "Initial build submition time",
+      "title": "Initial build submission time distribution",
       "type": "bargauge"
     },
     {
@@ -254,7 +250,7 @@
           "refId": "A"
         }
       ],
-      "title": "Initial builds on timeline",
+      "title": "Increase of initial builds on timeline",
       "type": "heatmap"
     },
     {
@@ -347,7 +343,7 @@
           "refId": "A"
         }
       ],
-      "title": "Initial build pipeline run submition average time on timeline",
+      "title": "Initial build pipeline run submission average time on timeline",
       "type": "heatmap"
     }
   ],
