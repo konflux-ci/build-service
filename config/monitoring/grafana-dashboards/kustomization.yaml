@@ -1,0 +1,17 @@
+kind: Kustomization
+apiVersion: kustomize.config.k8s.io/v1beta1
+
+namespace: grafana-operator-system
+
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+
+configMapGenerator:
+  - name: grafana-dashboard-initial-build-pipeline
+    files:
+      - grafana-dashboard-initial-build-pipeline.json
+  - name: grafana-dashboard-pac-provision
+    files:
+      - grafana-dashboard-pac-provision.json
