@@ -62,16 +62,32 @@ func newGithubClientByApp(appId int64, privateKeyPem []byte, owner string) (*Git
 	if err != nil {
 		return nil, err
 	}
-	installations, _, err := client.Apps.ListInstallations(context.Background(), &github.ListOptions{})
-	if err != nil {
-		return nil, err
+
+	opt := &github.RepositoryListByOrgOptions{
+		ListOptions: github.ListOptions{PerPage: 100},
 	}
+
 	var installID int64
-	for _, val := range installations {
-		if val.GetAccount().GetLogin() == owner {
-			installID = val.GetID()
+	for installID == 0 {
+		installations, resp, err := client.Apps.ListInstallations(context.Background(), &opt.ListOptions)
+		if err != nil {
+			return nil, err
 		}
+		for _, val := range installations {
+			if val.GetAccount().GetLogin() == owner {
+				installID = val.GetID()
+				break
+			}
+		}
+		if resp.NextPage == 0 {
+			break
+		}
+		opt.Page = resp.NextPage
 	}
+	if installID == 0 {
+		return nil, fmt.Errorf("unable to find GitHub InstallationID for user %s", owner)
+	}
+
 	token, _, err := client.Apps.CreateInstallationToken(
 		context.Background(),
 		installID,
