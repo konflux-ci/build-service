@@ -45,10 +45,6 @@
               {
                 "color": "green",
                 "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
               }
             ]
           }
@@ -101,7 +97,7 @@
         "type": "prometheus",
         "uid": "PF224BEF3374A25F8"
       },
-      "description": "Time spent from the Component creation till Pipelines as Code provision of the Component source git repository.\nEach bar shows how many repositories were provisioned in the time range. For example, number on \"15\" bar shows the number of git repository provisions that took from 10 to 15 seconds.",
+      "description": "Each bar shows how many repositories were provisioned in the time range. For example, \"15\" bar shows the number of git repository provisions that took from 10 to 15 seconds.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -161,7 +157,7 @@
           "refId": "A"
         }
       ],
-      "title": "Pipelines as Code provisions time",
+      "title": "Pipelines as Code provisions time distribution",
       "type": "bargauge"
     },
     {
@@ -254,7 +250,7 @@
           "refId": "A"
         }
       ],
-      "title": "Pipelines as Code provisions on timeline",
+      "title": "Increase of Pipelines as Code provisions on timeline",
       "type": "heatmap"
     },
     {

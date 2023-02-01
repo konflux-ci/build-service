@@ -104,7 +104,7 @@ func initMetrics() error {
 		Subsystem: metricsSubsystem,
 		Buckets:   buckets,
 		Name:      "initial_build_pipeline_creation_time",
-		Help:      "The time in seconds spent from the moment of Component creation till the initial build pipeline submition.",
+		Help:      "The time in seconds spent from the moment of Component creation till the initial build pipeline submission.",
 	})
 	pipelinesAsCodeComponentProvisionTimeMetric = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Namespace: metricsNamespace,
