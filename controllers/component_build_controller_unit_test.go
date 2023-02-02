@@ -637,6 +637,114 @@ func TestGeneratePaCWebhookSecretString(t *testing.T) {
 	})
 }
 
+func TestGetPathContext(t *testing.T) {
+	tests := []struct {
+		name              string
+		gitContext        string
+		dockerfileContext string
+		want              string
+	}{
+		{
+			name:              "should return empty context if both contexts empty",
+			gitContext:        "",
+			dockerfileContext: "",
+			want:              "",
+		},
+		{
+			name:              "should use current directory from git context",
+			gitContext:        ".",
+			dockerfileContext: "",
+			want:              ".",
+		},
+		{
+			name:              "should use current directory from dockerfile context",
+			gitContext:        "",
+			dockerfileContext: ".",
+			want:              ".",
+		},
+		{
+			name:              "should use current directory if both contexts are current directory",
+			gitContext:        ".",
+			dockerfileContext: ".",
+			want:              ".",
+		},
+		{
+			name:              "should use git context if dockerfile context if not set",
+			gitContext:        "dir",
+			dockerfileContext: "",
+			want:              "dir",
+		},
+		{
+			name:              "should use dockerfile context if git context if not set",
+			gitContext:        "",
+			dockerfileContext: "dir",
+			want:              "dir",
+		},
+		{
+			name:              "should use git context if dockerfile context is current directory",
+			gitContext:        "dir",
+			dockerfileContext: ".",
+			want:              "dir",
+		},
+		{
+			name:              "should use dockerfile context if git context is current directory",
+			gitContext:        ".",
+			dockerfileContext: "dir",
+			want:              "dir",
+		},
+		{
+			name:              "should respect both git and dockerfile contexts",
+			gitContext:        "component-dir",
+			dockerfileContext: "dockerfile-dir",
+			want:              "component-dir/dockerfile-dir",
+		},
+		{
+			name:              "should respect both git and dockerfile contexts in subfolders",
+			gitContext:        "path/to/component",
+			dockerfileContext: "path/to/dockercontext/",
+			want:              "path/to/component/path/to/dockercontext",
+		},
+		{
+			name:              "should remove slash at the end",
+			gitContext:        "path/to/dir/",
+			dockerfileContext: "",
+			want:              "path/to/dir",
+		},
+		{
+			name:              "should remove slash at the end",
+			gitContext:        "",
+			dockerfileContext: "path/to/dir/",
+			want:              "path/to/dir",
+		},
+		{
+			name:              "should not allow absolute path",
+			gitContext:        "/path/to/dir/",
+			dockerfileContext: "",
+			want:              "path/to/dir",
+		},
+		{
+			name:              "should not allow absolute path",
+			gitContext:        "",
+			dockerfileContext: "/path/to/dir/",
+			want:              "path/to/dir",
+		},
+		{
+			name:              "should not allow absolute path",
+			gitContext:        "/path/to/dir1/",
+			dockerfileContext: "/path/to/dir2/",
+			want:              "path/to/dir1/path/to/dir2",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := getPathContext(tt.gitContext, tt.dockerfileContext)
+			if got != tt.want {
+				t.Errorf("Expected \"%s\", but got \"%s\"", tt.want, got)
+			}
+		})
+	}
+}
+
 func TestCreateWorkspaceBinding(t *testing.T) {
 	tests := []struct {
 		name                      string

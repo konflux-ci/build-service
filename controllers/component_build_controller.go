@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -765,8 +766,9 @@ func generatePaCPipelineRunForComponent(component *appstudiov1alpha1.Component, 
 		if dockerFile.Uri != "" {
 			params = append(params, tektonapi.Param{Name: "dockerfile", Value: tektonapi.ArrayOrString{Type: "string", StringVal: dockerFile.Uri}})
 		}
-		if dockerFile.BuildContext != "" {
-			params = append(params, tektonapi.Param{Name: "path-context", Value: tektonapi.ArrayOrString{Type: "string", StringVal: dockerFile.BuildContext}})
+		pathContext := getPathContext(component.Spec.Source.GitSource.Context, dockerFile.BuildContext)
+		if pathContext != "" {
+			params = append(params, tektonapi.Param{Name: "path-context", Value: tektonapi.ArrayOrString{Type: "string", StringVal: pathContext}})
 		}
 	}
 
@@ -803,6 +805,17 @@ func getContainerImageRepository(image string) string {
 	}
 	// registry.io/user/image:tag
 	return strings.Split(image, ":")[0]
+}
+
+func getPathContext(gitContext, dockerfileContext string) string {
+	if gitContext == "" && dockerfileContext == "" {
+		return ""
+	}
+	separator := string(filepath.Separator)
+	path := filepath.Join(gitContext, dockerfileContext)
+	path = filepath.Clean(path)
+	path = strings.TrimPrefix(path, separator)
+	return path
 }
 
 func createWorkspaceBinding(pipelineWorkspaces []tektonapi.PipelineWorkspaceDeclaration) []tektonapi.WorkspaceBinding {
@@ -1039,8 +1052,9 @@ func generateInitialPipelineRunForComponent(component *appstudiov1alpha1.Compone
 		if dockerFile.Uri != "" {
 			params = append(params, tektonapi.Param{Name: "dockerfile", Value: tektonapi.ArrayOrString{Type: "string", StringVal: dockerFile.Uri}})
 		}
-		if dockerFile.BuildContext != "" {
-			params = append(params, tektonapi.Param{Name: "path-context", Value: tektonapi.ArrayOrString{Type: "string", StringVal: dockerFile.BuildContext}})
+		pathContext := getPathContext(component.Spec.Source.GitSource.Context, dockerFile.BuildContext)
+		if pathContext != "" {
+			params = append(params, tektonapi.Param{Name: "path-context", Value: tektonapi.ArrayOrString{Type: "string", StringVal: pathContext}})
 		}
 	}
 
