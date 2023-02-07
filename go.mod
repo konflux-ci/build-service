@@ -20,7 +20,7 @@ require (
 require (
 	github.com/openshift-pipelines/pipelines-as-code v0.15.3
 	github.com/redhat-appstudio/application-api v0.0.0-20230116150710-8ead4c6952d3
-	github.com/redhat-appstudio/application-service v0.0.0-20230123220308-51958ae630fe
+	github.com/redhat-appstudio/application-service v0.0.0-20230211102041-695765c656ab
 	github.com/tektoncd/pipeline v0.44.0
 )
 
@@ -43,7 +43,7 @@ require (
 	github.com/containerd/typeurl v1.0.2 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/devfile/api/v2 v2.2.0 // indirect
-	github.com/devfile/library v1.3.0 // indirect
+	github.com/devfile/library/v2 v2.2.1-0.20221207223615-7beda0850228 // indirect
 	github.com/devfile/registry-support/index/generator v0.0.0-20230123181701-4de4dadb13e7 // indirect
 	github.com/devfile/registry-support/registry-library v0.0.0-20230123181701-4de4dadb13e7 // indirect
 	github.com/docker/cli v23.0.0-rc.3+incompatible // indirect
@@ -121,7 +121,7 @@ require (
 	github.com/prometheus/procfs v0.9.0 // indirect
 	github.com/prometheus/statsd_exporter v0.23.0 // indirect
 	github.com/redhat-developer/alizer/go v0.0.0-20230124144157-ad2d3056c08d // indirect
-	github.com/redhat-developer/gitops-generator v0.0.0-20230113152345-19efcd5ec104 // indirect
+	github.com/redhat-developer/gitops-generator v0.0.0-20230209215431-095561c4a909 // indirect
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06 // indirect
 	github.com/sergi/go-diff v1.3.1 // indirect
 	github.com/shurcooL/githubv4 v0.0.0-20221229060216-a8d4a561cc93 // indirect
@@ -140,6 +140,7 @@ require (
 	go.uber.org/multierr v1.9.0 // indirect
 	go.uber.org/zap v1.24.0 // indirect
 	golang.org/x/crypto v0.5.0 // indirect
+	golang.org/x/exp v0.0.0-20230206171751-46f607a40771 // indirect
 	golang.org/x/mod v0.7.0 // indirect
 	golang.org/x/net v0.5.0 // indirect
 	golang.org/x/oauth2 v0.4.0
