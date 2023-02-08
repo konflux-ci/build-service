@@ -161,11 +161,58 @@ func (c *GithubClient) filesUpToDate(owner, repository, branch string, files []F
 	return true, nil
 }
 
+// filesExistInDirectory checks if given files exist under specified directory.
+// Returns subset of given files which exist.
+func (c *GithubClient) filesExistInDirectory(owner, repository, branch, directoryPath string, files []File) ([]File, error) {
+	existingFiles := make([]File, 0, len(files))
+
+	opts := &github.RepositoryContentGetOptions{
+		Ref: "refs/heads/" + branch,
+	}
+	_, dirContent, resp, err := c.client.Repositories.GetContents(c.ctx, owner, repository, directoryPath, opts)
+	if err != nil {
+		if resp.StatusCode == 404 {
+			return existingFiles, nil
+		}
+		return existingFiles, err
+	}
+
+	for _, file := range dirContent {
+		if file.GetType() != "file" {
+			continue
+		}
+		for _, f := range files {
+			if file.GetPath() == f.FullPath {
+				existingFiles = append(existingFiles, File{FullPath: file.GetPath()})
+				break
+			}
+		}
+	}
+
+	return existingFiles, nil
+}
+
 func (c *GithubClient) createTree(owner, repository string, baseRef *github.Reference, files []File) (tree *github.Tree, err error) {
 	// Load each file into the tree.
 	entries := []*github.TreeEntry{}
 	for _, file := range files {
 		entries = append(entries, &github.TreeEntry{Path: github.String(file.FullPath), Type: github.String("blob"), Content: github.String(string(file.Content)), Mode: github.String("100644")})
+	}
+
+	tree, _, err = c.client.Git.CreateTree(c.ctx, owner, repository, *baseRef.Object.SHA, entries)
+	return tree, err
+}
+
+func (c *GithubClient) deleteFromTree(owner, repository string, baseRef *github.Reference, files []File) (tree *github.Tree, err error) {
+	// Delete each file from the tree.
+	entries := []*github.TreeEntry{}
+	for _, file := range files {
+		entries = append(entries, &github.TreeEntry{
+			Path:    github.String(file.FullPath),
+			Type:    github.String("blob"),
+			Content: github.String(string(file.Content)),
+			Mode:    github.String("100644"),
+		})
 	}
 
 	tree, _, err = c.client.Git.CreateTree(c.ctx, owner, repository, *baseRef.Object.SHA, entries)
@@ -182,6 +229,36 @@ func (c *GithubClient) addCommitToBranch(owner, repository, authorName, authorEm
 	parent.Commit.SHA = parent.SHA
 
 	tree, err := c.createTree(owner, repository, ref, files)
+	if err != nil {
+		return err
+	}
+
+	// Create the commit using the tree.
+	date := time.Now()
+	author := &github.CommitAuthor{Date: &date, Name: &authorName, Email: &authorEmail}
+	commit := &github.Commit{Author: author, Message: &commitMessage, Tree: tree, Parents: []*github.Commit{parent.Commit}}
+	newCommit, _, err := c.client.Git.CreateCommit(c.ctx, owner, repository, commit)
+	if err != nil {
+		return err
+	}
+
+	// Attach the created commit to the given branch.
+	ref.Object.SHA = newCommit.SHA
+	_, _, err = c.client.Git.UpdateRef(c.ctx, owner, repository, ref, false)
+	return err
+}
+
+// Creates commit into specified branch that deletes given files.
+func (c *GithubClient) addDeleteCommitToBranch(owner, repository, authorName, authorEmail, commitMessage string, files []File, ref *github.Reference) error {
+	// Get the parent commit to attach the commit to.
+	parent, _, err := c.client.Repositories.GetCommit(c.ctx, owner, repository, *ref.Object.SHA, nil)
+	if err != nil {
+		return err
+	}
+	// This is not always populated, but needed.
+	parent.Commit.SHA = parent.SHA
+
+	tree, err := c.deleteFromTree(owner, repository, ref, files)
 	if err != nil {
 		return err
 	}
@@ -270,4 +347,15 @@ func (c *GithubClient) createWebhook(owner, repository string, webhook *github.H
 func (c *GithubClient) updateWebhook(owner, repository string, webhook *github.Hook) (*github.Hook, error) {
 	webhook, _, err := c.client.Repositories.EditHook(c.ctx, owner, repository, *webhook.ID, webhook)
 	return webhook, err
+}
+
+func (c *GithubClient) deleteWebhook(owner, repository string, webhookId int64) error {
+	resp, err := c.client.Repositories.DeleteHook(c.ctx, owner, repository, webhookId)
+	if err != nil {
+		if resp.StatusCode == 404 {
+			return nil
+		}
+		return err
+	}
+	return nil
 }

@@ -98,6 +98,13 @@ var _ = Describe("Component initial build controller", func() {
 			github.NewGithubClientByApp = func(appId int64, privateKeyPem []byte, owner string) (*github.GithubClient, error) { return nil, nil }
 			github.NewGithubClient = func(accessToken string) *github.GithubClient { return nil }
 			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) { return "", nil }
+			github.SetupPaCWebhook = func(g *github.GithubClient, webhookUrl, webhookSecret, owner, repository string) error { return nil }
+			gitlab.EnsurePaCMergeRequest = func(g *gitlab.GitlabClient, d *gitlab.PaCMergeRequestData) (string, error) { return "", nil }
+			gitlab.SetupPaCWebhook = func(g *gitlab.GitlabClient, projectPath, webhookUrl, webhookSecret string) error { return nil }
+			github.UndoPaCPullRequest = func(g *github.GithubClient, d *github.PaCPullRequestData) (string, error) { return "", nil }
+			github.DeletePaCWebhook = func(g *github.GithubClient, webhookUrl, owner, repository string) error { return nil }
+			gitlab.UndoPaCMergeRequest = func(g *gitlab.GitlabClient, d *gitlab.PaCMergeRequestData) (string, error) { return "", nil }
+			gitlab.DeletePaCWebhook = func(g *gitlab.GitlabClient, projectPath, webhookUrl string) error { return nil }
 
 			createComponentForPaCBuild(resourceKey)
 		})
@@ -141,7 +148,7 @@ var _ = Describe("Component initial build controller", func() {
 
 			waitPaCRepositoryCreated(resourceKey)
 			Eventually(func() bool {
-				return isCreatePaCPullRequestInvoked == true
+				return isCreatePaCPullRequestInvoked
 			}, timeout, interval).Should(BeTrue())
 			waitComponentAnnotationValue(resourceKey, PaCProvisionAnnotationName, PaCProvisionDoneAnnotationValue)
 		})
@@ -184,7 +191,10 @@ var _ = Describe("Component initial build controller", func() {
 			waitSecretCreated(webhookSecretKey)
 			waitPaCRepositoryCreated(resourceKey)
 			Eventually(func() bool {
-				return isCreatePaCPullRequestInvoked == true && isSetupPaCWebhookInvoked == true
+				return isCreatePaCPullRequestInvoked
+			}, timeout, interval).Should(BeTrue())
+			Eventually(func() bool {
+				return isSetupPaCWebhookInvoked
 			}, timeout, interval).Should(BeTrue())
 			waitComponentAnnotationValue(resourceKey, PaCProvisionAnnotationName, PaCProvisionDoneAnnotationValue)
 		})
@@ -234,7 +244,10 @@ var _ = Describe("Component initial build controller", func() {
 			waitSecretCreated(webhookSecretKey)
 			waitPaCRepositoryCreated(resourceKey)
 			Eventually(func() bool {
-				return isCreatePaCPullRequestInvoked == true && isSetupPaCWebhookInvoked == true
+				return isCreatePaCPullRequestInvoked
+			}, timeout, interval).Should(BeTrue())
+			Eventually(func() bool {
+				return isSetupPaCWebhookInvoked
 			}, timeout, interval).Should(BeTrue())
 			waitComponentAnnotationValue(resourceKey, PaCProvisionAnnotationName, PaCProvisionDoneAnnotationValue)
 		})
@@ -268,7 +281,7 @@ var _ = Describe("Component initial build controller", func() {
 
 			waitPaCRepositoryCreated(resourceKey)
 			Eventually(func() bool {
-				return isCreatePaCPullRequestInvoked == true
+				return isCreatePaCPullRequestInvoked
 			}, timeout, interval).Should(BeTrue())
 			waitComponentAnnotationValue(resourceKey, PaCProvisionAnnotationName, PaCProvisionDoneAnnotationValue)
 		})
@@ -460,6 +473,183 @@ var _ = Describe("Component initial build controller", func() {
 			setComponentDevfileModel(resourceKey)
 
 			ensureComponentInitialBuildAnnotationState(resourceKey, false)
+		})
+	})
+
+	Context("Test Pipelines as Code build clean up", func() {
+
+		_ = BeforeEach(func() {
+			createNamespace(pipelinesAsCodeNamespace)
+			createRoute(pacRouteKey, "pac-host")
+			createNamespace(buildServiceNamespaceName)
+
+			github.NewGithubClientByApp = func(appId int64, privateKeyPem []byte, owner string) (*github.GithubClient, error) { return nil, nil }
+			github.NewGithubClient = func(accessToken string) *github.GithubClient { return nil }
+			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) { return "", nil }
+			github.SetupPaCWebhook = func(g *github.GithubClient, webhookUrl, webhookSecret, owner, repository string) error { return nil }
+			gitlab.EnsurePaCMergeRequest = func(g *gitlab.GitlabClient, d *gitlab.PaCMergeRequestData) (string, error) { return "", nil }
+			gitlab.SetupPaCWebhook = func(g *gitlab.GitlabClient, projectPath, webhookUrl, webhookSecret string) error { return nil }
+		})
+
+		_ = AfterEach(func() {
+			deleteSecret(webhookSecretKey)
+			deleteSecret(namespacePaCSecretKey)
+
+			deleteSecret(pacSecretKey)
+			deleteRoute(pacRouteKey)
+		})
+
+		It("should successfully submit PR with PaC definitions removal using GitHub application", func() {
+			isRemovePaCPullRequestInvoked := false
+			github.UndoPaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+				isRemovePaCPullRequestInvoked = true
+				Expect(d.Owner).To(Equal("devfile-samples"))
+				Expect(d.Repository).To(Equal("devfile-sample-java-springboot-basic"))
+				Expect(len(d.Files)).To(Equal(2))
+				for _, file := range d.Files {
+					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
+				}
+				Expect(d.CommitMessage).ToNot(BeEmpty())
+				Expect(d.Branch).ToNot(BeEmpty())
+				Expect(d.BaseBranch).ToNot(BeEmpty())
+				Expect(d.PRTitle).ToNot(BeEmpty())
+				Expect(d.PRText).ToNot(BeEmpty())
+				Expect(d.AuthorName).ToNot(BeEmpty())
+				Expect(d.AuthorEmail).ToNot(BeEmpty())
+				return "url", nil
+			}
+			github.DeletePaCWebhook = func(g *github.GithubClient, webhookUrl, owner, repository string) error {
+				defer GinkgoRecover()
+				Fail("Should not try to delete webhook if GitHub application is used")
+				return nil
+			}
+
+			pacSecretData := map[string]string{
+				"github-application-id": "12345",
+				"github-private-key":    githubAppPrivateKey,
+			}
+			createSecret(pacSecretKey, pacSecretData)
+
+			createComponentForPaCBuild(resourceKey)
+			setComponentDevfileModel(resourceKey)
+			waitPaCFinalizerOnComponent(resourceKey)
+
+			deleteComponent(resourceKey)
+
+			Eventually(func() bool {
+				return isRemovePaCPullRequestInvoked
+			}, timeout, interval).Should(BeTrue())
+		})
+
+		It("should successfully submit PR with PaC definitions removal using GitHub token", func() {
+			isRemovePaCPullRequestInvoked := false
+			github.UndoPaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+				isRemovePaCPullRequestInvoked = true
+				Expect(d.Owner).To(Equal("devfile-samples"))
+				Expect(d.Repository).To(Equal("devfile-sample-java-springboot-basic"))
+				Expect(len(d.Files)).To(Equal(2))
+				for _, file := range d.Files {
+					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
+				}
+				Expect(d.CommitMessage).ToNot(BeEmpty())
+				Expect(d.Branch).ToNot(BeEmpty())
+				Expect(d.BaseBranch).ToNot(BeEmpty())
+				Expect(d.PRTitle).ToNot(BeEmpty())
+				Expect(d.PRText).ToNot(BeEmpty())
+				Expect(d.AuthorName).ToNot(BeEmpty())
+				Expect(d.AuthorEmail).ToNot(BeEmpty())
+				return "url", nil
+			}
+			isDeletePaCWebhookInvoked := false
+			github.DeletePaCWebhook = func(g *github.GithubClient, webhookUrl, owner, repository string) error {
+				isDeletePaCWebhookInvoked = true
+				Expect(webhookUrl).To(Equal(pacWebhookUrl))
+				Expect(owner).To(Equal("devfile-samples"))
+				Expect(repository).To(Equal("devfile-sample-java-springboot-basic"))
+				return nil
+			}
+
+			pacSecretData := map[string]string{"github.token": "ghp_token"}
+			createSecret(pacSecretKey, pacSecretData)
+
+			createComponentForPaCBuild(resourceKey)
+			setComponentDevfileModel(resourceKey)
+			waitPaCFinalizerOnComponent(resourceKey)
+
+			deleteComponent(resourceKey)
+
+			Eventually(func() bool {
+				return isRemovePaCPullRequestInvoked
+			}, timeout, interval).Should(BeTrue())
+			Eventually(func() bool {
+				return isDeletePaCWebhookInvoked
+			}, timeout, interval).Should(BeTrue())
+		})
+
+		It("should successfully submit MR with PaC definitions removal using GitLab token", func() {
+			isRemovePaCPullRequestInvoked := false
+			gitlab.UndoPaCMergeRequest = func(c *gitlab.GitlabClient, d *gitlab.PaCMergeRequestData) (string, error) {
+				isRemovePaCPullRequestInvoked = true
+				Expect(d.ProjectPath).To(Equal("devfile-samples/devfile-sample-go-basic"))
+				Expect(len(d.Files)).To(Equal(2))
+				for _, file := range d.Files {
+					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
+				}
+				Expect(d.CommitMessage).ToNot(BeEmpty())
+				Expect(d.Branch).ToNot(BeEmpty())
+				Expect(d.BaseBranch).ToNot(BeEmpty())
+				Expect(d.MrTitle).ToNot(BeEmpty())
+				Expect(d.MrText).ToNot(BeEmpty())
+				Expect(d.AuthorName).ToNot(BeEmpty())
+				Expect(d.AuthorEmail).ToNot(BeEmpty())
+				return "url", nil
+			}
+			isDeletePaCWebhookInvoked := false
+			gitlab.DeletePaCWebhook = func(g *gitlab.GitlabClient, projectPath, webhookUrl string) error {
+				isDeletePaCWebhookInvoked = true
+				Expect(webhookUrl).To(Equal(pacWebhookUrl))
+				Expect(projectPath).To(Equal("devfile-samples/devfile-sample-go-basic"))
+				return nil
+			}
+
+			pacSecretData := map[string]string{"gitlab.token": "glpat-token"}
+			createSecret(pacSecretKey, pacSecretData)
+
+			component := getSampleComponentData(resourceKey)
+			component.Annotations = map[string]string{
+				PaCProvisionAnnotationName: PaCProvisionRequestedAnnotationValue,
+			}
+			component.Spec.Source.GitSource.URL = "https://gitlab.com/devfile-samples/devfile-sample-go-basic"
+			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
+			setComponentDevfileModel(resourceKey)
+			waitPaCFinalizerOnComponent(resourceKey)
+
+			deleteComponent(resourceKey)
+
+			Eventually(func() bool {
+				return isRemovePaCPullRequestInvoked
+			}, timeout, interval).Should(BeTrue())
+			Eventually(func() bool {
+				return isDeletePaCWebhookInvoked
+			}, timeout, interval).Should(BeTrue())
+		})
+
+		It("should not block component deletion if PaC definitions removal failed", func() {
+			github.UndoPaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+				return "", fmt.Errorf("failed to create PR")
+			}
+			github.DeletePaCWebhook = func(g *github.GithubClient, webhookUrl, owner, repository string) error {
+				return fmt.Errorf("failed to delete webhook")
+			}
+
+			pacSecretData := map[string]string{"github.token": "ghp_token"}
+			createSecret(pacSecretKey, pacSecretData)
+
+			createComponentForPaCBuild(resourceKey)
+			setComponentDevfileModel(resourceKey)
+			waitPaCFinalizerOnComponent(resourceKey)
+
+			deleteComponent(resourceKey)
 		})
 	})
 
@@ -902,4 +1092,5 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(k8sClient.Delete(ctx, selectors)).Should(Succeed())
 		})
 	})
+
 })

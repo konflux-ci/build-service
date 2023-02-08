@@ -18,7 +18,9 @@ package gitlab
 
 // Allow mocking for tests
 var EnsurePaCMergeRequest func(g *GitlabClient, d *PaCMergeRequestData) (string, error) = ensurePaCMergeRequest
+var UndoPaCMergeRequest func(g *GitlabClient, d *PaCMergeRequestData) (string, error) = undoPaCMergeRequest
 var SetupPaCWebhook func(g *GitlabClient, projectPath, webhookUrl, webhookSecret string) error = setupPaCWebhook
+var DeletePaCWebhook func(g *GitlabClient, projectPath, webhookUrl string) error = deletePaCWebhook
 
 type File struct {
 	FullPath string
@@ -107,6 +109,42 @@ func ensurePaCMergeRequest(glclient *GitlabClient, d *PaCMergeRequestData) (stri
 	}
 }
 
+func undoPaCMergeRequest(glclient *GitlabClient, d *PaCMergeRequestData) (string, error) {
+	files, err := glclient.filesExistInDirectory(d.ProjectPath, d.BaseBranch, ".tekton", d.Files)
+	if err != nil {
+		return "", err
+	}
+	if len(files) == 0 {
+		// Nothing to prune
+		return "", nil
+	}
+
+	// Need to create MR that deletes PaC configuration of the component
+
+	// Check if branch exists
+	branchExists, err := glclient.branchExist(d.ProjectPath, d.Branch)
+	if err != nil {
+		return "", err
+	}
+	if branchExists {
+		if err := glclient.deleteBranch(d.ProjectPath, d.Branch); err != nil {
+			return "", err
+		}
+	}
+
+	// Create branch, commit and pull request
+	if err := glclient.createBranch(d.ProjectPath, d.Branch, d.BaseBranch); err != nil {
+		return "", err
+	}
+
+	err = glclient.addDeleteCommitToBranch(d.ProjectPath, d.Branch, d.AuthorName, d.AuthorEmail, d.CommitMessage, files)
+	if err != nil {
+		return "", err
+	}
+
+	return glclient.createMergeRequestWithinRepository(d.ProjectPath, d.Branch, d.BaseBranch, d.MrTitle, d.MrText)
+}
+
 func setupPaCWebhook(glclient *GitlabClient, projectPath, webhookUrl, webhookSecret string) error {
 	existingWebhook, err := glclient.getWebhookByTargetUrl(projectPath, webhookUrl)
 	if err != nil {
@@ -120,4 +158,18 @@ func setupPaCWebhook(glclient *GitlabClient, projectPath, webhookUrl, webhookSec
 
 	_, err = glclient.updatePaCWebhook(projectPath, existingWebhook.ID, webhookUrl, webhookSecret)
 	return err
+}
+
+func deletePaCWebhook(glclient *GitlabClient, projectPath, webhookUrl string) error {
+	existingWebhook, err := glclient.getWebhookByTargetUrl(projectPath, webhookUrl)
+	if err != nil {
+		return err
+	}
+
+	if existingWebhook == nil {
+		// Webhook doesn't exist, nothing to do
+		return nil
+	}
+
+	return glclient.deleteWebhook(projectPath, existingWebhook.ID)
 }

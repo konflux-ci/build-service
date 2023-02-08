@@ -30,7 +30,9 @@ var (
 
 var (
 	StubEnsurePaCMergeRequest = func(g *GitlabClient, d *PaCMergeRequestData) (string, error) { return "", nil }
+	StubUndoPaCMergeRequest   = func(g *GitlabClient, d *PaCMergeRequestData) (string, error) { return "", nil }
 	StubSetupPaCWebhook       = func(g *GitlabClient, projectPath, webhookUrl, webhookSecret string) error { return nil }
+	StubDeletePaCWebhook      = func(g *GitlabClient, projectPath, webhookUrl string) error { return nil }
 )
 
 func TestEnsurePaCMergeRequest(t *testing.T) {
@@ -57,11 +59,45 @@ func TestEnsurePaCMergeRequest(t *testing.T) {
 		AuthorEmail:   "appstudio@redhat.com",
 		Files: []File{
 			{FullPath: ".tekton/" + componentName + "-push.yaml", Content: pipelineOnPush},
-			{FullPath: ".tekton/" + componentName + "-merge-request.yaml", Content: pipelineOnPR},
+			{FullPath: ".tekton/" + componentName + "-pull-request.yaml", Content: pipelineOnPR},
 		},
 	}
 
 	url, err := EnsurePaCMergeRequest(glclient, mrData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if url != "" && !strings.HasPrefix(url, "http") {
+		t.Fatal("Merge Request URL must not be empty")
+	}
+}
+
+func TestUndoPaCMergeRequest(t *testing.T) {
+	UndoPaCMergeRequest = StubUndoPaCMergeRequest
+
+	glclient, err := NewGitlabClient(accessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	componentName := "unittest-component-name"
+	gitSourceUrlParts := strings.Split(repoUrl, "/")
+	mrData := &PaCMergeRequestData{
+		ProjectPath:   gitSourceUrlParts[3] + "/" + gitSourceUrlParts[4],
+		CommitMessage: "Appstudio purge " + componentName,
+		Branch:        "appstudio-purge-" + componentName,
+		BaseBranch:    "main",
+		MrTitle:       "Appstudio purge " + componentName,
+		MrText:        "Pipelines as Code configuration removal",
+		AuthorName:    "redhat-appstudio",
+		AuthorEmail:   "appstudio@redhat.com",
+		Files: []File{
+			{FullPath: ".tekton/" + componentName + "-push.yaml"},
+			{FullPath: ".tekton/" + componentName + "-pull-request.yaml"},
+		},
+	}
+
+	url, err := UndoPaCMergeRequest(glclient, mrData)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,6 +121,25 @@ func TestSetupPaCWebhook(t *testing.T) {
 	projectPath := gitSourceUrlParts[3] + "/" + gitSourceUrlParts[4]
 
 	err = SetupPaCWebhook(glclient, projectPath, targetWebhookUrl, webhookSecretString)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDeletePaCWebhook(t *testing.T) {
+	DeletePaCWebhook = StubDeletePaCWebhook
+
+	targetWebhookUrl := "https://pac.route.my-cluster.net"
+
+	glclient, err := NewGitlabClient(accessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	gitSourceUrlParts := strings.Split(repoUrl, "/")
+	projectPath := gitSourceUrlParts[3] + "/" + gitSourceUrlParts[4]
+
+	err = DeletePaCWebhook(glclient, projectPath, targetWebhookUrl)
 	if err != nil {
 		t.Fatal(err)
 	}
