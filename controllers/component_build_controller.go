@@ -157,6 +157,18 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
+	if component.Spec.ContainerImage == "" {
+		// Expect that ContainerImage is set to default value if the field left empty by user.
+		log.Info("Waiting for ContainerImage to be set")
+		return ctrl.Result{}, nil
+	}
+
+	// Do not run any builds for any container-image components
+	if component.Spec.ContainerImage != "" && (component.Spec.Source.GitSource == nil || component.Spec.Source.GitSource.URL == "") {
+		log.Info("Nothing to do for container image component")
+		return ctrl.Result{}, nil
+	}
+
 	if !component.ObjectMeta.DeletionTimestamp.IsZero() {
 		// Deletion of the component is requested
 
@@ -173,18 +185,6 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		// Try to clean up Pipelines as Code configuration
 		r.UndoPaCProvisionForComponent(ctx, &component)
 
-		return ctrl.Result{}, nil
-	}
-
-	if component.Spec.ContainerImage == "" {
-		// Expect that ContainerImage is set to default value if the field left empty by user.
-		log.Info("Waiting for ContainerImage to be set")
-		return ctrl.Result{}, nil
-	}
-
-	// Do not run any builds for any container-image components
-	if component.Spec.ContainerImage != "" && (component.Spec.Source.GitSource == nil || component.Spec.Source.GitSource.URL == "") {
-		log.Info("Nothing to do for container image component")
 		return ctrl.Result{}, nil
 	}
 

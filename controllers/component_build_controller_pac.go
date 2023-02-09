@@ -477,7 +477,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 			if err != nil {
 				return "", fmt.Errorf("failed to configure Pipelines as Code webhook: %w", err)
 			} else {
-				fmt.Printf("Pipelines as Code webhook \"%s\" configured for %s component in %s namespace\n", webhookTargetUrl, component.GetName(), component.GetNamespace())
+				r.Log.Info(fmt.Sprintf("Pipelines as Code webhook \"%s\" configured for %s component in %s namespace\n", webhookTargetUrl, component.GetName(), component.GetNamespace()))
 			}
 		}
 
@@ -565,7 +565,7 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(log logr.Logger, 
 	gitSourceUrlParts := strings.Split(strings.TrimSuffix(component.Spec.Source.GitSource.URL, ".git"), "/")
 
 	commitMessage := "Appstudio purge " + component.Name
-	branch := "appstudio-" + component.Name
+	branch := "appstudio-purge-" + component.Name
 	baseBranch := "main"
 	mrTitle := "Appstudio purge " + component.Name
 	mrText := "Pipelines as Code configuration removal"
@@ -603,6 +603,8 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(log logr.Logger, 
 				if err != nil {
 					// Just log the error and continue with merge request creation
 					log.Error(err, "failed to delete Pipelines as Code webhook")
+				} else {
+					log.Info(fmt.Sprintf("Pipelines as Code webhook \"%s\" deleted for %s component in %s namespace\n", webhookTargetUrl, component.GetName(), component.GetNamespace()))
 				}
 			}
 		}
