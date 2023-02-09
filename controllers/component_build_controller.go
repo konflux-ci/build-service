@@ -172,6 +172,8 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 		// Try to clean up Pipelines as Code configuration
 		r.UndoPaCProvisionForComponent(ctx, &component)
+
+		return ctrl.Result{}, nil
 	}
 
 	if component.Spec.ContainerImage == "" {
