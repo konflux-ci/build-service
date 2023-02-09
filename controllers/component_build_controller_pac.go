@@ -146,11 +146,9 @@ func (r *ComponentBuildReconciler) UndoPaCProvisionForComponent(ctx context.Cont
 		return
 	}
 
-	pacSecret, _, err := r.ensurePaCSecret(ctx, component, gitProvider)
-	if pacSecret == nil {
-		if err != nil {
-			log.Error(err, "error getting git provider credentials secret")
-		}
+	pacSecret := corev1.Secret{}
+	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: buildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}, &pacSecret); err != nil {
+		log.Error(err, "error getting git provider credentials secret")
 		// Cannot continue without accessing git provider credentials.
 		return
 	}
