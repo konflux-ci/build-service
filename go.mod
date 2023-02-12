@@ -16,6 +16,8 @@ require (
 	sigs.k8s.io/yaml v1.3.0
 )
 
+require github.com/devfile/library v1.2.1-0.20220308191614-f0f7e11b17de // indirect
+
 // If you update dependencies below you must also update controllers/suite_test.go
 require (
 	github.com/openshift-pipelines/pipelines-as-code v0.15.3
@@ -43,7 +45,6 @@ require (
 	github.com/containerd/typeurl v1.0.2 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/devfile/api/v2 v2.2.0 // indirect
-	github.com/devfile/library v1.3.0 // indirect
 	github.com/devfile/registry-support/index/generator v0.0.0-20230123181701-4de4dadb13e7 // indirect
 	github.com/devfile/registry-support/registry-library v0.0.0-20230123181701-4de4dadb13e7 // indirect
 	github.com/docker/cli v23.0.0-rc.3+incompatible // indirect
