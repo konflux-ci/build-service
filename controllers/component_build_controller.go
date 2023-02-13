@@ -172,18 +172,20 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if !component.ObjectMeta.DeletionTimestamp.IsZero() {
 		// Deletion of the component is requested
 
-		// In order not to block the deletion of the Component delete finalizer
-		// and then try to do clean up ignoring errors.
+		if controllerutil.ContainsFinalizer(&component, PaCProvisionFinalizer) {
+			// In order not to block the deletion of the Component delete finalizer
+			// and then try to do clean up ignoring errors.
 
-		// Delete Pipelines as Code provision finalizer
-		controllerutil.RemoveFinalizer(&component, PaCProvisionFinalizer)
-		if err := r.Client.Update(ctx, &component); err != nil {
-			return ctrl.Result{}, err
+			// Delete Pipelines as Code provision finalizer
+			controllerutil.RemoveFinalizer(&component, PaCProvisionFinalizer)
+			if err := r.Client.Update(ctx, &component); err != nil {
+				return ctrl.Result{}, err
+			}
+			log.Info("PaC finalizer removed")
+
+			// Try to clean up Pipelines as Code configuration
+			r.UndoPaCProvisionForComponent(ctx, &component)
 		}
-		log.Info("PaC finalizer removed")
-
-		// Try to clean up Pipelines as Code configuration
-		r.UndoPaCProvisionForComponent(ctx, &component)
 
 		return ctrl.Result{}, nil
 	}
