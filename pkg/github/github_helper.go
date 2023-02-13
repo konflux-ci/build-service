@@ -24,7 +24,9 @@ import (
 
 // Allow mocking for tests
 var CreatePaCPullRequest func(g *GithubClient, d *PaCPullRequestData) (string, error) = ensurePaCPullRequest
+var UndoPaCPullRequest func(g *GithubClient, d *PaCPullRequestData) (string, error) = undoPaCPullRequest
 var SetupPaCWebhook func(g *GithubClient, webhookUrl, webhookSecret, owner, repository string) error = setupPaCWebhook
+var DeletePaCWebhook func(g *GithubClient, webhookUrl, owner, repository string) error = deletePaCWebhook
 
 const (
 	// Allowed values are 'json' and 'form' according to the doc: https://docs.github.com/en/rest/webhooks/repos#create-a-repository-webhook
@@ -128,6 +130,46 @@ func ensurePaCPullRequest(ghclient *GithubClient, d *PaCPullRequestData) (string
 	}
 }
 
+// undoPaCPullRequest creates a new pull request to remove PaC configuration for the component.
+// Returns the pull request web URL.
+// If there is no error and web URL is empty, it means that the PR is not needed (PaC configuraton has already been deleted).
+func undoPaCPullRequest(ghclient *GithubClient, d *PaCPullRequestData) (string, error) {
+	files, err := ghclient.filesExistInDirectory(d.Owner, d.Repository, d.BaseBranch, ".tekton", d.Files)
+	if err != nil {
+		return "", err
+	}
+	if len(files) == 0 {
+		// Nothing to prune
+		return "", nil
+	}
+
+	// Need to create PR that deletes PaC configuration of the component
+
+	// Check if branch exists
+	branchExists, err := ghclient.referenceExist(d.Owner, d.Repository, d.Branch)
+	if err != nil {
+		return "", err
+	}
+	if branchExists {
+		if err := ghclient.deleteReference(d.Owner, d.Repository, d.Branch); err != nil {
+			return "", err
+		}
+	}
+
+	// Create branch, commit and pull request
+	branchRef, err := ghclient.createReference(d.Owner, d.Repository, d.Branch, d.BaseBranch)
+	if err != nil {
+		return "", err
+	}
+
+	err = ghclient.addDeleteCommitToBranch(d.Owner, d.Repository, d.AuthorName, d.AuthorEmail, d.CommitMessage, d.Files, branchRef)
+	if err != nil {
+		return "", err
+	}
+
+	return ghclient.createPullRequestWithinRepository(d.Owner, d.Repository, d.Branch, d.BaseBranch, d.PRTitle, d.PRText)
+}
+
 // SetupPaCWebhook creates or updates Pipelines as Code webhook configuration
 func setupPaCWebhook(ghclient *GithubClient, webhookUrl, webhookSecret, owner, repository string) error {
 	existingWebhook, err := ghclient.getWebhookByTargetUrl(owner, repository, webhookUrl)
@@ -187,4 +229,17 @@ func getDefaultWebhookConfig(webhookUrl, webhookSecret string) *github.Hook {
 		},
 		Active: github.Bool(true),
 	}
+}
+
+func deletePaCWebhook(ghclient *GithubClient, webhookUrl string, owner string, repository string) error {
+	existingWebhook, err := ghclient.getWebhookByTargetUrl(owner, repository, webhookUrl)
+	if err != nil {
+		return err
+	}
+	if existingWebhook == nil {
+		// Webhook doesn't exist, nothing to do
+		return nil
+	}
+
+	return ghclient.deleteWebhook(owner, repository, *existingWebhook.ID)
 }

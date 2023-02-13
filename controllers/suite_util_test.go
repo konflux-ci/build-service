@@ -28,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 
@@ -164,6 +165,16 @@ func setComponentDevfile(componentKey types.NamespacedName, devfile string) {
 func setComponentDevfileModel(componentKey types.NamespacedName) {
 	devfile := getMinimalDevfile()
 	setComponentDevfile(componentKey, devfile)
+}
+
+func waitPaCFinalizerOnComponent(componentKey types.NamespacedName) {
+	component := &appstudiov1alpha1.Component{}
+	Eventually(func() bool {
+		if err := k8sClient.Get(ctx, componentKey, component); err != nil {
+			return false
+		}
+		return controllerutil.ContainsFinalizer(component, PaCProvisionFinalizer)
+	}, timeout, interval).Should(BeTrue())
 }
 
 func listComponentPipelineRuns(componentKey types.NamespacedName) []tektonapi.PipelineRun {

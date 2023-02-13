@@ -85,6 +85,36 @@ func (c *GitlabClient) filesUpToDate(projectPath, branchName string, files []Fil
 	return true, nil
 }
 
+// filesExistInDirectory checks if given files exist under specified directory.
+// Returns subset of given files which exist.
+func (c *GitlabClient) filesExistInDirectory(projectPath, branchName, directoryPath string, files []File) ([]File, error) {
+	existingFiles := make([]File, 0, len(files))
+
+	opts := &gitlab.ListTreeOptions{
+		Ref:         &branchName,
+		Path:        &directoryPath,
+		ListOptions: gitlab.ListOptions{PerPage: 100},
+	}
+	dirContent, resp, err := c.client.Repositories.ListTree(projectPath, opts)
+	if err != nil {
+		if resp.StatusCode == 404 {
+			return existingFiles, nil
+		}
+		return existingFiles, err
+	}
+
+	for _, file := range dirContent {
+		for _, f := range files {
+			if file.Path == f.FullPath {
+				existingFiles = append(existingFiles, File{FullPath: file.Path})
+				break
+			}
+		}
+	}
+
+	return existingFiles, nil
+}
+
 func (c *GitlabClient) commitFilesIntoBranch(projectPath, branchName, commitMessage, authorName, authorEmail string, files []File) error {
 	actions := []*gitlab.CommitActionOptions{}
 	for _, file := range files {
@@ -124,6 +154,29 @@ func (c *GitlabClient) commitFilesIntoBranch(projectPath, branchName, commitMess
 	return err
 }
 
+// Creates commit into specified branch that deletes given files.
+func (c *GitlabClient) addDeleteCommitToBranch(projectPath, branchName, authorName, authorEmail, commitMessage string, files []File) error {
+	actions := []*gitlab.CommitActionOptions{}
+	fileActionType := gitlab.FileDelete
+	for _, file := range files {
+		filePath := file.FullPath
+		actions = append(actions, &gitlab.CommitActionOptions{
+			Action:   &fileActionType,
+			FilePath: &filePath,
+		})
+	}
+
+	opts := &gitlab.CreateCommitOptions{
+		Branch:        &branchName,
+		CommitMessage: &commitMessage,
+		AuthorName:    &authorName,
+		AuthorEmail:   &authorEmail,
+		Actions:       actions,
+	}
+	_, _, err := c.client.Commits.CreateCommit(projectPath, opts)
+	return err
+}
+
 func (c *GitlabClient) diffNotEmpty(projectPath, branchName, baseBranchName string) (bool, error) {
 	straight := false
 	opts := &gitlab.CompareOptions{
@@ -146,6 +199,7 @@ func (c *GitlabClient) findMergeRequestByBranches(projectPath, branch, targetBra
 		SourceBranch: &branch,
 		TargetBranch: &targetBranch,
 		View:         &viewType,
+		ListOptions:  gitlab.ListOptions{PerPage: 100},
 	}
 	mrs, _, err := c.client.MergeRequests.ListProjectMergeRequests(projectPath, opts)
 	if err != nil {
@@ -200,6 +254,14 @@ func (c *GitlabClient) updatePaCWebhook(projectPath string, webhookId int, webho
 	opts := gitlab.EditProjectHookOptions(*getPaCWebhookOpts(webhookTargetUrl, webhookSecret))
 	hook, _, err := c.client.Projects.EditProjectHook(projectPath, webhookId, &opts)
 	return hook, err
+}
+
+func (c *GitlabClient) deleteWebhook(projectPath string, webhookId int) error {
+	resp, err := c.client.Projects.DeleteProjectHook(projectPath, webhookId)
+	if resp.StatusCode == 404 {
+		return nil
+	}
+	return err
 }
 
 func getPaCWebhookOpts(webhookTargetUrl, webhookSecret string) *gitlab.AddProjectHookOptions {

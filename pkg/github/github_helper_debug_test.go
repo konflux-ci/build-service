@@ -17,7 +17,7 @@ limitations under the License.
 package github
 
 import (
-	"io/ioutil"
+	"os"
 	"strings"
 	"testing"
 )
@@ -35,7 +35,9 @@ var (
 
 var (
 	StubCreatePaCPullRequest = func(g *GithubClient, d *PaCPullRequestData) (string, error) { return "", nil }
+	StubUndoPaCPullRequest   = func(g *GithubClient, d *PaCPullRequestData) (string, error) { return "", nil }
 	StubSetupPaCWebhook      = func(g *GithubClient, webhookUrl, webhookSecret, owner, repository string) error { return nil }
+	StubDeletePaCWebhook     = func(g *GithubClient, webhookUrl, owner, repository string) error { return nil }
 )
 
 func TestCreatePaCPullRequest(t *testing.T) {
@@ -60,7 +62,7 @@ func TestCreatePaCPullRequest(t *testing.T) {
 		AuthorEmail:   "appstudio@redhat.com",
 		Files: []File{
 			{FullPath: ".tekton/" + componentName + "-push.yaml", Content: pipelineOnPush},
-			{FullPath: ".tekton/" + componentName + "-pull.yaml", Content: pipelineOnPR},
+			{FullPath: ".tekton/" + componentName + "-pull-request.yaml", Content: pipelineOnPR},
 		},
 	}
 
@@ -83,7 +85,7 @@ func TestCreatePaCPullRequestViaGitHubApplication(t *testing.T) {
 	gitSourceUrlParts := strings.Split(repoUrl, "/")
 	owner := gitSourceUrlParts[3]
 
-	githubAppPrivateKey, err := ioutil.ReadFile(githubAppPrivateKeyPath)
+	githubAppPrivateKey, err := os.ReadFile(githubAppPrivateKeyPath)
 	if err != nil {
 		// Private key file by given path doesn't exist
 		return
@@ -106,11 +108,44 @@ func TestCreatePaCPullRequestViaGitHubApplication(t *testing.T) {
 		AuthorEmail:   "appstudio@redhat.com",
 		Files: []File{
 			{FullPath: ".tekton/" + componentName + "-push.yaml", Content: pipelineOnPush},
-			{FullPath: ".tekton/" + componentName + "-pull.yaml", Content: pipelineOnPR},
+			{FullPath: ".tekton/" + componentName + "-pull-request.yaml", Content: pipelineOnPR},
 		},
 	}
 
 	url, err := CreatePaCPullRequest(ghclient, prData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if url != "" && !strings.HasPrefix(url, "http") {
+		t.Fatal("Pull Request URL must not be empty")
+	}
+}
+
+func TestUndoPaCPullRequest(t *testing.T) {
+	UndoPaCPullRequest = StubUndoPaCPullRequest
+
+	ghclient := NewGithubClient(accessToken)
+
+	// componentName := "unittest-component-name"
+	componentName := "devfile-sample-go-basic"
+	gitSourceUrlParts := strings.Split(repoUrl, "/")
+	prData := &PaCPullRequestData{
+		Owner:         gitSourceUrlParts[3],
+		Repository:    gitSourceUrlParts[4],
+		CommitMessage: "Appstudio purge " + componentName,
+		Branch:        "appstudio-purge-" + componentName,
+		BaseBranch:    "main",
+		PRTitle:       "Appstudio purge " + componentName,
+		PRText:        "Pipelines as Code configuration removal",
+		AuthorName:    "redhat-appstudio",
+		AuthorEmail:   "appstudio@redhat.com",
+		Files: []File{
+			{FullPath: ".tekton/" + componentName + "-push.yaml"},
+			{FullPath: ".tekton/" + componentName + "-pull-request.yaml"},
+		},
+	}
+
+	url, err := UndoPaCPullRequest(ghclient, prData)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,6 +167,23 @@ func TestSetupPaCWebhook(t *testing.T) {
 	repository := gitSourceUrlParts[4]
 
 	err := SetupPaCWebhook(ghclient, targetWebhookUrl, webhookSecretString, owner, repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDeletePaCWebhook(t *testing.T) {
+	DeletePaCWebhook = StubDeletePaCWebhook
+
+	targetWebhookUrl := "https://pac.route.my-cluster.net"
+
+	ghclient := NewGithubClient(accessToken)
+
+	gitSourceUrlParts := strings.Split(repoUrl, "/")
+	owner := gitSourceUrlParts[3]
+	repository := gitSourceUrlParts[4]
+
+	err := DeletePaCWebhook(ghclient, targetWebhookUrl, owner, repository)
 	if err != nil {
 		t.Fatal(err)
 	}
