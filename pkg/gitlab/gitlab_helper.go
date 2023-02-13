@@ -41,6 +41,15 @@ type PaCMergeRequestData struct {
 
 // ensurePaCMergeRequest creates a new merge request and returns its web URL
 func ensurePaCMergeRequest(glclient *GitlabClient, d *PaCMergeRequestData) (string, error) {
+	// Fallback to the default branch if base branch is not set
+	if d.BaseBranch == "" {
+		baseBranch, err := glclient.getDefaultBranch(d.ProjectPath)
+		if err != nil {
+			return "", err
+		}
+		d.BaseBranch = baseBranch
+	}
+
 	pacConfigurationUpToDate, err := glclient.filesUpToDate(d.ProjectPath, d.BaseBranch, d.Files)
 	if err != nil {
 		return "", err

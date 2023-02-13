@@ -58,6 +58,15 @@ type PaCPullRequestData struct {
 // ensurePaCPullRequest creates a new pull request or updates existing (if needed) and returns its web URL.
 // If there is no error and web URL is empty, it means that the PR is not needed (main branch is up to date).
 func ensurePaCPullRequest(ghclient *GithubClient, d *PaCPullRequestData) (string, error) {
+	// Fallback to the default branch if base branch is not set
+	if d.BaseBranch == "" {
+		baseBranch, err := ghclient.getDefaultBranch(d.Owner, d.Repository)
+		if err != nil {
+			return "", err
+		}
+		d.BaseBranch = baseBranch
+	}
+
 	// Check if Pipelines as Code configuration up to date in the main branch
 	upToDate, err := ghclient.filesUpToDate(d.Owner, d.Repository, d.BaseBranch, d.Files)
 	if err != nil {

@@ -134,6 +134,17 @@ func (c *GithubClient) deleteReference(owner, repository, branch string) error {
 	return err
 }
 
+func (c *GithubClient) getDefaultBranch(owner, repository string) (string, error) {
+	repositoryInfo, _, err := c.client.Repositories.Get(c.ctx, owner, repository)
+	if err != nil {
+		return "", err
+	}
+	if repositoryInfo == nil {
+		return "", fmt.Errorf("repository info is empty in GitHub API response")
+	}
+	return *repositoryInfo.DefaultBranch, nil
+}
+
 func (c *GithubClient) filesUpToDate(owner, repository, branch string, files []File) (bool, error) {
 	for _, file := range files {
 		opts := &github.RepositoryContentGetOptions{
