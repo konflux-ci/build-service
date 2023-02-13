@@ -55,7 +55,7 @@ func TestCreatePaCPullRequest(t *testing.T) {
 		Repository:    gitSourceUrlParts[4],
 		CommitMessage: "Appstudio update " + componentName,
 		Branch:        "appstudio-" + componentName,
-		BaseBranch:    "main",
+		BaseBranch:    "",
 		PRTitle:       "Appstudio update " + componentName,
 		PRText:        "Pipelines as Code configuration proposal",
 		AuthorName:    "redhat-appstudio",
@@ -101,7 +101,7 @@ func TestCreatePaCPullRequestViaGitHubApplication(t *testing.T) {
 		Repository:    gitSourceUrlParts[4],
 		CommitMessage: "Appstudio update " + componentName,
 		Branch:        "appstudio-" + componentName,
-		BaseBranch:    "main",
+		BaseBranch:    "",
 		PRTitle:       "Appstudio update " + componentName,
 		PRText:        "Pipelines as Code configuration proposal",
 		AuthorName:    "redhat-appstudio",
@@ -126,15 +126,14 @@ func TestUndoPaCPullRequest(t *testing.T) {
 
 	ghclient := NewGithubClient(accessToken)
 
-	// componentName := "unittest-component-name"
-	componentName := "devfile-sample-go-basic"
+	componentName := "unittest-component-name"
 	gitSourceUrlParts := strings.Split(repoUrl, "/")
 	prData := &PaCPullRequestData{
 		Owner:         gitSourceUrlParts[3],
 		Repository:    gitSourceUrlParts[4],
 		CommitMessage: "Appstudio purge " + componentName,
 		Branch:        "appstudio-purge-" + componentName,
-		BaseBranch:    "main",
+		BaseBranch:    "",
 		PRTitle:       "Appstudio purge " + componentName,
 		PRText:        "Pipelines as Code configuration removal",
 		AuthorName:    "redhat-appstudio",

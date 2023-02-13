@@ -91,7 +91,8 @@ func getSampleComponentData(componentKey types.NamespacedName) *appstudiov1alpha
 			Source: appstudiov1alpha1.ComponentSource{
 				ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
 					GitSource: &appstudiov1alpha1.GitSource{
-						URL: SampleRepoLink,
+						URL:      SampleRepoLink,
+						Revision: "main",
 					},
 				},
 			},

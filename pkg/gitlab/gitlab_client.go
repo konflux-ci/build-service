@@ -66,6 +66,17 @@ func (c *GitlabClient) deleteBranch(projectPath, branchName string) error {
 	return err
 }
 
+func (c *GitlabClient) getDefaultBranch(projectPath string) (string, error) {
+	projectInfo, _, err := c.client.Projects.GetProject(projectPath, nil)
+	if err != nil {
+		return "", err
+	}
+	if projectInfo == nil {
+		return "", fmt.Errorf("project info is empty in GitLab API response")
+	}
+	return projectInfo.DefaultBranch, nil
+}
+
 func (c *GitlabClient) filesUpToDate(projectPath, branchName string, files []File) (bool, error) {
 	for _, file := range files {
 		opts := &gitlab.GetRawFileOptions{

@@ -441,7 +441,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 
 	commitMessage := "Appstudio update " + component.Name
 	branch := "appstudio-" + component.Name
-	baseBranch := "main"
+	baseBranch := "" // empty string means autodetect
 	mrTitle := "Appstudio update " + component.Name
 	mrText := "Pipelines as Code configuration proposal"
 	authorName := "redhat-appstudio"
@@ -566,7 +566,7 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(log logr.Logger, 
 
 	commitMessage := "Appstudio purge " + component.Name
 	branch := "appstudio-purge-" + component.Name
-	baseBranch := "main"
+	baseBranch := "" // empty string means autodetect
 	mrTitle := "Appstudio purge " + component.Name
 	mrText := "Pipelines as Code configuration removal"
 	authorName := "redhat-appstudio"
