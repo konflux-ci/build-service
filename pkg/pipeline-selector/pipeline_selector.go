@@ -51,8 +51,11 @@ func getPipelineSelectionParametersForComponent(component *appstudiov1alpha1.Com
 	parameters.ComponentName = component.GetName()
 	parameters.Annotations = component.GetAnnotations()
 	parameters.Labels = component.GetLabels()
+	devfileSrc := devfile.DevfileSrc{
+		Data: component.Status.Devfile,
+	}
 
-	devfileData, err := devfile.ParseDevfileModel(component.Status.Devfile)
+	devfileData, err := devfile.ParseDevfile(devfileSrc)
 	if err != nil {
 		return nil, err
 	}
