@@ -119,6 +119,15 @@ func ensurePaCMergeRequest(glclient *GitlabClient, d *PaCMergeRequestData) (stri
 }
 
 func undoPaCMergeRequest(glclient *GitlabClient, d *PaCMergeRequestData) (string, error) {
+	// Fallback to the default branch if base branch is not set
+	if d.BaseBranch == "" {
+		baseBranch, err := glclient.getDefaultBranch(d.ProjectPath)
+		if err != nil {
+			return "", err
+		}
+		d.BaseBranch = baseBranch
+	}
+
 	files, err := glclient.filesExistInDirectory(d.ProjectPath, d.BaseBranch, ".tekton", d.Files)
 	if err != nil {
 		return "", err

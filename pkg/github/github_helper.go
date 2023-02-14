@@ -143,6 +143,15 @@ func ensurePaCPullRequest(ghclient *GithubClient, d *PaCPullRequestData) (string
 // Returns the pull request web URL.
 // If there is no error and web URL is empty, it means that the PR is not needed (PaC configuraton has already been deleted).
 func undoPaCPullRequest(ghclient *GithubClient, d *PaCPullRequestData) (string, error) {
+	// Fallback to the default branch if base branch is not set
+	if d.BaseBranch == "" {
+		baseBranch, err := ghclient.getDefaultBranch(d.Owner, d.Repository)
+		if err != nil {
+			return "", err
+		}
+		d.BaseBranch = baseBranch
+	}
+
 	files, err := ghclient.filesExistInDirectory(d.Owner, d.Repository, d.BaseBranch, ".tekton", d.Files)
 	if err != nil {
 		return "", err
