@@ -20,7 +20,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -160,7 +160,7 @@ func (c *GithubClient) filesUpToDate(owner, repository, branch string, files []F
 			}
 			return false, err
 		}
-		fileContent, err := ioutil.ReadAll(fileContentReader)
+		fileContent, err := io.ReadAll(fileContentReader)
 		if err != nil {
 			return false, err
 		}
@@ -219,10 +219,9 @@ func (c *GithubClient) deleteFromTree(owner, repository string, baseRef *github.
 	entries := []*github.TreeEntry{}
 	for _, file := range files {
 		entries = append(entries, &github.TreeEntry{
-			Path:    github.String(file.FullPath),
-			Type:    github.String("blob"),
-			Content: github.String(string(file.Content)),
-			Mode:    github.String("100644"),
+			Path: github.String(file.FullPath),
+			Type: github.String("blob"),
+			Mode: github.String("100644"),
 		})
 	}
 
