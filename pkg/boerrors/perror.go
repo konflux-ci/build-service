@@ -48,7 +48,7 @@ func (r BuildOpError) ShortError() string {
 	if r.id == ETransientError {
 		return r.Error()
 	}
-	return fmt.Sprintf("error %d: %s", r.id, boErrorMessages[r.id])
+	return fmt.Sprintf("%d: %s", r.id, boErrorMessages[r.id])
 }
 
 func (r BuildOpError) IsPersistent() bool {

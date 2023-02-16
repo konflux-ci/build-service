@@ -43,9 +43,11 @@ const (
 
 	PaCProvisionFinalizer = "pac.component.appstudio.openshift.io/finalizer"
 
-	PaCProvisionAnnotationName           = "appstudio.openshift.io/pac-provision"
-	PaCProvisionRequestedAnnotationValue = "request"
-	PaCProvisionDoneAnnotationValue      = "done"
+	PaCProvisionAnnotationName             = "appstudio.openshift.io/pac-provision"
+	PaCProvisionRequestedAnnotationValue   = "request"
+	PaCProvisionDoneAnnotationValue        = "done"
+	PaCProvisionErrorAnnotationValue       = "error"
+	PaCProvisionErrorDetailsAnnotationName = "appstudio.openshift.io/pac-provision-error"
 
 	ApplicationNameLabelName  = "appstudio.openshift.io/application"
 	ComponentNameLabelName    = "appstudio.openshift.io/component"
@@ -215,11 +217,13 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		log.Info("Starting Pipelines as Code provision for the Component")
 
 		var pacAnnotationValue string
+		var pacPersistentErrorMessage string
 		err := r.ProvisionPaCForComponent(ctx, &component)
 		if err != nil {
-			if boErr, ok := err.(boerrors.BuildOpError); ok && boErr.IsPersistent() {
+			if boErr, ok := err.(*boerrors.BuildOpError); ok && boErr.IsPersistent() {
 				log.Error(err, "Pipelines as Code provision for the Component failed")
-				pacAnnotationValue = boErr.ShortError()
+				pacAnnotationValue = PaCProvisionErrorAnnotationValue
+				pacPersistentErrorMessage = boErr.ShortError()
 			} else {
 				// transient error, retry
 				log.Error(err, "Pipelines as Code provision transient error")
@@ -241,6 +245,9 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			component.Annotations = make(map[string]string)
 		}
 		component.Annotations[PaCProvisionAnnotationName] = pacAnnotationValue
+		if pacPersistentErrorMessage != "" {
+			component.Annotations[PaCProvisionErrorDetailsAnnotationName] = pacPersistentErrorMessage
+		}
 
 		// Add finalizer to clean up Pipelines as Code configuration on component deletion
 		if component.ObjectMeta.DeletionTimestamp.IsZero() {
