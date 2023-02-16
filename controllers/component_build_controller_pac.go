@@ -37,6 +37,7 @@ import (
 	gitopsprepare "github.com/redhat-appstudio/application-service/gitops/prepare"
 	"github.com/redhat-appstudio/application-service/pkg/devfile"
 	buildappstudiov1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
+	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 	"github.com/redhat-appstudio/build-service/pkg/github"
 	"github.com/redhat-appstudio/build-service/pkg/gitlab"
 	pipelineselector "github.com/redhat-appstudio/build-service/pkg/pipeline-selector"
@@ -68,26 +69,26 @@ const (
 // ProvisionPaCForComponent does Pipelines as Code provision for the given component.
 // Mainly, it creates PaC configuration merge request into the component source repositotiry.
 // If GitHub PaC application is not configured, creates a webhook for PaC.
-// Returns done status and error. If done is true, it means no futher reconciliation needed.
-// If done is true and error is nil then the provision finished successfully.
-func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context, component *appstudiov1alpha1.Component) (bool, error) {
+func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context, component *appstudiov1alpha1.Component) error {
 	log := r.Log.WithValues("ComponentOnboardingForPaC", types.NamespacedName{Namespace: component.Namespace, Name: component.Name})
 
 	gitProvider, err := gitops.GetGitProvider(*component)
 	if err != nil {
 		// Do not reconcile, because configuration must be fixed before it is possible to proceed.
-		return true, fmt.Errorf("error detecting git provider: %w", err)
+		return boerrors.NewBuildOpError(boerrors.EUnknownGitProvider,
+			fmt.Errorf("error detecting git provider: %w", err))
 	}
 
-	pacSecret, done, err := r.ensurePaCSecret(ctx, component, gitProvider)
-	if !done || pacSecret == nil {
-		return done, err
+	pacSecret, err := r.ensurePaCSecret(ctx, component, gitProvider)
+	if err != nil {
+		return err
 	}
 
 	if err := validatePaCConfiguration(gitProvider, pacSecret.Data); err != nil {
 		r.EventRecorder.Event(pacSecret, "Warning", "ErrorValidatingPaCSecret", err.Error())
 		// Do not reconcile, because configuration must be fixed before it is possible to proceed.
-		return true, fmt.Errorf("invalid configuration in Pipelines as Code secret: %w", err)
+		return boerrors.NewBuildOpError(boerrors.EPaCSecretInvalid,
+			fmt.Errorf("invalid configuration in Pipelines as Code secret: %w", err))
 	}
 
 	var webhookSecretString, webhookTargetUrl string
@@ -96,25 +97,25 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context,
 		// and stores it in the corresponding k8s secret.
 		webhookSecretString, err = r.ensureWebhookSecret(ctx, component)
 		if err != nil {
-			return false, err
+			return err
 		}
 
 		// Obtain Pipelines as Code callback URL
 		webhookTargetUrl, err = r.getPaCWebhookTargetUrl(ctx)
 		if err != nil {
-			return false, err
+			return err
 		}
 	}
 
 	if err := r.ensurePaCRepository(ctx, component, pacSecret.Data); err != nil {
-		return false, err
+		return err
 	}
 
 	// Manage merge request for Pipelines as Code configuration
 	mrUrl, err := r.ConfigureRepositoryForPaC(ctx, component, pacSecret.Data, webhookTargetUrl, webhookSecretString)
 	if err != nil {
 		r.EventRecorder.Event(component, "Warning", "ErrorConfiguringPaCForComponentRepository", err.Error())
-		return false, fmt.Errorf("failed to configure Component source repository for Pipelines as Code: %w", err)
+		return err
 	}
 	var mrMessage string
 	if mrUrl != "" {
@@ -130,7 +131,7 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context,
 		pipelinesAsCodeComponentProvisionTimeMetric.Observe(time.Since(component.CreationTimestamp.Time).Seconds())
 	}
 
-	return true, nil
+	return nil
 }
 
 // UndoPaCProvisionForComponent creates merge request that removes Pipelines as Code configuration from component source repository.
@@ -177,7 +178,7 @@ func (r *ComponentBuildReconciler) UndoPaCProvisionForComponent(ctx context.Cont
 	log.Info(mrMessage)
 }
 
-func (r *ComponentBuildReconciler) ensurePaCSecret(ctx context.Context, component *appstudiov1alpha1.Component, gitProvider string) (*corev1.Secret, bool, error) {
+func (r *ComponentBuildReconciler) ensurePaCSecret(ctx context.Context, component *appstudiov1alpha1.Component, gitProvider string) (*corev1.Secret, error) {
 	// Expected that the secret contains token for Pipelines as Code webhook configuration,
 	// but under <git-provider>.token field. For example: github.token
 	// Also it can contain github-private-key and github-application-id
@@ -187,7 +188,7 @@ func (r *ComponentBuildReconciler) ensurePaCSecret(ctx context.Context, componen
 	if err := r.Client.Get(ctx, pacSecretKey, &pacSecret); err != nil {
 		if !errors.IsNotFound(err) {
 			r.EventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
-			return nil, false, fmt.Errorf("failed to get Pipelines as Code secret in %s namespace: %w", component.Namespace, err)
+			return nil, fmt.Errorf("failed to get Pipelines as Code secret in %s namespace: %w", component.Namespace, err)
 		}
 
 		// Fallback to the global configuration
@@ -195,12 +196,13 @@ func (r *ComponentBuildReconciler) ensurePaCSecret(ctx context.Context, componen
 		if err := r.Client.Get(ctx, globalPaCSecretKey, &pacSecret); err != nil {
 			if !errors.IsNotFound(err) {
 				r.EventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
-				return nil, false, fmt.Errorf("failed to get Pipelines as Code secret in %s namespace: %w", globalPaCSecretKey.Namespace, err)
+				return nil, fmt.Errorf("failed to get Pipelines as Code secret in %s namespace: %w", globalPaCSecretKey.Namespace, err)
 			}
 
 			r.EventRecorder.Event(&pacSecret, "Warning", "PaCSecretNotFound", err.Error())
 			// Do not trigger a new reconcile. The PaC secret must be created first.
-			return nil, true, fmt.Errorf(" Pipelines as Code secret not found in %s namespace nor in %s", pacSecretKey.Namespace, globalPaCSecretKey.Namespace)
+			return nil, boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound,
+				fmt.Errorf(" Pipelines as Code secret not found in %s namespace nor in %s", pacSecretKey.Namespace, globalPaCSecretKey.Namespace))
 		}
 
 		if !gitops.IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
@@ -218,12 +220,12 @@ func (r *ComponentBuildReconciler) ensurePaCSecret(ctx context.Context, componen
 				Data: pacSecret.Data,
 			}
 			if err := r.Client.Create(ctx, localPaCSecret); err != nil {
-				return nil, false, fmt.Errorf("failed to create local PaC configuration secret: %w", err)
+				return nil, fmt.Errorf("failed to create local PaC configuration secret: %w", err)
 			}
 		}
 	}
 
-	return &pacSecret, true, nil
+	return &pacSecret, nil
 }
 
 // Returns webhook secret for given component.

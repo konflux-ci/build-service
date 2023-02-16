@@ -35,6 +35,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
+	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 )
 
 const (
@@ -214,17 +215,16 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		log.Info("Starting Pipelines as Code provision for the Component")
 
 		var pacAnnotationValue string
-		done, err := r.ProvisionPaCForComponent(ctx, &component)
-		if !done {
-			// Need to retry
-			if err != nil {
-				log.Error(err, "Pipelines as Code provision transient error")
-			}
-			return ctrl.Result{}, err
-		}
+		err := r.ProvisionPaCForComponent(ctx, &component)
 		if err != nil {
-			pacAnnotationValue = "error"
-			log.Error(err, "Pipelines as Code provision for the Component failed")
+			if boErr, ok := err.(boerrors.BuildOpError); ok && boErr.IsPersistent() {
+				log.Error(err, "Pipelines as Code provision for the Component failed")
+				pacAnnotationValue = boErr.ShortError()
+			} else {
+				// transient error, retry
+				log.Error(err, "Pipelines as Code provision transient error")
+				return ctrl.Result{}, err
+			}
 		} else {
 			pacAnnotationValue = PaCProvisionDoneAnnotationValue
 			log.Info("Pipelines as Code provision for the Component finished successfully")

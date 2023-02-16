@@ -20,13 +20,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strings"
 	"time"
 
 	ghinstallation "github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/google/go-github/v45/github"
+	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 	"golang.org/x/oauth2"
 )
 
@@ -56,26 +57,31 @@ func newGithubClient(accessToken string) *GithubClient {
 func newGithubClientByApp(appId int64, privateKeyPem []byte, owner string) (*GithubClient, error) {
 	itr, err := ghinstallation.NewAppsTransport(http.DefaultTransport, appId, privateKeyPem) // 172616 (appstudio) 184730(Michkov)
 	if err != nil {
-		return nil, err
+		// Inability to create transport based on a private key indicates that the key is bad formatted
+		return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppInvalidPrivateKey, err)
 	}
 	client := github.NewClient(&http.Client{Transport: itr})
-	if err != nil {
-		return nil, err
-	}
 
+	var installId int64
 	opt := &github.RepositoryListByOrgOptions{
 		ListOptions: github.ListOptions{PerPage: 100},
 	}
-
-	var installID int64
-	for installID == 0 {
+	for installId == 0 {
 		installations, resp, err := client.Apps.ListInstallations(context.Background(), &opt.ListOptions)
 		if err != nil {
-			return nil, err
+			if resp != nil && resp.Response != nil && resp.Response.StatusCode != 0 {
+				switch resp.StatusCode {
+				case 401:
+					return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppWrongPrivateKey, err)
+				case 404:
+					return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppDoesNotExist, err)
+				}
+			}
+			return nil, boerrors.NewBuildOpError(boerrors.ETransientError, err)
 		}
 		for _, val := range installations {
 			if val.GetAccount().GetLogin() == owner {
-				installID = val.GetID()
+				installId = val.GetID()
 				break
 			}
 		}
@@ -84,15 +90,17 @@ func newGithubClientByApp(appId int64, privateKeyPem []byte, owner string) (*Git
 		}
 		opt.Page = resp.NextPage
 	}
-	if installID == 0 {
-		return nil, fmt.Errorf("unable to find GitHub InstallationID for user %s", owner)
+	if installId == 0 {
+		err := fmt.Errorf("unable to find GitHub InstallationID for user %s", owner)
+		return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppNotInstalled, err)
 	}
 
 	token, _, err := client.Apps.CreateInstallationToken(
 		context.Background(),
-		installID,
+		installId,
 		&github.InstallationTokenOptions{})
 	if err != nil {
+		// TODO analyze the error
 		return nil, err
 	}
 
@@ -160,7 +168,7 @@ func (c *GithubClient) filesUpToDate(owner, repository, branch string, files []F
 			}
 			return false, err
 		}
-		fileContent, err := ioutil.ReadAll(fileContentReader)
+		fileContent, err := io.ReadAll(fileContentReader)
 		if err != nil {
 			return false, err
 		}
