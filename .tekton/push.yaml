@@ -16,7 +16,7 @@ spec:
       value: 'quay.io/redhat-appstudio/build-service:{{revision}}'
     - name: infra-deployment-update-script
       value: |
-        sed -i -e 's|\(https://github.com/redhat-appstudio/build-service/.*?ref=\)\(.*\)|\1{{ revision }}|' -e 's/\(newTag: \).*/\1{{ revision }}/' components/build-service/kustomization.yaml
+        sed -i -e 's|\(https://github.com/redhat-appstudio/build-service/.*?ref=\)\(.*\)|\1{{ revision }}|' -e 's/\(newTag: \).*/\1{{ revision }}/' components/build-service/base/kustomization.yaml
         sed -i -e 's|\(https://github.com/redhat-appstudio/build-service/.*?ref=\)\(.*\)|\1{{ revision }}|' components/monitoring/grafana/base/build-service/kustomization.yaml
   pipelineRef:
     name: docker-build
