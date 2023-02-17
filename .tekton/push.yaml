@@ -20,7 +20,7 @@ spec:
         sed -i -e 's|\(https://github.com/redhat-appstudio/build-service/.*?ref=\)\(.*\)|\1{{ revision }}|' components/monitoring/grafana/base/build-service/kustomization.yaml
   pipelineRef:
     name: docker-build
-    bundle: quay.io/redhat-appstudio/hacbs-core-service-templates-bundle:latest
+    bundle: quay.io/redhat-appstudio-tekton-catalog/pipeline-core-services-docker-build:latest
   workspaces:
     - name: workspace
       volumeClaimTemplate:
