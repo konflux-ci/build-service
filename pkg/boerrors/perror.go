@@ -20,6 +20,8 @@ import (
 	"fmt"
 )
 
+var _ error = (*BuildOpError)(nil)
+
 // BuildOpError extends standard error to:
 //  1. Keep persistent / transient property of the error.
 //     All errors, except ETransientErrorId considered persistent.
@@ -39,6 +41,9 @@ func NewBuildOpError(id BOErrorId, err error) *BuildOpError {
 }
 
 func (r BuildOpError) Error() string {
+	if r.err == nil {
+		return ""
+	}
 	return r.err.Error()
 }
 
@@ -62,26 +67,26 @@ const (
 	EUnknownError   BOErrorId = 1
 
 	// 'pipelines-as-code-secret' secret doesn't exists in 'build-service' namespace nor Component's one.
-	EPaCSecretNotFound BOErrorId = 90
+	EPaCSecretNotFound BOErrorId = 50
 	// Validation of 'pipelines-as-code-secret' secret failed
-	EPaCSecretInvalid BOErrorId = 91
+	EPaCSecretInvalid BOErrorId = 51
 
 	// Happens when Component source repository is hosted on unsupported / unknown git provider.
 	// For example: https://my-gitlab.com
 	// If self-hosted instance of the supported git providers is used, then "git-provider" annotation must be set:
 	// git-provider: gitlab
-	EUnknownGitProvider BOErrorId = 100
+	EUnknownGitProvider BOErrorId = 60
 
 	// Happens when configured in cluster Pipelines as Code application is not installed in Component source repository.
 	// User must install the application to fix this error.
-	EGitHubAppNotInstalled BOErrorId = 120
+	EGitHubAppNotInstalled BOErrorId = 70
 	// Bad formatted private key
-	EGitHubAppInvalidPrivateKey BOErrorId = 121
-	// Private key doesn't match the GitHun Application
-	EGitHubAppWrongPrivateKey BOErrorId = 122
+	EGitHubAppMalformedPrivateKey BOErrorId = 71
+	// Private key doesn't match the GitHub Application
+	EGitHubAppPrivateKeyNotMatched BOErrorId = 72
 	// GitHub Application with specified ID does not exists.
 	// Correct configuration in the AppStudio installation ('pipelines-as-code-secret' secret in 'build-service' namespace).
-	EGitHubAppDoesNotExist BOErrorId = 123
+	EGitHubAppDoesNotExist BOErrorId = 73
 )
 
 var boErrorMessages = map[BOErrorId]string{
@@ -93,8 +98,8 @@ var boErrorMessages = map[BOErrorId]string{
 
 	EUnknownGitProvider: "unknown git provider of the source repository",
 
-	EGitHubAppNotInstalled:      "GitHub Application is not installed in user repository",
-	EGitHubAppInvalidPrivateKey: "invalid GitHub Application private key",
-	EGitHubAppWrongPrivateKey:   "GitHub Application private key does not match Application ID",
-	EGitHubAppDoesNotExist:      "GitHub Application with given ID does not exist",
+	EGitHubAppNotInstalled:         "GitHub Application is not installed in user repository",
+	EGitHubAppMalformedPrivateKey:  "invalid GitHub Application private key",
+	EGitHubAppPrivateKeyNotMatched: "GitHub Application private key does not match Application ID",
+	EGitHubAppDoesNotExist:         "GitHub Application with given ID does not exist",
 }

@@ -37,7 +37,6 @@ func TestGetProvisionTimeMetricsBuckets(t *testing.T) {
 			t.Errorf("Buckets must be in increasing order, but got: %v", buckets)
 		}
 	}
-
 }
 
 func TestGenerateInitialPipelineRunForComponent(t *testing.T) {

@@ -58,7 +58,7 @@ func newGithubClientByApp(appId int64, privateKeyPem []byte, owner string) (*Git
 	itr, err := ghinstallation.NewAppsTransport(http.DefaultTransport, appId, privateKeyPem) // 172616 (appstudio) 184730(Michkov)
 	if err != nil {
 		// Inability to create transport based on a private key indicates that the key is bad formatted
-		return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppInvalidPrivateKey, err)
+		return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppMalformedPrivateKey, err)
 	}
 	client := github.NewClient(&http.Client{Transport: itr})
 
@@ -72,7 +72,7 @@ func newGithubClientByApp(appId int64, privateKeyPem []byte, owner string) (*Git
 			if resp != nil && resp.Response != nil && resp.Response.StatusCode != 0 {
 				switch resp.StatusCode {
 				case 401:
-					return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppWrongPrivateKey, err)
+					return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppPrivateKeyNotMatched, err)
 				case 404:
 					return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppDoesNotExist, err)
 				}
