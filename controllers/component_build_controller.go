@@ -247,6 +247,8 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		component.Annotations[PaCProvisionAnnotationName] = pacAnnotationValue
 		if pacPersistentErrorMessage != "" {
 			component.Annotations[PaCProvisionErrorDetailsAnnotationName] = pacPersistentErrorMessage
+		} else {
+			delete(component.Annotations, PaCProvisionErrorDetailsAnnotationName)
 		}
 
 		// Add finalizer to clean up Pipelines as Code configuration on component deletion
