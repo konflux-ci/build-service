@@ -475,9 +475,10 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 			// Webhook
 			ghclient = github.NewGithubClient(accessToken)
 
+			log.Info("Setup Pipelines as Code webhook for")
 			err = github.SetupPaCWebhook(ghclient, webhookTargetUrl, webhookSecret, owner, repository)
 			if err != nil {
-				return "", fmt.Errorf("failed to configure Pipelines as Code webhook: %w", err)
+				return "", err
 			} else {
 				r.Log.Info(fmt.Sprintf("Pipelines as Code webhook \"%s\" configured for %s component in %s namespace\n", webhookTargetUrl, component.GetName(), component.GetNamespace()))
 			}

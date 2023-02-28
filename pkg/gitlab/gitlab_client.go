@@ -242,9 +242,9 @@ func (c *GitlabClient) createMergeRequestWithinRepository(projectPath, branchNam
 
 func (c *GitlabClient) getWebhookByTargetUrl(projectPath, webhookTargetUrl string) (*gitlab.ProjectHook, error) {
 	opts := &gitlab.ListProjectHooksOptions{PerPage: 100}
-	webhooks, _, err := c.client.Projects.ListProjectHooks(projectPath, opts)
+	webhooks, resp, err := c.client.Projects.ListProjectHooks(projectPath, opts)
 	if err != nil {
-		return nil, err
+		return nil, RefineGitHostingServiceError(resp.Response, err)
 	}
 	for _, webhook := range webhooks {
 		if webhook.URL == webhookTargetUrl {
@@ -257,14 +257,14 @@ func (c *GitlabClient) getWebhookByTargetUrl(projectPath, webhookTargetUrl strin
 
 func (c *GitlabClient) createPaCWebhook(projectPath, webhookTargetUrl, webhookSecret string) (*gitlab.ProjectHook, error) {
 	opts := getPaCWebhookOpts(webhookTargetUrl, webhookSecret)
-	hook, _, err := c.client.Projects.AddProjectHook(projectPath, opts)
-	return hook, err
+	hook, resp, err := c.client.Projects.AddProjectHook(projectPath, opts)
+	return hook, RefineGitHostingServiceError(resp.Response, err)
 }
 
 func (c *GitlabClient) updatePaCWebhook(projectPath string, webhookId int, webhookTargetUrl, webhookSecret string) (*gitlab.ProjectHook, error) {
 	opts := gitlab.EditProjectHookOptions(*getPaCWebhookOpts(webhookTargetUrl, webhookSecret))
-	hook, _, err := c.client.Projects.EditProjectHook(projectPath, webhookId, &opts)
-	return hook, err
+	hook, resp, err := c.client.Projects.EditProjectHook(projectPath, webhookId, &opts)
+	return hook, RefineGitHostingServiceError(resp.Response, err)
 }
 
 func (c *GitlabClient) deleteWebhook(projectPath string, webhookId int) error {
@@ -272,7 +272,7 @@ func (c *GitlabClient) deleteWebhook(projectPath string, webhookId int) error {
 	if resp.StatusCode == 404 {
 		return nil
 	}
-	return err
+	return RefineGitHostingServiceError(resp.Response, err)
 }
 
 func getPaCWebhookOpts(webhookTargetUrl, webhookSecret string) *gitlab.AddProjectHookOptions {

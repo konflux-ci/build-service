@@ -112,16 +112,19 @@ func (c *GithubClient) referenceExist(owner, repository, branch string) (bool, e
 	if err == nil {
 		return true, nil
 	}
-
-	if resp.StatusCode == 404 {
+	switch resp.StatusCode {
+	case 401:
+		return false, boerrors.NewBuildOpError(boerrors.EGitHubTokenUnauthorized, err)
+	case 404:
 		return false, nil
 	}
+
 	return false, err
 }
 
 func (c *GithubClient) getReference(owner, repository, branch string) (*github.Reference, error) {
-	ref, _, err := c.client.Git.GetRef(c.ctx, owner, repository, "refs/heads/"+branch)
-	return ref, err
+	ref, resp, err := c.client.Git.GetRef(c.ctx, owner, repository, "refs/heads/"+branch)
+	return ref, RefineGitHostingServiceError(resp.Response, err)
 }
 
 func (c *GithubClient) createReference(owner, repository, branch, baseBranch string) (*github.Reference, error) {
@@ -133,19 +136,19 @@ func (c *GithubClient) createReference(owner, repository, branch, baseBranch str
 		Ref:    github.String("refs/heads/" + branch),
 		Object: &github.GitObject{SHA: baseBranchRef.Object.SHA},
 	}
-	ref, _, err := c.client.Git.CreateRef(c.ctx, owner, repository, newBranchRef)
-	return ref, err
+	ref, resp, err := c.client.Git.CreateRef(c.ctx, owner, repository, newBranchRef)
+	return ref, RefineGitHostingServiceError(resp.Response, err)
 }
 
 func (c *GithubClient) deleteReference(owner, repository, branch string) error {
-	_, err := c.client.Git.DeleteRef(c.ctx, owner, repository, "refs/heads/"+branch)
-	return err
+	resp, err := c.client.Git.DeleteRef(c.ctx, owner, repository, "refs/heads/"+branch)
+	return RefineGitHostingServiceError(resp.Response, err)
 }
 
 func (c *GithubClient) getDefaultBranch(owner, repository string) (string, error) {
-	repositoryInfo, _, err := c.client.Repositories.Get(c.ctx, owner, repository)
+	repositoryInfo, resp, err := c.client.Repositories.Get(c.ctx, owner, repository)
 	if err != nil {
-		return "", err
+		return "", RefineGitHostingServiceError(resp.Response, err)
 	}
 	if repositoryInfo == nil {
 		return "", fmt.Errorf("repository info is empty in GitHub API response")
@@ -166,7 +169,8 @@ func (c *GithubClient) filesUpToDate(owner, repository, branch string, files []F
 				// Given file not found
 				return false, nil
 			}
-			return false, err
+
+			return false, RefineGitHostingServiceError(resp.Response, err)
 		}
 		fileContent, err := io.ReadAll(fileContentReader)
 		if err != nil {
@@ -190,7 +194,10 @@ func (c *GithubClient) filesExistInDirectory(owner, repository, branch, director
 	}
 	_, dirContent, resp, err := c.client.Repositories.GetContents(c.ctx, owner, repository, directoryPath, opts)
 	if err != nil {
-		if resp.StatusCode == 404 {
+		switch resp.StatusCode {
+		case 401:
+			return existingFiles, boerrors.NewBuildOpError(boerrors.EGitHubTokenUnauthorized, err)
+		case 404:
 			return existingFiles, nil
 		}
 		return existingFiles, err
@@ -218,8 +225,8 @@ func (c *GithubClient) createTree(owner, repository string, baseRef *github.Refe
 		entries = append(entries, &github.TreeEntry{Path: github.String(file.FullPath), Type: github.String("blob"), Content: github.String(string(file.Content)), Mode: github.String("100644")})
 	}
 
-	tree, _, err = c.client.Git.CreateTree(c.ctx, owner, repository, *baseRef.Object.SHA, entries)
-	return tree, err
+	tree, resp, err := c.client.Git.CreateTree(c.ctx, owner, repository, *baseRef.Object.SHA, entries)
+	return tree, RefineGitHostingServiceError(resp.Response, err)
 }
 
 func (c *GithubClient) deleteFromTree(owner, repository string, baseRef *github.Reference, files []File) (tree *github.Tree, err error) {
@@ -233,15 +240,15 @@ func (c *GithubClient) deleteFromTree(owner, repository string, baseRef *github.
 		})
 	}
 
-	tree, _, err = c.client.Git.CreateTree(c.ctx, owner, repository, *baseRef.Object.SHA, entries)
-	return tree, err
+	tree, resp, err := c.client.Git.CreateTree(c.ctx, owner, repository, *baseRef.Object.SHA, entries)
+	return tree, RefineGitHostingServiceError(resp.Response, err)
 }
 
 func (c *GithubClient) addCommitToBranch(owner, repository, authorName, authorEmail, commitMessage string, files []File, ref *github.Reference) error {
 	// Get the parent commit to attach the commit to.
-	parent, _, err := c.client.Repositories.GetCommit(c.ctx, owner, repository, *ref.Object.SHA, nil)
+	parent, resp, err := c.client.Repositories.GetCommit(c.ctx, owner, repository, *ref.Object.SHA, nil)
 	if err != nil {
-		return err
+		return RefineGitHostingServiceError(resp.Response, err)
 	}
 	// This is not always populated, but is needed.
 	parent.Commit.SHA = parent.SHA
@@ -255,23 +262,26 @@ func (c *GithubClient) addCommitToBranch(owner, repository, authorName, authorEm
 	date := time.Now()
 	author := &github.CommitAuthor{Date: &date, Name: &authorName, Email: &authorEmail}
 	commit := &github.Commit{Author: author, Message: &commitMessage, Tree: tree, Parents: []*github.Commit{parent.Commit}}
-	newCommit, _, err := c.client.Git.CreateCommit(c.ctx, owner, repository, commit)
+	newCommit, resp, err := c.client.Git.CreateCommit(c.ctx, owner, repository, commit)
 	if err != nil {
+		if resp != nil {
+			return RefineGitHostingServiceError(resp.Response, err)
+		}
 		return err
 	}
 
 	// Attach the created commit to the given branch.
 	ref.Object.SHA = newCommit.SHA
-	_, _, err = c.client.Git.UpdateRef(c.ctx, owner, repository, ref, false)
-	return err
+	_, resp, err = c.client.Git.UpdateRef(c.ctx, owner, repository, ref, false)
+	return RefineGitHostingServiceError(resp.Response, err)
 }
 
 // Creates commit into specified branch that deletes given files.
 func (c *GithubClient) addDeleteCommitToBranch(owner, repository, authorName, authorEmail, commitMessage string, files []File, ref *github.Reference) error {
 	// Get the parent commit to attach the commit to.
-	parent, _, err := c.client.Repositories.GetCommit(c.ctx, owner, repository, *ref.Object.SHA, nil)
+	parent, resp, err := c.client.Repositories.GetCommit(c.ctx, owner, repository, *ref.Object.SHA, nil)
 	if err != nil {
-		return err
+		return RefineGitHostingServiceError(resp.Response, err)
 	}
 	// This is not always populated, but needed.
 	parent.Commit.SHA = parent.SHA
@@ -285,15 +295,15 @@ func (c *GithubClient) addDeleteCommitToBranch(owner, repository, authorName, au
 	date := time.Now()
 	author := &github.CommitAuthor{Date: &date, Name: &authorName, Email: &authorEmail}
 	commit := &github.Commit{Author: author, Message: &commitMessage, Tree: tree, Parents: []*github.Commit{parent.Commit}}
-	newCommit, _, err := c.client.Git.CreateCommit(c.ctx, owner, repository, commit)
+	newCommit, resp, err := c.client.Git.CreateCommit(c.ctx, owner, repository, commit)
 	if err != nil {
-		return err
+		return RefineGitHostingServiceError(resp.Response, err)
 	}
 
 	// Attach the created commit to the given branch.
 	ref.Object.SHA = newCommit.SHA
-	_, _, err = c.client.Git.UpdateRef(c.ctx, owner, repository, ref, false)
-	return err
+	_, resp, err = c.client.Git.UpdateRef(c.ctx, owner, repository, ref, false)
+	return RefineGitHostingServiceError(resp.Response, err)
 }
 
 // findPullRequestByBranchesWithinRepository searches for a PR within repository by current and target (base) branch.
@@ -304,9 +314,9 @@ func (c *GithubClient) findPullRequestByBranchesWithinRepository(owner, reposito
 		Head:        owner + ":" + branchName,
 		ListOptions: github.ListOptions{PerPage: 100},
 	}
-	prs, _, err := c.client.PullRequests.List(c.ctx, owner, repository, opts)
+	prs, resp, err := c.client.PullRequests.List(c.ctx, owner, repository, opts)
 	if err != nil {
-		return nil, err
+		return nil, RefineGitHostingServiceError(resp.Response, err)
 	}
 	switch len(prs) {
 	case 0:
@@ -331,9 +341,9 @@ func (c *GithubClient) createPullRequestWithinRepository(owner, repository, bran
 		MaintainerCanModify: github.Bool(true),
 	}
 
-	pr, _, err := c.client.PullRequests.Create(c.ctx, owner, repository, newPRData)
+	pr, resp, err := c.client.PullRequests.Create(c.ctx, owner, repository, newPRData)
 	if err != nil {
-		return "", err
+		return "", RefineGitHostingServiceError(resp.Response, err)
 	}
 
 	return pr.GetHTMLURL(), nil
@@ -343,9 +353,9 @@ func (c *GithubClient) createPullRequestWithinRepository(owner, repository, bran
 func (c *GithubClient) getWebhookByTargetUrl(owner, repository, webhookTargetUrl string) (*github.Hook, error) {
 	// Suppose that the repository does not have more than 100 webhooks
 	listOpts := &github.ListOptions{PerPage: 100}
-	webhooks, _, err := c.client.Repositories.ListHooks(c.ctx, owner, repository, listOpts)
+	webhooks, resp, err := c.client.Repositories.ListHooks(c.ctx, owner, repository, listOpts)
 	if err != nil {
-		return nil, err
+		return nil, RefineGitHostingServiceError(resp.Response, err)
 	}
 
 	for _, webhook := range webhooks {
@@ -358,22 +368,27 @@ func (c *GithubClient) getWebhookByTargetUrl(owner, repository, webhookTargetUrl
 }
 
 func (c *GithubClient) createWebhook(owner, repository string, webhook *github.Hook) (*github.Hook, error) {
-	webhook, _, err := c.client.Repositories.CreateHook(c.ctx, owner, repository, webhook)
-	return webhook, err
+	webhook, resp, err := c.client.Repositories.CreateHook(c.ctx, owner, repository, webhook)
+	return webhook, RefineGitHostingServiceError(resp.Response, err)
 }
 
 func (c *GithubClient) updateWebhook(owner, repository string, webhook *github.Hook) (*github.Hook, error) {
-	webhook, _, err := c.client.Repositories.EditHook(c.ctx, owner, repository, *webhook.ID, webhook)
-	return webhook, err
+	webhook, resp, err := c.client.Repositories.EditHook(c.ctx, owner, repository, *webhook.ID, webhook)
+	return webhook, RefineGitHostingServiceError(resp.Response, err)
 }
 
 func (c *GithubClient) deleteWebhook(owner, repository string, webhookId int64) error {
 	resp, err := c.client.Repositories.DeleteHook(c.ctx, owner, repository, webhookId)
 	if err != nil {
-		if resp.StatusCode == 404 {
+		switch resp.StatusCode {
+		case 401:
+			return boerrors.NewBuildOpError(boerrors.EGitHubTokenUnauthorized, err)
+		case 404:
+			// Note: GitHub responds 404 in the following two cases:
+			// 1) delete a nonexisting hook with sufficient scope
+			// 2) delete an existing hook without sufficient scope.
 			return nil
 		}
-		return err
 	}
 	return nil
 }

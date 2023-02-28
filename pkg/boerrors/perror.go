@@ -31,12 +31,16 @@ type BuildOpError struct {
 	id BOErrorId
 	// typically used to log the error message along with nested errors
 	err error
+	// Optional. To provide extra information about this error
+	// If set, it will be appended to the error message returned from Error
+	ExtraInfo string
 }
 
 func NewBuildOpError(id BOErrorId, err error) *BuildOpError {
 	return &BuildOpError{
-		id:  id,
-		err: err,
+		id:        id,
+		err:       err,
+		ExtraInfo: "",
 	}
 }
 
@@ -44,7 +48,11 @@ func (r BuildOpError) Error() string {
 	if r.err == nil {
 		return ""
 	}
-	return r.err.Error()
+	if r.ExtraInfo == "" {
+		return r.err.Error()
+	} else {
+		return fmt.Sprintf("%s %s", r.err.Error(), r.ExtraInfo)
+	}
 }
 
 // ShortError returns short message with error ID in case of persistent error or
@@ -87,6 +95,12 @@ const (
 	// GitHub Application with specified ID does not exists.
 	// Correct configuration in the AppStudio installation ('pipelines-as-code-secret' secret in 'build-service' namespace).
 	EGitHubAppDoesNotExist BOErrorId = 73
+
+	EGitHubTokenUnauthorized     BOErrorId = 74
+	EGitHubNoResourceToOperateOn BOErrorId = 75
+
+	EGitLabTokenInsufficientScope BOErrorId = 76
+	EGitLabTokenUnauthorized      BOErrorId = 77
 )
 
 var boErrorMessages = map[BOErrorId]string{
@@ -102,4 +116,10 @@ var boErrorMessages = map[BOErrorId]string{
 	EGitHubAppMalformedPrivateKey:  "invalid GitHub Application private key",
 	EGitHubAppPrivateKeyNotMatched: "GitHub Application private key does not match Application ID",
 	EGitHubAppDoesNotExist:         "GitHub Application with given ID does not exist",
+
+	EGitHubTokenUnauthorized:     "Access token is unrecognizable by GitHub",
+	EGitHubNoResourceToOperateOn: "No resource for finishing the request",
+
+	EGitLabTokenInsufficientScope: "GitLab access token does not have enough scope",
+	EGitLabTokenUnauthorized:      "Access token is unrecognizable by remote GitLab service",
 }

@@ -16,6 +16,11 @@ limitations under the License.
 
 package gitlab
 
+import (
+	"github.com/redhat-appstudio/build-service/pkg/boerrors"
+	"net/http"
+)
+
 // Allow mocking for tests
 var EnsurePaCMergeRequest func(g *GitlabClient, d *PaCMergeRequestData) (string, error) = ensurePaCMergeRequest
 var UndoPaCMergeRequest func(g *GitlabClient, d *PaCMergeRequestData) (string, error) = undoPaCMergeRequest
@@ -190,4 +195,22 @@ func deletePaCWebhook(glclient *GitlabClient, projectPath, webhookUrl string) er
 	}
 
 	return glclient.deleteWebhook(projectPath, existingWebhook.ID)
+}
+
+// RefineGitHostingServiceError generates expected permanent error from GitHub response.
+// If no one is detected, the original error will be returned.
+// RefineGitHostingServiceError should be called just after every GitHub API call.
+func RefineGitHostingServiceError(response *http.Response, originErr error) error {
+	// go-gitlab APIs do not return a http.Response object if the error is not related to an HTTP request.
+	if response == nil {
+		return originErr
+	}
+	switch response.StatusCode {
+	case 401:
+		return boerrors.NewBuildOpError(boerrors.EGitLabTokenUnauthorized, originErr)
+	case 403:
+		return boerrors.NewBuildOpError(boerrors.EGitLabTokenInsufficientScope, originErr)
+	default:
+		return originErr
+	}
 }
