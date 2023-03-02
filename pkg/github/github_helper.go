@@ -273,6 +273,9 @@ func RefineGitHostingServiceError(response *http.Response, originErr error) erro
 	if response == nil {
 		return originErr
 	}
+	if _, ok := originErr.(*github.RateLimitError); ok {
+		return boerrors.NewBuildOpError(boerrors.EGitHubReachRateLimit, originErr)
+	}
 	switch response.StatusCode {
 	case http.StatusUnauthorized:
 		// Client's access token can't be recognized by GitHub.

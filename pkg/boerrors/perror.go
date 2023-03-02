@@ -98,9 +98,10 @@ const (
 
 	EGitHubTokenUnauthorized     BOErrorId = 74
 	EGitHubNoResourceToOperateOn BOErrorId = 75
+	EGitHubReachRateLimit        BOErrorId = 76
 
-	EGitLabTokenInsufficientScope BOErrorId = 76
-	EGitLabTokenUnauthorized      BOErrorId = 77
+	EGitLabTokenInsufficientScope BOErrorId = 77
+	EGitLabTokenUnauthorized      BOErrorId = 78
 )
 
 var boErrorMessages = map[BOErrorId]string{
@@ -119,6 +120,7 @@ var boErrorMessages = map[BOErrorId]string{
 
 	EGitHubTokenUnauthorized:     "Access token is unrecognizable by GitHub",
 	EGitHubNoResourceToOperateOn: "No resource for finishing the request",
+	EGitHubReachRateLimit:        "Reach GitHub REST API rate limit",
 
 	EGitLabTokenInsufficientScope: "GitLab access token does not have enough scope",
 	EGitLabTokenUnauthorized:      "Access token is unrecognizable by remote GitLab service",
