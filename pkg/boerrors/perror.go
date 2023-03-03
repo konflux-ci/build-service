@@ -96,11 +96,21 @@ const (
 	// Correct configuration in the AppStudio installation ('pipelines-as-code-secret' secret in 'build-service' namespace).
 	EGitHubAppDoesNotExist BOErrorId = 73
 
-	EGitHubTokenUnauthorized     BOErrorId = 74
+	// EGitHubTokenUnauthorized access token can't be recognized by GitHub and 401 is responded.
+	// This error may be caused by a malformed token string or an expired token.
+	EGitHubTokenUnauthorized BOErrorId = 74
+	// EGitHubNoResourceToOperateOn No resource is suitable for GitHub to handle the request and 404 is responded.
+	// Generally, this error could be caused by two cases. One is, operate non-existing resource with an access
+	// token that has sufficient scope, e.g. delete a non-existing webhook. Another one is, the access token does
+	// not have sufficient scope, e.g. list webhooks from a repository, but scope "read:repo_hook" is set.
 	EGitHubNoResourceToOperateOn BOErrorId = 75
-	EGitHubReachRateLimit        BOErrorId = 76
+	// EGitHubReachRateLimit reach the GitHub REST API rate limit.
+	EGitHubReachRateLimit BOErrorId = 76
 
-	EGitLabTokenUnauthorized      BOErrorId = 90
+	// EGitLabTokenUnauthorized access token is not recognized by GitLab and 401 is responded.
+	// The access token may be malformed or expired.
+	EGitLabTokenUnauthorized BOErrorId = 90
+	// EGitLabTokenInsufficientScope the access token does not have sufficient scope and 403 is responded.
 	EGitLabTokenInsufficientScope BOErrorId = 91
 )
 
