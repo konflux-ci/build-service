@@ -100,8 +100,8 @@ const (
 	EGitHubNoResourceToOperateOn BOErrorId = 75
 	EGitHubReachRateLimit        BOErrorId = 76
 
-	EGitLabTokenInsufficientScope BOErrorId = 77
-	EGitLabTokenUnauthorized      BOErrorId = 78
+	EGitLabTokenUnauthorized      BOErrorId = 90
+	EGitLabTokenInsufficientScope BOErrorId = 91
 )
 
 var boErrorMessages = map[BOErrorId]string{
