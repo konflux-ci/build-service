@@ -264,10 +264,7 @@ func (c *GithubClient) addCommitToBranch(owner, repository, authorName, authorEm
 	commit := &github.Commit{Author: author, Message: &commitMessage, Tree: tree, Parents: []*github.Commit{parent.Commit}}
 	newCommit, resp, err := c.client.Git.CreateCommit(c.ctx, owner, repository, commit)
 	if err != nil {
-		if resp != nil {
-			return RefineGitHostingServiceError(resp.Response, err)
-		}
-		return err
+		return RefineGitHostingServiceError(resp.Response, err)
 	}
 
 	// Attach the created commit to the given branch.
