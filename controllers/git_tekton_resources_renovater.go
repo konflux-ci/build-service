@@ -36,11 +36,13 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 const (
 	RenovateConfigName = "renovate-config"
 	RenovateImageUrl   = "quay.io/redhat-appstudio/renovate:34.154-slim"
+	TimeToLiveOfJob    = 24 * time.Hour
 )
 
 // GitTektonResourcesRenovater watches AppStudio BuildPipelineSelector object in order to update
@@ -160,13 +162,15 @@ func (r *GitTektonResourcesRenovater) CreateRenovaterJob(ctx context.Context, in
 	trueBool := true
 	falseBool := false
 	backoffLimit := int32(1)
+	timeToLive := int32(TimeToLiveOfJob.Seconds())
 	job := &batch.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: buildServiceNamespaceName,
 		},
 		Spec: batch.JobSpec{
-			BackoffLimit: &backoffLimit,
+			BackoffLimit:            &backoffLimit,
+			TTLSecondsAfterFinished: &timeToLive,
 			Template: corev1.PodTemplateSpec{
 				Spec: corev1.PodSpec{
 					Volumes: []corev1.Volume{
@@ -218,12 +222,13 @@ func (r *GitTektonResourcesRenovater) CreateRenovaterJob(ctx context.Context, in
 			},
 		},
 	}
-	if err := r.Client.Delete(ctx, secret); err != nil {
+
+	if err := r.Client.Delete(ctx, job, client.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil {
 		if !errors.IsNotFound(err) {
 			return err
 		}
 	}
-	if err := r.Client.Delete(ctx, job, client.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil {
+	if err := r.Client.Delete(ctx, secret); err != nil {
 		if !errors.IsNotFound(err) {
 			return err
 		}
@@ -235,5 +240,12 @@ func (r *GitTektonResourcesRenovater) CreateRenovaterJob(ctx context.Context, in
 		return err
 	}
 	r.Log.Info(fmt.Sprintf("Job %s triggered", job.Name))
+	if err := controllerutil.SetOwnerReference(job, secret, r.Scheme); err != nil {
+		return err
+	}
+	if err := r.Client.Update(ctx, secret); err != nil {
+		return err
+	}
+
 	return nil
 }
