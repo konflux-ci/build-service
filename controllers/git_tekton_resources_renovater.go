@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -40,9 +41,10 @@ import (
 )
 
 const (
-	RenovateConfigName = "renovate-config"
-	RenovateImageUrl   = "quay.io/redhat-appstudio/renovate:34.154-slim"
-	TimeToLiveOfJob    = 24 * time.Hour
+	RenovateConfigName  = "renovate-config"
+	RenovateImageUrl    = "quay.io/redhat-appstudio/renovate:34.154-slim"
+	TimeToLiveOfJob     = 24 * time.Hour
+	InstallationsPerJob = 20
 )
 
 // GitTektonResourcesRenovater watches AppStudio BuildPipelineSelector object in order to update
@@ -111,12 +113,24 @@ func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Re
 		r.Log.Error(err, "failed to create configmap")
 		return ctrl.Result{}, err
 	}
-	for _, installation := range installations {
-		err = r.CreateRenovaterJob(ctx, installation)
+
+	installationsForJob := []github.ApplicationInstallation{}
+	for i, installation := range installations {
+		if i%InstallationsPerJob == 0 && len(installationsForJob) != 0 {
+			err = r.CreateRenovaterJob(ctx, installationsForJob)
+			if err != nil {
+				r.Log.Error(err, "failed to create a job")
+			}
+			installationsForJob = []github.ApplicationInstallation{}
+		}
+		installationsForJob = append(installationsForJob, installation)
+	}
+
+	if len(installationsForJob) != 0 {
+		err = r.CreateRenovaterJob(ctx, installationsForJob)
 		if err != nil {
 			r.Log.Error(err, "failed to create a job")
 		}
-		time.Sleep(10 * time.Second)
 	}
 
 	return ctrl.Result{RequeueAfter: 10 * time.Hour}, nil
@@ -148,16 +162,21 @@ func generateConfigJS(slug string) string {
 	return fmt.Sprintf(template, slug, slug)
 }
 
-func (r *GitTektonResourcesRenovater) CreateRenovaterJob(ctx context.Context, installation github.ApplicationInstallation) error {
-	name := fmt.Sprintf("renovate-job-%d", installation.InstallationID)
+func (r *GitTektonResourcesRenovater) CreateRenovaterJob(ctx context.Context, installations []github.ApplicationInstallation) error {
+
+	name := fmt.Sprintf("renovate-job-%s", getRandomString(5))
+	secretTokens := map[string]string{}
+	renovateCmds := []string{}
+	for _, installation := range installations {
+		secretTokens[fmt.Sprint(installation.InstallationID)] = installation.Token
+		renovateCmds = append(renovateCmds, fmt.Sprintf("RENOVATE_TOKEN=$TOKEN_%d renovate", installation.InstallationID))
+	}
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: buildServiceNamespaceName,
 		},
-		StringData: map[string]string{
-			"token": installation.Token,
-		},
+		StringData: secretTokens,
 	}
 	trueBool := true
 	falseBool := false
@@ -187,19 +206,17 @@ func (r *GitTektonResourcesRenovater) CreateRenovaterJob(ctx context.Context, in
 						{
 							Name:  "renovate",
 							Image: RenovateImageUrl,
-							Env: []corev1.EnvVar{
+							EnvFrom: []corev1.EnvFromSource{
 								{
-									Name: "RENOVATE_TOKEN",
-									ValueFrom: &corev1.EnvVarSource{
-										SecretKeyRef: &corev1.SecretKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{
-												Name: name,
-											},
-											Key: "token",
+									Prefix: "TOKEN_",
+									SecretRef: &corev1.SecretEnvSource{
+										LocalObjectReference: corev1.LocalObjectReference{
+											Name: name,
 										},
 									},
 								},
 							},
+							Command: []string{"bash", "-c", strings.Join(renovateCmds, "; ")},
 							VolumeMounts: []corev1.VolumeMount{
 								{
 									Name:      RenovateConfigName,
