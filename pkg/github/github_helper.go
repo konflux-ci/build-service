@@ -17,9 +17,12 @@ limitations under the License.
 package github
 
 import (
+	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/google/go-github/v45/github"
+	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 )
 
 // Allow mocking for tests
@@ -260,4 +263,34 @@ func deletePaCWebhook(ghclient *GithubClient, webhookUrl string, owner string, r
 	}
 
 	return ghclient.deleteWebhook(owner, repository, *existingWebhook.ID)
+}
+
+// RefineGitHostingServiceError generates expected permanent error from GitHub response.
+// If no one is detected, the original error will be returned.
+// RefineGitHostingServiceError should be called just after every GitHub API call.
+func RefineGitHostingServiceError(response *http.Response, originErr error) error {
+	// go-github APIs do not return a http.Response object if the error is not related to an HTTP request.
+	if response == nil {
+		return originErr
+	}
+	if _, ok := originErr.(*github.RateLimitError); ok {
+		return boerrors.NewBuildOpError(boerrors.EGitHubReachRateLimit, originErr)
+	}
+	switch response.StatusCode {
+	case http.StatusUnauthorized:
+		// Client's access token can't be recognized by GitHub.
+		return boerrors.NewBuildOpError(boerrors.EGitHubTokenUnauthorized, originErr)
+	case http.StatusNotFound:
+		// No expected resource is found due to insufficient scope set to the client's access token.
+		scopes := response.Header["X-Oauth-Scopes"]
+		err := boerrors.NewBuildOpError(boerrors.EGitHubNoResourceToOperateOn, originErr)
+		if len(scopes) == 0 {
+			err.ExtraInfo = "No scope is found from response header. Check it from GitHub settings."
+		} else {
+			err.ExtraInfo = fmt.Sprintf("Scopes set to access token: %s", strings.Join(scopes, ", "))
+		}
+		return err
+	default:
+		return originErr
+	}
 }

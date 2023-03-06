@@ -61,22 +61,32 @@ func TestNestedErrorMessage(t *testing.T) {
 	tests := []struct {
 		name                       string
 		nestedError                error
+		extraInfo                  string
 		expectedNestedErrorMessage string
 	}{
 		{
 			name:                       "should return nested error message",
 			nestedError:                fmt.Errorf("invalid credentials"),
+			extraInfo:                  "",
 			expectedNestedErrorMessage: "invalid credentials",
 		},
 		{
 			name:                       "should return empty string if nested error is nil",
 			nestedError:                nil,
+			extraInfo:                  "",
 			expectedNestedErrorMessage: "",
+		},
+		{
+			name:                       "should include extra information when there is",
+			nestedError:                fmt.Errorf("404 no resource []"),
+			extraInfo:                  "permission denied",
+			expectedNestedErrorMessage: "404 no resource [] permission denied",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			boErr := NewBuildOpError(EUnknownError, tt.nestedError)
+			boErr.ExtraInfo = tt.extraInfo
 			if boErr.Error() != tt.expectedNestedErrorMessage {
 				t.Errorf("Expected \"%s\" error message, but got \"%s\"", tt.expectedNestedErrorMessage, boErr.Error())
 			}
@@ -87,18 +97,26 @@ func TestNestedErrorMessage(t *testing.T) {
 func TestShortErrorMessage(t *testing.T) {
 	tests := []struct {
 		name                 string
+		nestedError          error
 		errId                BOErrorId
 		expectedShortMessage string
 	}{
 		{
 			name:                 "should return short error message",
+			nestedError:          nil,
 			errId:                EGitHubAppNotInstalled,
 			expectedShortMessage: "70: GitHub Application is not installed in user repository",
+		},
+		{
+			name:                 "should return nested error's message for transient error",
+			nestedError:          fmt.Errorf("http connection error"),
+			errId:                ETransientError,
+			expectedShortMessage: "http connection error",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			boErr := NewBuildOpError(tt.errId, nil)
+			boErr := NewBuildOpError(tt.errId, tt.nestedError)
 			if boErr.ShortError() != tt.expectedShortMessage {
 				t.Errorf("Expected \"%s\" error message, but got \"%s\"", tt.expectedShortMessage, boErr.Error())
 			}

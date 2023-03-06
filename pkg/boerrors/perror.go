@@ -31,12 +31,16 @@ type BuildOpError struct {
 	id BOErrorId
 	// typically used to log the error message along with nested errors
 	err error
+	// Optional. To provide extra information about this error
+	// If set, it will be appended to the error message returned from Error
+	ExtraInfo string
 }
 
 func NewBuildOpError(id BOErrorId, err error) *BuildOpError {
 	return &BuildOpError{
-		id:  id,
-		err: err,
+		id:        id,
+		err:       err,
+		ExtraInfo: "",
 	}
 }
 
@@ -44,7 +48,11 @@ func (r BuildOpError) Error() string {
 	if r.err == nil {
 		return ""
 	}
-	return r.err.Error()
+	if r.ExtraInfo == "" {
+		return r.err.Error()
+	} else {
+		return fmt.Sprintf("%s %s", r.err.Error(), r.ExtraInfo)
+	}
 }
 
 // ShortError returns short message with error ID in case of persistent error or
@@ -87,6 +95,23 @@ const (
 	// GitHub Application with specified ID does not exists.
 	// Correct configuration in the AppStudio installation ('pipelines-as-code-secret' secret in 'build-service' namespace).
 	EGitHubAppDoesNotExist BOErrorId = 73
+
+	// EGitHubTokenUnauthorized access token can't be recognized by GitHub and 401 is responded.
+	// This error may be caused by a malformed token string or an expired token.
+	EGitHubTokenUnauthorized BOErrorId = 74
+	// EGitHubNoResourceToOperateOn No resource is suitable for GitHub to handle the request and 404 is responded.
+	// Generally, this error could be caused by two cases. One is, operate non-existing resource with an access
+	// token that has sufficient scope, e.g. delete a non-existing webhook. Another one is, the access token does
+	// not have sufficient scope, e.g. list webhooks from a repository, but scope "read:repo_hook" is set.
+	EGitHubNoResourceToOperateOn BOErrorId = 75
+	// EGitHubReachRateLimit reach the GitHub REST API rate limit.
+	EGitHubReachRateLimit BOErrorId = 76
+
+	// EGitLabTokenUnauthorized access token is not recognized by GitLab and 401 is responded.
+	// The access token may be malformed or expired.
+	EGitLabTokenUnauthorized BOErrorId = 90
+	// EGitLabTokenInsufficientScope the access token does not have sufficient scope and 403 is responded.
+	EGitLabTokenInsufficientScope BOErrorId = 91
 )
 
 var boErrorMessages = map[BOErrorId]string{
@@ -102,4 +127,11 @@ var boErrorMessages = map[BOErrorId]string{
 	EGitHubAppMalformedPrivateKey:  "invalid GitHub Application private key",
 	EGitHubAppPrivateKeyNotMatched: "GitHub Application private key does not match Application ID",
 	EGitHubAppDoesNotExist:         "GitHub Application with given ID does not exist",
+
+	EGitHubTokenUnauthorized:     "Access token is unrecognizable by GitHub",
+	EGitHubNoResourceToOperateOn: "No resource for finishing the request",
+	EGitHubReachRateLimit:        "Reach GitHub REST API rate limit",
+
+	EGitLabTokenInsufficientScope: "GitLab access token does not have enough scope",
+	EGitLabTokenUnauthorized:      "Access token is unrecognizable by remote GitLab service",
 }
