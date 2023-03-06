@@ -254,16 +254,6 @@ func (r *GitTektonResourcesRenovater) CreateRenovaterJob(ctx context.Context, in
 		},
 	}
 
-	if err := r.Client.Delete(ctx, job, client.PropagationPolicy(metav1.DeletePropagationForeground)); err != nil {
-		if !errors.IsNotFound(err) {
-			return err
-		}
-	}
-	if err := r.Client.Delete(ctx, secret); err != nil {
-		if !errors.IsNotFound(err) {
-			return err
-		}
-	}
 	if err := r.Client.Create(ctx, secret); err != nil {
 		return err
 	}
