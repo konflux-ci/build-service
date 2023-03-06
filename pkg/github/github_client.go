@@ -113,7 +113,7 @@ func newGithubClientByApp(appId int64, privateKeyPem []byte, owner string) (*Git
 }
 
 func GetInstallations(appId int64, privateKeyPem []byte) ([]ApplicationInstallation, string, error) {
-	itr, err := ghinstallation.NewAppsTransport(http.DefaultTransport, appId, privateKeyPem) // 172616 (appstudio) 184730(Michkov)
+	itr, err := ghinstallation.NewAppsTransport(http.DefaultTransport, appId, privateKeyPem)
 	if err != nil {
 		// Inability to create transport based on a private key indicates that the key is bad formatted
 		return nil, "", boerrors.NewBuildOpError(boerrors.EGitHubAppMalformedPrivateKey, err)
@@ -124,6 +124,9 @@ func GetInstallations(appId int64, privateKeyPem []byte) ([]ApplicationInstallat
 		ListOptions: github.ListOptions{PerPage: 100},
 	}
 	githubApp, _, err := client.Apps.Get(context.Background(), "")
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to load GitHub app metadata, %w", err)
+	}
 	slug := (githubApp.GetSlug())
 	for {
 		installations, resp, err := client.Apps.ListInstallations(context.Background(), &opt.ListOptions)

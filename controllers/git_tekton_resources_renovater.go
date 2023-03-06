@@ -1,5 +1,5 @@
 /*
-Copyright 2022.
+Copyright 2023.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -36,15 +37,20 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
 const (
-	RenovateConfigName  = "renovate-config"
-	RenovateImageUrl    = "quay.io/redhat-appstudio/renovate:34.154-slim"
-	TimeToLiveOfJob     = 24 * time.Hour
-	InstallationsPerJob = 20
+	RenovateConfigName      = "renovate-config"
+	RenovateImageEnvName    = "RENOVATE_IMAGE"
+	DefaultRenovateImageUrl = "quay.io/redhat-appstudio/renovate:34.154-slim"
+	TimeToLiveOfJob         = 24 * time.Hour
+	NextReconcile           = 10 * time.Hour
+	InstallationsPerJob     = 20
 )
 
 // GitTektonResourcesRenovater watches AppStudio BuildPipelineSelector object in order to update
@@ -58,17 +64,25 @@ type GitTektonResourcesRenovater struct {
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *GitTektonResourcesRenovater) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).For(&buildappstudiov1alpha1.BuildPipelineSelector{}).Complete(r)
+	return ctrl.NewControllerManagedBy(mgr).For(&buildappstudiov1alpha1.BuildPipelineSelector{}, builder.WithPredicates(predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return e.Object.GetNamespace() == buildServiceNamespaceName && e.Object.GetName() == buildPipelineSelectorResourceName
+		},
+		DeleteFunc: func(event.DeleteEvent) bool {
+			return false
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			return e.ObjectNew.GetNamespace() == buildServiceNamespaceName && e.ObjectNew.GetName() == buildPipelineSelectorResourceName
+		},
+		GenericFunc: func(event.GenericEvent) bool {
+			return false
+		},
+	})).Complete(r)
 }
 
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;delete;deletecollection
 
 func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-
-	// Only process main buildPipelineSelector
-	if req.Namespace != buildServiceNamespaceName && req.Name != buildPipelineSelectorResourceName {
-		return ctrl.Result{}, nil
-	}
 
 	// Check if GitHub Application is used, if not then skip
 	pacSecret := corev1.Secret{}
@@ -76,20 +90,22 @@ func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Re
 	if err := r.Client.Get(ctx, globalPaCSecretKey, &pacSecret); err != nil {
 		if !errors.IsNotFound(err) {
 			r.EventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
-			return ctrl.Result{}, fmt.Errorf("failed to get Pipelines as Code secret in %s namespace: %w", globalPaCSecretKey.Namespace, err)
+			r.Log.Error(err, "failed to get Pipelines as Code secret in %s namespace: %w", globalPaCSecretKey.Namespace, err)
+			os.Exit(1)
 		}
 	}
 	isApp := gitops.IsPaCApplicationConfigured("github", pacSecret.Data)
 	if !isApp {
 		r.Log.Info("GitHub App is not set")
-		return ctrl.Result{}, nil
+		return ctrl.Result{RequeueAfter: NextReconcile}, nil
 	}
 
 	// Load GitHub App and get GitHub Installations
 	githubAppIdStr := string(pacSecret.Data[gitops.PipelinesAsCode_githubAppIdKey])
 	githubAppId, err := strconv.ParseInt(githubAppIdStr, 10, 64)
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to convert %s to int: %w", githubAppIdStr, err)
+		r.Log.Error(err, "failed to convert %s to int: %w", githubAppIdStr, err)
+		os.Exit(1)
 	}
 	privateKey := pacSecret.Data[gitops.PipelinesAsCode_githubPrivateKey]
 	installations, slug, err := github.GetInstallations(githubAppId, privateKey)
@@ -114,33 +130,27 @@ func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, err
 	}
 
-	installationsForJob := []github.ApplicationInstallation{}
-	for i, installation := range installations {
-		if i%InstallationsPerJob == 0 && len(installationsForJob) != 0 {
-			err = r.CreateRenovaterJob(ctx, installationsForJob)
-			if err != nil {
-				r.Log.Error(err, "failed to create a job")
-			}
-			installationsForJob = []github.ApplicationInstallation{}
-		}
-		installationsForJob = append(installationsForJob, installation)
-	}
+	for i := 0; i < len(installations); i += InstallationsPerJob {
+		end := i + InstallationsPerJob
 
-	if len(installationsForJob) != 0 {
-		err = r.CreateRenovaterJob(ctx, installationsForJob)
+		if end > len(installations) {
+			end = len(installations)
+		}
+		err = r.CreateRenovaterJob(ctx, installations[i:end])
 		if err != nil {
 			r.Log.Error(err, "failed to create a job")
 		}
 	}
 
-	return ctrl.Result{RequeueAfter: 10 * time.Hour}, nil
+	return ctrl.Result{RequeueAfter: NextReconcile}, nil
 }
 
 func generateConfigJS(slug string) string {
 	template := `
 	module.exports = {
+		platform: "github",
 		username: "%s[bot]",
-		gitAuthor:"AppStudio <123456+%s[bot]@users.noreply.github.com>",
+		gitAuthor:"%s <123456+%s[bot]@users.noreply.github.com>",
 		onboarding: false,
 		requireConfig: "ignored",
 		autodiscover: true,
@@ -159,12 +169,12 @@ func generateConfigJS(slug string) string {
 		dependencyDashboard: false
 	}
 	`
-	return fmt.Sprintf(template, slug, slug)
+	return fmt.Sprintf(template, slug, slug, slug)
 }
 
 func (r *GitTektonResourcesRenovater) CreateRenovaterJob(ctx context.Context, installations []github.ApplicationInstallation) error {
-
-	name := fmt.Sprintf("renovate-job-%s", getRandomString(5))
+	timestamp := time.Now().Unix()
+	name := fmt.Sprintf("renovate-job-%d-%s", timestamp, getRandomString(5))
 	secretTokens := map[string]string{}
 	renovateCmds := []string{}
 	for _, installation := range installations {
@@ -182,6 +192,10 @@ func (r *GitTektonResourcesRenovater) CreateRenovaterJob(ctx context.Context, in
 	falseBool := false
 	backoffLimit := int32(1)
 	timeToLive := int32(TimeToLiveOfJob.Seconds())
+	renovateImageUrl := os.Getenv(RenovateImageEnvName)
+	if renovateImageUrl == "" {
+		renovateImageUrl = DefaultRenovateImageUrl
+	}
 	job := &batch.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -205,7 +219,7 @@ func (r *GitTektonResourcesRenovater) CreateRenovaterJob(ctx context.Context, in
 					Containers: []corev1.Container{
 						{
 							Name:  "renovate",
-							Image: RenovateImageUrl,
+							Image: renovateImageUrl,
 							EnvFrom: []corev1.EnvFromSource{
 								{
 									Prefix: "TOKEN_",
@@ -240,7 +254,7 @@ func (r *GitTektonResourcesRenovater) CreateRenovaterJob(ctx context.Context, in
 		},
 	}
 
-	if err := r.Client.Delete(ctx, job, client.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil {
+	if err := r.Client.Delete(ctx, job, client.PropagationPolicy(metav1.DeletePropagationForeground)); err != nil {
 		if !errors.IsNotFound(err) {
 			return err
 		}
