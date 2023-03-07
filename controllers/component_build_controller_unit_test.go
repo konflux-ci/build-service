@@ -126,7 +126,7 @@ func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 				t.Errorf("generateInitialPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
 			}
 		case "output-image":
-			if !strings.HasPrefix(param.Value.StringVal, "registry.io/username/image:initial-build-") {
+			if !strings.HasPrefix(param.Value.StringVal, "registry.io/username/image:build-") {
 				t.Errorf("generateInitialPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
 			}
 		case "rebuild":

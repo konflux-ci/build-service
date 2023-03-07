@@ -915,7 +915,7 @@ var _ = Describe("Component initial build controller", func() {
 				switch p.Name {
 				case "output-image":
 					Expect(p.Value.StringVal).ToNot(BeEmpty())
-					Expect(strings.HasPrefix(p.Value.StringVal, "docker.io/foo/customized:"+HASCompName+"-initial-build-"))
+					Expect(strings.HasPrefix(p.Value.StringVal, "docker.io/foo/customized:"+HASCompName+"-build-"))
 				case "git-url":
 					Expect(p.Value.StringVal).To(Equal(SampleRepoLink))
 				case "revision":

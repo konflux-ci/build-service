@@ -20,8 +20,10 @@ import (
 	"context"
 	"fmt"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -41,7 +43,8 @@ import (
 const (
 	InitialBuildAnnotationName = "appstudio.openshift.io/component-initial-build"
 
-	PaCProvisionFinalizer = "pac.component.appstudio.openshift.io/finalizer"
+	PaCProvisionFinalizer            = "pac.component.appstudio.openshift.io/finalizer"
+	ImageRegistrySecretLinkFinalizer = "image-registry-secret-sa-link.component.appstudio.openshift.io/finalizer"
 
 	PaCProvisionAnnotationName             = "appstudio.openshift.io/pac-provision"
 	PaCProvisionRequestedAnnotationValue   = "request"
@@ -53,6 +56,9 @@ const (
 	ComponentNameLabelName    = "appstudio.openshift.io/component"
 	PartOfLabelName           = "app.kubernetes.io/part-of"
 	PartOfAppStudioLabelValue = "appstudio"
+
+	ImageRepoAnnotationName         = "image.redhat.com/image"
+	ImageRepoGenerateAnnotationName = "image.redhat.com/generate"
 
 	buildServiceNamespaceName         = "build-service"
 	buildPipelineSelectorResourceName = "build-pipeline-selector"
@@ -175,6 +181,21 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if !component.ObjectMeta.DeletionTimestamp.IsZero() {
 		// Deletion of the component is requested
 
+		if controllerutil.ContainsFinalizer(&component, ImageRegistrySecretLinkFinalizer) {
+			if err := r.removeImageRegistrySecretLink(ctx, &component); err != nil {
+				return ctrl.Result{}, err
+			}
+
+			controllerutil.RemoveFinalizer(&component, PaCProvisionFinalizer)
+			if err := r.Client.Update(ctx, &component); err != nil {
+				return ctrl.Result{}, err
+			}
+			log.Info("image secret link finalizer removed")
+
+			// Requeue to process other finalizers
+			return ctrl.Result{Requeue: true}, nil
+		}
+
 		if controllerutil.ContainsFinalizer(&component, PaCProvisionFinalizer) {
 			// In order not to block the deletion of the Component delete finalizer
 			// and then try to do clean up ignoring errors.
@@ -193,12 +214,23 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
+	// Ensure devfile model is set
 	if component.Status.Devfile == "" {
 		// The Component has been just created.
 		// Component controller (from Application Service) must set devfile model, wait for it.
 		log.Info("Waiting for devfile model in component")
 		// Do not requeue as after model update a new update event will trigger a new reconcile
 		return ctrl.Result{}, nil
+	}
+
+	if _, exists := component.Annotations[ImageRepoGenerateAnnotationName]; exists {
+		// Image repository per component strategy is used.
+		// Wait for the image repository to be created.
+		if _, exists := component.Annotations[ImageRepoAnnotationName]; !exists {
+			log.Info("Waiting for component image quay repository to be created")
+			// Do not requeue as after the annotation update a new event will trigger a new reconcile
+			return ctrl.Result{}, nil
+		}
 	}
 
 	// Check if Pipelines as Code workflow enabled
@@ -284,7 +316,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	if err := r.SubmitNewBuild(ctx, component); err != nil {
+	if err := r.SubmitNewBuild(ctx, &component); err != nil {
 		// Try to revert the initial build annotation
 		if err := r.Client.Get(ctx, req.NamespacedName, &component); err == nil {
 			if len(component.Annotations) > 0 {
@@ -301,4 +333,47 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// removeImageRegistrySecretLink remove image registry secret link from the pipeline service account.
+// Returns no error in case of a permanent error to not to block pruning.
+func (r *ComponentBuildReconciler) removeImageRegistrySecretLink(ctx context.Context, component *appstudiov1alpha1.Component) error {
+	_, imageRepoSecretName, err := getComponentImageRepoAndSecretNameFromImageAnnotation(component)
+	if err != nil {
+		// If it's not possible to read secret information, then we cannot do pruning, nothing to do.
+		return nil
+	}
+
+	pipelinesServiceAccount := corev1.ServiceAccount{}
+	err = r.Client.Get(ctx, types.NamespacedName{Name: "pipeline", Namespace: component.Namespace}, &pipelinesServiceAccount)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// Service account does not exist, nothing to prune
+			return nil
+		}
+		return err
+	}
+
+	index := -1
+	for i, credentialSecret := range pipelinesServiceAccount.Secrets {
+		if credentialSecret.Name == imageRepoSecretName {
+			index = i
+			break
+		}
+	}
+	if index != -1 {
+		secrets := make([]corev1.ObjectReference, 0, len(pipelinesServiceAccount.Secrets))
+		if len(pipelinesServiceAccount.Secrets) != 1 {
+			secrets = append(secrets, pipelinesServiceAccount.Secrets[:index]...)
+			secrets = append(secrets, pipelinesServiceAccount.Secrets[index+1:]...)
+		}
+		pipelinesServiceAccount.Secrets = secrets
+
+		if err := r.Client.Update(ctx, &pipelinesServiceAccount); err != nil {
+			r.Log.Error(err, fmt.Sprintf("Unable to update pipeline service account %v", pipelinesServiceAccount))
+			return err
+		}
+	}
+
+	return nil
 }
