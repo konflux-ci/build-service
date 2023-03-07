@@ -91,13 +91,13 @@ func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Re
 		if !errors.IsNotFound(err) {
 			r.EventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
 			r.Log.Error(err, "failed to get Pipelines as Code secret in %s namespace: %w", globalPaCSecretKey.Namespace, err)
-			os.Exit(1)
+			return ctrl.Result{}, nil
 		}
 	}
 	isApp := gitops.IsPaCApplicationConfigured("github", pacSecret.Data)
 	if !isApp {
 		r.Log.Info("GitHub App is not set")
-		return ctrl.Result{RequeueAfter: NextReconcile}, nil
+		return ctrl.Result{}, nil
 	}
 
 	// Load GitHub App and get GitHub Installations
@@ -105,7 +105,7 @@ func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Re
 	githubAppId, err := strconv.ParseInt(githubAppIdStr, 10, 64)
 	if err != nil {
 		r.Log.Error(err, "failed to convert %s to int: %w", githubAppIdStr, err)
-		os.Exit(1)
+		return ctrl.Result{}, nil
 	}
 	privateKey := pacSecret.Data[gitops.PipelinesAsCode_githubPrivateKey]
 	installations, slug, err := github.GetInstallations(githubAppId, privateKey)
