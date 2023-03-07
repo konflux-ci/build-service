@@ -138,6 +138,14 @@ var _ = BeforeSuite(func() {
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
+	err = (&GitTektonResourcesRenovater{
+		Client:        k8sManager.GetClient(),
+		Scheme:        k8sManager.GetScheme(),
+		Log:           ctrl.Log.WithName("controllers").WithName("GitTektonResourcesRenovater"),
+		EventRecorder: k8sManager.GetEventRecorderFor("GitTektonResourcesRenovater"),
+	}).SetupWithManager(k8sManager)
+	Expect(err).ToNot(HaveOccurred())
+
 	go func() {
 		defer GinkgoRecover()
 		err = k8sManager.Start(ctx)

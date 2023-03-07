@@ -34,6 +34,7 @@ import (
 // Allow mocking for tests
 var NewGithubClientByApp func(appId int64, privateKeyPem []byte, owner string) (*GithubClient, error) = newGithubClientByApp
 var NewGithubClient func(accessToken string) *GithubClient = newGithubClient
+var GetInstallations func(appId int64, privateKeyPem []byte) ([]ApplicationInstallation, string, error) = getInstallations
 
 type GithubClient struct {
 	ctx    context.Context
@@ -112,7 +113,7 @@ func newGithubClientByApp(appId int64, privateKeyPem []byte, owner string) (*Git
 	return NewGithubClient(token.GetToken()), nil
 }
 
-func GetInstallations(appId int64, privateKeyPem []byte) ([]ApplicationInstallation, string, error) {
+func getInstallations(appId int64, privateKeyPem []byte) ([]ApplicationInstallation, string, error) {
 	itr, err := ghinstallation.NewAppsTransport(http.DefaultTransport, appId, privateKeyPem)
 	if err != nil {
 		// Inability to create transport based on a private key indicates that the key is bad formatted
