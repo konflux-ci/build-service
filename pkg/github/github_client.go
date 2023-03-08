@@ -34,10 +34,16 @@ import (
 // Allow mocking for tests
 var NewGithubClientByApp func(appId int64, privateKeyPem []byte, owner string) (*GithubClient, error) = newGithubClientByApp
 var NewGithubClient func(accessToken string) *GithubClient = newGithubClient
+var GetInstallations func(appId int64, privateKeyPem []byte) ([]ApplicationInstallation, string, error) = getInstallations
 
 type GithubClient struct {
 	ctx    context.Context
 	client *github.Client
+}
+
+type ApplicationInstallation struct {
+	Token          string
+	InstallationID int64
 }
 
 func newGithubClient(accessToken string) *GithubClient {
@@ -105,6 +111,58 @@ func newGithubClientByApp(appId int64, privateKeyPem []byte, owner string) (*Git
 	}
 
 	return NewGithubClient(token.GetToken()), nil
+}
+
+func getInstallations(appId int64, privateKeyPem []byte) ([]ApplicationInstallation, string, error) {
+	itr, err := ghinstallation.NewAppsTransport(http.DefaultTransport, appId, privateKeyPem)
+	if err != nil {
+		// Inability to create transport based on a private key indicates that the key is bad formatted
+		return nil, "", boerrors.NewBuildOpError(boerrors.EGitHubAppMalformedPrivateKey, err)
+	}
+	client := github.NewClient(&http.Client{Transport: itr})
+	appInstallations := []ApplicationInstallation{}
+	opt := &github.RepositoryListByOrgOptions{
+		ListOptions: github.ListOptions{PerPage: 100},
+	}
+	githubApp, _, err := client.Apps.Get(context.Background(), "")
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to load GitHub app metadata, %w", err)
+	}
+	slug := (githubApp.GetSlug())
+	for {
+		installations, resp, err := client.Apps.ListInstallations(context.Background(), &opt.ListOptions)
+		if err != nil {
+			if resp != nil && resp.Response != nil && resp.Response.StatusCode != 0 {
+				switch resp.StatusCode {
+				case 401:
+					return nil, "", boerrors.NewBuildOpError(boerrors.EGitHubAppPrivateKeyNotMatched, err)
+				case 404:
+					return nil, "", boerrors.NewBuildOpError(boerrors.EGitHubAppDoesNotExist, err)
+				}
+			}
+			return nil, "", boerrors.NewBuildOpError(boerrors.ETransientError, err)
+		}
+		for _, val := range installations {
+			token, _, err := client.Apps.CreateInstallationToken(
+				context.Background(),
+				*val.ID,
+				&github.InstallationTokenOptions{})
+			if err != nil {
+				// TODO analyze the error
+				continue
+			}
+			appInstallations = append(appInstallations, ApplicationInstallation{
+				Token:          token.GetToken(),
+				InstallationID: *val.ID,
+			})
+		}
+		if resp.NextPage == 0 {
+			break
+		}
+		opt.Page = resp.NextPage
+	}
+
+	return appInstallations, slug, nil
 }
 
 func (c *GithubClient) referenceExist(owner, repository, branch string) (bool, error) {

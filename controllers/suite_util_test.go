@@ -23,6 +23,7 @@ import (
 	. "github.com/onsi/gomega"
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	routev1 "github.com/openshift/api/route/v1"
+	batch "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -33,6 +34,8 @@ import (
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
+	buildappstudiov1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
+	"github.com/redhat-appstudio/build-service/pkg/github"
 )
 
 const (
@@ -52,6 +55,7 @@ const (
 	SampleRepoLink          = "https://github.com/devfile-samples/devfile-sample-java-springboot-basic"
 	GitSecretName           = "git-secret"
 	ComponentContainerImage = "registry.io/username/image:tag"
+	SelectorDefaultName     = "default"
 )
 
 func isOwnedBy(resource []metav1.OwnerReference, component appstudiov1alpha1.Component) bool {
@@ -414,4 +418,61 @@ func deleteRoute(routeKey types.NamespacedName) {
 	if err := k8sClient.Delete(ctx, route); err != nil && !k8sErrors.IsNotFound(err) {
 		Fail(err.Error())
 	}
+}
+
+func createBuildPipelineRunSelector(selectorKey types.NamespacedName) {
+	buildPipelineSelector := buildappstudiov1alpha1.BuildPipelineSelector{
+		ObjectMeta: metav1.ObjectMeta{Name: selectorKey.Name, Namespace: selectorKey.Namespace},
+		Spec: buildappstudiov1alpha1.BuildPipelineSelectorSpec{
+			Selectors: []buildappstudiov1alpha1.PipelineSelector{
+				{
+					Name:           SelectorDefaultName,
+					PipelineRef:    tektonapi.PipelineRef{},
+					PipelineParams: []buildappstudiov1alpha1.PipelineParam{},
+					WhenConditions: buildappstudiov1alpha1.WhenCondition{},
+				}}},
+	}
+
+	if err := k8sClient.Create(ctx, &buildPipelineSelector); err != nil && !k8sErrors.IsAlreadyExists(err) {
+		Fail(err.Error())
+	}
+}
+func deleteBuildPipelineRunSelector(selectorKey types.NamespacedName) {
+	buildPipelineSelector := buildappstudiov1alpha1.BuildPipelineSelector{}
+	if err := k8sClient.Get(ctx, selectorKey, &buildPipelineSelector); err != nil {
+		if k8sErrors.IsNotFound(err) {
+			return
+		}
+		Fail(err.Error())
+	}
+	if err := k8sClient.Delete(ctx, &buildPipelineSelector); err != nil && !k8sErrors.IsNotFound(err) {
+		Fail(err.Error())
+	}
+}
+
+func listJobs(namespace string) []batch.Job {
+	jobs := &batch.JobList{}
+
+	err := k8sClient.List(ctx, jobs, client.InNamespace(namespace))
+	Expect(err).ToNot(HaveOccurred())
+	return jobs.Items
+}
+
+func deleteJobs(namespace string) {
+	err := k8sClient.DeleteAllOf(ctx, &batch.Job{}, client.InNamespace(namespace), client.PropagationPolicy(metav1.DeletePropagationBackground))
+	Expect(err).ToNot(HaveOccurred())
+	Eventually(func() bool {
+		return len(listJobs(namespace)) == 0
+	}, 10*time.Second, 100*time.Millisecond).Should(BeTrue())
+}
+
+func generateInstallations(count int) []github.ApplicationInstallation {
+	installations := []github.ApplicationInstallation{}
+	for i := 0; i < count; i++ {
+		installations = append(installations, github.ApplicationInstallation{
+			Token:          getRandomString(30),
+			InstallationID: int64(i),
+		})
+	}
+	return installations
 }
