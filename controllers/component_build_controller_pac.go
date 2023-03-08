@@ -394,41 +394,52 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 	return nil
 }
 
-// ConfigureRepositoryForPaC creates a merge request with initial Pipelines as Code configuration
-// and configures a webhook to notify in-cluster PaC unless application (on the repository side) is used.
-func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context, component *appstudiov1alpha1.Component, config map[string][]byte, webhookTargetUrl, webhookSecret string) (prUrl string, err error) {
-	log := r.Log.WithValues("Repository", component.Spec.Source.GitSource.URL)
+// generatePaCPipelineRunConfigs generates PipelineRun YAML configs for given component.
+// The generated PipelineRun Yaml content are returned in byte string and in the order of push and pull request.
+func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigs(
+	ctx context.Context, log logr.Logger, component *appstudiov1alpha1.Component, pacTargetBranch string) ([]byte, []byte, error) {
 
 	pipelineRef, additionalPipelineParams, err := r.GetPipelineForComponent(ctx, component)
 	if err != nil {
-		return "", err
+		return nil, nil, err
 	}
-	log.Info(fmt.Sprintf("Selected %s pipeline from %s bundle for %s component", pipelineRef.Name, pipelineRef.Bundle, component.Name))
+	log.Info(fmt.Sprintf("Selected %s pipeline from %s bundle for %s component",
+		pipelineRef.Name, pipelineRef.Bundle, component.Name))
 
 	// Get pipeline from the bundle to be expanded to the PipelineRun
 	pipelineSpec, err := retrievePipelineSpec(pipelineRef.Bundle, pipelineRef.Name)
 	if err != nil {
 		r.EventRecorder.Event(component, "Warning", "ErrorGettingPipelineFromBundle", err.Error())
-		return "", err
+		return nil, nil, err
 	}
 
-	pipelineOnPush, err := generatePaCPipelineRunForComponent(component, pipelineSpec, additionalPipelineParams, false)
+	prOnPush, err := generatePaCPipelineRunForComponent(
+		component, pipelineSpec, additionalPipelineParams, false, pacTargetBranch)
 	if err != nil {
-		return "", err
+		return nil, nil, err
 	}
-	pipelineOnPushYaml, err := yaml.Marshal(pipelineOnPush)
+	prOnPushYaml, err := yaml.Marshal(prOnPush)
 	if err != nil {
-		return "", err
+		return nil, nil, err
 	}
 
-	pipelineOnPR, err := generatePaCPipelineRunForComponent(component, pipelineSpec, additionalPipelineParams, true)
+	prOnPR, err := generatePaCPipelineRunForComponent(
+		component, pipelineSpec, additionalPipelineParams, true, pacTargetBranch)
 	if err != nil {
-		return "", err
+		return nil, nil, err
 	}
-	pipelineOnPRYaml, err := yaml.Marshal(pipelineOnPR)
+	prOnPRYaml, err := yaml.Marshal(prOnPR)
 	if err != nil {
-		return "", err
+		return nil, nil, err
 	}
+
+	return prOnPushYaml, prOnPRYaml, nil
+}
+
+// ConfigureRepositoryForPaC creates a merge request with initial Pipelines as Code configuration
+// and configures a webhook to notify in-cluster PaC unless application (on the repository side) is used.
+func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context, component *appstudiov1alpha1.Component, config map[string][]byte, webhookTargetUrl, webhookSecret string) (prUrl string, err error) {
+	log := r.Log.WithValues("Repository", component.Spec.Source.GitSource.URL)
 
 	gitProvider, _ := gitops.GetGitProvider(*component)
 	isAppUsed := gitops.IsPaCApplicationConfigured(gitProvider, config)
@@ -449,8 +460,11 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 	authorName := "redhat-appstudio"
 	authorEmail := "appstudio@redhat.com"
 
+	var pacTargetBranch string
+
 	if component.Spec.Source.GitSource != nil && component.Spec.Source.GitSource.Revision != "" {
 		baseBranch = component.Spec.Source.GitSource.Revision
+		pacTargetBranch = component.Spec.Source.GitSource.Revision
 	}
 
 	switch gitProvider {
@@ -493,6 +507,16 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 			}
 		}
 
+		if pacTargetBranch == "" {
+			pacTargetBranch, err = github.GetDefaultBranch(ghclient, owner, repository)
+			if err != nil {
+				return "", err
+			}
+		}
+		prOnPushYaml, prOnPRYaml, err := r.generatePaCPipelineRunConfigs(ctx, log, component, pacTargetBranch)
+		if err != nil {
+			return "", err
+		}
 		prData := &github.PaCPullRequestData{
 			Owner:         owner,
 			Repository:    repository,
@@ -504,8 +528,8 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 			AuthorName:    authorName,
 			AuthorEmail:   authorEmail,
 			Files: []github.File{
-				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPushFilename, Content: pipelineOnPushYaml},
-				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPRFilename, Content: pipelineOnPRYaml},
+				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPushFilename, Content: prOnPushYaml},
+				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPRFilename, Content: prOnPRYaml},
 			},
 		}
 		prUrl, err = github.CreatePaCPullRequest(ghclient, prData)
@@ -535,6 +559,16 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 			return "", err
 		}
 
+		if pacTargetBranch == "" {
+			pacTargetBranch, err = gitlab.GetDefaultBranch(glclient, projectPath)
+			if err != nil {
+				return "", err
+			}
+		}
+		prOnPushYaml, prOnPRYaml, err := r.generatePaCPipelineRunConfigs(ctx, log, component, pacTargetBranch)
+		if err != nil {
+			return "", err
+		}
 		mrData := &gitlab.PaCMergeRequestData{
 			ProjectPath:   projectPath,
 			CommitMessage: commitMessage,
@@ -545,8 +579,8 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 			AuthorName:    authorName,
 			AuthorEmail:   authorEmail,
 			Files: []gitlab.File{
-				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPushFilename, Content: pipelineOnPushYaml},
-				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPRFilename, Content: pipelineOnPRYaml},
+				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPushFilename, Content: prOnPushYaml},
+				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPRFilename, Content: prOnPRYaml},
 			},
 		}
 		mrUrl, err := gitlab.EnsurePaCMergeRequest(glclient, mrData)
@@ -690,16 +724,19 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(log logr.Logger, 
 
 // generatePaCPipelineRunForComponent returns pipeline run definition to build component source with.
 // Generated pipeline run contains placeholders that are expanded by Pipeline-as-Code.
-func generatePaCPipelineRunForComponent(component *appstudiov1alpha1.Component, pipelineSpec *tektonapi.PipelineSpec, additionalPipelineParams []tektonapi.Param, onPull bool) (*tektonapi.PipelineRun, error) {
-	var targetBranches []string
-	if component.Spec.Source.GitSource != nil && component.Spec.Source.GitSource.Revision != "" {
-		targetBranches = []string{component.Spec.Source.GitSource.Revision}
-	} else {
-		targetBranches = []string{"main", "master"}
+func generatePaCPipelineRunForComponent(
+	component *appstudiov1alpha1.Component,
+	pipelineSpec *tektonapi.PipelineSpec,
+	additionalPipelineParams []tektonapi.Param,
+	onPull bool,
+	pacTargetBranch string) (*tektonapi.PipelineRun, error) {
+
+	if pacTargetBranch == "" {
+		return nil, fmt.Errorf("target branch can't be empty for generating PaC PipelineRun for: %v", component)
 	}
 
 	annotations := map[string]string{
-		"pipelinesascode.tekton.dev/on-target-branch": "[" + strings.Join(targetBranches[:], ",") + "]",
+		"pipelinesascode.tekton.dev/on-target-branch": "[" + pacTargetBranch + "]",
 		"pipelinesascode.tekton.dev/max-keep-runs":    "3",
 		"build.appstudio.redhat.com/commit_sha":       "{{revision}}",
 		"build.appstudio.redhat.com/target_branch":    "{{target_branch}}",
