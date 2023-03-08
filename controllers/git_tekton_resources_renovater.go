@@ -80,7 +80,7 @@ func (r *GitTektonResourcesRenovater) SetupWithManager(mgr ctrl.Manager) error {
 	})).Complete(r)
 }
 
-// +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;delete;deletecollection
+// +kubebuilder:rbac:groups=batch,resources=jobs,verbs=create;get;list;watch;delete;deletecollection
 
 func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 
