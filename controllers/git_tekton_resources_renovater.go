@@ -45,12 +45,14 @@ import (
 )
 
 const (
-	RenovateConfigName      = "renovate-config"
-	RenovateImageEnvName    = "RENOVATE_IMAGE"
-	DefaultRenovateImageUrl = "quay.io/redhat-appstudio/renovate:34.154-slim"
-	TimeToLiveOfJob         = 24 * time.Hour
-	NextReconcile           = 10 * time.Hour
-	InstallationsPerJob     = 20
+	RenovateConfigName          = "renovate-config"
+	RenovateImageEnvName        = "RENOVATE_IMAGE"
+	DefaultRenovateImageUrl     = "quay.io/redhat-appstudio/renovate:34.154-slim"
+	DefaultRenovateMatchPattern = "^quay.io/redhat-appstudio-tekton-catalog/"
+	RenovateMatchPatternEnvName = "RENOVATE_PATTERN"
+	TimeToLiveOfJob             = 24 * time.Hour
+	NextReconcile               = 10 * time.Hour
+	InstallationsPerJob         = 20
 )
 
 // GitTektonResourcesRenovater watches AppStudio BuildPipelineSelector object in order to update
@@ -161,7 +163,13 @@ func generateConfigJS(slug string) string {
 			packageRules: [
 			  {
 				matchPackagePatterns: ["*"],
-				groupName: "tekton references"
+				enabled: false
+			  },
+			  {
+				matchPackagePatterns: ["%s"],
+				matchDepPatterns: ["%s"],
+				groupName: "tekton references",
+				enabled: true
 			  }
 			]
 		},
@@ -169,7 +177,11 @@ func generateConfigJS(slug string) string {
 		dependencyDashboard: false
 	}
 	`
-	return fmt.Sprintf(template, slug, slug, slug)
+	renovatePattern := os.Getenv(RenovateMatchPatternEnvName)
+	if renovatePattern == "" {
+		renovatePattern = DefaultRenovateMatchPattern
+	}
+	return fmt.Sprintf(template, slug, slug, slug, renovatePattern, renovatePattern)
 }
 
 func (r *GitTektonResourcesRenovater) CreateRenovaterJob(ctx context.Context, installations []github.ApplicationInstallation) error {
