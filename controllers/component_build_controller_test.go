@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"fmt"
+	"sigs.k8s.io/yaml"
 	"strings"
 	"time"
 
@@ -101,18 +102,14 @@ var _ = Describe("Component initial build controller", func() {
 			github.IsAppInstalledIntoRepository = func(g *github.GithubClient, owner, repository string) (bool, error) { return true, nil }
 			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) { return "", nil }
 			github.SetupPaCWebhook = func(g *github.GithubClient, webhookUrl, webhookSecret, owner, repository string) error { return nil }
-			github.GetDefaultBranch = func(githubClient *github.GithubClient, owner string, repository string) (string, error) {
-				return "cool-feature", nil
-			}
 			gitlab.EnsurePaCMergeRequest = func(g *gitlab.GitlabClient, d *gitlab.PaCMergeRequestData) (string, error) { return "", nil }
 			gitlab.SetupPaCWebhook = func(g *gitlab.GitlabClient, projectPath, webhookUrl, webhookSecret string) error { return nil }
 			github.UndoPaCPullRequest = func(g *github.GithubClient, d *github.PaCPullRequestData) (string, error) { return "", nil }
 			github.DeletePaCWebhook = func(g *github.GithubClient, webhookUrl, owner, repository string) error { return nil }
 			gitlab.UndoPaCMergeRequest = func(g *gitlab.GitlabClient, d *gitlab.PaCMergeRequestData) (string, error) { return "", nil }
 			gitlab.DeletePaCWebhook = func(g *gitlab.GitlabClient, projectPath, webhookUrl string) error { return nil }
-			gitlab.GetDefaultBranch = func(g *gitlab.GitlabClient, projectPath string) (string, error) { return "cool-feature", nil }
 
-			createComponentForPaCBuild(resourceKey)
+			createComponentForPaCBuild(getSampleComponentData(resourceKey))
 		})
 
 		_ = AfterEach(func() {
@@ -520,6 +517,36 @@ var _ = Describe("Component initial build controller", func() {
 
 			ensureComponentInitialBuildAnnotationState(resourceKey, false)
 		})
+
+		It("should set default branch to on-target-branch annotation if Revision is not set", func() {
+			deleteComponent(resourceKey)
+
+			sampleComponent := getSampleComponentData(resourceKey)
+			// Unset Revision so that GetDefaultBranch function is called to use the default branch
+			// set in the remote component repository
+			sampleComponent.Spec.Source.GitSource.Revision = ""
+			createComponentForPaCBuild(sampleComponent)
+
+			const repoDefaultBranch = "cool-feature"
+
+			github.GetDefaultBranch = func(*github.GithubClient, string, string) (string, error) {
+				return repoDefaultBranch, nil
+			}
+
+			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+				for _, file := range d.Files {
+					var prYaml v1beta1.PipelineRun
+					if err := yaml.Unmarshal(file.Content, &prYaml); err != nil {
+						return "", err
+					}
+					targetBranches := prYaml.Annotations["pipelinesascode.tekton.dev/on-target-branch"]
+					Expect(targetBranches).To(Equal(fmt.Sprintf("[%s]", repoDefaultBranch)))
+				}
+				return "url", nil
+			}
+
+			setComponentDevfileModel(resourceKey)
+		})
 	})
 
 	Context("Test Pipelines as Code build clean up", func() {
@@ -576,7 +603,7 @@ var _ = Describe("Component initial build controller", func() {
 			}
 			createSecret(pacSecretKey, pacSecretData)
 
-			createComponentForPaCBuild(resourceKey)
+			createComponentForPaCBuild(getSampleComponentData(resourceKey))
 			setComponentDevfileModel(resourceKey)
 			waitPaCFinalizerOnComponent(resourceKey)
 
@@ -618,7 +645,7 @@ var _ = Describe("Component initial build controller", func() {
 			pacSecretData := map[string]string{"github.token": "ghp_token"}
 			createSecret(pacSecretKey, pacSecretData)
 
-			createComponentForPaCBuild(resourceKey)
+			createComponentForPaCBuild(getSampleComponentData(resourceKey))
 			setComponentDevfileModel(resourceKey)
 			waitPaCFinalizerOnComponent(resourceKey)
 
@@ -691,7 +718,7 @@ var _ = Describe("Component initial build controller", func() {
 			pacSecretData := map[string]string{"github.token": "ghp_token"}
 			createSecret(pacSecretKey, pacSecretData)
 
-			createComponentForPaCBuild(resourceKey)
+			createComponentForPaCBuild(getSampleComponentData(resourceKey))
 			setComponentDevfileModel(resourceKey)
 			waitPaCFinalizerOnComponent(resourceKey)
 
