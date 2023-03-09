@@ -134,7 +134,7 @@ var _ = Describe("Component initial build controller", func() {
 				}
 				Expect(d.CommitMessage).ToNot(BeEmpty())
 				Expect(d.Branch).ToNot(BeEmpty())
-				Expect(d.BaseBranch).ToNot(BeEmpty())
+				Expect(d.BaseBranch).To(Equal("main"))
 				Expect(d.PRTitle).ToNot(BeEmpty())
 				Expect(d.PRText).ToNot(BeEmpty())
 				Expect(d.AuthorName).ToNot(BeEmpty())
@@ -518,7 +518,7 @@ var _ = Describe("Component initial build controller", func() {
 			ensureComponentInitialBuildAnnotationState(resourceKey, false)
 		})
 
-		It("should set default branch to on-target-branch annotation if Revision is not set", func() {
+		It("should set default branch as base branch properly when Revision is not set", func() {
 			deleteComponent(resourceKey)
 
 			sampleComponent := getSampleComponentData(resourceKey)
@@ -534,6 +534,7 @@ var _ = Describe("Component initial build controller", func() {
 			}
 
 			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+				Expect(d.BaseBranch).To(Equal(repoDefaultBranch))
 				for _, file := range d.Files {
 					var prYaml v1beta1.PipelineRun
 					if err := yaml.Unmarshal(file.Content, &prYaml); err != nil {

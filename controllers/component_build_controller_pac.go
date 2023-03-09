@@ -454,17 +454,14 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 
 	commitMessage := "Appstudio update " + component.Name
 	branch := "appstudio-" + component.Name
-	baseBranch := "" // empty string means autodetect
 	mrTitle := "Appstudio update " + component.Name
 	mrText := "Pipelines as Code configuration proposal"
 	authorName := "redhat-appstudio"
 	authorEmail := "appstudio@redhat.com"
 
-	var pacTargetBranch string
-
-	if component.Spec.Source.GitSource != nil && component.Spec.Source.GitSource.Revision != "" {
+	var baseBranch string
+	if component.Spec.Source.GitSource != nil {
 		baseBranch = component.Spec.Source.GitSource.Revision
-		pacTargetBranch = component.Spec.Source.GitSource.Revision
 	}
 
 	switch gitProvider {
@@ -507,13 +504,14 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 			}
 		}
 
-		if pacTargetBranch == "" {
-			pacTargetBranch, err = github.GetDefaultBranch(ghclient, owner, repository)
+		if baseBranch == "" {
+			baseBranch, err = github.GetDefaultBranch(ghclient, owner, repository)
 			if err != nil {
-				return "", err
+				return "", nil
 			}
 		}
-		prOnPushYaml, prOnPRYaml, err := r.generatePaCPipelineRunConfigs(ctx, log, component, pacTargetBranch)
+
+		prOnPushYaml, prOnPRYaml, err := r.generatePaCPipelineRunConfigs(ctx, log, component, baseBranch)
 		if err != nil {
 			return "", err
 		}
@@ -559,13 +557,14 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 			return "", err
 		}
 
-		if pacTargetBranch == "" {
-			pacTargetBranch, err = gitlab.GetDefaultBranch(glclient, projectPath)
+		if baseBranch == "" {
+			baseBranch, err = gitlab.GetDefaultBranch(glclient, projectPath)
 			if err != nil {
-				return "", err
+				return "", nil
 			}
 		}
-		prOnPushYaml, prOnPRYaml, err := r.generatePaCPipelineRunConfigs(ctx, log, component, pacTargetBranch)
+
+		prOnPushYaml, prOnPRYaml, err := r.generatePaCPipelineRunConfigs(ctx, log, component, baseBranch)
 		if err != nil {
 			return "", err
 		}
