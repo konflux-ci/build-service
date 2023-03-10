@@ -34,10 +34,11 @@ var (
 )
 
 var (
-	StubCreatePaCPullRequest = func(g *GithubClient, d *PaCPullRequestData) (string, error) { return "", nil }
-	StubUndoPaCPullRequest   = func(g *GithubClient, d *PaCPullRequestData) (string, error) { return "", nil }
-	StubSetupPaCWebhook      = func(g *GithubClient, webhookUrl, webhookSecret, owner, repository string) error { return nil }
-	StubDeletePaCWebhook     = func(g *GithubClient, webhookUrl, owner, repository string) error { return nil }
+	StubIsAppInstalledIntoRepository = func(g *GithubClient, owner, repository string) (bool, error) { return true, nil }
+	StubCreatePaCPullRequest         = func(g *GithubClient, d *PaCPullRequestData) (string, error) { return "", nil }
+	StubUndoPaCPullRequest           = func(g *GithubClient, d *PaCPullRequestData) (string, error) { return "", nil }
+	StubSetupPaCWebhook              = func(g *GithubClient, webhookUrl, webhookSecret, owner, repository string) error { return nil }
+	StubDeletePaCWebhook             = func(g *GithubClient, webhookUrl, owner, repository string) error { return nil }
 )
 
 func TestCreatePaCPullRequest(t *testing.T) {
@@ -77,6 +78,7 @@ func TestCreatePaCPullRequest(t *testing.T) {
 
 func TestCreatePaCPullRequestViaGitHubApplication(t *testing.T) {
 	CreatePaCPullRequest = StubCreatePaCPullRequest
+	IsAppInstalledIntoRepository = StubIsAppInstalledIntoRepository
 
 	pipelineOnPush := []byte("pipelineOnPush:\n  bundle: 'test-bundle-1'\n  when: 'in-push'\n")
 	pipelineOnPR := []byte("pipelineOnPR:\n  bundle: 'test-bundle-2'\n  when: 'on-pr'\n")
@@ -84,21 +86,29 @@ func TestCreatePaCPullRequestViaGitHubApplication(t *testing.T) {
 	componentName := "unittest-component-name"
 	gitSourceUrlParts := strings.Split(repoUrl, "/")
 	owner := gitSourceUrlParts[3]
+	repository := gitSourceUrlParts[4]
 
 	githubAppPrivateKey, err := os.ReadFile(githubAppPrivateKeyPath)
 	if err != nil {
 		// Private key file by given path doesn't exist
 		return
 	}
-
 	ghclient, err := NewGithubClientByApp(githubAppId, []byte(githubAppPrivateKey), owner)
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	installed, err := IsAppInstalledIntoRepository(ghclient, owner, repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !installed {
+		t.Fatal("The application is not installed into given repository")
+	}
+
 	prData := &PaCPullRequestData{
 		Owner:         owner,
-		Repository:    gitSourceUrlParts[4],
+		Repository:    repository,
 		CommitMessage: "Appstudio update " + componentName,
 		Branch:        "appstudio-" + componentName,
 		BaseBranch:    "",

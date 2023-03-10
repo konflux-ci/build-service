@@ -471,6 +471,15 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 			if err != nil {
 				return "", err
 			}
+
+			// Check if the application is installed into target repository
+			appInstalled, err := github.IsAppInstalledIntoRepository(ghclient, owner, repository)
+			if err != nil {
+				return "", err
+			}
+			if !appInstalled {
+				return "", boerrors.NewBuildOpError(boerrors.EGitHubAppNotInstalled, fmt.Errorf("GitHub Application is not installed into the repository"))
+			}
 		} else {
 			// Webhook
 			ghclient = github.NewGithubClient(accessToken)

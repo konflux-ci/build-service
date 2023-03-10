@@ -100,6 +100,8 @@ func newGithubClientByApp(appId int64, privateKeyPem []byte, owner string) (*Git
 		err := fmt.Errorf("unable to find GitHub InstallationID for user %s", owner)
 		return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppNotInstalled, err)
 	}
+	// The user has the application installed,
+	// but it doesn't guarantee that the application is installed into all user's repositories.
 
 	token, _, err := client.Apps.CreateInstallationToken(
 		context.Background(),
@@ -163,6 +165,30 @@ func getInstallations(appId int64, privateKeyPem []byte) ([]ApplicationInstallat
 	}
 
 	return appInstallations, slug, nil
+}
+
+// isAppInstalledIntoRepository finds out if the application is installed into given repository.
+// The application is identified by it's installation token, i.e. the client itself must be created
+// from an application installation token. See newGithubClientByApp for details.
+// This method should be used only with clients created by newGithubClientByApp.
+func (c *GithubClient) isAppInstalledIntoRepository(owner, repository string) (bool, error) {
+	listOpts := &github.ListOptions{PerPage: 100}
+	for {
+		repositoriesListPage, resp, err := c.client.Apps.ListRepos(c.ctx, listOpts)
+		if err != nil {
+			return false, err
+		}
+		for _, repo := range repositoriesListPage.Repositories {
+			if *repo.Name == repository && *repo.Owner.Login == owner {
+				return true, nil
+			}
+		}
+		if resp.NextPage == 0 {
+			break
+		}
+		listOpts.Page = resp.NextPage
+	}
+	return false, nil
 }
 
 func (c *GithubClient) referenceExist(owner, repository, branch string) (bool, error) {
