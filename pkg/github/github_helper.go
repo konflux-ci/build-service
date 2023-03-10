@@ -31,9 +31,7 @@ var UndoPaCPullRequest func(g *GithubClient, d *PaCPullRequestData) (string, err
 var SetupPaCWebhook func(g *GithubClient, webhookUrl, webhookSecret, owner, repository string) error = setupPaCWebhook
 var DeletePaCWebhook func(g *GithubClient, webhookUrl, owner, repository string) error = deletePaCWebhook
 var IsAppInstalledIntoRepository func(g *GithubClient, owner, repository string) (bool, error) = isAppInstalledIntoRepository
-var GetDefaultBranch func(*GithubClient, string, string) (string, error) = func(client *GithubClient, owner string, repository string) (string, error) {
-	return client.getDefaultBranch(owner, repository)
-}
+var GetDefaultBranch func(*GithubClient, string, string) (string, error) = getDefaultBranch
 
 const (
 	// Allowed values are 'json' and 'form' according to the doc: https://docs.github.com/en/rest/webhooks/repos#create-a-repository-webhook
@@ -301,4 +299,8 @@ func RefineGitHostingServiceError(response *http.Response, originErr error) erro
 	default:
 		return originErr
 	}
+}
+
+func getDefaultBranch(client *GithubClient, owner string, repository string) (string, error) {
+	return client.getDefaultBranch(owner, repository)
 }

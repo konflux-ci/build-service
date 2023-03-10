@@ -26,9 +26,7 @@ var EnsurePaCMergeRequest func(g *GitlabClient, d *PaCMergeRequestData) (string,
 var UndoPaCMergeRequest func(g *GitlabClient, d *PaCMergeRequestData) (string, error) = undoPaCMergeRequest
 var SetupPaCWebhook func(g *GitlabClient, projectPath, webhookUrl, webhookSecret string) error = setupPaCWebhook
 var DeletePaCWebhook func(g *GitlabClient, projectPath, webhookUrl string) error = deletePaCWebhook
-var GetDefaultBranch func(*GitlabClient, string) (string, error) = func(client *GitlabClient, projectPath string) (string, error) {
-	return client.getDefaultBranch(projectPath)
-}
+var GetDefaultBranch func(*GitlabClient, string) (string, error) = getDefaultBranch
 
 type File struct {
 	FullPath string
@@ -216,4 +214,8 @@ func RefineGitHostingServiceError(response *http.Response, originErr error) erro
 	default:
 		return originErr
 	}
+}
+
+func getDefaultBranch(client *GitlabClient, projectPath string) (string, error) {
+	return client.getDefaultBranch(projectPath)
 }

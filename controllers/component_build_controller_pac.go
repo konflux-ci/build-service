@@ -413,27 +413,27 @@ func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigs(
 		return nil, nil, err
 	}
 
-	prOnPush, err := generatePaCPipelineRunForComponent(
+	pipelineRunOnPush, err := generatePaCPipelineRunForComponent(
 		component, pipelineSpec, additionalPipelineParams, false, pacTargetBranch)
 	if err != nil {
 		return nil, nil, err
 	}
-	prOnPushYaml, err := yaml.Marshal(prOnPush)
+	pipelineRunOnPushYaml, err := yaml.Marshal(pipelineRunOnPush)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	prOnPR, err := generatePaCPipelineRunForComponent(
+	pipelineRunOnPR, err := generatePaCPipelineRunForComponent(
 		component, pipelineSpec, additionalPipelineParams, true, pacTargetBranch)
 	if err != nil {
 		return nil, nil, err
 	}
-	prOnPRYaml, err := yaml.Marshal(prOnPR)
+	pipelineRunOnPRYaml, err := yaml.Marshal(pipelineRunOnPR)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	return prOnPushYaml, prOnPRYaml, nil
+	return pipelineRunOnPushYaml, pipelineRunOnPRYaml, nil
 }
 
 // ConfigureRepositoryForPaC creates a merge request with initial Pipelines as Code configuration
@@ -511,7 +511,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 			}
 		}
 
-		prOnPushYaml, prOnPRYaml, err := r.generatePaCPipelineRunConfigs(ctx, log, component, baseBranch)
+		pipelineRunOnPushYaml, pipelineRunOnPRYaml, err := r.generatePaCPipelineRunConfigs(ctx, log, component, baseBranch)
 		if err != nil {
 			return "", err
 		}
@@ -526,8 +526,8 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 			AuthorName:    authorName,
 			AuthorEmail:   authorEmail,
 			Files: []github.File{
-				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPushFilename, Content: prOnPushYaml},
-				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPRFilename, Content: prOnPRYaml},
+				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPushFilename, Content: pipelineRunOnPushYaml},
+				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPRFilename, Content: pipelineRunOnPRYaml},
 			},
 		}
 		prUrl, err = github.CreatePaCPullRequest(ghclient, prData)
@@ -564,7 +564,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 			}
 		}
 
-		prOnPushYaml, prOnPRYaml, err := r.generatePaCPipelineRunConfigs(ctx, log, component, baseBranch)
+		pipelineRunOnPushYaml, pipelineRunOnPRYaml, err := r.generatePaCPipelineRunConfigs(ctx, log, component, baseBranch)
 		if err != nil {
 			return "", err
 		}
@@ -578,8 +578,8 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 			AuthorName:    authorName,
 			AuthorEmail:   authorEmail,
 			Files: []gitlab.File{
-				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPushFilename, Content: prOnPushYaml},
-				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPRFilename, Content: prOnPRYaml},
+				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPushFilename, Content: pipelineRunOnPushYaml},
+				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPRFilename, Content: pipelineRunOnPRYaml},
 			},
 		}
 		mrUrl, err := gitlab.EnsurePaCMergeRequest(glclient, mrData)
