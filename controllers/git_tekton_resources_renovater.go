@@ -18,13 +18,16 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
+	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	"github.com/redhat-appstudio/application-service/gitops"
 	gitopsprepare "github.com/redhat-appstudio/application-service/gitops/prepare"
 	buildappstudiov1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
@@ -53,6 +56,7 @@ const (
 	TimeToLiveOfJob             = 24 * time.Hour
 	NextReconcile               = 10 * time.Hour
 	InstallationsPerJob         = 20
+	InstallationsPerJobEnvName  = "RENOVATE_INSTALLATIONS_PER_JOB"
 )
 
 // GitTektonResourcesRenovater watches AppStudio BuildPipelineSelector object in order to update
@@ -62,6 +66,17 @@ type GitTektonResourcesRenovater struct {
 	Scheme        *runtime.Scheme
 	Log           logr.Logger
 	EventRecorder record.EventRecorder
+}
+
+type installationStruct struct {
+	id           int
+	token        string
+	repositories []renovateRepository
+}
+
+type renovateRepository struct {
+	Repository   string   `json:"repository"`
+	BaseBranches []string `json:"baseBranches,omitempty"`
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -87,6 +102,8 @@ func (r *GitTektonResourcesRenovater) SetupWithManager(mgr ctrl.Manager) error {
 // +kubebuilder:rbac:namespace=system,groups=batch,resources=jobs,verbs=create;get;list;watch;delete;deletecollection
 // +kubebuilder:rbac:namespace=system,groups=core,resources=secrets,verbs=get;list;watch;create;patch;update;delete;deletecollection
 // +kubebuilder:rbac:namespace=system,groups=core,resources=configmaps,verbs=get;list;watch;create;patch;update;delete;deletecollection
+
+// +kubebuilder:rbac:groups=appstudio.redhat.com,resources=components,verbs=get;list
 
 func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 
@@ -114,35 +131,67 @@ func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, nil
 	}
 	privateKey := pacSecret.Data[gitops.PipelinesAsCode_githubPrivateKey]
-	installations, slug, err := github.GetInstallations(githubAppId, privateKey)
+	githubInstallations, slug, err := github.GetInstallations(githubAppId, privateKey)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	// Update config.js file for Jobs
-	configmap := corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Name: RenovateConfigName, Namespace: buildServiceNamespaceName},
-		Data: map[string]string{
-			"config.js": generateConfigJS(slug),
-		},
-	}
-	if err := r.Client.Delete(ctx, &configmap); err != nil {
-		if !errors.IsNotFound(err) {
-			return ctrl.Result{}, err
-		}
-	}
-	if err := r.Client.Create(ctx, &configmap); err != nil {
-		r.Log.Error(err, "failed to create configmap")
+	// Get Components
+	componentList := &appstudiov1alpha1.ComponentList{}
+	if err := r.Client.List(ctx, componentList, &client.ListOptions{}); err != nil {
+		r.Log.Error(err, "failed to list Components")
 		return ctrl.Result{}, err
 	}
-
-	for i := 0; i < len(installations); i += InstallationsPerJob {
-		end := i + InstallationsPerJob
-
-		if end > len(installations) {
-			end = len(installations)
+	componentUrlToBranchMap := make(map[string]string)
+	for _, component := range componentList.Items {
+		if component.Spec.Source.GitSource != nil {
+			url := strings.TrimSuffix(strings.TrimSuffix(component.Spec.Source.GitSource.URL, ".git"), "/")
+			componentUrlToBranchMap[url] = component.Spec.Source.GitSource.Revision
 		}
-		err = r.CreateRenovaterJob(ctx, installations[i:end])
+	}
+
+	// Match installed repositories with Components and get custom branch if defined
+	installationsForJobs := []installationStruct{}
+	for _, githubInstallation := range githubInstallations {
+		repositories := []renovateRepository{}
+		for _, repository := range githubInstallation.Repositories {
+			branch, ok := componentUrlToBranchMap[repository.GetHTMLURL()]
+			// Filter repositories with installed GH App but missing Component
+			if !ok {
+				continue
+			}
+			baseBranches := []string{}
+			if branch != "" {
+				baseBranches = append(baseBranches, branch)
+			}
+			repositories = append(repositories, renovateRepository{
+				BaseBranches: baseBranches,
+				Repository:   repository.GetFullName(),
+			})
+		}
+		installationsForJobs = append(installationsForJobs,
+			installationStruct{
+				id:           int(githubInstallation.ID),
+				token:        githubInstallation.Token,
+				repositories: repositories,
+			})
+	}
+
+	// Generate renovate jobs. Limit processed installations per job.
+	var installationPerJobInt int
+	installationPerJobStr := os.Getenv(InstallationsPerJobEnvName)
+	if regexp.MustCompile(`\d`).MatchString(installationPerJobStr) {
+		installationPerJobInt, _ = strconv.Atoi(installationPerJobStr)
+	} else {
+		installationPerJobInt = InstallationsPerJob
+	}
+	for i := 0; i < len(installationsForJobs); i += installationPerJobInt {
+		end := i + installationPerJobInt
+
+		if end > len(installationsForJobs) {
+			end = len(installationsForJobs)
+		}
+		err = r.CreateRenovaterJob(ctx, installationsForJobs[i:end], slug)
 		if err != nil {
 			r.Log.Error(err, "failed to create a job")
 		}
@@ -151,7 +200,8 @@ func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Re
 	return ctrl.Result{RequeueAfter: NextReconcile}, nil
 }
 
-func generateConfigJS(slug string) string {
+func generateConfigJS(slug string, repositories []renovateRepository) string {
+	repositoriesData, _ := json.Marshal(repositories)
 	template := `
 	module.exports = {
 		platform: "github",
@@ -159,8 +209,8 @@ func generateConfigJS(slug string) string {
 		gitAuthor:"%s <123456+%s[bot]@users.noreply.github.com>",
 		onboarding: false,
 		requireConfig: "ignored",
-		autodiscover: true,
 		enabledManagers: ["tekton"],
+		repositories: %s,
 		tekton: {
 			fileMatch: ["\\.yaml$", "\\.yml$"],
 			includePaths: [".tekton/**"],
@@ -185,17 +235,30 @@ func generateConfigJS(slug string) string {
 	if renovatePattern == "" {
 		renovatePattern = DefaultRenovateMatchPattern
 	}
-	return fmt.Sprintf(template, slug, slug, slug, renovatePattern, renovatePattern)
+	return fmt.Sprintf(template, slug, slug, slug, repositoriesData, renovatePattern, renovatePattern)
 }
 
-func (r *GitTektonResourcesRenovater) CreateRenovaterJob(ctx context.Context, installations []github.ApplicationInstallation) error {
+func (r *GitTektonResourcesRenovater) CreateRenovaterJob(ctx context.Context, installations []installationStruct, slug string) error {
+	if len(installations) == 0 {
+		return nil
+	}
 	timestamp := time.Now().Unix()
 	name := fmt.Sprintf("renovate-job-%d-%s", timestamp, getRandomString(5))
 	secretTokens := map[string]string{}
+	configmaps := map[string]string{}
 	renovateCmds := []string{}
 	for _, installation := range installations {
-		secretTokens[fmt.Sprint(installation.InstallationID)] = installation.Token
-		renovateCmds = append(renovateCmds, fmt.Sprintf("RENOVATE_TOKEN=$TOKEN_%d renovate", installation.InstallationID))
+		if len(installation.repositories) == 0 {
+			continue
+		}
+		secretTokens[fmt.Sprint(installation.id)] = installation.token
+		configmaps[fmt.Sprintf("%d.js", installation.id)] = generateConfigJS(slug, installation.repositories)
+		renovateCmds = append(renovateCmds,
+			fmt.Sprintf("RENOVATE_TOKEN=$TOKEN_%d RENOVATE_CONFIG_FILE=/configs/%d.js renovate", installation.id, installation.id),
+		)
+	}
+	if len(renovateCmds) == 0 {
+		return nil
 	}
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -203,6 +266,13 @@ func (r *GitTektonResourcesRenovater) CreateRenovaterJob(ctx context.Context, in
 			Namespace: buildServiceNamespaceName,
 		},
 		StringData: secretTokens,
+	}
+	configMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: buildServiceNamespaceName,
+		},
+		Data: configmaps,
 	}
 	trueBool := true
 	falseBool := false
@@ -224,10 +294,10 @@ func (r *GitTektonResourcesRenovater) CreateRenovaterJob(ctx context.Context, in
 				Spec: corev1.PodSpec{
 					Volumes: []corev1.Volume{
 						{
-							Name: RenovateConfigName,
+							Name: name,
 							VolumeSource: corev1.VolumeSource{
 								ConfigMap: &corev1.ConfigMapVolumeSource{
-									LocalObjectReference: corev1.LocalObjectReference{Name: RenovateConfigName},
+									LocalObjectReference: corev1.LocalObjectReference{Name: name},
 								},
 							},
 						},
@@ -249,9 +319,8 @@ func (r *GitTektonResourcesRenovater) CreateRenovaterJob(ctx context.Context, in
 							Command: []string{"bash", "-c", strings.Join(renovateCmds, "; ")},
 							VolumeMounts: []corev1.VolumeMount{
 								{
-									Name:      RenovateConfigName,
-									MountPath: "/usr/src/app/config.js",
-									SubPath:   "config.js",
+									Name:      name,
+									MountPath: "/configs",
 								},
 							},
 							SecurityContext: &corev1.SecurityContext{
@@ -273,6 +342,9 @@ func (r *GitTektonResourcesRenovater) CreateRenovaterJob(ctx context.Context, in
 	if err := r.Client.Create(ctx, secret); err != nil {
 		return err
 	}
+	if err := r.Client.Create(ctx, configMap); err != nil {
+		return err
+	}
 	if err := r.Client.Create(ctx, job); err != nil {
 		return err
 	}
@@ -281,6 +353,13 @@ func (r *GitTektonResourcesRenovater) CreateRenovaterJob(ctx context.Context, in
 		return err
 	}
 	if err := r.Client.Update(ctx, secret); err != nil {
+		return err
+	}
+
+	if err := controllerutil.SetOwnerReference(job, configMap, r.Scheme); err != nil {
+		return err
+	}
+	if err := r.Client.Update(ctx, configMap); err != nil {
 		return err
 	}
 

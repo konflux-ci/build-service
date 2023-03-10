@@ -17,6 +17,7 @@ limitations under the License.
 package controllers
 
 import (
+	"os"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -52,28 +53,82 @@ var _ = Describe("Git tekton resources renovater", func() {
 		})
 
 		It("It should not trigger job", func() {
-			github.GetInstallations = func(appId int64, privateKeyPem []byte) ([]github.ApplicationInstallation, string, error) {
-				return generateInstallations(0), "slug", nil
+			installedRepositoryUrls := []string{
+				"https://github/test/repo1",
+				"https://github/test/repo2",
 			}
+			github.GetInstallations = func(appId int64, privateKeyPem []byte) ([]github.ApplicationInstallation, string, error) {
+				repositories := generateRepositories(installedRepositoryUrls)
+				return []github.ApplicationInstallation{generateInstallation(repositories)}, "slug", nil
+			}
+			componentNamespacedName := createComponentForPaCBuild(getComponentData(componentConfig{gitURL: "https://github/test/repo3"}))
 			createBuildPipelineRunSelector(defaultSelector)
 			time.Sleep(time.Second)
 			Expect(listJobs(buildServiceNamespaceName)).Should(BeEmpty())
+			deleteComponent(componentNamespacedName)
 		})
 		It("It should trigger job", func() {
-			github.GetInstallations = func(appId int64, privateKeyPem []byte) ([]github.ApplicationInstallation, string, error) {
-				return generateInstallations(1), "slug", nil
+			installedRepositoryUrls := []string{
+				"https://github/test/repo1",
+				"https://github/test/repo2",
 			}
+			github.GetInstallations = func(appId int64, privateKeyPem []byte) ([]github.ApplicationInstallation, string, error) {
+				repositories := generateRepositories(installedRepositoryUrls)
+				return []github.ApplicationInstallation{generateInstallation(repositories)}, "slug", nil
+			}
+			componentNamespacedName := createComponentForPaCBuild(getComponentData(componentConfig{gitURL: "https://github/test/repo1"}))
 			createBuildPipelineRunSelector(defaultSelector)
 			time.Sleep(time.Second)
 			Expect(listJobs(buildServiceNamespaceName)).Should(HaveLen(1))
+			deleteComponent(componentNamespacedName)
 		})
-		It("It should trigger 3 jobs", func() {
-			github.GetInstallations = func(appId int64, privateKeyPem []byte) ([]github.ApplicationInstallation, string, error) {
-				return generateInstallations(InstallationsPerJob*2 + 1), "slug", nil
+		It("It should trigger 2 jobs", func() {
+			installedRepositoryUrls1 := []string{
+				"https://github/test1/repo1",
+				"https://github/test1/repo2",
 			}
+			installedRepositoryUrls2 := []string{
+				"https://github/test2/repo1",
+				"https://github/test2/repo2",
+			}
+			installedRepositoryUrls3 := []string{
+				"https://github/test3/repo1",
+				"https://github/test3/repo2",
+			}
+			installedRepositoryUrls4 := []string{
+				"https://github/test4/repo1",
+				"https://github/test4/repo2",
+			}
+			installedRepositoryUrls5 := []string{
+				"https://github/test5/repo1",
+				"https://github/test5/repo2",
+			}
+			github.GetInstallations = func(appId int64, privateKeyPem []byte) ([]github.ApplicationInstallation, string, error) {
+				return []github.ApplicationInstallation{
+					generateInstallation(generateRepositories(installedRepositoryUrls1)),
+					generateInstallation(generateRepositories(installedRepositoryUrls2)),
+					generateInstallation(generateRepositories(installedRepositoryUrls3)),
+					generateInstallation(generateRepositories(installedRepositoryUrls4)),
+					generateInstallation(generateRepositories(installedRepositoryUrls5)),
+				}, "slug", nil
+			}
+
+			// This is one installation - two matching repos
+			componentNamespacedName1 := createComponentForPaCBuild(getComponentData(componentConfig{componentKey: types.NamespacedName{Name: "test1"}, gitURL: "https://github/test1/repo1"}))
+			componentNamespacedName2 := createComponentForPaCBuild(getComponentData(componentConfig{componentKey: types.NamespacedName{Name: "test2"}, gitURL: "https://github/test1/repo2"}))
+			// Second installation
+			componentNamespacedName3 := createComponentForPaCBuild(getComponentData(componentConfig{componentKey: types.NamespacedName{Name: "test3"}, gitURL: "https://github/test2/repo1"}))
+			// Third installation
+			componentNamespacedName4 := createComponentForPaCBuild(getComponentData(componentConfig{componentKey: types.NamespacedName{Name: "test4"}, gitURL: "https://github/test3/repo2"}))
+			// Set 2 installations per job
+			os.Setenv(InstallationsPerJobEnvName, "2")
 			createBuildPipelineRunSelector(defaultSelector)
 			time.Sleep(time.Second)
-			Expect(listJobs(buildServiceNamespaceName)).Should(HaveLen(3))
+			Expect(listJobs(buildServiceNamespaceName)).Should(HaveLen(2))
+			deleteComponent(componentNamespacedName1)
+			deleteComponent(componentNamespacedName2)
+			deleteComponent(componentNamespacedName3)
+			deleteComponent(componentNamespacedName4)
 		})
 	})
 })

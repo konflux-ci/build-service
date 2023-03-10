@@ -42,8 +42,9 @@ type GithubClient struct {
 }
 
 type ApplicationInstallation struct {
-	Token          string
-	InstallationID int64
+	Token        string
+	ID           int64
+	Repositories []*github.Repository
 }
 
 func newGithubClient(accessToken string) *GithubClient {
@@ -153,9 +154,15 @@ func getInstallations(appId int64, privateKeyPem []byte) ([]ApplicationInstallat
 				// TODO analyze the error
 				continue
 			}
+			installationClient := NewGithubClient(token.GetToken())
+			repositoriesList, _, err := installationClient.client.Apps.ListRepos(context.Background(), &github.ListOptions{})
+			if err != nil {
+				continue
+			}
 			appInstallations = append(appInstallations, ApplicationInstallation{
-				Token:          token.GetToken(),
-				InstallationID: *val.ID,
+				Token:        token.GetToken(),
+				ID:           *val.ID,
+				Repositories: repositoriesList.Repositories,
 			})
 		}
 		if resp.NextPage == 0 {
