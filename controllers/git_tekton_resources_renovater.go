@@ -82,7 +82,11 @@ func (r *GitTektonResourcesRenovater) SetupWithManager(mgr ctrl.Manager) error {
 	})).Complete(r)
 }
 
-// +kubebuilder:rbac:groups=batch,resources=jobs,verbs=create;get;list;watch;delete;deletecollection
+// Set Role for managing jobs/configmaps/secrets in the controller namespace
+
+// +kubebuilder:rbac:namespace=system,groups=batch,resources=jobs,verbs=create;get;list;watch;delete;deletecollection
+// +kubebuilder:rbac:namespace=system,groups=core,resources=secrets,verbs=get;list;watch;create;patch;update;delete;deletecollection
+// +kubebuilder:rbac:namespace=system,groups=core,resources=configmaps,verbs=get;list;watch;create;patch;update;delete;deletecollection
 
 func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 
