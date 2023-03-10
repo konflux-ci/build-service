@@ -478,7 +478,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 				return "", err
 			}
 			if !appInstalled {
-				return "", boerrors.NewBuildOpError(boerrors.EGitHubAppNotInstalled, nil)
+				return "", boerrors.NewBuildOpError(boerrors.EGitHubAppNotInstalled, fmt.Errorf("GitHub Application is not installed into the repository"))
 			}
 		} else {
 			// Webhook
