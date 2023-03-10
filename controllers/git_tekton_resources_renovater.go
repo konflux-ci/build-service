@@ -45,12 +45,14 @@ import (
 )
 
 const (
-	RenovateConfigName      = "renovate-config"
-	RenovateImageEnvName    = "RENOVATE_IMAGE"
-	DefaultRenovateImageUrl = "quay.io/redhat-appstudio/renovate:34.154-slim"
-	TimeToLiveOfJob         = 24 * time.Hour
-	NextReconcile           = 10 * time.Hour
-	InstallationsPerJob     = 20
+	RenovateConfigName          = "renovate-config"
+	RenovateImageEnvName        = "RENOVATE_IMAGE"
+	DefaultRenovateImageUrl     = "quay.io/redhat-appstudio/renovate:34.154-slim"
+	DefaultRenovateMatchPattern = "^quay.io/redhat-appstudio-tekton-catalog/"
+	RenovateMatchPatternEnvName = "RENOVATE_PATTERN"
+	TimeToLiveOfJob             = 24 * time.Hour
+	NextReconcile               = 10 * time.Hour
+	InstallationsPerJob         = 20
 )
 
 // GitTektonResourcesRenovater watches AppStudio BuildPipelineSelector object in order to update
@@ -80,7 +82,11 @@ func (r *GitTektonResourcesRenovater) SetupWithManager(mgr ctrl.Manager) error {
 	})).Complete(r)
 }
 
-// +kubebuilder:rbac:groups=batch,resources=jobs,verbs=create;get;list;watch;delete;deletecollection
+// Set Role for managing jobs/configmaps/secrets in the controller namespace
+
+// +kubebuilder:rbac:namespace=system,groups=batch,resources=jobs,verbs=create;get;list;watch;delete;deletecollection
+// +kubebuilder:rbac:namespace=system,groups=core,resources=secrets,verbs=get;list;watch;create;patch;update;delete;deletecollection
+// +kubebuilder:rbac:namespace=system,groups=core,resources=configmaps,verbs=get;list;watch;create;patch;update;delete;deletecollection
 
 func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 
@@ -161,7 +167,13 @@ func generateConfigJS(slug string) string {
 			packageRules: [
 			  {
 				matchPackagePatterns: ["*"],
-				groupName: "tekton references"
+				enabled: false
+			  },
+			  {
+				matchPackagePatterns: ["%s"],
+				matchDepPatterns: ["%s"],
+				groupName: "tekton references",
+				enabled: true
 			  }
 			]
 		},
@@ -169,7 +181,11 @@ func generateConfigJS(slug string) string {
 		dependencyDashboard: false
 	}
 	`
-	return fmt.Sprintf(template, slug, slug, slug)
+	renovatePattern := os.Getenv(RenovateMatchPatternEnvName)
+	if renovatePattern == "" {
+		renovatePattern = DefaultRenovateMatchPattern
+	}
+	return fmt.Sprintf(template, slug, slug, slug, renovatePattern, renovatePattern)
 }
 
 func (r *GitTektonResourcesRenovater) CreateRenovaterJob(ctx context.Context, installations []github.ApplicationInstallation) error {
