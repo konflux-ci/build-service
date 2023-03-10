@@ -35,7 +35,7 @@ var _ = Describe("Component PipelineRuns pruner controller", func() {
 	Context("Test Component PipelineRuns pruning ", func() {
 
 		_ = BeforeEach(func() {
-			createComponentForPaCBuild(resourceKey)
+			createComponentForPaCBuild(getSampleComponentData(resourceKey))
 		})
 
 		It("should not fail if nothing to prune", func() {

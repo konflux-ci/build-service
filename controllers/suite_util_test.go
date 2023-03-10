@@ -105,15 +105,18 @@ func getSampleComponentData(componentKey types.NamespacedName) *appstudiov1alpha
 }
 
 // createComponent creates sample component resource and verifies it was properly created
-func createComponentForPaCBuild(componentLookupKey types.NamespacedName) {
-	component := getSampleComponentData(componentLookupKey)
-	component.Annotations = map[string]string{
+func createComponentForPaCBuild(sampleComponentData *appstudiov1alpha1.Component) {
+	sampleComponentData.Annotations = map[string]string{
 		PaCProvisionAnnotationName: PaCProvisionRequestedAnnotationValue,
 	}
 
-	Expect(k8sClient.Create(ctx, component)).Should(Succeed())
+	Expect(k8sClient.Create(ctx, sampleComponentData)).Should(Succeed())
 
-	getComponent(componentLookupKey)
+	lookupKey := types.NamespacedName{
+		Name:      sampleComponentData.Name,
+		Namespace: sampleComponentData.Namespace,
+	}
+	getComponent(lookupKey)
 }
 
 // createComponent creates sample component resource and verifies it was properly created
