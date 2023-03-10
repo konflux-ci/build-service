@@ -30,6 +30,7 @@ var CreatePaCPullRequest func(g *GithubClient, d *PaCPullRequestData) (string, e
 var UndoPaCPullRequest func(g *GithubClient, d *PaCPullRequestData) (string, error) = undoPaCPullRequest
 var SetupPaCWebhook func(g *GithubClient, webhookUrl, webhookSecret, owner, repository string) error = setupPaCWebhook
 var DeletePaCWebhook func(g *GithubClient, webhookUrl, owner, repository string) error = deletePaCWebhook
+var IsAppInstalledIntoRepository func(g *GithubClient, owner, repository string) (bool, error) = isAppInstalledIntoRepository
 
 const (
 	// Allowed values are 'json' and 'form' according to the doc: https://docs.github.com/en/rest/webhooks/repos#create-a-repository-webhook
@@ -263,6 +264,10 @@ func deletePaCWebhook(ghclient *GithubClient, webhookUrl string, owner string, r
 	}
 
 	return ghclient.deleteWebhook(owner, repository, *existingWebhook.ID)
+}
+
+func isAppInstalledIntoRepository(ghclient *GithubClient, owner, repository string) (bool, error) {
+	return ghclient.isAppInstalledIntoRepository(owner, repository)
 }
 
 // RefineGitHostingServiceError generates expected permanent error from GitHub response.
