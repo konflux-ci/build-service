@@ -38,7 +38,7 @@ jobs:
           sarif_file: results.sarif
 
   envtest:
-    name: Envtest and coverage report
+    name: Envtest
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -47,6 +47,10 @@ jobs:
           go-version-file: './go.mod'
       - name: Run tests
         run: make test
+      - uses: actions/upload-artifact@v3
+        with:
+          name: coverage-report
+          path: cover.out
 
   codecov:
     name: Upload reports to Codecov
@@ -54,6 +58,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      - uses: actions/download-artifact@v3
+        with:
+          name: coverage-report
       - uses: codecov/codecov-action@v3.1.1
         with:
           fail_ci_if_error: true
