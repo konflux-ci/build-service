@@ -50,6 +50,7 @@ var _ = Describe("Git tekton resources renovater", func() {
 		_ = AfterEach(func() {
 			deleteBuildPipelineRunSelector(defaultSelector)
 			deleteJobs(buildServiceNamespaceName)
+			os.Unsetenv(InstallationsPerJobEnvName)
 		})
 
 		It("It should not trigger job", func() {

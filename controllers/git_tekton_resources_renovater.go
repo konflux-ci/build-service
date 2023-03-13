@@ -180,8 +180,11 @@ func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Re
 	// Generate renovate jobs. Limit processed installations per job.
 	var installationPerJobInt int
 	installationPerJobStr := os.Getenv(InstallationsPerJobEnvName)
-	if regexp.MustCompile(`\d`).MatchString(installationPerJobStr) {
+	if regexp.MustCompile(`^\d{1,2}$`).MatchString(installationPerJobStr) {
 		installationPerJobInt, _ = strconv.Atoi(installationPerJobStr)
+		if installationPerJobInt == 0 {
+			installationPerJobInt = InstallationsPerJob
+		}
 	} else {
 		installationPerJobInt = InstallationsPerJob
 	}
