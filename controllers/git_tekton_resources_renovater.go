@@ -131,7 +131,7 @@ func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, nil
 	}
 	privateKey := pacSecret.Data[gitops.PipelinesAsCode_githubPrivateKey]
-	githubInstallations, slug, err := github.GetInstallations(githubAppId, privateKey)
+	githubAppInstallations, slug, err := github.GetInstallations(githubAppId, privateKey)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -152,9 +152,9 @@ func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Re
 
 	// Match installed repositories with Components and get custom branch if defined
 	installationsForJobs := []installationStruct{}
-	for _, githubInstallation := range githubInstallations {
+	for _, githubAppInstallation := range githubAppInstallations {
 		repositories := []renovateRepository{}
-		for _, repository := range githubInstallation.Repositories {
+		for _, repository := range githubAppInstallation.Repositories {
 			branch, ok := componentUrlToBranchMap[repository.GetHTMLURL()]
 			// Filter repositories with installed GH App but missing Component
 			if !ok {
@@ -171,8 +171,8 @@ func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Re
 		}
 		installationsForJobs = append(installationsForJobs,
 			installationStruct{
-				id:           int(githubInstallation.ID),
-				token:        githubInstallation.Token,
+				id:           int(githubAppInstallation.ID),
+				token:        githubAppInstallation.Token,
 				repositories: repositories,
 			})
 	}

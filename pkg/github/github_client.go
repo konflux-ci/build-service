@@ -155,14 +155,15 @@ func getInstallations(appId int64, privateKeyPem []byte) ([]ApplicationInstallat
 				continue
 			}
 			installationClient := NewGithubClient(token.GetToken())
-			repositoriesList, _, err := installationClient.client.Apps.ListRepos(context.Background(), &github.ListOptions{})
+
+			repositories, err := getRepositoriesFromClient(installationClient)
 			if err != nil {
 				continue
 			}
 			appInstallations = append(appInstallations, ApplicationInstallation{
 				Token:        token.GetToken(),
 				ID:           *val.ID,
-				Repositories: repositoriesList.Repositories,
+				Repositories: repositories,
 			})
 		}
 		if resp.NextPage == 0 {
@@ -172,6 +173,23 @@ func getInstallations(appId int64, privateKeyPem []byte) ([]ApplicationInstallat
 	}
 
 	return appInstallations, slug, nil
+}
+
+func getRepositoriesFromClient(ghClient *GithubClient) ([]*github.Repository, error) {
+	opt := &github.ListOptions{PerPage: 100}
+	var repos []*github.Repository
+	for {
+		repoList, resp, err := ghClient.client.Apps.ListRepos(context.Background(), opt)
+		if err != nil {
+			return nil, err
+		}
+		repos = append(repos, repoList.Repositories...)
+		if resp.NextPage == 0 {
+			break
+		}
+		opt.Page = resp.NextPage
+	}
+	return repos, nil
 }
 
 // isAppInstalledIntoRepository finds out if the application is installed into given repository.
