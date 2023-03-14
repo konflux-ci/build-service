@@ -327,7 +327,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	// Check if Pipelines as Code workflow enabled
 	if val, exists := component.Annotations[PaCProvisionAnnotationName]; exists {
-		if val != PaCProvisionRequestedAnnotationValue {
+		if val != PaCProvisionRequestedAnnotationValue && !saUpdated {
 			if !(val == PaCProvisionDoneAnnotationValue || val == PaCProvisionErrorAnnotationValue) {
 				message := fmt.Sprintf(
 					"Unexpected value \"%s\" for \"%s\" annotation. Use \"%s\" value to do Pipeline as Code provision for the Component",

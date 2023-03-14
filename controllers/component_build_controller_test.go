@@ -551,6 +551,118 @@ var _ = Describe("Component initial build controller", func() {
 
 			setComponentDevfileModel(resourceKey)
 		})
+
+		It("should be able to switch betweeen internal and user provided image registry", func() {
+			usersImageRepo := "registry.io/user/image"
+			generatedImageRepo := "quay.io/appstudio/image"
+			generatedImageRepoSecretName := "image-repo-secret"
+			generatedImageRepoSecretKey := types.NamespacedName{Namespace: resourceKey.Namespace, Name: generatedImageRepoSecretName}
+			pipelineSAKey := types.NamespacedName{Namespace: resourceKey.Namespace, Name: "pipeline"}
+
+			checkPROutputImage := func(fileContent []byte, expectedImageRepo string) {
+				var prYaml v1beta1.PipelineRun
+				Expect(yaml.Unmarshal(fileContent, &prYaml)).To(Succeed())
+				outoutImage := ""
+				for _, param := range prYaml.Spec.Params {
+					if param.Name == "output-image" {
+						outoutImage = param.Value.StringVal
+						break
+					}
+				}
+				Expect(outoutImage).ToNot(BeEmpty())
+				Expect(outoutImage).To(ContainSubstring(expectedImageRepo))
+			}
+			checkSecretLinkToServiceAccount := func(generatedSecret bool) {
+				pipelineSA := &corev1.ServiceAccount{}
+				Expect(k8sClient.Get(ctx, pipelineSAKey, pipelineSA)).To(Succeed())
+				var secretName string
+				isImageRegistryGeneratedSecretLinked := false
+				isImageRegistryUserSecretLinked := false
+				for _, secret := range pipelineSA.Secrets {
+					if secret.Name == generatedImageRepoSecretName {
+						isImageRegistryGeneratedSecretLinked = true
+						secretName = generatedImageRepoSecretName
+					} else if secret.Name == imageRegistryUserSecretName {
+						isImageRegistryUserSecretLinked = true
+						secretName = imageRegistryUserSecretName
+					}
+				}
+				Expect(isImageRegistryGeneratedSecretLinked).To(Equal(generatedSecret))
+				Expect(isImageRegistryUserSecretLinked).ToNot(Equal(generatedSecret))
+
+				secretKey := types.NamespacedName{Namespace: pipelineSA.Namespace, Name: secretName}
+				secret := &corev1.Secret{}
+				Expect(k8sClient.Get(ctx, secretKey, secret)).To(Succeed())
+				Expect(secret.Annotations["tekton.dev/docker-0"]).ToNot(BeEmpty())
+			}
+
+			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+				defer GinkgoRecover()
+				Fail("Should not create PR if container image is not set")
+				return "", nil
+			}
+			deleteComponent(resourceKey)
+
+			// Create a component with empty ContainerImage
+			componentData := getSampleComponentData(resourceKey)
+			componentData.Spec.ContainerImage = ""
+			createComponentForPaCBuild(componentData)
+			setComponentDevfileModel(resourceKey)
+			// Wait to make sure PR creation is not invoked
+			time.Sleep(time.Second)
+
+			createSecret(generatedImageRepoSecretKey, nil)
+			defer deleteSecret(generatedImageRepoSecretKey)
+
+			// Switch to generated image repository
+
+			isCreatePaCPullRequestInvoked := false
+			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+				defer GinkgoRecover()
+				checkPROutputImage(d.Files[0].Content, generatedImageRepo)
+				isCreatePaCPullRequestInvoked = true
+				return "url", nil
+			}
+
+			component := getComponent(resourceKey)
+			component.Annotations[ImageRepoGenerateAnnotationName] = "false"
+			component.Annotations[ImageRepoAnnotationName] =
+				fmt.Sprintf("{\"image\":\"%s\",\"secret\":\"%s\"}", generatedImageRepo, generatedImageRepoSecretName)
+			Expect(k8sClient.Update(ctx, component)).To(Succeed())
+
+			Eventually(func() bool {
+				component = getComponent(resourceKey)
+				return component.Spec.ContainerImage == generatedImageRepo
+			}, timeout, interval).Should(BeTrue())
+			Eventually(func() bool {
+				return isCreatePaCPullRequestInvoked
+			}, timeout, interval).Should(BeTrue())
+
+			checkSecretLinkToServiceAccount(true)
+
+			// Switch to user provided image repository
+
+			isCreatePaCPullRequestInvoked = false
+			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+				defer GinkgoRecover()
+				checkPROutputImage(d.Files[0].Content, usersImageRepo)
+				isCreatePaCPullRequestInvoked = true
+				return "url2", nil
+			}
+
+			component = getComponent(resourceKey)
+			component.Spec.ContainerImage = usersImageRepo
+			Expect(k8sClient.Update(ctx, component)).To(Succeed())
+			Eventually(func() bool {
+				component = getComponent(resourceKey)
+				return component.Spec.ContainerImage == usersImageRepo
+			}, timeout, interval).Should(BeTrue())
+			Eventually(func() bool {
+				return isCreatePaCPullRequestInvoked
+			}, timeout, interval).Should(BeTrue())
+
+			checkSecretLinkToServiceAccount(false)
+		})
 	})
 
 	Context("Test Pipelines as Code build clean up", func() {
