@@ -19,6 +19,7 @@ package controllers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -31,6 +32,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
 
@@ -76,16 +78,113 @@ func (r *ComponentBuildReconciler) GetPipelineForComponent(ctx context.Context, 
 	}, nil, nil
 }
 
-// getImageRepositoryForComponent returns repository for the component's images.
-func getImageRepositoryForComponent(component *appstudiov1alpha1.Component) (string, error) {
-	imageRepo, _, err := getComponentImageRepoAndSecretNameFromImageAnnotation(component)
+func (r *ComponentBuildReconciler) ensurePipelineServiceAccount(ctx context.Context, namespace string) (*corev1.ServiceAccount, error) {
+	pipelinesServiceAccount := &corev1.ServiceAccount{}
+	err := r.Client.Get(ctx, types.NamespacedName{Name: "pipeline", Namespace: namespace}, pipelinesServiceAccount)
 	if err != nil {
-		return "", err
+		if !errors.IsNotFound(err) {
+			r.Log.Error(err, fmt.Sprintf("Failed to read service account %s in namespace %s", buildPipelineServiceAccountName, namespace))
+			return nil, err
+		}
+		// Create service account for the build pipeline
+		buildPipelineSA := corev1.ServiceAccount{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      buildPipelineServiceAccountName,
+				Namespace: namespace,
+			},
+		}
+		if err := r.Client.Create(ctx, &buildPipelineSA); err != nil {
+			r.Log.Error(err, fmt.Sprintf("Failed to create service account %s in namespace %s", buildPipelineServiceAccountName, namespace))
+			return nil, err
+		}
+		return r.ensurePipelineServiceAccount(ctx, namespace)
 	}
-	if imageRepo == "" {
-		imageRepo = getContainerImageRepository(component.Spec.ContainerImage)
+	return pipelinesServiceAccount, nil
+}
+
+func (r *ComponentBuildReconciler) linkImageRegistrySecretToServiceAccount(ctx context.Context, imageRepo, imageRepoSecretName string, serviceAccount *corev1.ServiceAccount) (bool, error) {
+	log := r.Log
+
+	// Ensure that image repo secret is annotated to make it respected by Tekton
+
+	// quay.io/userlogin/image:tag => https://quay.io
+	expectedTektonAnnotationValue := "https://" + strings.Split(imageRepo, "/")[0]
+
+	dockerSecret := corev1.Secret{}
+	err := r.Client.Get(ctx, types.NamespacedName{Name: imageRepoSecretName, Namespace: serviceAccount.Namespace}, &dockerSecret)
+	if err != nil {
+		log.Error(err, fmt.Sprintf("Secret %s is missing", imageRepoSecretName))
+		return false, boerrors.NewBuildOpError(boerrors.EComponentDockerSecretMissing, err)
 	}
-	return imageRepo, nil
+	if dockerSecret.Annotations == nil {
+		dockerSecret.Annotations = map[string]string{}
+	}
+	// We can always use 0 index because the component uses only one image repository
+	if dockerSecret.Annotations["tekton.dev/docker-0"] != expectedTektonAnnotationValue {
+		dockerSecret.Annotations["tekton.dev/docker-0"] = expectedTektonAnnotationValue
+		if err := r.Client.Update(ctx, &dockerSecret); err != nil {
+			log.Error(err, fmt.Sprintf("Failed to annotate %s secret with tekton annotation", imageRepoSecretName))
+			return false, err
+		}
+	}
+
+	// Update service account if needed
+	updateRequired := updateServiceAccountConfigIfSecretNotLinked(dockerSecret.Name, serviceAccount)
+	if updateRequired {
+		err = r.Client.Update(ctx, serviceAccount)
+		if err != nil {
+			log.Error(err, fmt.Sprintf("Unable to update service account %s", serviceAccount.Name))
+			return false, err
+		}
+		log.Info(fmt.Sprintf("Service Account %s updated with image secret", serviceAccount.Name))
+		return true, nil
+	}
+	return false, nil
+}
+
+// unlinkSecretFromServiceAccount ensures that the given secret is not linked with the provided service account.
+// Returns true if the secret was unlinked, false if the link didn't exist.
+func (r *ComponentBuildReconciler) unlinkSecretFromServiceAccount(ctx context.Context, secretName string, serviceAccount *corev1.ServiceAccount) (bool, error) {
+	index := -1
+	for i, credentialSecret := range serviceAccount.Secrets {
+		if credentialSecret.Name == secretName {
+			index = i
+			break
+		}
+	}
+	if index != -1 {
+		secrets := make([]corev1.ObjectReference, 0, len(serviceAccount.Secrets))
+		if len(serviceAccount.Secrets) != 1 {
+			secrets = append(secrets, serviceAccount.Secrets[:index]...)
+			secrets = append(secrets, serviceAccount.Secrets[index+1:]...)
+		}
+		serviceAccount.Secrets = secrets
+
+		if err := r.Client.Update(ctx, serviceAccount); err != nil {
+			r.Log.Error(err, fmt.Sprintf("Unable to update pipeline service account %v", serviceAccount))
+			return false, err
+		}
+		r.Log.Info(fmt.Sprintf("Removed %s secret link from %s service account", secretName, serviceAccount.Name))
+		return true, nil
+	}
+	return false, nil
+}
+
+func updateServiceAccountConfigIfSecretNotLinked(secretName string, serviceAccount *corev1.ServiceAccount) bool {
+	if secretName == "" {
+		// The secret is empty, no updates needed
+		return false
+	}
+	for _, credentialSecret := range serviceAccount.Secrets {
+		if credentialSecret.Name == secretName {
+			// The secret is present in the service account, no updates needed
+			return false
+		}
+	}
+
+	// Add the secret to the service account and return that update is needed
+	serviceAccount.Secrets = append(serviceAccount.Secrets, corev1.ObjectReference{Name: secretName})
+	return true
 }
 
 // getContainerImageRepository removes tag or SHA has from container image reference

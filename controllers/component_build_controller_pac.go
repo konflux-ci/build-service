@@ -741,10 +741,7 @@ func generatePaCPipelineRunForComponent(
 		"pipelines.appstudio.openshift.io/type": "build",
 	}
 
-	imageRepo, err := getImageRepositoryForComponent(component)
-	if err != nil {
-		return nil, err
-	}
+	imageRepo := getContainerImageRepository(component.Spec.ContainerImage)
 
 	var pipelineName string
 	var proposedImage string

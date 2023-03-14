@@ -18,9 +18,10 @@ package controllers
 
 import (
 	"fmt"
-	"sigs.k8s.io/yaml"
 	"strings"
 	"time"
+
+	"sigs.k8s.io/yaml"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -78,11 +79,12 @@ var _ = Describe("Component initial build controller", func() {
 
 	var (
 		// All related to the component resources have the same key (but different type)
-		resourceKey           = types.NamespacedName{Name: HASCompName, Namespace: HASAppNamespace}
-		pacRouteKey           = types.NamespacedName{Name: pipelinesAsCodeRouteName, Namespace: pipelinesAsCodeNamespace}
-		pacSecretKey          = types.NamespacedName{Name: gitopsprepare.PipelinesAsCodeSecretName, Namespace: buildServiceNamespaceName}
-		namespacePaCSecretKey = types.NamespacedName{Name: gitopsprepare.PipelinesAsCodeSecretName, Namespace: HASAppNamespace}
-		webhookSecretKey      = types.NamespacedName{Name: gitops.PipelinesAsCodeWebhooksSecretName, Namespace: HASAppNamespace}
+		resourceKey            = types.NamespacedName{Name: HASCompName, Namespace: HASAppNamespace}
+		pacRouteKey            = types.NamespacedName{Name: pipelinesAsCodeRouteName, Namespace: pipelinesAsCodeNamespace}
+		pacSecretKey           = types.NamespacedName{Name: gitopsprepare.PipelinesAsCodeSecretName, Namespace: buildServiceNamespaceName}
+		namespacePaCSecretKey  = types.NamespacedName{Name: gitopsprepare.PipelinesAsCodeSecretName, Namespace: HASAppNamespace}
+		webhookSecretKey       = types.NamespacedName{Name: gitops.PipelinesAsCodeWebhooksSecretName, Namespace: HASAppNamespace}
+		imageRegistrySecretKey = types.NamespacedName{Name: imageRegistryUserSecretName, Namespace: HASAppNamespace}
 	)
 
 	Context("Test Pipelines as Code build preparation", func() {
@@ -96,6 +98,7 @@ var _ = Describe("Component initial build controller", func() {
 				"github-private-key":    githubAppPrivateKey,
 			}
 			createSecret(pacSecretKey, pacSecretData)
+			createSecret(imageRegistrySecretKey, map[string]string{})
 
 			github.NewGithubClientByApp = func(appId int64, privateKeyPem []byte, owner string) (*github.GithubClient, error) { return nil, nil }
 			github.NewGithubClient = func(accessToken string) *github.GithubClient { return nil }

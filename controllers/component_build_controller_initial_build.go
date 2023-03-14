@@ -30,7 +30,6 @@ import (
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -46,26 +45,9 @@ const (
 func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component *appstudiov1alpha1.Component) error {
 	log := r.Log.WithValues("Namespace", component.Namespace, "Application", component.Spec.Application, "Component", component.Name)
 
-	// Create pipeline service account
-	pipelinesServiceAccount := corev1.ServiceAccount{}
-	err := r.Client.Get(ctx, types.NamespacedName{Name: "pipeline", Namespace: component.Namespace}, &pipelinesServiceAccount)
+	pipelineSA, err := r.ensurePipelineServiceAccount(ctx, component.Namespace)
 	if err != nil {
-		if !errors.IsNotFound(err) {
-			log.Error(err, fmt.Sprintf("Failed to read service account %s in namespace %s", buildPipelineServiceAccountName, component.Namespace))
-			return err
-		}
-		// Create service account for the build pipeline
-		buildPipelineSA := corev1.ServiceAccount{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      buildPipelineServiceAccountName,
-				Namespace: component.Namespace,
-			},
-		}
-		if err := r.Client.Create(ctx, &buildPipelineSA); err != nil {
-			log.Error(err, fmt.Sprintf("Failed to create service account %s in namespace %s", buildPipelineServiceAccountName, component.Namespace))
-			return err
-		}
-		return r.SubmitNewBuild(ctx, component)
+		return err
 	}
 
 	// Link git secret to pipeline service account if needed
@@ -83,67 +65,22 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 			gitSecret.Annotations = map[string]string{}
 		}
 		gitHost, _ := getGitProviderUrl(component.Spec.Source.GitSource.URL)
-		// Doesn't matter if it was present, we will always override because we clone from one repository only
-		gitSecret.Annotations["tekton.dev/git-0"] = gitHost
-		if err = r.Client.Update(ctx, &gitSecret); err != nil {
-			log.Error(err, fmt.Sprintf("Secret %s update failed", gitSecretName))
-			return err
+		// Doesn't matter if the annotation was present, we will always override because we clone from one repository only
+		if gitSecret.Annotations["tekton.dev/git-0"] != gitHost {
+			gitSecret.Annotations["tekton.dev/git-0"] = gitHost
+			if err = r.Client.Update(ctx, &gitSecret); err != nil {
+				log.Error(err, fmt.Sprintf("Secret %s update failed", gitSecretName))
+				return err
+			}
 		}
 
-		updateRequired := updateServiceAccountIfSecretNotLinked(gitSecretName, &pipelinesServiceAccount)
+		updateRequired := updateServiceAccountConfigIfSecretNotLinked(gitSecretName, pipelineSA)
 		if updateRequired {
-			if err := r.Client.Update(ctx, &pipelinesServiceAccount); err != nil {
-				log.Error(err, fmt.Sprintf("Unable to update pipeline service account %v", pipelinesServiceAccount))
+			if err := r.Client.Update(ctx, pipelineSA); err != nil {
+				log.Error(err, fmt.Sprintf("Unable to update pipeline service account %s", pipelineSA.Name))
 				return err
 			}
-			log.Info(fmt.Sprintf("Service Account %v updated with git secret", pipelinesServiceAccount))
-		}
-	}
-
-	// Link image registry secret to pipeline service account if needed
-	if _, exists := component.Annotations[ImageRepoGenerateAnnotationName]; exists {
-		imageRepo, imageRepoSecretName, err := getComponentImageRepoAndSecretNameFromImageAnnotation(component)
-		if err != nil {
-			return err
-		}
-		if imageRepo != "" && imageRepoSecretName != "" {
-			// Annotate the image repo secret to make it respected by Tekton
-			dockerSecret := corev1.Secret{}
-			err := r.Client.Get(ctx, types.NamespacedName{Name: imageRepoSecretName, Namespace: component.Namespace}, &dockerSecret)
-			if err != nil {
-				log.Error(err, fmt.Sprintf("Secret %s is missing", imageRepoSecretName))
-				return boerrors.NewBuildOpError(boerrors.EComponentDockerSecretMissing, err)
-			}
-			if dockerSecret.Annotations == nil {
-				dockerSecret.Annotations = map[string]string{}
-			}
-			// We can always use 0 index because the component uses only one image repository
-			dockerSecret.Annotations["tekton.dev/docker-0"] = "https://quay.io"
-
-			updateRequired := updateServiceAccountIfSecretNotLinked(dockerSecret.Name, &pipelinesServiceAccount)
-			if updateRequired {
-				err = r.Client.Update(ctx, &pipelinesServiceAccount)
-				if err != nil {
-					log.Error(err, fmt.Sprintf("Unable to update pipeline service account %v", pipelinesServiceAccount))
-					return err
-				}
-				log.Info(fmt.Sprintf("Service Account %v updated with image secret", pipelinesServiceAccount))
-			}
-
-			// Add finalizer to clean up docker secret link on component deletion
-			if err := r.Client.Get(ctx, types.NamespacedName{Namespace: component.Namespace, Name: component.Name}, component); err != nil {
-				log.Error(err, "failed to get Component")
-				return err
-			}
-			if component.ObjectMeta.DeletionTimestamp.IsZero() {
-				if !controllerutil.ContainsFinalizer(component, ImageRegistrySecretLinkFinalizer) {
-					controllerutil.AddFinalizer(component, ImageRegistrySecretLinkFinalizer)
-					log.Info("Image registry secret service account link finalizer added")
-				}
-			}
-			if err := r.Client.Update(ctx, component); err != nil {
-				return err
-			}
+			log.Info(fmt.Sprintf("Service Account %s updated with git secret", pipelineSA.Name))
 		}
 	}
 
@@ -187,10 +124,7 @@ func generateInitialPipelineRunForComponent(component *appstudiov1alpha1.Compone
 		revision = component.Spec.Source.GitSource.Revision
 	}
 
-	imageRepo, err := getImageRepositoryForComponent(component)
-	if err != nil {
-		return nil, err
-	}
+	imageRepo := getContainerImageRepository(component.Spec.ContainerImage)
 	image := fmt.Sprintf("%s:build-%s-%d", imageRepo, getRandomString(5), timestamp)
 
 	params := []tektonapi.Param{
@@ -271,23 +205,6 @@ func getGitProviderUrl(gitURL string) (string, error) {
 		return "", fmt.Errorf("failed to parse string into a URL: %v or scheme is empty", err)
 	}
 	return u.Scheme + "://" + u.Host, nil
-}
-
-func updateServiceAccountIfSecretNotLinked(secretName string, serviceAccount *corev1.ServiceAccount) bool {
-	if secretName == "" {
-		// The secret is empty, no updates needed
-		return false
-	}
-	for _, credentialSecret := range serviceAccount.Secrets {
-		if credentialSecret.Name == secretName {
-			// The secret is present in the service account, no updates needed
-			return false
-		}
-	}
-
-	// Add the secret to the service account and return that update is needed
-	serviceAccount.Secrets = append(serviceAccount.Secrets, corev1.ObjectReference{Name: secretName})
-	return true
 }
 
 func getRandomString(length int) string {

@@ -437,7 +437,7 @@ func TestUpdateServiceAccountIfSecretNotLinked(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := updateServiceAccountIfSecretNotLinked(tt.args.gitSecretName, tt.args.serviceAccount); got != tt.want {
+			if got := updateServiceAccountConfigIfSecretNotLinked(tt.args.gitSecretName, tt.args.serviceAccount); got != tt.want {
 				t.Errorf("UpdateServiceAccountIfSecretNotLinked() = %v, want %v", got, tt.want)
 			}
 		})
