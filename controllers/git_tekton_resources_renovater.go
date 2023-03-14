@@ -151,7 +151,7 @@ func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	// Match installed repositories with Components and get custom branch if defined
-	installationsForJobs := []installationStruct{}
+	installationsToUpdate := []installationStruct{}
 	for _, githubAppInstallation := range githubAppInstallations {
 		repositories := []renovateRepository{}
 		for _, repository := range githubAppInstallation.Repositories {
@@ -169,7 +169,7 @@ func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Re
 				Repository:   repository.GetFullName(),
 			})
 		}
-		installationsForJobs = append(installationsForJobs,
+		installationsToUpdate = append(installationsToUpdate,
 			installationStruct{
 				id:           int(githubAppInstallation.ID),
 				token:        githubAppInstallation.Token,
@@ -188,13 +188,13 @@ func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Re
 	} else {
 		installationPerJobInt = InstallationsPerJob
 	}
-	for i := 0; i < len(installationsForJobs); i += installationPerJobInt {
+	for i := 0; i < len(installationsToUpdate); i += installationPerJobInt {
 		end := i + installationPerJobInt
 
-		if end > len(installationsForJobs) {
-			end = len(installationsForJobs)
+		if end > len(installationsToUpdate) {
+			end = len(installationsToUpdate)
 		}
-		err = r.CreateRenovaterJob(ctx, installationsForJobs[i:end], slug)
+		err = r.CreateRenovaterJob(ctx, installationsToUpdate[i:end], slug)
 		if err != nil {
 			r.Log.Error(err, "failed to create a job")
 		}
