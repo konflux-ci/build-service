@@ -114,7 +114,7 @@ func (r *ComponentBuildReconciler) linkImageRegistrySecretToServiceAccount(ctx c
 	err := r.Client.Get(ctx, types.NamespacedName{Name: imageRepoSecretName, Namespace: serviceAccount.Namespace}, &dockerSecret)
 	if err != nil {
 		log.Error(err, fmt.Sprintf("Secret %s is missing", imageRepoSecretName))
-		return false, boerrors.NewBuildOpError(boerrors.EComponentDockerSecretMissing, err)
+		return false, boerrors.NewBuildOpError(boerrors.EComponentImageRegistrySecretMissing, err)
 	}
 	if dockerSecret.Annotations == nil {
 		dockerSecret.Annotations = map[string]string{}
