@@ -169,6 +169,10 @@ func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Re
 				Repository:   repository.GetFullName(),
 			})
 		}
+		// Do not add intatallation which has no matching repositories
+		if len(repositories) == 0 {
+			continue
+		}
 		installationsToUpdate = append(installationsToUpdate,
 			installationStruct{
 				id:           int(githubAppInstallation.ID),
@@ -251,9 +255,6 @@ func (r *GitTektonResourcesRenovater) CreateRenovaterJob(ctx context.Context, in
 	configmaps := map[string]string{}
 	renovateCmds := []string{}
 	for _, installation := range installations {
-		if len(installation.repositories) == 0 {
-			continue
-		}
 		secretTokens[fmt.Sprint(installation.id)] = installation.token
 		configmaps[fmt.Sprintf("%d.js", installation.id)] = generateConfigJS(slug, installation.repositories)
 		renovateCmds = append(renovateCmds,
