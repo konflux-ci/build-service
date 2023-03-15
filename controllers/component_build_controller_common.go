@@ -136,7 +136,7 @@ func (r *ComponentBuildReconciler) linkImageRegistrySecretToServiceAccount(ctx c
 			log.Error(err, fmt.Sprintf("Unable to update service account %s", serviceAccount.Name))
 			return false, err
 		}
-		log.Info(fmt.Sprintf("Service Account %s updated with image secret %s", serviceAccount.Name, dockerSecret.Name))
+		log.Info(fmt.Sprintf("Service Account %s updated with image registry secret %s", serviceAccount.Name, dockerSecret.Name))
 		return true, nil
 	}
 	return false, nil

@@ -59,7 +59,7 @@ const (
 
 	ImageRepoAnnotationName         = "image.redhat.com/image"
 	ImageRepoGenerateAnnotationName = "image.redhat.com/generate"
-	imageRegistryUserSecretName     = "redhat-appstudio-registry-pull-secret"
+	imageRepoUserSecretName         = "redhat-appstudio-registry-pull-secret"
 
 	buildServiceNamespaceName         = "build-service"
 	buildPipelineSelectorResourceName = "build-pipeline-selector"
@@ -179,7 +179,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				return ctrl.Result{}, nil
 			}
 
-			// Copy use container image reository created by image controller operator
+			// Copy container image repository created by image controller operator into Component's spec
 			imageRepo, _, err := getComponentImageRepoAndSecretNameFromImageAnnotation(&component)
 			if err != nil {
 				log.Error(err, "failed to get container image from image controller annotation")
@@ -228,7 +228,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				}
 				if imageRepoGenerated != getContainerImageRepository(component.Spec.ContainerImage) {
 					// User defined repository was used
-					imageRepoSecretName = imageRegistryUserSecretName
+					imageRepoSecretName = imageRepoUserSecretName
 				}
 				if _, err := r.unlinkSecretFromServiceAccount(ctx, imageRepoSecretName, pipelineSA); err != nil {
 					return ctrl.Result{}, err
@@ -243,7 +243,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if err := r.Client.Update(ctx, &component); err != nil {
 				return ctrl.Result{}, err
 			}
-			log.Info("image secret link finalizer removed")
+			log.Info("Image registry secret link finalizer removed")
 
 			// A new reconcile will be triggered because of the update above
 			return ctrl.Result{}, nil
@@ -286,26 +286,29 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	var imageRepo, oldImageRepo string
+	var oldImageRepoSecretName string
 	if imageRepoGenerated == getContainerImageRepository(component.Spec.ContainerImage) {
 		// Image repository provided by Image controller must be used
-		oldImageRepo = component.Spec.ContainerImage
-		imageRepo = imageRepoGenerated
+		oldImageRepoSecretName = imageRepoUserSecretName
 	} else {
 		// Use user provided image repository
 		// Credentials to image repository are the same for all Components of the Application
-		oldImageRepo = imageRepoGenerated
-		imageRepo = component.Spec.ContainerImage
-		imageRepoSecretName = imageRegistryUserSecretName
+		oldImageRepoSecretName = imageRepoSecretName
+		imageRepoSecretName = imageRepoUserSecretName
 	}
-	saUpdated, err := r.unlinkSecretFromServiceAccount(ctx, oldImageRepo, pipelineSA)
+	saUpdated, err := r.unlinkSecretFromServiceAccount(ctx, oldImageRepoSecretName, pipelineSA)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 	if saUpdated {
 		pipelineSA, _ = r.ensurePipelineServiceAccount(ctx, component.Namespace)
+		if imageRepoGenerated == getContainerImageRepository(component.Spec.ContainerImage) {
+			log.Info("Switched to generated image registry")
+		} else {
+			log.Info("Switched to user defined image registry")
+		}
 	}
-	_, err = r.linkImageRegistrySecretToServiceAccount(ctx, imageRepo, imageRepoSecretName, pipelineSA)
+	_, err = r.linkImageRegistrySecretToServiceAccount(ctx, component.Spec.ContainerImage, imageRepoSecretName, pipelineSA)
 	if err != nil {
 		return ctrl.Result{}, err
 	}

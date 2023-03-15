@@ -84,7 +84,7 @@ var _ = Describe("Component initial build controller", func() {
 		pacSecretKey           = types.NamespacedName{Name: gitopsprepare.PipelinesAsCodeSecretName, Namespace: buildServiceNamespaceName}
 		namespacePaCSecretKey  = types.NamespacedName{Name: gitopsprepare.PipelinesAsCodeSecretName, Namespace: HASAppNamespace}
 		webhookSecretKey       = types.NamespacedName{Name: gitops.PipelinesAsCodeWebhooksSecretName, Namespace: HASAppNamespace}
-		imageRegistrySecretKey = types.NamespacedName{Name: imageRegistryUserSecretName, Namespace: HASAppNamespace}
+		imageRegistrySecretKey = types.NamespacedName{Name: imageRepoUserSecretName, Namespace: HASAppNamespace}
 	)
 
 	Context("Test Pipelines as Code build preparation", func() {
@@ -552,10 +552,10 @@ var _ = Describe("Component initial build controller", func() {
 			setComponentDevfileModel(resourceKey)
 		})
 
-		It("should be able to switch betweeen internal and user provided image registry", func() {
+		It("should be able to switch between internal and user provided image registry", func() {
 			usersImageRepo := "registry.io/user/image"
-			generatedImageRepo := "quay.io/appstudio/image"
-			generatedImageRepoSecretName := "image-repo-secret"
+			generatedImageRepo := "quay.io/appstudio/generated-image"
+			generatedImageRepoSecretName := "generated-image-repo-secret"
 			generatedImageRepoSecretKey := types.NamespacedName{Namespace: resourceKey.Namespace, Name: generatedImageRepoSecretName}
 			pipelineSAKey := types.NamespacedName{Namespace: resourceKey.Namespace, Name: "pipeline"}
 
@@ -582,9 +582,9 @@ var _ = Describe("Component initial build controller", func() {
 					if secret.Name == generatedImageRepoSecretName {
 						isImageRegistryGeneratedSecretLinked = true
 						secretName = generatedImageRepoSecretName
-					} else if secret.Name == imageRegistryUserSecretName {
+					} else if secret.Name == imageRepoUserSecretName {
 						isImageRegistryUserSecretLinked = true
-						secretName = imageRegistryUserSecretName
+						secretName = imageRepoUserSecretName
 					}
 				}
 				Expect(isImageRegistryGeneratedSecretLinked).To(Equal(generatedSecret))
@@ -639,6 +639,8 @@ var _ = Describe("Component initial build controller", func() {
 			}, timeout, interval).Should(BeTrue())
 
 			checkSecretLinkToServiceAccount(true)
+			// Wait for all reconcilations finihed to avoid changing callbacks in the middle of a reconcile.
+			time.Sleep(2 * time.Second)
 
 			// Switch to user provided image repository
 
