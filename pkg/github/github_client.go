@@ -42,8 +42,9 @@ type GithubClient struct {
 }
 
 type ApplicationInstallation struct {
-	Token          string
-	InstallationID int64
+	Token        string
+	ID           int64
+	Repositories []*github.Repository
 }
 
 func newGithubClient(accessToken string) *GithubClient {
@@ -153,9 +154,16 @@ func getInstallations(appId int64, privateKeyPem []byte) ([]ApplicationInstallat
 				// TODO analyze the error
 				continue
 			}
+			installationClient := NewGithubClient(token.GetToken())
+
+			repositories, err := getRepositoriesFromClient(installationClient)
+			if err != nil {
+				continue
+			}
 			appInstallations = append(appInstallations, ApplicationInstallation{
-				Token:          token.GetToken(),
-				InstallationID: *val.ID,
+				Token:        token.GetToken(),
+				ID:           *val.ID,
+				Repositories: repositories,
 			})
 		}
 		if resp.NextPage == 0 {
@@ -165,6 +173,23 @@ func getInstallations(appId int64, privateKeyPem []byte) ([]ApplicationInstallat
 	}
 
 	return appInstallations, slug, nil
+}
+
+func getRepositoriesFromClient(ghClient *GithubClient) ([]*github.Repository, error) {
+	opt := &github.ListOptions{PerPage: 100}
+	var repos []*github.Repository
+	for {
+		repoList, resp, err := ghClient.client.Apps.ListRepos(context.Background(), opt)
+		if err != nil {
+			return nil, err
+		}
+		repos = append(repos, repoList.Repositories...)
+		if resp.NextPage == 0 {
+			break
+		}
+		opt.Page = resp.NextPage
+	}
+	return repos, nil
 }
 
 // isAppInstalledIntoRepository finds out if the application is installed into given repository.

@@ -17,6 +17,9 @@ limitations under the License.
 package controllers
 
 import (
+	"fmt"
+	"math/rand"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -33,6 +36,7 @@ import (
 
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 
+	gh "github.com/google/go-github/v45/github"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	buildappstudiov1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
 	"github.com/redhat-appstudio/build-service/pkg/github"
@@ -58,6 +62,14 @@ const (
 	SelectorDefaultName     = "default"
 )
 
+type componentConfig struct {
+	componentKey   types.NamespacedName
+	containerImage string
+	gitURL         string
+	gitRevision    string
+	application    string
+}
+
 func isOwnedBy(resource []metav1.OwnerReference, component appstudiov1alpha1.Component) bool {
 	if len(resource) == 0 {
 		return false
@@ -78,25 +90,49 @@ func getMinimalDevfile() string {
     `
 }
 
-func getSampleComponentData(componentKey types.NamespacedName) *appstudiov1alpha1.Component {
+func getComponentData(config componentConfig) *appstudiov1alpha1.Component {
+	name := config.componentKey.Name
+	if name == "" {
+		name = HASCompName
+	}
+	namespace := config.componentKey.Namespace
+	if namespace == "" {
+		namespace = HASAppNamespace
+	}
+	image := config.containerImage
+	if image == "" {
+		image = ComponentContainerImage
+	}
+	gitUrl := config.gitURL
+	if gitUrl == "" {
+		gitUrl = SampleRepoLink
+	}
+	gitRevision := config.gitRevision
+	if gitRevision == "" {
+		gitRevision = "main"
+	}
+	application := config.application
+	if application == "" {
+		application = HASAppName
+	}
 	return &appstudiov1alpha1.Component{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "appstudio.redhat.com/v1alpha1",
 			Kind:       "Component",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      componentKey.Name,
-			Namespace: componentKey.Namespace,
+			Name:      name,
+			Namespace: namespace,
 		},
 		Spec: appstudiov1alpha1.ComponentSpec{
-			ComponentName:  componentKey.Name,
-			Application:    HASAppName,
-			ContainerImage: ComponentContainerImage,
+			ComponentName:  name,
+			Application:    application,
+			ContainerImage: image,
 			Source: appstudiov1alpha1.ComponentSource{
 				ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
 					GitSource: &appstudiov1alpha1.GitSource{
-						URL:      SampleRepoLink,
-						Revision: "main",
+						URL:      gitUrl,
+						Revision: gitRevision,
 					},
 				},
 			},
@@ -104,8 +140,12 @@ func getSampleComponentData(componentKey types.NamespacedName) *appstudiov1alpha
 	}
 }
 
+func getSampleComponentData(componentKey types.NamespacedName) *appstudiov1alpha1.Component {
+	return getComponentData(componentConfig{componentKey: componentKey})
+}
+
 // createComponent creates sample component resource and verifies it was properly created
-func createComponentForPaCBuild(sampleComponentData *appstudiov1alpha1.Component) {
+func createComponentForPaCBuild(sampleComponentData *appstudiov1alpha1.Component) types.NamespacedName {
 	sampleComponentData.Annotations = map[string]string{
 		PaCProvisionAnnotationName: PaCProvisionRequestedAnnotationValue,
 	}
@@ -117,6 +157,7 @@ func createComponentForPaCBuild(sampleComponentData *appstudiov1alpha1.Component
 		Namespace: sampleComponentData.Namespace,
 	}
 	getComponent(lookupKey)
+	return lookupKey
 }
 
 // createComponent creates sample component resource and verifies it was properly created
@@ -469,13 +510,26 @@ func deleteJobs(namespace string) {
 	}, 10*time.Second, 100*time.Millisecond).Should(BeTrue())
 }
 
-func generateInstallations(count int) []github.ApplicationInstallation {
-	installations := []github.ApplicationInstallation{}
-	for i := 0; i < count; i++ {
-		installations = append(installations, github.ApplicationInstallation{
-			Token:          getRandomString(30),
-			InstallationID: int64(i),
-		})
+func generateInstallation(repositories []*gh.Repository) github.ApplicationInstallation {
+	return github.ApplicationInstallation{
+		ID:           int64(rand.Intn(100)),
+		Token:        getRandomString(30),
+		Repositories: repositories,
 	}
-	return installations
+}
+
+func generateRepository(repoURL string) *gh.Repository {
+	repoURLParts := strings.Split(repoURL, "/")
+	return &gh.Repository{
+		HTMLURL:  &repoURL,
+		FullName: gh.String(fmt.Sprintf("%s/%s", repoURLParts[3], repoURLParts[4])),
+	}
+}
+
+func generateRepositories(repoURL []string) []*gh.Repository {
+	repositories := []*gh.Repository{}
+	for _, repo := range repoURL {
+		repositories = append(repositories, generateRepository(repo))
+	}
+	return repositories
 }
