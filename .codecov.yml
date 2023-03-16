@@ -9,6 +9,6 @@ coverage:
     project:
       default:
         target: auto
-        threshold: 1.5%
+        threshold: 1%
         removed_code_behavior: adjust_base
 
