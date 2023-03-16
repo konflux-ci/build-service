@@ -17,7 +17,9 @@ limitations under the License.
 package gitlab
 
 import (
+	"fmt"
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
+	"github.com/xanzy/go-gitlab"
 	"net/http"
 )
 
@@ -27,6 +29,8 @@ var UndoPaCMergeRequest func(g *GitlabClient, d *PaCMergeRequestData) (string, e
 var SetupPaCWebhook func(g *GitlabClient, projectPath, webhookUrl, webhookSecret string) error = setupPaCWebhook
 var DeletePaCWebhook func(g *GitlabClient, projectPath, webhookUrl string) error = deletePaCWebhook
 var GetDefaultBranch func(*GitlabClient, string) (string, error) = getDefaultBranch
+var FindUnmergedOnboardingMergeRequest func(*GitlabClient, string, string, string, string) (*gitlab.MergeRequest, error) = findUnmergedOnboardingMergeRequest
+var CloseMergeRequest func(*GitlabClient, string, *gitlab.MergeRequest) (*gitlab.MergeRequest, error) = closeMergeRequest
 
 type File struct {
 	FullPath string
@@ -218,4 +222,39 @@ func RefineGitHostingServiceError(response *http.Response, originErr error) erro
 
 func getDefaultBranch(client *GitlabClient, projectPath string) (string, error) {
 	return client.getDefaultBranch(projectPath)
+}
+
+// findUnmergedOnboardingMergeRequest finds out the unmerged merge request that is opened during the component onboarding
+// An onboarding merge request fulfills all the following criteria:
+// 1) opened based on the base branch which is determined by the Revision or is the default branch of component repository
+// 2) opened by a specific author
+// 3) opened from source branch appstudio-{component.Name}
+// If no onboarding merge request is found, nil is returned.
+func findUnmergedOnboardingMergeRequest(
+	glclient *GitlabClient, componentName, projectPath, baseBranch, authorName string) (*gitlab.MergeRequest, error) {
+	opts := &gitlab.ListProjectMergeRequestsOptions{
+		State:          gitlab.String("opened"),
+		AuthorUsername: gitlab.String(authorName),
+		SourceBranch:   gitlab.String(fmt.Sprintf("appstudio-%s", componentName)),
+		TargetBranch:   gitlab.String(baseBranch),
+	}
+	mrs, resp, err := glclient.client.MergeRequests.ListProjectMergeRequests(projectPath, opts)
+	if err != nil {
+		return nil, RefineGitHostingServiceError(resp.Response, err)
+	}
+	if len(mrs) == 0 {
+		return nil, nil
+	}
+	return mrs[0], nil
+}
+
+func closeMergeRequest(glclient *GitlabClient, projectPath string, mergeRequest *gitlab.MergeRequest) (*gitlab.MergeRequest, error) {
+	updateOpts := &gitlab.UpdateMergeRequestOptions{
+		StateEvent: gitlab.String("close"),
+	}
+	mr, resp, err := glclient.client.MergeRequests.UpdateMergeRequest(projectPath, mergeRequest.ID, updateOpts)
+	if err != nil {
+		return nil, RefineGitHostingServiceError(resp.Response, err)
+	}
+	return mr, nil
 }
