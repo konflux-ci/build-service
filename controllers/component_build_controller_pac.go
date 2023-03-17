@@ -741,7 +741,7 @@ func generatePaCPipelineRunForComponent(
 		"pipelines.appstudio.openshift.io/type": "build",
 	}
 
-	imageRepo := getContainerImageRepository(component.Spec.ContainerImage)
+	imageRepo := getContainerImageRepositoryForComponent(component)
 
 	var pipelineName string
 	var proposedImage string
@@ -828,7 +828,7 @@ func retrievePipelineSpec(bundleUri, pipelineName string) (*tektonapi.PipelineSp
 	var err error
 	resolver := oci.NewResolver(bundleUri, authn.DefaultKeychain)
 
-	if obj, _, err = resolver.Get(context.TODO(), "pipeline", pipelineName); err != nil {
+	if obj, _, err = resolver.Get(context.TODO(), buildPipelineServiceAccountName, pipelineName); err != nil {
 		return nil, err
 	}
 	pipelineSpecObj, ok := obj.(tektonapi.PipelineObject)

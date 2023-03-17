@@ -382,68 +382,6 @@ func TestGetGitProvider(t *testing.T) {
 	}
 }
 
-func TestUpdateServiceAccountIfSecretNotLinked(t *testing.T) {
-	type args struct {
-		gitSecretName  string
-		serviceAccount *corev1.ServiceAccount
-	}
-	tests := []struct {
-		name string
-		args args
-		want bool
-	}{
-		{
-			name: "present",
-			args: args{
-				gitSecretName: "present",
-				serviceAccount: &corev1.ServiceAccount{
-					Secrets: []corev1.ObjectReference{
-						{
-							Name: "present",
-						},
-					},
-				},
-			},
-			want: false, // since it was present, this implies the SA wasn't updated.
-		},
-		{
-			name: "not present",
-			args: args{
-				gitSecretName: "not-present",
-				serviceAccount: &corev1.ServiceAccount{
-					Secrets: []corev1.ObjectReference{
-						{
-							Name: "something-else",
-						},
-					},
-				},
-			},
-			want: true, // since it wasn't present, this implies the SA was updated.
-		},
-		{
-			name: "secretname is empty string",
-			args: args{
-				gitSecretName: "",
-				serviceAccount: &corev1.ServiceAccount{
-					Secrets: []corev1.ObjectReference{
-						{
-							Name: "present",
-						},
-					},
-				},
-			},
-			want: false, // since it wasn't present, this implies the SA was updated.
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := updateServiceAccountConfigIfSecretNotLinked(tt.args.gitSecretName, tt.args.serviceAccount); got != tt.want {
-				t.Errorf("UpdateServiceAccountIfSecretNotLinked() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestValidatePaCConfiguration(t *testing.T) {
 	const ghAppPrivateKeyStub = "-----BEGIN RSA PRIVATE KEY-----_key-content_-----END RSA PRIVATE KEY-----"
 

@@ -30,13 +30,10 @@ import (
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-)
-
-const (
-	buildPipelineServiceAccountName = "pipeline"
 )
 
 // SubmitNewBuild creates a new PipelineRun to build a new image for the given component.
@@ -45,19 +42,17 @@ const (
 func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component *appstudiov1alpha1.Component) error {
 	log := r.Log.WithValues("Namespace", component.Namespace, "Application", component.Spec.Application, "Component", component.Name)
 
-	pipelineSA, err := r.ensurePipelineServiceAccount(ctx, component.Namespace)
-	if err != nil {
-		return err
-	}
-
 	// Link git secret to pipeline service account if needed
 	gitSecretName := component.Spec.Secret
 	if gitSecretName != "" {
 		gitSecret := corev1.Secret{}
 		err := r.Client.Get(ctx, types.NamespacedName{Name: gitSecretName, Namespace: component.Namespace}, &gitSecret)
 		if err != nil {
-			log.Error(err, fmt.Sprintf("Secret %s is missing", gitSecretName))
-			return boerrors.NewBuildOpError(boerrors.EComponentGitSecretMissing, err)
+			if errors.IsNotFound(err) {
+				log.Error(err, fmt.Sprintf("Secret %s is missing", gitSecretName))
+				return boerrors.NewBuildOpError(boerrors.EComponentGitSecretMissing, err)
+			}
+			return err
 		}
 
 		// Make the secret ready for consumption by Tekton
@@ -74,13 +69,9 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 			}
 		}
 
-		updateRequired := updateServiceAccountConfigIfSecretNotLinked(gitSecretName, pipelineSA)
-		if updateRequired {
-			if err := r.Client.Update(ctx, pipelineSA); err != nil {
-				log.Error(err, fmt.Sprintf("Unable to update pipeline service account %s", pipelineSA.Name))
-				return err
-			}
-			log.Info(fmt.Sprintf("Service Account %s updated with git secret", pipelineSA.Name))
+		_, err = r.linkSecretToServiceAccount(ctx, gitSecretName, buildPipelineServiceAccountName, component.Namespace, false)
+		if err != nil {
+			return err
 		}
 	}
 
@@ -124,7 +115,7 @@ func generateInitialPipelineRunForComponent(component *appstudiov1alpha1.Compone
 		revision = component.Spec.Source.GitSource.Revision
 	}
 
-	imageRepo := getContainerImageRepository(component.Spec.ContainerImage)
+	imageRepo := getContainerImageRepositoryForComponent(component)
 	image := fmt.Sprintf("%s:build-%s-%d", imageRepo, getRandomString(5), timestamp)
 
 	params := []tektonapi.Param{

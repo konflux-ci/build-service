@@ -59,7 +59,7 @@ const (
 
 	ImageRepoAnnotationName         = "image.redhat.com/image"
 	ImageRepoGenerateAnnotationName = "image.redhat.com/generate"
-	imageRepoUserSecretName         = "redhat-appstudio-registry-pull-secret"
+	buildPipelineServiceAccountName = "pipeline"
 
 	buildServiceNamespaceName         = "build-service"
 	buildPipelineSelectorResourceName = "build-pipeline-selector"
@@ -167,40 +167,8 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	if component.Spec.ContainerImage == "" {
+	if getContainerImageRepositoryForComponent(&component) == "" {
 		// Container image must be set. It's not possible to proceed without it.
-
-		// If the image is not set by user, let's read it from the annotation set by image controller operator.
-		if _, exists := component.Annotations[ImageRepoGenerateAnnotationName]; exists {
-			// Wait for the image repository to be created
-			if _, exists := component.Annotations[ImageRepoAnnotationName]; !exists {
-				log.Info("Waiting for component image quay repository to be created")
-				// Do not requeue as after the annotation update a new event will trigger a new reconcile
-				return ctrl.Result{}, nil
-			}
-
-			// Copy container image repository created by image controller operator into Component's spec
-			imageRepo, _, err := getComponentImageRepoAndSecretNameFromImageAnnotation(&component)
-			if err != nil {
-				log.Error(err, "failed to get container image from image controller annotation")
-				// Do not requeue as it will not change anything
-				return ctrl.Result{}, nil
-			}
-			if imageRepo == "" {
-				log.Error(nil, "container image repositry is not set in the annotation")
-				// Do not requeue, wait for the fix in the annotation
-				return ctrl.Result{}, nil
-			}
-			// Imply latest tag
-			component.Spec.ContainerImage = imageRepo
-
-			if err := r.Client.Update(ctx, &component); err != nil {
-				log.Error(err, "failed to set container image for the Component")
-				return ctrl.Result{}, err
-			}
-			return ctrl.Result{}, nil
-		}
-
 		log.Info("Waiting for ContainerImage to be set")
 		return ctrl.Result{}, nil
 	}
@@ -216,22 +184,16 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 		if controllerutil.ContainsFinalizer(&component, ImageRegistrySecretLinkFinalizer) {
 			pipelineSA := &corev1.ServiceAccount{}
-			err := r.Client.Get(ctx, types.NamespacedName{Name: "pipeline", Namespace: req.Namespace}, pipelineSA)
+			err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: req.Namespace}, pipelineSA)
 			if err != nil && !errors.IsNotFound(err) {
 				log.Error(err, fmt.Sprintf("Failed to read service account %s in namespace %s", buildPipelineServiceAccountName, req.Namespace))
 				return ctrl.Result{}, err
 			}
 			if err == nil { // If pipeline service account found, unlink the secret from it
-				imageRepoGenerated, imageRepoSecretName, err := getComponentImageRepoAndSecretNameFromImageAnnotation(&component)
-				if err != nil {
-					return ctrl.Result{}, err
-				}
-				if imageRepoGenerated != getContainerImageRepository(component.Spec.ContainerImage) {
-					// User defined repository was used
-					imageRepoSecretName = imageRepoUserSecretName
-				}
-				if _, err := r.unlinkSecretFromServiceAccount(ctx, imageRepoSecretName, pipelineSA); err != nil {
-					return ctrl.Result{}, err
+				if _, generatedImageRepoSecretName, err := getComponentImageRepoAndSecretNameFromImageAnnotation(&component); err == nil {
+					if _, err := r.unlinkSecretFromServiceAccount(ctx, generatedImageRepoSecretName, pipelineSA.Name, pipelineSA.Namespace); err != nil {
+						return ctrl.Result{}, err
+					}
 				}
 			}
 
@@ -276,61 +238,48 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
-	// Ensure component image repository credentials secret is linked to the pipeline service account
-
+	// Ensure pipeline service account exists
 	pipelineSA, err := r.ensurePipelineServiceAccount(ctx, component.Namespace)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	imageRepoGenerated, imageRepoSecretName, err := getComponentImageRepoAndSecretNameFromImageAnnotation(&component)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	var oldImageRepoSecretName string
-	if imageRepoGenerated == getContainerImageRepository(component.Spec.ContainerImage) {
-		// Image repository provided by Image controller must be used
-		oldImageRepoSecretName = imageRepoUserSecretName
-	} else {
-		// Use user provided image repository
-		// Credentials to image repository are the same for all Components of the Application
-		oldImageRepoSecretName = imageRepoSecretName
-		imageRepoSecretName = imageRepoUserSecretName
-	}
-	saUpdated, err := r.unlinkSecretFromServiceAccount(ctx, oldImageRepoSecretName, pipelineSA)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	if saUpdated {
-		pipelineSA, _ = r.ensurePipelineServiceAccount(ctx, component.Namespace)
-		if imageRepoGenerated == getContainerImageRepository(component.Spec.ContainerImage) {
-			log.Info("Switched to generated image registry")
-		} else {
-			log.Info("Switched to user defined image registry")
-		}
-	}
-	_, err = r.linkImageRegistrySecretToServiceAccount(ctx, component.Spec.ContainerImage, imageRepoSecretName, pipelineSA)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
 
-	// Ensure finalizer exists to clean up image registry secret link on component deletion
-	if component.ObjectMeta.DeletionTimestamp.IsZero() {
-		if !controllerutil.ContainsFinalizer(&component, ImageRegistrySecretLinkFinalizer) {
-			if err := r.Client.Get(ctx, req.NamespacedName, &component); err != nil {
-				log.Error(err, "failed to get Component")
+	// Link auto generated image registry secret in case of auto generated image repository is used.
+	isSwitchedImageRegistry := false
+	if !controllerutil.ContainsFinalizer(&component, ImageRegistrySecretLinkFinalizer) {
+		imageRepoGenerated, imageRepoSecretName, err := getComponentImageRepoAndSecretNameFromImageAnnotation(&component)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+
+		// Check if the generated image is used
+		if imageRepoGenerated != "" && (component.Spec.ContainerImage == "" || imageRepoGenerated == getContainerImageRepository(component.Spec.ContainerImage)) {
+			_, err = r.linkSecretToServiceAccount(ctx, imageRepoSecretName, pipelineSA.Name, pipelineSA.Namespace, true)
+			if err != nil {
 				return ctrl.Result{}, err
 			}
-			controllerutil.AddFinalizer(&component, ImageRegistrySecretLinkFinalizer)
-			if err := r.Client.Update(ctx, &component); err != nil {
-				return ctrl.Result{}, err
+
+			// Ensure finalizer exists to clean up image registry secret link on component deletion
+			if component.ObjectMeta.DeletionTimestamp.IsZero() {
+				if !controllerutil.ContainsFinalizer(&component, ImageRegistrySecretLinkFinalizer) {
+					if err := r.Client.Get(ctx, req.NamespacedName, &component); err != nil {
+						log.Error(err, "failed to get Component")
+						return ctrl.Result{}, err
+					}
+					controllerutil.AddFinalizer(&component, ImageRegistrySecretLinkFinalizer)
+					if err := r.Client.Update(ctx, &component); err != nil {
+						return ctrl.Result{}, err
+					}
+					isSwitchedImageRegistry = true
+					log.Info("Image registry secret service account link finalizer added")
+				}
 			}
-			log.Info("Image registry secret service account link finalizer added")
 		}
 	}
 
 	// Check if Pipelines as Code workflow enabled
 	if val, exists := component.Annotations[PaCProvisionAnnotationName]; exists {
-		if val != PaCProvisionRequestedAnnotationValue && !saUpdated {
+		if val != PaCProvisionRequestedAnnotationValue && !isSwitchedImageRegistry {
 			if !(val == PaCProvisionDoneAnnotationValue || val == PaCProvisionErrorAnnotationValue) {
 				message := fmt.Sprintf(
 					"Unexpected value \"%s\" for \"%s\" annotation. Use \"%s\" value to do Pipeline as Code provision for the Component",
