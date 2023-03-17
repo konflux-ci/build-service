@@ -17,10 +17,10 @@ limitations under the License.
 package gitlab
 
 import (
-	"fmt"
+	"net/http"
+
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 	"github.com/xanzy/go-gitlab"
-	"net/http"
 )
 
 // Allow mocking for tests
@@ -231,11 +231,11 @@ func getDefaultBranch(client *GitlabClient, projectPath string) (string, error) 
 // 3) opened from source branch appstudio-{component.Name}
 // If no onboarding merge request is found, nil is returned.
 func findUnmergedOnboardingMergeRequest(
-	glclient *GitlabClient, componentName, projectPath, baseBranch, authorName string) (*gitlab.MergeRequest, error) {
+	glclient *GitlabClient, projectPath, sourceBranch, baseBranch, authorName string) (*gitlab.MergeRequest, error) {
 	opts := &gitlab.ListProjectMergeRequestsOptions{
 		State:          gitlab.String("opened"),
 		AuthorUsername: gitlab.String(authorName),
-		SourceBranch:   gitlab.String(fmt.Sprintf("appstudio-%s", componentName)),
+		SourceBranch:   gitlab.String(sourceBranch),
 		TargetBranch:   gitlab.String(baseBranch),
 	}
 	mrs, resp, err := glclient.client.MergeRequests.ListProjectMergeRequests(projectPath, opts)

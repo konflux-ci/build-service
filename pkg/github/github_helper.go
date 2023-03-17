@@ -33,7 +33,7 @@ var SetupPaCWebhook func(g *GithubClient, webhookUrl, webhookSecret, owner, repo
 var DeletePaCWebhook func(g *GithubClient, webhookUrl, owner, repository string) error = deletePaCWebhook
 var IsAppInstalledIntoRepository func(g *GithubClient, owner, repository string) (bool, error) = isAppInstalledIntoRepository
 var GetDefaultBranch func(*GithubClient, string, string) (string, error) = getDefaultBranch
-var FindUnmergedOnboardingMergeRequest func(*GithubClient, string, string, string, string) (*github.PullRequest, error) = findUnmergedOnboardingMergeRequest
+var FindUnmergedOnboardingMergeRequest func(*GithubClient, string, string, string, string, string) (*github.PullRequest, error) = findUnmergedOnboardingMergeRequest
 var CloseMergeRequest func(*GithubClient, string, string, *github.PullRequest) (*github.PullRequest, error) = closeMergeRequest
 
 const (
@@ -314,9 +314,9 @@ func getDefaultBranch(client *GithubClient, owner string, repository string) (st
 // 2) opened from head ref: owner:appstudio-{component.Name}
 // If no onboarding merge request is found, nil is returned.
 func findUnmergedOnboardingMergeRequest(
-	ghclient *GithubClient, componentName, owner, repository, baseBranch string) (*github.PullRequest, error) {
+	ghclient *GithubClient, owner, repository, sourceBranch, baseBranch, authorName string) (*github.PullRequest, error) {
 	opts := &github.PullRequestListOptions{
-		Head: fmt.Sprintf("%s:appstudio-%s", owner, componentName),
+		Head: fmt.Sprintf("%s:%s", authorName, sourceBranch),
 		Base: baseBranch,
 		// Opened pull request is searched by default by GitHub API.
 	}

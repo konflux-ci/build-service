@@ -105,7 +105,7 @@ var _ = Describe("Component initial build controller", func() {
 			github.NewGithubClient = func(accessToken string) *github.GithubClient { return nil }
 			github.IsAppInstalledIntoRepository = func(g *github.GithubClient, owner, repository string) (bool, error) { return true, nil }
 			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) { return "", nil }
-			github.FindUnmergedOnboardingMergeRequest = func(*github.GithubClient, string, string, string, string) (*gogithub.PullRequest, error) {
+			github.FindUnmergedOnboardingMergeRequest = func(*github.GithubClient, string, string, string, string, string) (*gogithub.PullRequest, error) {
 				return nil, nil
 			}
 			github.SetupPaCWebhook = func(g *github.GithubClient, webhookUrl, webhookSecret, owner, repository string) error { return nil }
@@ -656,7 +656,7 @@ var _ = Describe("Component initial build controller", func() {
 			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) { return "", nil }
 			github.SetupPaCWebhook = func(g *github.GithubClient, webhookUrl, webhookSecret, owner, repository string) error { return nil }
 			github.IsAppInstalledIntoRepository = func(g *github.GithubClient, owner, repository string) (bool, error) { return true, nil }
-			github.FindUnmergedOnboardingMergeRequest = func(*github.GithubClient, string, string, string, string) (*gogithub.PullRequest, error) {
+			github.FindUnmergedOnboardingMergeRequest = func(*github.GithubClient, string, string, string, string, string) (*gogithub.PullRequest, error) {
 				return nil, nil
 			}
 			gitlab.EnsurePaCMergeRequest = func(g *gitlab.GitlabClient, d *gitlab.PaCMergeRequestData) (string, error) { return "", nil }
@@ -854,10 +854,11 @@ var _ = Describe("Component initial build controller", func() {
 
 			isFindOnboardingMergeRequestInvoked := false
 			github.FindUnmergedOnboardingMergeRequest = func(
-				client *github.GithubClient, componentName, owner, repository, baseBranch string) (*gogithub.PullRequest, error) {
+				client *github.GithubClient, owner, repository, sourceBranch, baseBranch, authorName string) (*gogithub.PullRequest, error) {
 				isFindOnboardingMergeRequestInvoked = true
-				Expect(componentName).Should(Equal(component.Name))
+				Expect(sourceBranch).Should(Equal(fmt.Sprintf("appstudio-%s", component.Name)))
 				Expect(baseBranch).Should(Equal(expectedBaseBranch))
+				Expect(authorName).Should(Equal(owner))
 				Expect(gitSourceUrlParts[3]).Should(Equal(owner))
 				Expect(gitSourceUrlParts[4]).Should(Equal(repository))
 				return &gogithub.PullRequest{
@@ -938,8 +939,8 @@ var _ = Describe("Component initial build controller", func() {
 			}
 
 			gitlab.FindUnmergedOnboardingMergeRequest = func(
-				g *gitlab.GitlabClient, componentName, projectPath, baseBranch, authorName string) (*gogitlab.MergeRequest, error) {
-				Expect(componentName).Should(Equal(component.Name))
+				g *gitlab.GitlabClient, projectPath, sourceBranch, baseBranch, authorName string) (*gogitlab.MergeRequest, error) {
+				Expect(sourceBranch).Should(Equal(fmt.Sprintf("appstudio-%s", component.Name)))
 				Expect(projectPath).Should(Equal(expectedProjectPath))
 				Expect(baseBranch).Should(Equal(expectedBaseBranch))
 				Expect(authorName).Should(Equal("redhat-appstudio"))

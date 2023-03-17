@@ -57,6 +57,8 @@ const (
 	pipelinesAsCodeRouteName   = "pipelines-as-code-controller"
 	pipelinesAsCodeRouteEnvVar = "PAC_WEBHOOK_URL"
 
+	pacMergeRequestSourceBranchPrefix = "appstudio-"
+
 	defaultPipelineName   = "docker-build"
 	defaultPipelineBundle = "quay.io/redhat-appstudio-tekton-catalog/pipeline-docker-build:8cf8982d58a841922b687b7166f0cfdc1cc3fc72"
 )
@@ -433,6 +435,10 @@ func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigs(
 	return pipelineRunOnPushYaml, pipelineRunOnPRYaml, nil
 }
 
+func generateMergeRequestSourceBranch(component *appstudiov1alpha1.Component) string {
+	return fmt.Sprintf("%s%s", pacMergeRequestSourceBranchPrefix, component.Name)
+}
+
 // ConfigureRepositoryForPaC creates a merge request with initial Pipelines as Code configuration
 // and configures a webhook to notify in-cluster PaC unless application (on the repository side) is used.
 func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context, component *appstudiov1alpha1.Component, config map[string][]byte, webhookTargetUrl, webhookSecret string) (prUrl string, err error) {
@@ -450,7 +456,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 	gitSourceUrlParts := strings.Split(strings.TrimSuffix(component.Spec.Source.GitSource.URL, ".git"), "/")
 
 	commitMessage := "Appstudio update " + component.Name
-	branch := "appstudio-" + component.Name
+	branch := generateMergeRequestSourceBranch(component)
 	mrTitle := "Appstudio update " + component.Name
 	mrText := "Pipelines as Code configuration proposal"
 	authorName := "redhat-appstudio"
@@ -658,7 +664,8 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(log logr.Logger, 
 			}
 		}
 
-		pullRequest, err := github.FindUnmergedOnboardingMergeRequest(ghclient, component.Name, owner, repository, baseBranch)
+		sourceBranch := generateMergeRequestSourceBranch(component)
+		pullRequest, err := github.FindUnmergedOnboardingMergeRequest(ghclient, owner, repository, sourceBranch, baseBranch, owner)
 		if err != nil {
 			return "", "", err
 		}
@@ -720,7 +727,8 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(log logr.Logger, 
 			}
 		}
 
-		mr, err := gitlab.FindUnmergedOnboardingMergeRequest(glclient, component.Name, projectPath, baseBranch, authorName)
+		sourceBranch := generateMergeRequestSourceBranch(component)
+		mr, err := gitlab.FindUnmergedOnboardingMergeRequest(glclient, projectPath, sourceBranch, baseBranch, authorName)
 		if err != nil {
 			return "", "", err
 		}
