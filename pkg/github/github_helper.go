@@ -35,6 +35,7 @@ var IsAppInstalledIntoRepository func(g *GithubClient, owner, repository string)
 var GetDefaultBranch func(*GithubClient, string, string) (string, error) = getDefaultBranch
 var FindUnmergedOnboardingMergeRequest func(*GithubClient, string, string, string, string, string) (*github.PullRequest, error) = findUnmergedOnboardingMergeRequest
 var CloseMergeRequest func(*GithubClient, string, string, *github.PullRequest) (*github.PullRequest, error) = closeMergeRequest
+var DeleteBranch func(*GithubClient, string, string, string) error = deleteBranch
 
 const (
 	// Allowed values are 'json' and 'form' according to the doc: https://docs.github.com/en/rest/webhooks/repos#create-a-repository-webhook
@@ -340,4 +341,8 @@ func closeMergeRequest(ghclient *GithubClient, owner, repository string, pullReq
 	pullRequest, resp, err := ghclient.client.PullRequests.Edit(
 		context.Background(), owner, repository, pullRequest.GetNumber(), updateData)
 	return pullRequest, RefineGitHostingServiceError(resp.Response, err)
+}
+
+func deleteBranch(client *GithubClient, owner, repository, branch string) error {
+	return client.deleteBranch(owner, repository, branch)
 }

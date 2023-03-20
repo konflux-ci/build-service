@@ -46,6 +46,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/yaml"
+
+	gogithub "github.com/google/go-github/v45/github"
+	gogitlab "github.com/xanzy/go-gitlab"
 )
 
 const (
@@ -697,11 +700,21 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(log logr.Logger, 
 			}
 			return prUrl, "delete", nil
 		} else {
-			updatedPR, err := github.CloseMergeRequest(ghclient, owner, repository, pullRequest)
-			if err != nil {
-				return "", "", err
+			err := github.DeleteBranch(ghclient, owner, repository, sourceBranch)
+			if err == nil {
+				log.Info(fmt.Sprintf("pull request source branch %s is deleted", sourceBranch))
+				return prUrl, "close", nil
 			}
-			return updatedPR.GetURL(), "close", nil
+			// Non-existing source branch should not be an error, just ignore it
+			// but other errors should be handled.
+			if ghErrResp, ok := err.(*gogithub.ErrorResponse); ok {
+				if ghErrResp.Response.StatusCode == 422 {
+					log.Info(fmt.Sprintf("Tried to delete source branch %s, but it does not exist in repository yet.",
+						sourceBranch))
+					return prUrl, "close", nil
+				}
+			}
+			return "", "", err
 		}
 
 	case "gitlab":
@@ -754,11 +767,19 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(log logr.Logger, 
 			}
 			return mrUrl, "delete", nil
 		} else {
-			updatedMR, err := gitlab.CloseMergeRequest(glclient, projectPath, mr)
-			if err != nil {
-				return "", "", err
+			err := gitlab.DeleteBranch(glclient, projectPath, sourceBranch)
+			if err == nil {
+				log.Info(fmt.Sprintf("merge request source branch %s is deleted", sourceBranch))
+				return mr.WebURL, "close", nil
 			}
-			return updatedMR.WebURL, "close", nil
+			if glErrResp, ok := err.(*gogitlab.ErrorResponse); ok {
+				if glErrResp.Response.StatusCode == 404 {
+					log.Info(fmt.Sprintf("Tried to delete source branch %s, but it does not exist in repository yet.",
+						sourceBranch))
+					return mr.WebURL, "close", nil
+				}
+			}
+			return "", "", err
 		}
 
 	case "bitbucket":

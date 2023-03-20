@@ -30,7 +30,7 @@ var SetupPaCWebhook func(g *GitlabClient, projectPath, webhookUrl, webhookSecret
 var DeletePaCWebhook func(g *GitlabClient, projectPath, webhookUrl string) error = deletePaCWebhook
 var GetDefaultBranch func(*GitlabClient, string) (string, error) = getDefaultBranch
 var FindUnmergedOnboardingMergeRequest func(*GitlabClient, string, string, string, string) (*gitlab.MergeRequest, error) = findUnmergedOnboardingMergeRequest
-var CloseMergeRequest func(*GitlabClient, string, *gitlab.MergeRequest) (*gitlab.MergeRequest, error) = closeMergeRequest
+var DeleteBranch func(*GitlabClient, string, string) error = deleteBranch
 
 type File struct {
 	FullPath string
@@ -248,13 +248,9 @@ func findUnmergedOnboardingMergeRequest(
 	return mrs[0], nil
 }
 
-func closeMergeRequest(glclient *GitlabClient, projectPath string, mergeRequest *gitlab.MergeRequest) (*gitlab.MergeRequest, error) {
-	updateOpts := &gitlab.UpdateMergeRequestOptions{
-		StateEvent: gitlab.String("close"),
+func deleteBranch(glclient *GitlabClient, projectPath, branch string) error {
+	if resp, err := glclient.client.Branches.DeleteBranch(projectPath, branch); err != nil {
+		return RefineGitHostingServiceError(resp.Response, err)
 	}
-	mr, resp, err := glclient.client.MergeRequests.UpdateMergeRequest(projectPath, mergeRequest.ID, updateOpts)
-	if err != nil {
-		return nil, RefineGitHostingServiceError(resp.Response, err)
-	}
-	return mr, nil
+	return nil
 }
