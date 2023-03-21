@@ -110,7 +110,7 @@ var _ = BeforeSuite(func() {
 
 	svcAccount := corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "pipeline",
+			Name:      buildPipelineServiceAccountName,
 			Namespace: "default",
 		},
 	}

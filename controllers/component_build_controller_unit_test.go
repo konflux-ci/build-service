@@ -126,7 +126,7 @@ func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 				t.Errorf("generateInitialPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
 			}
 		case "output-image":
-			if !strings.HasPrefix(param.Value.StringVal, "registry.io/username/image:initial-build-") {
+			if !strings.HasPrefix(param.Value.StringVal, "registry.io/username/image:build-") {
 				t.Errorf("generateInitialPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
 			}
 		case "rebuild":
@@ -377,68 +377,6 @@ func TestGetGitProvider(t *testing.T) {
 				(tt.wantErr == true && err == nil) ||
 				(tt.wantErr == false && err != nil) {
 				t.Errorf("UpdateServiceAccountIfSecretNotLinked() Got Error: = %v, want %v ; Got String:  = %v , want %v", err, tt.wantErr, got, tt.wantString)
-			}
-		})
-	}
-}
-
-func TestUpdateServiceAccountIfSecretNotLinked(t *testing.T) {
-	type args struct {
-		gitSecretName  string
-		serviceAccount *corev1.ServiceAccount
-	}
-	tests := []struct {
-		name string
-		args args
-		want bool
-	}{
-		{
-			name: "present",
-			args: args{
-				gitSecretName: "present",
-				serviceAccount: &corev1.ServiceAccount{
-					Secrets: []corev1.ObjectReference{
-						{
-							Name: "present",
-						},
-					},
-				},
-			},
-			want: false, // since it was present, this implies the SA wasn't updated.
-		},
-		{
-			name: "not present",
-			args: args{
-				gitSecretName: "not-present",
-				serviceAccount: &corev1.ServiceAccount{
-					Secrets: []corev1.ObjectReference{
-						{
-							Name: "something-else",
-						},
-					},
-				},
-			},
-			want: true, // since it wasn't present, this implies the SA was updated.
-		},
-		{
-			name: "secretname is empty string",
-			args: args{
-				gitSecretName: "",
-				serviceAccount: &corev1.ServiceAccount{
-					Secrets: []corev1.ObjectReference{
-						{
-							Name: "present",
-						},
-					},
-				},
-			},
-			want: false, // since it wasn't present, this implies the SA was updated.
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := updateServiceAccountIfSecretNotLinked(tt.args.gitSecretName, tt.args.serviceAccount); got != tt.want {
-				t.Errorf("UpdateServiceAccountIfSecretNotLinked() = %v, want %v", got, tt.want)
 			}
 		})
 	}

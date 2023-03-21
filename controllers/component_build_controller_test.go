@@ -18,9 +18,10 @@ package controllers
 
 import (
 	"fmt"
-	"sigs.k8s.io/yaml"
 	"strings"
 	"time"
+
+	"sigs.k8s.io/yaml"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -533,6 +534,7 @@ var _ = Describe("Component initial build controller", func() {
 				return repoDefaultBranch, nil
 			}
 
+			isCreatePaCPullRequestInvoked := false
 			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
 				Expect(d.BaseBranch).To(Equal(repoDefaultBranch))
 				for _, file := range d.Files {
@@ -543,10 +545,96 @@ var _ = Describe("Component initial build controller", func() {
 					targetBranches := prYaml.Annotations["pipelinesascode.tekton.dev/on-target-branch"]
 					Expect(targetBranches).To(Equal(fmt.Sprintf("[%s]", repoDefaultBranch)))
 				}
+				isCreatePaCPullRequestInvoked = true
 				return "url", nil
 			}
 
 			setComponentDevfileModel(resourceKey)
+
+			Eventually(func() bool {
+				return isCreatePaCPullRequestInvoked
+			}, timeout, interval).Should(BeTrue())
+		})
+
+		It("should link auto generated image repository secret to pipeline service accoount", func() {
+			deleteComponent(resourceKey)
+
+			userImageRepo := "docker.io/user/image"
+			generatedImageRepo := "quay.io/appstudio/generated-image"
+			generatedImageRepoSecretName := "generated-image-repo-secret"
+			generatedImageRepoSecretKey := types.NamespacedName{Namespace: resourceKey.Namespace, Name: generatedImageRepoSecretName}
+			pipelineSAKey := types.NamespacedName{Namespace: resourceKey.Namespace, Name: buildPipelineServiceAccountName}
+
+			checkPROutputImage := func(fileContent []byte, expectedImageRepo string) {
+				var prYaml v1beta1.PipelineRun
+				Expect(yaml.Unmarshal(fileContent, &prYaml)).To(Succeed())
+				outoutImage := ""
+				for _, param := range prYaml.Spec.Params {
+					if param.Name == "output-image" {
+						outoutImage = param.Value.StringVal
+						break
+					}
+				}
+				Expect(outoutImage).ToNot(BeEmpty())
+				Expect(outoutImage).To(ContainSubstring(expectedImageRepo))
+			}
+
+			isCreatePaCPullRequestInvoked := false
+			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+				defer GinkgoRecover()
+				checkPROutputImage(d.Files[0].Content, userImageRepo)
+				isCreatePaCPullRequestInvoked = true
+				return "url", nil
+			}
+
+			// Create a component with user's ContainerImage
+			component := getSampleComponentData(resourceKey)
+			component.Spec.ContainerImage = userImageRepo
+			createComponentForPaCBuild(component)
+			setComponentDevfileModel(resourceKey)
+
+			Eventually(func() bool {
+				return isCreatePaCPullRequestInvoked
+			}, timeout, interval).Should(BeTrue())
+
+			createSecret(generatedImageRepoSecretKey, nil)
+			defer deleteSecret(generatedImageRepoSecretKey)
+
+			// Switch to generated image repository
+
+			isCreatePaCPullRequestInvoked = false
+			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+				defer GinkgoRecover()
+				checkPROutputImage(d.Files[0].Content, generatedImageRepo)
+				isCreatePaCPullRequestInvoked = true
+				return "url2", nil
+			}
+
+			component = getComponent(resourceKey)
+			component.Annotations[ImageRepoGenerateAnnotationName] = "false"
+			component.Annotations[ImageRepoAnnotationName] =
+				fmt.Sprintf("{\"image\":\"%s\",\"secret\":\"%s\"}", generatedImageRepo, generatedImageRepoSecretName)
+			component.Spec.ContainerImage = generatedImageRepo
+			Expect(k8sClient.Update(ctx, component)).To(Succeed())
+
+			Eventually(func() bool {
+				component = getComponent(resourceKey)
+				return component.Spec.ContainerImage == generatedImageRepo
+			}, timeout, interval).Should(BeTrue())
+			Eventually(func() bool {
+				return isCreatePaCPullRequestInvoked
+			}, timeout, interval).Should(BeTrue())
+
+			pipelineSA := &corev1.ServiceAccount{}
+			Expect(k8sClient.Get(ctx, pipelineSAKey, pipelineSA)).To(Succeed())
+			isImageRegistryGeneratedSecretLinked := false
+			for _, secret := range pipelineSA.Secrets {
+				if secret.Name == generatedImageRepoSecretName {
+					isImageRegistryGeneratedSecretLinked = true
+					break
+				}
+			}
+			Expect(isImageRegistryGeneratedSecretLinked).To(BeTrue())
 		})
 	})
 
@@ -746,6 +834,90 @@ var _ = Describe("Component initial build controller", func() {
 			ensureComponentInitialBuildAnnotationState(resourceKey, true)
 		})
 
+		It("should submit initial build for private git repository", func() {
+			deleteComponent(resourceKey)
+
+			gitSecretKey := types.NamespacedName{Name: GitSecretName, Namespace: resourceKey.Namespace}
+			gitSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      gitSecretKey.Name,
+					Namespace: gitSecretKey.Namespace,
+				},
+			}
+			Expect(k8sClient.Create(ctx, gitSecret)).Should(Succeed())
+
+			// Create component that refers to the git secret
+			component := getSampleComponentData(resourceKey)
+			component.Spec.ContainerImage = "docker.io/foo/customized:default-test-component"
+			component.Spec.Secret = GitSecretName
+			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
+			setComponentDevfileModel(resourceKey)
+
+			// Wait until all resources created
+			waitOneInitialPipelineRunCreated(resourceKey)
+			ensureComponentInitialBuildAnnotationState(resourceKey, true)
+
+			// Check that git credentials secret is annotated
+			Expect(k8sClient.Get(ctx, gitSecretKey, gitSecret)).Should(Succeed())
+			tektonGitAnnotation := gitSecret.ObjectMeta.Annotations["tekton.dev/git-0"]
+			Expect(tektonGitAnnotation).To(Equal("https://github.com"))
+
+			// Check that the pipeline service account has been linked with the Github authentication credentials
+			var pipelineSA corev1.ServiceAccount
+			pipelineSAKey := types.NamespacedName{Namespace: resourceKey.Namespace, Name: buildPipelineServiceAccountName}
+			Expect(k8sClient.Get(ctx, pipelineSAKey, &pipelineSA)).Should(Succeed())
+
+			secretFound := false
+			for _, secret := range pipelineSA.Secrets {
+				if secret.Name == GitSecretName {
+					secretFound = true
+					break
+				}
+			}
+			Expect(secretFound).To(BeTrue())
+
+			// Check the pipeline run and its resources
+			pipelineRuns := listComponentPipelineRuns(resourceKey)
+			Expect(len(pipelineRuns)).To(Equal(1))
+			pipelineRun := pipelineRuns[0]
+
+			Expect(pipelineRun.Labels[ApplicationNameLabelName]).To(Equal(HASAppName))
+			Expect(pipelineRun.Labels[ComponentNameLabelName]).To(Equal(HASCompName))
+
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/pipeline_name"]).To(Equal(defaultPipelineName))
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(defaultPipelineBundle))
+
+			Expect(pipelineRun.Spec.PipelineSpec).To(BeNil())
+
+			Expect(pipelineRun.Spec.PipelineRef).ToNot(BeNil())
+			Expect(pipelineRun.Spec.PipelineRef.Name).To(Equal(defaultPipelineName))
+			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(defaultPipelineBundle))
+
+			Expect(pipelineRun.Spec.Params).ToNot(BeEmpty())
+			for _, p := range pipelineRun.Spec.Params {
+				switch p.Name {
+				case "output-image":
+					Expect(p.Value.StringVal).ToNot(BeEmpty())
+					Expect(strings.HasPrefix(p.Value.StringVal, "docker.io/foo/customized:"+HASCompName+"-build-"))
+				case "git-url":
+					Expect(p.Value.StringVal).To(Equal(SampleRepoLink))
+				case "revision":
+					Expect(p.Value.StringVal).To(Equal("main"))
+				}
+			}
+
+			Expect(pipelineRun.Spec.Workspaces).To(Not(BeEmpty()))
+			for _, w := range pipelineRun.Spec.Workspaces {
+				if w.Name == "workspace" {
+					Expect(w.VolumeClaimTemplate).NotTo(
+						Equal(nil), "PipelineRun should have its own volumeClaimTemplate.")
+				}
+			}
+
+			// Clean up
+			deleteSecret(gitSecretKey)
+		})
+
 		It("should not submit initial build if the component devfile model is not set", func() {
 			ensureNoPipelineRunsCreated(resourceKey)
 		})
@@ -786,153 +958,6 @@ var _ = Describe("Component initial build controller", func() {
 			ensureNoPipelineRunsCreated(resourceKey)
 		})
 
-		It("should submit initial build if a container image is set to default repo and starting with namespace tag", func() {
-			deleteComponent(resourceKey)
-
-			component := &appstudiov1alpha1.Component{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "appstudio.redhat.com/v1alpha1",
-					Kind:       "Component",
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      HASCompName,
-					Namespace: HASAppNamespace,
-				},
-				Spec: appstudiov1alpha1.ComponentSpec{
-					ComponentName:  HASCompName,
-					Application:    HASAppName,
-					ContainerImage: gitops.GetDefaultImageRepo() + ":" + HASAppNamespace + "-tag",
-					Source: appstudiov1alpha1.ComponentSource{
-						ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
-							GitSource: &appstudiov1alpha1.GitSource{
-								URL: SampleRepoLink,
-							},
-						},
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
-
-			setComponentDevfileModel(resourceKey)
-
-			waitOneInitialPipelineRunCreated(resourceKey)
-			ensureComponentInitialBuildAnnotationState(resourceKey, true)
-		})
-
-	})
-
-	Context("Check if initial build objects are created", func() {
-
-		var gitSecret *corev1.Secret
-
-		BeforeEach(func() {
-			// Pre-create git secret
-			gitSecret = &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      GitSecretName,
-					Namespace: HASAppNamespace,
-				},
-			}
-			Expect(k8sClient.Create(ctx, gitSecret)).Should(Succeed())
-			// Create component that refers to the git secret
-			component := &appstudiov1alpha1.Component{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "appstudio.redhat.com/v1alpha1",
-					Kind:       "Component",
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      HASCompName,
-					Namespace: HASAppNamespace,
-				},
-				Spec: appstudiov1alpha1.ComponentSpec{
-					ComponentName:  HASCompName,
-					Application:    HASAppName,
-					Secret:         GitSecretName,
-					ContainerImage: "docker.io/foo/customized:default-test-component",
-					Source: appstudiov1alpha1.ComponentSource{
-						ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
-							GitSource: &appstudiov1alpha1.GitSource{
-								URL: SampleRepoLink,
-							},
-						},
-					},
-				},
-				Status: appstudiov1alpha1.ComponentStatus{
-					Devfile: getMinimalDevfile(),
-				},
-			}
-			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
-		})
-
-		AfterEach(func() {
-			deleteComponentPipelineRuns(resourceKey)
-			deleteComponent(resourceKey)
-			Expect(k8sClient.Delete(ctx, gitSecret)).Should(Succeed())
-		})
-
-		It("should create build objects when image registry secret missing", func() {
-			setComponentDevfileModel(resourceKey)
-
-			// Wait until all resources created
-			waitOneInitialPipelineRunCreated(resourceKey)
-
-			// Check that git credentials secret is annotated
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: GitSecretName, Namespace: HASAppNamespace}, gitSecret)).Should(Succeed())
-			tektonGitAnnotation := gitSecret.ObjectMeta.Annotations["tekton.dev/git-0"]
-			Expect(tektonGitAnnotation).To(Equal("https://github.com"))
-
-			// Check that the pipeline service account has been linked with the Github authentication credentials
-			var pipelineSA corev1.ServiceAccount
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "pipeline", Namespace: HASAppNamespace}, &pipelineSA)).Should(Succeed())
-
-			secretFound := false
-			for _, secret := range pipelineSA.Secrets {
-				if secret.Name == GitSecretName {
-					secretFound = true
-					break
-				}
-			}
-			Expect(secretFound).To(BeTrue())
-
-			// Check the pipeline run and its resources
-			pipelineRuns := listComponentPipelineRuns(resourceKey)
-			Expect(len(pipelineRuns)).To(Equal(1))
-			pipelineRun := pipelineRuns[0]
-
-			Expect(pipelineRun.Labels[ApplicationNameLabelName]).To(Equal(HASAppName))
-			Expect(pipelineRun.Labels[ComponentNameLabelName]).To(Equal(HASCompName))
-
-			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/pipeline_name"]).To(Equal(defaultPipelineName))
-			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(defaultPipelineBundle))
-
-			Expect(pipelineRun.Spec.PipelineSpec).To(BeNil())
-
-			Expect(pipelineRun.Spec.PipelineRef).ToNot(BeNil())
-			Expect(pipelineRun.Spec.PipelineRef.Name).To(Equal(defaultPipelineName))
-			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(defaultPipelineBundle))
-
-			Expect(pipelineRun.Spec.Params).ToNot(BeEmpty())
-			for _, p := range pipelineRun.Spec.Params {
-				switch p.Name {
-				case "output-image":
-					Expect(p.Value.StringVal).ToNot(BeEmpty())
-					Expect(strings.HasPrefix(p.Value.StringVal, "docker.io/foo/customized:"+HASCompName+"-initial-build-"))
-				case "git-url":
-					Expect(p.Value.StringVal).To(Equal(SampleRepoLink))
-				case "revision":
-					Expect(p.Value.StringVal).To(Equal(""))
-				}
-			}
-
-			Expect(pipelineRun.Spec.Workspaces).To(Not(BeEmpty()))
-			for _, w := range pipelineRun.Spec.Workspaces {
-				if w.Name == "workspace" {
-					Expect(w.VolumeClaimTemplate).NotTo(
-						Equal(nil), "PipelineRun should have its own volumeClaimTemplate.")
-				}
-			}
-
-		})
 	})
 
 	Context("Resolve the correct build bundle during the component's creation", func() {

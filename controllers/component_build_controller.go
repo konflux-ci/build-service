@@ -20,8 +20,10 @@ import (
 	"context"
 	"fmt"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -41,7 +43,8 @@ import (
 const (
 	InitialBuildAnnotationName = "appstudio.openshift.io/component-initial-build"
 
-	PaCProvisionFinalizer = "pac.component.appstudio.openshift.io/finalizer"
+	PaCProvisionFinalizer            = "pac.component.appstudio.openshift.io/finalizer"
+	ImageRegistrySecretLinkFinalizer = "image-registry-secret-sa-link.component.appstudio.openshift.io/finalizer"
 
 	PaCProvisionAnnotationName             = "appstudio.openshift.io/pac-provision"
 	PaCProvisionRequestedAnnotationValue   = "request"
@@ -53,6 +56,10 @@ const (
 	ComponentNameLabelName    = "appstudio.openshift.io/component"
 	PartOfLabelName           = "app.kubernetes.io/part-of"
 	PartOfAppStudioLabelValue = "appstudio"
+
+	ImageRepoAnnotationName         = "image.redhat.com/image"
+	ImageRepoGenerateAnnotationName = "image.redhat.com/generate"
+	buildPipelineServiceAccountName = "pipeline"
 
 	buildServiceNamespaceName         = "build-service"
 	buildPipelineSelectorResourceName = "build-pipeline-selector"
@@ -160,8 +167,8 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	if component.Spec.ContainerImage == "" {
-		// Expect that ContainerImage is set to default value if the field left empty by user.
+	if getContainerImageRepositoryForComponent(&component) == "" {
+		// Container image must be set. It's not possible to proceed without it.
 		log.Info("Waiting for ContainerImage to be set")
 		return ctrl.Result{}, nil
 	}
@@ -174,6 +181,35 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	if !component.ObjectMeta.DeletionTimestamp.IsZero() {
 		// Deletion of the component is requested
+
+		if controllerutil.ContainsFinalizer(&component, ImageRegistrySecretLinkFinalizer) {
+			pipelineSA := &corev1.ServiceAccount{}
+			err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: req.Namespace}, pipelineSA)
+			if err != nil && !errors.IsNotFound(err) {
+				log.Error(err, fmt.Sprintf("Failed to read service account %s in namespace %s", buildPipelineServiceAccountName, req.Namespace))
+				return ctrl.Result{}, err
+			}
+			if err == nil { // If pipeline service account found, unlink the secret from it
+				if _, generatedImageRepoSecretName, err := getComponentImageRepoAndSecretNameFromImageAnnotation(&component); err == nil {
+					if _, err := r.unlinkSecretFromServiceAccount(ctx, generatedImageRepoSecretName, pipelineSA.Name, pipelineSA.Namespace); err != nil {
+						return ctrl.Result{}, err
+					}
+				}
+			}
+
+			if err := r.Client.Get(ctx, req.NamespacedName, &component); err != nil {
+				log.Error(err, "failed to get Component")
+				return ctrl.Result{}, err
+			}
+			controllerutil.RemoveFinalizer(&component, ImageRegistrySecretLinkFinalizer)
+			if err := r.Client.Update(ctx, &component); err != nil {
+				return ctrl.Result{}, err
+			}
+			log.Info("Image registry secret link finalizer removed")
+
+			// A new reconcile will be triggered because of the update above
+			return ctrl.Result{}, nil
+		}
 
 		if controllerutil.ContainsFinalizer(&component, PaCProvisionFinalizer) {
 			// In order not to block the deletion of the Component delete finalizer
@@ -193,6 +229,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
+	// Ensure devfile model is set
 	if component.Status.Devfile == "" {
 		// The Component has been just created.
 		// Component controller (from Application Service) must set devfile model, wait for it.
@@ -201,9 +238,48 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
+	// Ensure pipeline service account exists
+	pipelineSA, err := r.ensurePipelineServiceAccount(ctx, component.Namespace)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Link auto generated image registry secret in case of auto generated image repository is used.
+	isSwitchedImageRegistry := false
+	if !controllerutil.ContainsFinalizer(&component, ImageRegistrySecretLinkFinalizer) {
+		imageRepoGenerated, imageRepoSecretName, err := getComponentImageRepoAndSecretNameFromImageAnnotation(&component)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+
+		// Check if the generated image is used
+		if imageRepoGenerated != "" && (component.Spec.ContainerImage == "" || imageRepoGenerated == getContainerImageRepository(component.Spec.ContainerImage)) {
+			_, err = r.linkSecretToServiceAccount(ctx, imageRepoSecretName, pipelineSA.Name, pipelineSA.Namespace, true)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+
+			// Ensure finalizer exists to clean up image registry secret link on component deletion
+			if component.ObjectMeta.DeletionTimestamp.IsZero() {
+				if !controllerutil.ContainsFinalizer(&component, ImageRegistrySecretLinkFinalizer) {
+					if err := r.Client.Get(ctx, req.NamespacedName, &component); err != nil {
+						log.Error(err, "failed to get Component")
+						return ctrl.Result{}, err
+					}
+					controllerutil.AddFinalizer(&component, ImageRegistrySecretLinkFinalizer)
+					if err := r.Client.Update(ctx, &component); err != nil {
+						return ctrl.Result{}, err
+					}
+					isSwitchedImageRegistry = true
+					log.Info("Image registry secret service account link finalizer added")
+				}
+			}
+		}
+	}
+
 	// Check if Pipelines as Code workflow enabled
 	if val, exists := component.Annotations[PaCProvisionAnnotationName]; exists {
-		if val != PaCProvisionRequestedAnnotationValue {
+		if val != PaCProvisionRequestedAnnotationValue && !isSwitchedImageRegistry {
 			if !(val == PaCProvisionDoneAnnotationValue || val == PaCProvisionErrorAnnotationValue) {
 				message := fmt.Sprintf(
 					"Unexpected value \"%s\" for \"%s\" annotation. Use \"%s\" value to do Pipeline as Code provision for the Component",
@@ -284,7 +360,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	if err := r.SubmitNewBuild(ctx, component); err != nil {
+	if err := r.SubmitNewBuild(ctx, &component); err != nil {
 		// Try to revert the initial build annotation
 		if err := r.Client.Get(ctx, req.NamespacedName, &component); err == nil {
 			if len(component.Annotations) > 0 {
