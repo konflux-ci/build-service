@@ -498,8 +498,3 @@ func (c *GithubClient) deleteWebhook(owner, repository string, webhookId int64) 
 	}
 	return nil
 }
-
-func (c *GithubClient) deleteBranch(owner, repository, branch string) error {
-	resp, err := c.client.Git.DeleteRef(c.ctx, owner, repository, branch)
-	return RefineGitHostingServiceError(resp.Response, err)
-}

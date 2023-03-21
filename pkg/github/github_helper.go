@@ -34,7 +34,6 @@ var DeletePaCWebhook func(g *GithubClient, webhookUrl, owner, repository string)
 var IsAppInstalledIntoRepository func(g *GithubClient, owner, repository string) (bool, error) = isAppInstalledIntoRepository
 var GetDefaultBranch func(*GithubClient, string, string) (string, error) = getDefaultBranch
 var FindUnmergedOnboardingMergeRequest func(*GithubClient, string, string, string, string, string) (*github.PullRequest, error) = findUnmergedOnboardingMergeRequest
-var CloseMergeRequest func(*GithubClient, string, string, *github.PullRequest) (*github.PullRequest, error) = closeMergeRequest
 var DeleteBranch func(*GithubClient, string, string, string) error = deleteBranch
 
 const (
@@ -331,18 +330,6 @@ func findUnmergedOnboardingMergeRequest(
 	return pullRequests[0], nil
 }
 
-func closeMergeRequest(ghclient *GithubClient, owner, repository string, pullRequest *github.PullRequest) (*github.PullRequest, error) {
-	updateData := &github.PullRequest{
-		Title:               pullRequest.Title,
-		Body:                pullRequest.Body,
-		State:               github.String("closed"),
-		MaintainerCanModify: pullRequest.MaintainerCanModify,
-	}
-	pullRequest, resp, err := ghclient.client.PullRequests.Edit(
-		context.Background(), owner, repository, pullRequest.GetNumber(), updateData)
-	return pullRequest, RefineGitHostingServiceError(resp.Response, err)
-}
-
 func deleteBranch(client *GithubClient, owner, repository, branch string) error {
-	return client.deleteBranch(owner, repository, branch)
+	return client.deleteReference(owner, repository, branch)
 }
