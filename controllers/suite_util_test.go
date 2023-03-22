@@ -275,7 +275,8 @@ func waitOneInitialPipelineRunCreated(componentKey types.NamespacedName) {
 		}
 		pipelineRun := pipelineRuns[0]
 		return isOwnedBy(pipelineRun.OwnerReferences, *component)
-	}, timeout, interval).Should(BeTrue())
+	}, timeout, interval).Should(BeTrue(),
+		fmt.Sprintf("No pipelinerun is created for component: %v", component))
 }
 
 func ensureNoPipelineRunsCreated(componentLookupKey types.NamespacedName) {

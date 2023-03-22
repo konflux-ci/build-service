@@ -46,6 +46,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/yaml"
+
+	gogithub "github.com/google/go-github/v45/github"
+	gogitlab "github.com/xanzy/go-gitlab"
 )
 
 const (
@@ -56,6 +59,8 @@ const (
 	pipelinesAsCodeNamespace   = "pipelines-as-code"
 	pipelinesAsCodeRouteName   = "pipelines-as-code-controller"
 	pipelinesAsCodeRouteEnvVar = "PAC_WEBHOOK_URL"
+
+	pacMergeRequestSourceBranchPrefix = "appstudio-"
 
 	defaultPipelineName   = "docker-build"
 	defaultPipelineBundle = "quay.io/redhat-appstudio-tekton-catalog/pipeline-docker-build:8cf8982d58a841922b687b7166f0cfdc1cc3fc72"
@@ -159,18 +164,20 @@ func (r *ComponentBuildReconciler) UndoPaCProvisionForComponent(ctx context.Cont
 	}
 
 	// Manage merge request for Pipelines as Code configuration removal
-	mrUrl, err := r.UnconfigureRepositoryForPaC(log, component, pacSecret.Data, webhookTargetUrl)
+	mrUrl, action, err := r.UnconfigureRepositoryForPaC(log, component, pacSecret.Data, webhookTargetUrl)
 	if err != nil {
 		log.Error(err, "failed to create merge request to remove Pipelines as Code configuration from Component source repository")
 		return
 	}
-	var mrMessage string
-	if mrUrl != "" {
-		mrMessage = fmt.Sprintf("Pipelines as Code configuration removal merge request: %s", mrUrl)
-	} else {
-		mrMessage = "Pipelines as Code configuration removal merge request is not needed"
+	if action == "delete" {
+		if mrUrl != "" {
+			log.Info(fmt.Sprintf("Pipelines as Code configuration removal merge request: %s", mrUrl))
+		} else {
+			log.Info("Pipelines as Code configuration removal merge request is not needed")
+		}
+	} else if action == "close" {
+		log.Info(fmt.Sprintf("Pipelines as Code configuration merge request has been closed: %s", mrUrl))
 	}
-	log.Info(mrMessage)
 }
 
 func (r *ComponentBuildReconciler) ensurePaCSecret(ctx context.Context, component *appstudiov1alpha1.Component, gitProvider string) (*corev1.Secret, error) {
@@ -431,6 +438,10 @@ func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigs(
 	return pipelineRunOnPushYaml, pipelineRunOnPRYaml, nil
 }
 
+func generateMergeRequestSourceBranch(component *appstudiov1alpha1.Component) string {
+	return fmt.Sprintf("%s%s", pacMergeRequestSourceBranchPrefix, component.Name)
+}
+
 // ConfigureRepositoryForPaC creates a merge request with initial Pipelines as Code configuration
 // and configures a webhook to notify in-cluster PaC unless application (on the repository side) is used.
 func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context, component *appstudiov1alpha1.Component, config map[string][]byte, webhookTargetUrl, webhookSecret string) (prUrl string, err error) {
@@ -448,7 +459,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 	gitSourceUrlParts := strings.Split(strings.TrimSuffix(component.Spec.Source.GitSource.URL, ".git"), "/")
 
 	commitMessage := "Appstudio update " + component.Name
-	branch := "appstudio-" + component.Name
+	branch := generateMergeRequestSourceBranch(component)
 	mrTitle := "Appstudio update " + component.Name
 	mrText := "Pipelines as Code configuration proposal"
 	authorName := "redhat-appstudio"
@@ -592,7 +603,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 // Deletes PaC webhook if it's used.
 // Does not delete PaC GitHub application from the repository as its installation was done manually by the user.
 // Returns merge request web URL or empty string if it's not needed.
-func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(log logr.Logger, component *appstudiov1alpha1.Component, config map[string][]byte, webhookTargetUrl string) (prUrl string, err error) {
+func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(log logr.Logger, component *appstudiov1alpha1.Component, config map[string][]byte, webhookTargetUrl string) (prUrl string, action string, err error) {
 	gitProvider, _ := gitops.GetGitProvider(*component)
 	isAppUsed := gitops.IsPaCApplicationConfigured(gitProvider, config)
 
@@ -606,13 +617,13 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(log logr.Logger, 
 
 	commitMessage := "Appstudio purge " + component.Name
 	branch := "appstudio-purge-" + component.Name
-	baseBranch := "" // empty string means autodetect
 	mrTitle := "Appstudio purge " + component.Name
 	mrText := "Pipelines as Code configuration removal"
 	authorName := "redhat-appstudio"
 	authorEmail := "appstudio@redhat.com"
 
-	if component.Spec.Source.GitSource != nil && component.Spec.Source.GitSource.Revision != "" {
+	var baseBranch string
+	if component.Spec.Source.GitSource != nil {
 		baseBranch = component.Spec.Source.GitSource.Revision
 	}
 
@@ -626,13 +637,13 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(log logr.Logger, 
 			githubAppIdStr := string(config[gitops.PipelinesAsCode_githubAppIdKey])
 			githubAppId, err := strconv.ParseInt(githubAppIdStr, 10, 64)
 			if err != nil {
-				return "", fmt.Errorf("failed to convert %s to int: %w", githubAppIdStr, err)
+				return "", "", fmt.Errorf("failed to convert %s to int: %w", githubAppIdStr, err)
 			}
 
 			privateKey := config[gitops.PipelinesAsCode_githubPrivateKey]
 			ghclient, err = github.NewGithubClientByApp(githubAppId, privateKey, owner)
 			if err != nil {
-				return "", err
+				return "", "", err
 			}
 		} else {
 			// Webhook
@@ -649,37 +660,67 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(log logr.Logger, 
 			}
 		}
 
-		prData := &github.PaCPullRequestData{
-			Owner:         owner,
-			Repository:    repository,
-			CommitMessage: commitMessage,
-			Branch:        branch,
-			BaseBranch:    baseBranch,
-			PRTitle:       mrTitle,
-			PRText:        mrText,
-			AuthorName:    authorName,
-			AuthorEmail:   authorEmail,
-			Files: []github.File{
-				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPushFilename},
-				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPRFilename},
-			},
-		}
-		prUrl, err = github.UndoPaCPullRequest(ghclient, prData)
-		if err != nil {
-			// Handle case when GitHub application is not installed for the component repository
-			if strings.Contains(err.Error(), "Resource not accessible by integration") {
-				return "", fmt.Errorf(" Pipelines as Code GitHub application with %s ID is not installed for %s repository",
-					string(config[gitops.PipelinesAsCode_githubAppIdKey]), component.Spec.Source.GitSource.URL)
+		if baseBranch == "" {
+			baseBranch, err = github.GetDefaultBranch(ghclient, owner, repository)
+			if err != nil {
+				return "", "", nil
 			}
-			return "", err
 		}
 
-		return prUrl, nil
+		sourceBranch := generateMergeRequestSourceBranch(component)
+		pullRequest, err := github.FindUnmergedOnboardingMergeRequest(ghclient, owner, repository, sourceBranch, baseBranch, owner)
+		if err != nil {
+			return "", "", err
+		}
+
+		if pullRequest == nil {
+			prData := &github.PaCPullRequestData{
+				Owner:         owner,
+				Repository:    repository,
+				CommitMessage: commitMessage,
+				Branch:        branch,
+				BaseBranch:    baseBranch,
+				PRTitle:       mrTitle,
+				PRText:        mrText,
+				AuthorName:    authorName,
+				AuthorEmail:   authorEmail,
+				Files: []github.File{
+					{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPushFilename},
+					{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPRFilename},
+				},
+			}
+			prUrl, err = github.UndoPaCPullRequest(ghclient, prData)
+			if err != nil {
+				// Handle case when GitHub application is not installed for the component repository
+				if strings.Contains(err.Error(), "Resource not accessible by integration") {
+					return "", "", fmt.Errorf(" Pipelines as Code GitHub application with %s ID is not installed for %s repository",
+						string(config[gitops.PipelinesAsCode_githubAppIdKey]), component.Spec.Source.GitSource.URL)
+				}
+				return "", "", err
+			}
+			return prUrl, "delete", nil
+		} else {
+			err := github.DeleteBranch(ghclient, owner, repository, sourceBranch)
+			if err == nil {
+				log.Info(fmt.Sprintf("pull request source branch %s is deleted", sourceBranch))
+				return prUrl, "close", nil
+			}
+			// Non-existing source branch should not be an error, just ignore it
+			// but other errors should be handled.
+			if ghErrResp, ok := err.(*gogithub.ErrorResponse); ok {
+				if ghErrResp.Response.StatusCode == 422 {
+					log.Info(fmt.Sprintf("Tried to delete source branch %s, but it does not exist in repository yet.",
+						sourceBranch))
+					return prUrl, "close", nil
+				}
+			}
+			return "", "", err
+		}
 
 	case "gitlab":
 		glclient, err := gitlab.NewGitlabClient(accessToken)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 
 		gitlabNamespace := gitSourceUrlParts[3]
@@ -692,27 +733,60 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(log logr.Logger, 
 			log.Error(err, "failed to delete Pipelines as Code webhook")
 		}
 
-		mrData := &gitlab.PaCMergeRequestData{
-			ProjectPath:   projectPath,
-			CommitMessage: commitMessage,
-			Branch:        branch,
-			BaseBranch:    baseBranch,
-			MrTitle:       mrTitle,
-			MrText:        mrText,
-			AuthorName:    authorName,
-			AuthorEmail:   authorEmail,
-			Files: []gitlab.File{
-				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPushFilename},
-				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPRFilename},
-			},
+		if baseBranch == "" {
+			baseBranch, err = gitlab.GetDefaultBranch(glclient, projectPath)
+			if err != nil {
+				return "", "", nil
+			}
 		}
-		return gitlab.UndoPaCMergeRequest(glclient, mrData)
+
+		sourceBranch := generateMergeRequestSourceBranch(component)
+		mr, err := gitlab.FindUnmergedOnboardingMergeRequest(glclient, projectPath, sourceBranch, baseBranch, authorName)
+		if err != nil {
+			return "", "", err
+		}
+
+		if mr == nil {
+			mrData := &gitlab.PaCMergeRequestData{
+				ProjectPath:   projectPath,
+				CommitMessage: commitMessage,
+				Branch:        branch,
+				BaseBranch:    baseBranch,
+				MrTitle:       mrTitle,
+				MrText:        mrText,
+				AuthorName:    authorName,
+				AuthorEmail:   authorEmail,
+				Files: []gitlab.File{
+					{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPushFilename},
+					{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPRFilename},
+				},
+			}
+			mrUrl, err := gitlab.UndoPaCMergeRequest(glclient, mrData)
+			if err != nil {
+				return "", "", err
+			}
+			return mrUrl, "delete", nil
+		} else {
+			err := gitlab.DeleteBranch(glclient, projectPath, sourceBranch)
+			if err == nil {
+				log.Info(fmt.Sprintf("merge request source branch %s is deleted", sourceBranch))
+				return mr.WebURL, "close", nil
+			}
+			if glErrResp, ok := err.(*gogitlab.ErrorResponse); ok {
+				if glErrResp.Response.StatusCode == 404 {
+					log.Info(fmt.Sprintf("Tried to delete source branch %s, but it does not exist in repository yet.",
+						sourceBranch))
+					return mr.WebURL, "close", nil
+				}
+			}
+			return "", "", err
+		}
 
 	case "bitbucket":
 		// TODO implement
-		return "", fmt.Errorf("git provider %s is not supported", gitProvider)
+		return "", "", fmt.Errorf("git provider %s is not supported", gitProvider)
 	default:
-		return "", fmt.Errorf("git provider %s is not supported", gitProvider)
+		return "", "", fmt.Errorf("git provider %s is not supported", gitProvider)
 	}
 }
 

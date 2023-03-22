@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -37,6 +38,9 @@ import (
 	"github.com/redhat-appstudio/build-service/pkg/github"
 	"github.com/redhat-appstudio/build-service/pkg/gitlab"
 	"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+
+	gogithub "github.com/google/go-github/v45/github"
+	gogitlab "github.com/xanzy/go-gitlab"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -102,6 +106,9 @@ var _ = Describe("Component initial build controller", func() {
 			github.NewGithubClient = func(accessToken string) *github.GithubClient { return nil }
 			github.IsAppInstalledIntoRepository = func(g *github.GithubClient, owner, repository string) (bool, error) { return true, nil }
 			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) { return "", nil }
+			github.FindUnmergedOnboardingMergeRequest = func(*github.GithubClient, string, string, string, string, string) (*gogithub.PullRequest, error) {
+				return nil, nil
+			}
 			github.SetupPaCWebhook = func(g *github.GithubClient, webhookUrl, webhookSecret, owner, repository string) error { return nil }
 			gitlab.EnsurePaCMergeRequest = func(g *gitlab.GitlabClient, d *gitlab.PaCMergeRequestData) (string, error) { return "", nil }
 			gitlab.SetupPaCWebhook = func(g *gitlab.GitlabClient, projectPath, webhookUrl, webhookSecret string) error { return nil }
@@ -650,8 +657,14 @@ var _ = Describe("Component initial build controller", func() {
 			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) { return "", nil }
 			github.SetupPaCWebhook = func(g *github.GithubClient, webhookUrl, webhookSecret, owner, repository string) error { return nil }
 			github.IsAppInstalledIntoRepository = func(g *github.GithubClient, owner, repository string) (bool, error) { return true, nil }
+			github.FindUnmergedOnboardingMergeRequest = func(*github.GithubClient, string, string, string, string, string) (*gogithub.PullRequest, error) {
+				return nil, nil
+			}
 			gitlab.EnsurePaCMergeRequest = func(g *gitlab.GitlabClient, d *gitlab.PaCMergeRequestData) (string, error) { return "", nil }
 			gitlab.SetupPaCWebhook = func(g *gitlab.GitlabClient, projectPath, webhookUrl, webhookSecret string) error { return nil }
+			gitlab.FindUnmergedOnboardingMergeRequest = func(*gitlab.GitlabClient, string, string, string, string) (*gogitlab.MergeRequest, error) {
+				return nil, nil
+			}
 		})
 
 		_ = AfterEach(func() {
@@ -774,6 +787,11 @@ var _ = Describe("Component initial build controller", func() {
 				Expect(projectPath).To(Equal("devfile-samples/devfile-sample-go-basic"))
 				return nil
 			}
+			isDeleteBranchInvoked := false
+			gitlab.DeleteBranch = func(*gitlab.GitlabClient, string, string) error {
+				isDeleteBranchInvoked = true
+				return nil
+			}
 
 			pacSecretData := map[string]string{"gitlab.token": "glpat-token"}
 			createSecret(pacSecretKey, pacSecretData)
@@ -795,6 +813,9 @@ var _ = Describe("Component initial build controller", func() {
 			Eventually(func() bool {
 				return isDeletePaCWebhookInvoked
 			}, timeout, interval).Should(BeTrue())
+			Eventually(func() bool {
+				return isDeleteBranchInvoked
+			}, timeout, interval).Should(BeFalse())
 		})
 
 		It("should not block component deletion if PaC definitions removal failed", func() {
@@ -813,6 +834,178 @@ var _ = Describe("Component initial build controller", func() {
 			waitPaCFinalizerOnComponent(resourceKey)
 
 			deleteComponent(resourceKey)
+		})
+
+		var assertCloseUnmergedPullRequest = func(expectedBaseBranch string, sourceBranchExists bool) {
+			github.UndoPaCPullRequest = func(g *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+				defer GinkgoRecover()
+				Fail("Expect to close unmerged merge request other than delete .tekton/")
+				return "", nil
+			}
+
+			component := getSampleComponentData(resourceKey)
+			if expectedBaseBranch == "" {
+				expectedBaseBranch = component.Spec.Source.GitSource.Revision
+			} else {
+				component.Spec.Source.GitSource.Revision = ""
+			}
+			gitUrl := strings.TrimSuffix(component.Spec.Source.GitSource.URL, ".git")
+			gitSourceUrlParts := strings.Split(gitUrl, "/")
+			pullRequestUrl := fmt.Sprintf("%s/pull/1", gitUrl)
+
+			expectedSourceBranch := pacMergeRequestSourceBranchPrefix + component.Name
+
+			isFindOnboardingMergeRequestInvoked := false
+			github.FindUnmergedOnboardingMergeRequest = func(
+				client *github.GithubClient, owner, repository, sourceBranch, baseBranch, authorName string) (*gogithub.PullRequest, error) {
+				isFindOnboardingMergeRequestInvoked = true
+				Expect(sourceBranch).Should(Equal(expectedSourceBranch))
+				Expect(baseBranch).Should(Equal(expectedBaseBranch))
+				Expect(authorName).Should(Equal(owner))
+				Expect(gitSourceUrlParts[3]).Should(Equal(owner))
+				Expect(gitSourceUrlParts[4]).Should(Equal(repository))
+				return &gogithub.PullRequest{
+					URL: gogithub.String(pullRequestUrl),
+				}, nil
+			}
+
+			isDeleteBranchInvoked := false
+			github.DeleteBranch = func(client *github.GithubClient, owner, repository, branch string) error {
+				isDeleteBranchInvoked = true
+				Expect(branch).Should(Equal(expectedSourceBranch))
+				Expect(gitSourceUrlParts[3]).Should(Equal(owner))
+				Expect(gitSourceUrlParts[4]).Should(Equal(repository))
+				if !sourceBranchExists {
+					return &gogithub.ErrorResponse{
+						Response: &http.Response{
+							StatusCode: 422,
+						},
+					}
+				}
+				return nil
+			}
+
+			pacSecretData := map[string]string{
+				"github-application-id": "12345",
+				"github-private-key":    githubAppPrivateKey,
+			}
+			createSecret(pacSecretKey, pacSecretData)
+
+			createComponentForPaCBuild(component)
+			setComponentDevfileModel(resourceKey)
+			waitPaCFinalizerOnComponent(resourceKey)
+
+			deleteComponent(resourceKey)
+
+			Eventually(func() bool {
+				return isFindOnboardingMergeRequestInvoked
+			}, timeout, interval).Should(BeTrue(),
+				"github.FindUnmergedOnboardingMergeRequest should be invoked, but not.")
+			Eventually(func() bool {
+				return isDeleteBranchInvoked
+			}, timeout, interval).Should(BeTrue(),
+				"github.DeleteBranch should be invoked, but not.")
+		}
+
+		It("should close unmerged PaC pull request using GitHub application, opened based on branch specified in Revision", func() {
+			assertCloseUnmergedPullRequest("", true)
+		})
+
+		It("should keep silent when close unmerged PaC pull request using GitHub app by deleting a non-existing source branch", func() {
+			assertCloseUnmergedPullRequest("", false)
+		})
+
+		It("should close unmerged PaC pull request using GitHub application, opened based on default branch", func() {
+			defaultBranch := "devel"
+			github.GetDefaultBranch = func(*github.GithubClient, string, string) (string, error) {
+				return defaultBranch, nil
+			}
+			assertCloseUnmergedPullRequest(defaultBranch, true)
+		})
+
+		var assertCloseUnmergedMR = func(expectedBaseBranch string, sourceBranchExists bool) {
+			const gitUrl = "https://gitlab.com/devfile-samples/devfile-sample-go-basic"
+			const expectedProjectPath = "devfile-samples/devfile-sample-go-basic"
+			component := getSampleComponentData(resourceKey)
+			component.Annotations = map[string]string{
+				PaCProvisionAnnotationName: PaCProvisionRequestedAnnotationValue,
+			}
+			component.Spec.Source.GitSource.URL = gitUrl
+			if expectedBaseBranch == "" {
+				expectedBaseBranch = component.Spec.Source.GitSource.Revision
+			} else {
+				component.Spec.Source.GitSource.Revision = ""
+			}
+			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
+
+			mrUrl := fmt.Sprintf("%s/-/merge_requests/1", gitUrl)
+			existingMR := &gogitlab.MergeRequest{
+				ID:     1,
+				WebURL: mrUrl,
+			}
+
+			isUndoPaCMergeRequestInvoked := false
+			gitlab.UndoPaCMergeRequest = func(g *gitlab.GitlabClient, d *gitlab.PaCMergeRequestData) (string, error) {
+				isUndoPaCMergeRequestInvoked = true
+				return "", nil
+			}
+
+			gitlab.FindUnmergedOnboardingMergeRequest = func(
+				g *gitlab.GitlabClient, projectPath, sourceBranch, baseBranch, authorName string) (*gogitlab.MergeRequest, error) {
+				Expect(sourceBranch).Should(Equal(fmt.Sprintf("appstudio-%s", component.Name)))
+				Expect(projectPath).Should(Equal(expectedProjectPath))
+				Expect(baseBranch).Should(Equal(expectedBaseBranch))
+				Expect(authorName).Should(Equal("redhat-appstudio"))
+				return existingMR, nil
+			}
+
+			isDeleteBranchInvoked := false
+			gitlab.DeleteBranch = func(g *gitlab.GitlabClient, projectPath, sourceBranch string) error {
+				isDeleteBranchInvoked = true
+				Expect(projectPath).Should(Equal(expectedProjectPath))
+				Expect(sourceBranch).Should(Equal(pacMergeRequestSourceBranchPrefix + component.Name))
+				if !sourceBranchExists {
+					return &gogitlab.ErrorResponse{
+						Response: &http.Response{
+							StatusCode: 404,
+						},
+					}
+				}
+				return nil
+			}
+
+			pacSecretData := map[string]string{"gitlab.token": "glpat-token"}
+			createSecret(pacSecretKey, pacSecretData)
+
+			setComponentDevfileModel(resourceKey)
+			waitPaCFinalizerOnComponent(resourceKey)
+
+			deleteComponent(resourceKey)
+
+			Eventually(func() bool {
+				return isUndoPaCMergeRequestInvoked
+			}, timeout, interval).Should(BeFalse(),
+				"gitlab.UndoPaCMergeRequest should not be invoked, but it was invoked.")
+			Eventually(func() bool {
+				return isDeleteBranchInvoked
+			}, timeout, interval).Should(BeTrue(),
+				"gitlab.DeleteBranch should be invoked, but not.")
+		}
+
+		It("should close unmerged PaC merge request using GitLab token, opened based on branch specified in Revision", func() {
+			assertCloseUnmergedMR("", true)
+		})
+
+		It("should keep silent when close unmerged PaC merge request using GitLab token by deleting a non-existing source branch", func() {
+			assertCloseUnmergedMR("", false)
+		})
+
+		It("should close unmerged PaC merge request using GitLab token, opened based on default branch", func() {
+			defaultBranch := "devel"
+			gitlab.GetDefaultBranch = func(*gitlab.GitlabClient, string) (string, error) {
+				return defaultBranch, nil
+			}
+			assertCloseUnmergedMR(defaultBranch, true)
 		})
 	})
 

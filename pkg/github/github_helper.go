@@ -17,6 +17,7 @@ limitations under the License.
 package github
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -32,6 +33,8 @@ var SetupPaCWebhook func(g *GithubClient, webhookUrl, webhookSecret, owner, repo
 var DeletePaCWebhook func(g *GithubClient, webhookUrl, owner, repository string) error = deletePaCWebhook
 var IsAppInstalledIntoRepository func(g *GithubClient, owner, repository string) (bool, error) = isAppInstalledIntoRepository
 var GetDefaultBranch func(*GithubClient, string, string) (string, error) = getDefaultBranch
+var FindUnmergedOnboardingMergeRequest func(*GithubClient, string, string, string, string, string) (*github.PullRequest, error) = findUnmergedOnboardingMergeRequest
+var DeleteBranch func(*GithubClient, string, string, string) error = deleteBranch
 
 const (
 	// Allowed values are 'json' and 'form' according to the doc: https://docs.github.com/en/rest/webhooks/repos#create-a-repository-webhook
@@ -303,4 +306,30 @@ func RefineGitHostingServiceError(response *http.Response, originErr error) erro
 
 func getDefaultBranch(client *GithubClient, owner string, repository string) (string, error) {
 	return client.getDefaultBranch(owner, repository)
+}
+
+// findUnmergedOnboardingMergeRequest finds out the unmerged merge request that is opened during the component onboarding
+// An onboarding merge request fulfills both:
+// 1) opened based on the base branch which is determined by the Revision or is the default branch of component repository
+// 2) opened from head ref: owner:appstudio-{component.Name}
+// If no onboarding merge request is found, nil is returned.
+func findUnmergedOnboardingMergeRequest(
+	ghclient *GithubClient, owner, repository, sourceBranch, baseBranch, authorName string) (*github.PullRequest, error) {
+	opts := &github.PullRequestListOptions{
+		Head: fmt.Sprintf("%s:%s", authorName, sourceBranch),
+		Base: baseBranch,
+		// Opened pull request is searched by default by GitHub API.
+	}
+	pullRequests, resp, err := ghclient.client.PullRequests.List(context.Background(), owner, repository, opts)
+	if err != nil {
+		return nil, RefineGitHostingServiceError(resp.Response, err)
+	}
+	if len(pullRequests) == 0 {
+		return nil, nil
+	}
+	return pullRequests[0], nil
+}
+
+func deleteBranch(client *GithubClient, owner, repository, branch string) error {
+	return client.deleteReference(owner, repository, branch)
 }
