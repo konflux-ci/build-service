@@ -164,6 +164,88 @@ var _ = Describe("Component initial build controller", func() {
 			waitComponentAnnotationValue(resourceKey, PaCProvisionAnnotationName, PaCProvisionDoneAnnotationValue)
 		})
 
+		It("should fail to submit PR if GitHub application is not installed into repo", func() {
+			github.IsAppInstalledIntoRepository = func(*github.GithubClient, string, string) (bool, error) {
+				return false, nil
+			}
+
+			isCreatePaCPullRequestInvoked := false
+			github.CreatePaCPullRequest = func(*github.GithubClient, *github.PaCPullRequestData) (string, error) {
+				isCreatePaCPullRequestInvoked = true
+				return "url", nil
+			}
+
+			setComponentDevfileModel(resourceKey)
+
+			waitComponentAnnotationValue(resourceKey,
+				PaCProvisionAnnotationName, PaCProvisionErrorAnnotationValue)
+			expectedErr := boerrors.NewBuildOpError(
+				boerrors.EGitHubAppNotInstalled, fmt.Errorf("something is wrong"))
+			waitComponentAnnotationValue(resourceKey,
+				PaCProvisionErrorDetailsAnnotationName, expectedErr.ShortError())
+
+			Expect(isCreatePaCPullRequestInvoked).Should(BeFalse())
+		})
+
+		It("should fail to submit PR if unknown git provider is used", func() {
+			component := getComponent(resourceKey)
+			invalidGitUrl := strings.Replace(SampleRepoLink, "github.com", "outer-space.git", 1)
+			component.Spec.Source.GitSource.URL = invalidGitUrl
+			Expect(k8sClient.Update(ctx, component)).To(Succeed())
+			Eventually(func() bool {
+				Expect(k8sClient.Get(ctx, resourceKey, component)).To(Succeed())
+				return component.Spec.Source.GitSource.URL == invalidGitUrl
+			}, timeout, interval).Should(BeTrue())
+
+			isCreatePaCPullRequestInvoked := false
+			github.CreatePaCPullRequest = func(*github.GithubClient, *github.PaCPullRequestData) (string, error) {
+				isCreatePaCPullRequestInvoked = true
+				return "url", nil
+			}
+
+			setComponentDevfileModel(resourceKey)
+
+			waitComponentAnnotationValue(resourceKey,
+				PaCProvisionAnnotationName, PaCProvisionErrorAnnotationValue)
+			expectedErr := boerrors.NewBuildOpError(
+				boerrors.EUnknownGitProvider, fmt.Errorf("something is wrong"))
+			waitComponentAnnotationValue(resourceKey,
+				PaCProvisionErrorDetailsAnnotationName, expectedErr.ShortError())
+
+			Expect(isCreatePaCPullRequestInvoked).Should(BeFalse())
+		})
+
+		It("should fail to submit PR if PaC secret is invalid", func() {
+			isCreatePaCPullRequestInvoked := false
+			github.CreatePaCPullRequest = func(*github.GithubClient, *github.PaCPullRequestData) (string, error) {
+				isCreatePaCPullRequestInvoked = true
+				return "url", nil
+			}
+
+			deleteSecret(pacSecretKey)
+
+			pacSecretData := map[string]string{
+				"github-application-id": "12345",
+				"github-private-key":    "secret private key",
+			}
+			createSecret(pacSecretKey, pacSecretData)
+			var pacSecret corev1.Secret
+			Eventually(func() error {
+				return k8sClient.Get(ctx, pacSecretKey, &pacSecret)
+			}, timeout, interval).Should(Succeed())
+
+			setComponentDevfileModel(resourceKey)
+
+			waitComponentAnnotationValue(resourceKey,
+				PaCProvisionAnnotationName, PaCProvisionErrorAnnotationValue)
+			expectedErr := boerrors.NewBuildOpError(
+				boerrors.EPaCSecretInvalid, fmt.Errorf("something is wrong"))
+			waitComponentAnnotationValue(resourceKey,
+				PaCProvisionErrorDetailsAnnotationName, expectedErr.ShortError())
+
+			Expect(isCreatePaCPullRequestInvoked).Should(BeFalse())
+		})
+
 		It("should successfully submit PR with PaC definitions using GitHub token and set PaC annotation", func() {
 			isCreatePaCPullRequestInvoked := false
 			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
