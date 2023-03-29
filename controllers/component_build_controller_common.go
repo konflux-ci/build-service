@@ -245,8 +245,7 @@ func getComponentImageRepoAndSecretNameFromImageAnnotation(component *appstudiov
 	}
 
 	var repoInfo RepositoryInfo
-	if _, exists := component.Annotations[ImageRepoGenerateAnnotationName]; exists {
-		imageRepoDataJson := component.Annotations[ImageRepoAnnotationName]
+	if imageRepoDataJson, exists := component.Annotations[ImageRepoAnnotationName]; exists {
 		if err := json.Unmarshal([]byte(imageRepoDataJson), &repoInfo); err != nil {
 			return "", "", boerrors.NewBuildOpError(boerrors.EFailedToParseImageAnnotation, err)
 		}
