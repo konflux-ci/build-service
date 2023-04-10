@@ -20,10 +20,8 @@ import (
 	"context"
 	"fmt"
 
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -144,9 +142,8 @@ func (r *ComponentBuildReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=buildpipelineselectors,verbs=get;list;watch;create;update;patch
 //+kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns,verbs=create
 //+kubebuilder:rbac:groups=pipelinesascode.tekton.dev,resources=repositories,verbs=get;list;watch;create;update;patch
-//+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch
 //+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;patch;update
-//+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch
+//+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;update;patch
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch
 
@@ -167,12 +164,6 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	if getContainerImageRepositoryForComponent(&component) == "" {
-		// Container image must be set. It's not possible to proceed without it.
-		log.Info("Waiting for ContainerImage to be set")
-		return ctrl.Result{}, nil
-	}
-
 	// Do not run any builds for any container-image components
 	if component.Spec.ContainerImage != "" && (component.Spec.Source.GitSource == nil || component.Spec.Source.GitSource.URL == "") {
 		log.Info("Nothing to do for container image component")
@@ -182,21 +173,9 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if !component.ObjectMeta.DeletionTimestamp.IsZero() {
 		// Deletion of the component is requested
 
+		// Delete the secret link finalizer unconditionally, because now Image Controller uses SPI for this task.
+		// TODO remove this block after some time.
 		if controllerutil.ContainsFinalizer(&component, ImageRegistrySecretLinkFinalizer) {
-			pipelineSA := &corev1.ServiceAccount{}
-			err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: req.Namespace}, pipelineSA)
-			if err != nil && !errors.IsNotFound(err) {
-				log.Error(err, fmt.Sprintf("Failed to read service account %s in namespace %s", buildPipelineServiceAccountName, req.Namespace))
-				return ctrl.Result{}, err
-			}
-			if err == nil { // If pipeline service account found, unlink the secret from it
-				if _, generatedImageRepoSecretName, err := getComponentImageRepoAndSecretNameFromImageAnnotation(&component); err == nil {
-					if _, err := r.unlinkSecretFromServiceAccount(ctx, generatedImageRepoSecretName, pipelineSA.Name, pipelineSA.Namespace); err != nil {
-						return ctrl.Result{}, err
-					}
-				}
-			}
-
 			if err := r.Client.Get(ctx, req.NamespacedName, &component); err != nil {
 				log.Error(err, "failed to get Component")
 				return ctrl.Result{}, err
@@ -238,48 +217,9 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
-	// Ensure pipeline service account exists
-	pipelineSA, err := r.ensurePipelineServiceAccount(ctx, component.Namespace)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-
-	// Link auto generated image registry secret in case of auto generated image repository is used.
-	isSwitchedImageRegistry := false
-	if !controllerutil.ContainsFinalizer(&component, ImageRegistrySecretLinkFinalizer) {
-		imageRepoGenerated, imageRepoSecretName, err := getComponentImageRepoAndSecretNameFromImageAnnotation(&component)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-
-		// Check if the generated image is used
-		if imageRepoGenerated != "" && (component.Spec.ContainerImage == "" || imageRepoGenerated == getContainerImageRepository(component.Spec.ContainerImage)) {
-			_, err = r.linkSecretToServiceAccount(ctx, imageRepoSecretName, pipelineSA.Name, pipelineSA.Namespace, true)
-			if err != nil {
-				return ctrl.Result{}, err
-			}
-
-			// Ensure finalizer exists to clean up image registry secret link on component deletion
-			if component.ObjectMeta.DeletionTimestamp.IsZero() {
-				if !controllerutil.ContainsFinalizer(&component, ImageRegistrySecretLinkFinalizer) {
-					if err := r.Client.Get(ctx, req.NamespacedName, &component); err != nil {
-						log.Error(err, "failed to get Component")
-						return ctrl.Result{}, err
-					}
-					controllerutil.AddFinalizer(&component, ImageRegistrySecretLinkFinalizer)
-					if err := r.Client.Update(ctx, &component); err != nil {
-						return ctrl.Result{}, err
-					}
-					isSwitchedImageRegistry = true
-					log.Info("Image registry secret service account link finalizer added")
-				}
-			}
-		}
-	}
-
 	// Check if Pipelines as Code workflow enabled
 	if val, exists := component.Annotations[PaCProvisionAnnotationName]; exists {
-		if val != PaCProvisionRequestedAnnotationValue && !isSwitchedImageRegistry {
+		if val != PaCProvisionRequestedAnnotationValue {
 			if !(val == PaCProvisionDoneAnnotationValue || val == PaCProvisionErrorAnnotationValue) {
 				message := fmt.Sprintf(
 					"Unexpected value \"%s\" for \"%s\" annotation. Use \"%s\" value to do Pipeline as Code provision for the Component",
