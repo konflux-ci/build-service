@@ -208,6 +208,12 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
+	if getContainerImageRepositoryForComponent(&component) == "" {
+		// Container image must be set. It's not possible to proceed without it.
+		log.Info("Waiting for ContainerImage to be set")
+		return ctrl.Result{}, nil
+	}
+
 	// Ensure devfile model is set
 	if component.Status.Devfile == "" {
 		// The Component has been just created.
