@@ -229,7 +229,11 @@ func generateConfigJS(slug string, repositories []renovateRepository) string {
 			  {
 				matchPackagePatterns: ["%s"],
 				matchDepPatterns: ["%s"],
-				groupName: "tekton references",
+				groupName: "RHTAP references",
+				branchPrefix: "rhtap/",
+				commitMessageExtra: "",
+				commitMessageTopic: "RHTAP references",
+				prFooter: "",
 				enabled: true
 			  }
 			]
