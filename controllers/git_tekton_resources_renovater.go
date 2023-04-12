@@ -229,7 +229,13 @@ func generateConfigJS(slug string, repositories []renovateRepository) string {
 			  {
 				matchPackagePatterns: ["%s"],
 				matchDepPatterns: ["%s"],
-				groupName: "tekton references",
+				groupName: "RHTAP references",
+				branchPrefix: "rhtap/",
+				commitMessageExtra: "",
+				commitMessageTopic: "RHTAP references",
+				prFooter: "",
+				prBodyColumns: ["Package", "Change", "Notes"],
+				prBodyDefinitions: { "Notes": "{{#if (or (containsString updateType 'minor') (containsString updateType 'major'))}}:warning:[migration](https://github.com/redhat-appstudio/build-definitions/blob/main/task/{{{replace '%stask-' '' packageName}}}/{{{newVersion}}}/MIGRATION.md):warning:{{/if}}" },
 				enabled: true
 			  }
 			]
@@ -242,7 +248,7 @@ func generateConfigJS(slug string, repositories []renovateRepository) string {
 	if renovatePattern == "" {
 		renovatePattern = DefaultRenovateMatchPattern
 	}
-	return fmt.Sprintf(template, slug, slug, slug, repositoriesData, renovatePattern, renovatePattern)
+	return fmt.Sprintf(template, slug, slug, slug, repositoriesData, renovatePattern, renovatePattern, renovatePattern)
 }
 
 func (r *GitTektonResourcesRenovater) CreateRenovaterJob(ctx context.Context, installations []installationStruct, slug string) error {
