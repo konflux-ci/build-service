@@ -50,7 +50,7 @@ import (
 const (
 	RenovateConfigName          = "renovate-config"
 	RenovateImageEnvName        = "RENOVATE_IMAGE"
-	DefaultRenovateImageUrl     = "quay.io/redhat-appstudio/renovate:34.154-slim"
+	DefaultRenovateImageUrl     = "quay.io/redhat-appstudio/renovate:35.47-slim"
 	DefaultRenovateMatchPattern = "^quay.io/redhat-appstudio-tekton-catalog/"
 	RenovateMatchPatternEnvName = "RENOVATE_PATTERN"
 	TimeToLiveOfJob             = 24 * time.Hour
@@ -240,7 +240,7 @@ func generateConfigJS(slug string, repositories []renovateRepository) string {
 			  }
 			]
 		},
-		includeForks: true,
+		forkProcessing: "enabled",
 		dependencyDashboard: false
 	}
 	`
