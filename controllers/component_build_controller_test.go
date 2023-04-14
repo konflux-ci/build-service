@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/yaml"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -89,6 +90,24 @@ var _ = Describe("Component initial build controller", func() {
 		namespacePaCSecretKey = types.NamespacedName{Name: gitopsprepare.PipelinesAsCodeSecretName, Namespace: HASAppNamespace}
 		webhookSecretKey      = types.NamespacedName{Name: gitops.PipelinesAsCodeWebhooksSecretName, Namespace: HASAppNamespace}
 	)
+
+	Context("Component migration", func() {
+		It("should delete outdated ImageRegistrySecretLinkFinalizer finalizer from existing component", func() {
+			component := getComponentData(componentConfig{})
+			component.ObjectMeta.Finalizers = []string{
+				ImageRegistrySecretLinkFinalizer,
+			}
+			Expect(controllerutil.ContainsFinalizer(component, ImageRegistrySecretLinkFinalizer)).To(BeTrue())
+			Expect(k8sClient.Create(ctx, component)).To(Succeed())
+
+			Eventually(func() bool {
+				component = getComponent(resourceKey)
+				return !controllerutil.ContainsFinalizer(component, ImageRegistrySecretLinkFinalizer)
+			}, timeout, interval).Should(BeTrue())
+
+			deleteComponent(resourceKey)
+		})
+	})
 
 	Context("Test Pipelines as Code build preparation", func() {
 
@@ -557,6 +576,16 @@ var _ = Describe("Component initial build controller", func() {
 				Fail("PR creation should not be invoked")
 				return "", nil
 			}
+
+			ensureComponentInitialBuildAnnotationState(resourceKey, false)
+		})
+
+		It("should do nothing if the component image is not defined in spec nor annotation", func() {
+			deleteComponent(resourceKey)
+			component := getComponentData(componentConfig{})
+			component.Spec.ContainerImage = ""
+			Expect(k8sClient.Create(ctx, component)).To(Succeed())
+			setComponentDevfileModel(resourceKey)
 
 			ensureComponentInitialBuildAnnotationState(resourceKey, false)
 		})

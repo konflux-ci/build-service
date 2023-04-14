@@ -164,6 +164,19 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
+	// Delete deprecated secret link finalizer unconditionally, because now Image Controller uses SPI for this task.
+	// TODO remove this block after the migration is executed.
+	if controllerutil.ContainsFinalizer(&component, ImageRegistrySecretLinkFinalizer) {
+		controllerutil.RemoveFinalizer(&component, ImageRegistrySecretLinkFinalizer)
+		if err := r.Client.Update(ctx, &component); err != nil {
+			return ctrl.Result{}, err
+		}
+		log.Info("Image registry secret link finalizer removed")
+
+		// A new reconcile will be triggered because of the update above
+		return ctrl.Result{}, nil
+	}
+
 	// Do not run any builds for any container-image components
 	if component.Spec.ContainerImage != "" && (component.Spec.Source.GitSource == nil || component.Spec.Source.GitSource.URL == "") {
 		log.Info("Nothing to do for container image component")
@@ -172,23 +185,6 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	if !component.ObjectMeta.DeletionTimestamp.IsZero() {
 		// Deletion of the component is requested
-
-		// Delete the secret link finalizer unconditionally, because now Image Controller uses SPI for this task.
-		// TODO remove this block after some time.
-		if controllerutil.ContainsFinalizer(&component, ImageRegistrySecretLinkFinalizer) {
-			if err := r.Client.Get(ctx, req.NamespacedName, &component); err != nil {
-				log.Error(err, "failed to get Component")
-				return ctrl.Result{}, err
-			}
-			controllerutil.RemoveFinalizer(&component, ImageRegistrySecretLinkFinalizer)
-			if err := r.Client.Update(ctx, &component); err != nil {
-				return ctrl.Result{}, err
-			}
-			log.Info("Image registry secret link finalizer removed")
-
-			// A new reconcile will be triggered because of the update above
-			return ctrl.Result{}, nil
-		}
 
 		if controllerutil.ContainsFinalizer(&component, PaCProvisionFinalizer) {
 			// In order not to block the deletion of the Component delete finalizer
