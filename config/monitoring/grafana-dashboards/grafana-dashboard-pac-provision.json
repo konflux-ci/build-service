@@ -29,10 +29,6 @@
   "liveNow": false,
   "panels": [
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PF224BEF3374A25F8"
-      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -75,10 +71,6 @@
       "pluginVersion": "9.1.6",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PF224BEF3374A25F8"
-          },
           "editorMode": "builder",
           "exemplar": false,
           "expr": "redhat_appstudio_buildservice_PaC_configuration_time_count",
@@ -93,10 +85,6 @@
       "type": "stat"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PF224BEF3374A25F8"
-      },
       "description": "Each bar shows how many repositories were provisioned in the time range. For example, \"15\" bar shows the number of git repository provisions that took from 10 to 15 seconds.",
       "fieldConfig": {
         "defaults": {
@@ -141,10 +129,6 @@
       "pluginVersion": "9.1.6",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PF224BEF3374A25F8"
-          },
           "editorMode": "builder",
           "exemplar": false,
           "expr": "redhat_appstudio_buildservice_PaC_configuration_time_bucket",
@@ -161,10 +145,6 @@
       "type": "bargauge"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PF224BEF3374A25F8"
-      },
       "description": "Shows increase of Pipelines as Code provisions in each time category over time",
       "fieldConfig": {
         "defaults": {
@@ -237,10 +217,6 @@
       "pluginVersion": "9.1.6",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PF224BEF3374A25F8"
-          },
           "editorMode": "code",
           "expr": "sum(increase(redhat_appstudio_buildservice_PaC_configuration_time_bucket[$__interval])) by (le)",
           "format": "heatmap",
@@ -254,10 +230,6 @@
       "type": "heatmap"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PF224BEF3374A25F8"
-      },
       "description": "",
       "fieldConfig": {
         "defaults": {
@@ -330,10 +302,6 @@
       "pluginVersion": "9.1.6",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PF224BEF3374A25F8"
-          },
           "editorMode": "code",
           "expr": "rate(redhat_appstudio_buildservice_PaC_configuration_time_sum[$__rate_interval])/rate(redhat_appstudio_buildservice_PaC_configuration_time_count[$__rate_interval])",
           "format": "heatmap",
