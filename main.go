@@ -25,10 +25,14 @@ import (
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
+	uberzap "go.uber.org/zap"
+	uberzapcore "go.uber.org/zap/zapcore"
 	"k8s.io/client-go/discovery"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	"k8s.io/client-go/rest"
+	"k8s.io/klog/v2"
 
+	"github.com/go-logr/logr"
 	routev1 "github.com/openshift/api/route/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -54,7 +58,7 @@ import (
 
 var (
 	scheme   = runtime.NewScheme()
-	setupLog = ctrl.Log.WithName("setup")
+	setupLog logr.Logger
 )
 
 func init() {
@@ -76,13 +80,18 @@ func main() {
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
-	opts := zap.Options{
-		Development: true,
+
+	zapOpts := zap.Options{
+		TimeEncoder: uberzapcore.ISO8601TimeEncoder,
+		ZapOpts:     []uberzap.Option{uberzap.WithCaller(true)},
 	}
-	opts.BindFlags(flag.CommandLine)
+	zapOpts.BindFlags(flag.CommandLine)
+	klog.InitFlags(flag.CommandLine)
 	flag.Parse()
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&zapOpts)))
+	setupLog = ctrl.Log.WithName("setup")
+	klog.SetLogger(setupLog)
 
 	if err := routev1.AddToScheme(scheme); err != nil {
 		setupLog.Error(err, "unable to add openshift route api to the scheme")
@@ -128,7 +137,6 @@ func main() {
 	if err = (&controllers.ComponentBuildReconciler{
 		Client:        mgr.GetClient(),
 		Scheme:        mgr.GetScheme(),
-		Log:           ctrl.Log.WithName("controllers").WithName("ComponentOnboarding"),
 		EventRecorder: mgr.GetEventRecorderFor("ComponentOnboarding"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ComponentOnboarding")
@@ -138,7 +146,6 @@ func main() {
 	if err = (&controllers.PaCPipelineRunPrunerReconciler{
 		Client:        mgr.GetClient(),
 		Scheme:        mgr.GetScheme(),
-		Log:           ctrl.Log.WithName("controllers").WithName("PaCPipelineRunPruner"),
 		EventRecorder: mgr.GetEventRecorderFor("PaCPipelineRunPruner"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "PaCPipelineRunPruner")
@@ -148,7 +155,6 @@ func main() {
 	if err = (&controllers.GitTektonResourcesRenovater{
 		Client:        mgr.GetClient(),
 		Scheme:        mgr.GetScheme(),
-		Log:           ctrl.Log.WithName("controllers").WithName("GitTektonResourcesRenovater"),
 		EventRecorder: mgr.GetEventRecorderFor("GitTektonResourcesRenovater"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "GitTektonResourcesRenovater")

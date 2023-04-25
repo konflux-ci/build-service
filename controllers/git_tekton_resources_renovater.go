@@ -26,12 +26,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-logr/logr"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	"github.com/redhat-appstudio/application-service/gitops"
 	gitopsprepare "github.com/redhat-appstudio/application-service/gitops/prepare"
 	buildappstudiov1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
 	"github.com/redhat-appstudio/build-service/pkg/github"
+	l "github.com/redhat-appstudio/build-service/pkg/logs"
 	batch "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -44,6 +44,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
@@ -64,7 +65,6 @@ const (
 type GitTektonResourcesRenovater struct {
 	Client        client.Client
 	Scheme        *runtime.Scheme
-	Log           logr.Logger
 	EventRecorder record.EventRecorder
 }
 
@@ -106,6 +106,8 @@ func (r *GitTektonResourcesRenovater) SetupWithManager(mgr ctrl.Manager) error {
 // +kubebuilder:rbac:groups=appstudio.redhat.com,resources=components,verbs=get;list
 
 func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	log := ctrllog.FromContext(ctx).WithName("GitTektonResourcesRenovator")
+	ctx = ctrllog.IntoContext(ctx, log)
 
 	// Check if GitHub Application is used, if not then skip
 	pacSecret := corev1.Secret{}
@@ -113,13 +115,13 @@ func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Re
 	if err := r.Client.Get(ctx, globalPaCSecretKey, &pacSecret); err != nil {
 		if !errors.IsNotFound(err) {
 			r.EventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
-			r.Log.Error(err, "failed to get Pipelines as Code secret in %s namespace: %w", globalPaCSecretKey.Namespace, err)
+			log.Error(err, "failed to get Pipelines as Code secret in %s namespace: %w", globalPaCSecretKey.Namespace, err, l.Action, l.ActionView)
 			return ctrl.Result{}, nil
 		}
 	}
 	isApp := gitops.IsPaCApplicationConfigured("github", pacSecret.Data)
 	if !isApp {
-		r.Log.Info("GitHub App is not set")
+		log.Info("GitHub App is not set")
 		return ctrl.Result{}, nil
 	}
 
@@ -127,7 +129,7 @@ func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Re
 	githubAppIdStr := string(pacSecret.Data[gitops.PipelinesAsCode_githubAppIdKey])
 	githubAppId, err := strconv.ParseInt(githubAppIdStr, 10, 64)
 	if err != nil {
-		r.Log.Error(err, "failed to convert %s to int: %w", githubAppIdStr, err)
+		log.Error(err, "failed to convert %s to int: %w", githubAppIdStr, err)
 		return ctrl.Result{}, nil
 	}
 	privateKey := pacSecret.Data[gitops.PipelinesAsCode_githubPrivateKey]
@@ -139,7 +141,7 @@ func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Re
 	// Get Components
 	componentList := &appstudiov1alpha1.ComponentList{}
 	if err := r.Client.List(ctx, componentList, &client.ListOptions{}); err != nil {
-		r.Log.Error(err, "failed to list Components")
+		log.Error(err, "failed to list Components", l.Action, l.ActionView)
 		return ctrl.Result{}, err
 	}
 	componentUrlToBranchMap := make(map[string]string)
@@ -200,7 +202,7 @@ func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Re
 		}
 		err = r.CreateRenovaterJob(ctx, installationsToUpdate[i:end], slug)
 		if err != nil {
-			r.Log.Error(err, "failed to create a job")
+			log.Error(err, "failed to create a job", l.Action, l.ActionAdd)
 		}
 	}
 
@@ -252,6 +254,8 @@ func generateConfigJS(slug string, repositories []renovateRepository) string {
 }
 
 func (r *GitTektonResourcesRenovater) CreateRenovaterJob(ctx context.Context, installations []installationStruct, slug string) error {
+	log := ctrllog.FromContext(ctx)
+
 	if len(installations) == 0 {
 		return nil
 	}
@@ -358,7 +362,7 @@ func (r *GitTektonResourcesRenovater) CreateRenovaterJob(ctx context.Context, in
 	if err := r.Client.Create(ctx, job); err != nil {
 		return err
 	}
-	r.Log.Info(fmt.Sprintf("Job %s triggered", job.Name))
+	log.Info(fmt.Sprintf("Job %s triggered", job.Name), l.Action, l.ActionAdd)
 	if err := controllerutil.SetOwnerReference(job, secret, r.Scheme); err != nil {
 		return err
 	}

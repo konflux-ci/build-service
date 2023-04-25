@@ -30,14 +30,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
-
-	"github.com/go-logr/logr"
 
 	"github.com/prometheus/client_golang/prometheus"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
+	l "github.com/redhat-appstudio/build-service/pkg/logs"
 )
 
 const (
@@ -111,7 +111,6 @@ func getProvisionTimeMetricsBuckets() []float64 {
 type ComponentBuildReconciler struct {
 	Client        client.Client
 	Scheme        *runtime.Scheme
-	Log           logr.Logger
 	EventRecorder record.EventRecorder
 }
 
@@ -151,7 +150,8 @@ func (r *ComponentBuildReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch
 
 func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := r.Log.WithValues("ComponentOnboarding", req.NamespacedName)
+	log := ctrllog.FromContext(ctx).WithName("ComponentOnboarding")
+	ctx = ctrllog.IntoContext(ctx, log)
 
 	// Fetch the Component instance
 	var component appstudiov1alpha1.Component
@@ -186,7 +186,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			pipelineSA := &corev1.ServiceAccount{}
 			err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: req.Namespace}, pipelineSA)
 			if err != nil && !errors.IsNotFound(err) {
-				log.Error(err, fmt.Sprintf("Failed to read service account %s in namespace %s", buildPipelineServiceAccountName, req.Namespace))
+				log.Error(err, fmt.Sprintf("Failed to read service account %s in namespace %s", buildPipelineServiceAccountName, req.Namespace), l.Action, l.ActionView)
 				return ctrl.Result{}, err
 			}
 			if err == nil { // If pipeline service account found, unlink the secret from it
@@ -198,14 +198,14 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			}
 
 			if err := r.Client.Get(ctx, req.NamespacedName, &component); err != nil {
-				log.Error(err, "failed to get Component")
+				log.Error(err, "failed to get Component", l.Action, l.ActionView)
 				return ctrl.Result{}, err
 			}
 			controllerutil.RemoveFinalizer(&component, ImageRegistrySecretLinkFinalizer)
 			if err := r.Client.Update(ctx, &component); err != nil {
 				return ctrl.Result{}, err
 			}
-			log.Info("Image registry secret link finalizer removed")
+			log.Info("Image registry secret link finalizer removed", l.Action, l.ActionDelete)
 
 			// A new reconcile will be triggered because of the update above
 			return ctrl.Result{}, nil
@@ -220,7 +220,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if err := r.Client.Update(ctx, &component); err != nil {
 				return ctrl.Result{}, err
 			}
-			log.Info("PaC finalizer removed")
+			log.Info("PaC finalizer removed", l.Action, l.ActionDelete)
 
 			// Try to clean up Pipelines as Code configuration
 			r.UndoPaCProvisionForComponent(ctx, &component)
@@ -263,7 +263,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if component.ObjectMeta.DeletionTimestamp.IsZero() {
 				if !controllerutil.ContainsFinalizer(&component, ImageRegistrySecretLinkFinalizer) {
 					if err := r.Client.Get(ctx, req.NamespacedName, &component); err != nil {
-						log.Error(err, "failed to get Component")
+						log.Error(err, "failed to get Component", l.Action, l.ActionView)
 						return ctrl.Result{}, err
 					}
 					controllerutil.AddFinalizer(&component, ImageRegistrySecretLinkFinalizer)
@@ -271,7 +271,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 						return ctrl.Result{}, err
 					}
 					isSwitchedImageRegistry = true
-					log.Info("Image registry secret service account link finalizer added")
+					log.Info("Image registry secret service account link finalizer added", l.Action, l.ActionUpdate)
 				}
 			}
 		}
@@ -312,7 +312,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 		// Update component to show Pipeline as Code provision is done
 		if err := r.Client.Get(ctx, req.NamespacedName, &component); err != nil {
-			log.Error(err, "failed to get Component")
+			log.Error(err, "failed to get Component", l.Action, l.ActionView)
 			return ctrl.Result{}, err
 		}
 
@@ -331,7 +331,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if component.ObjectMeta.DeletionTimestamp.IsZero() {
 			if !controllerutil.ContainsFinalizer(&component, PaCProvisionFinalizer) {
 				controllerutil.AddFinalizer(&component, PaCProvisionFinalizer)
-				log.Info("PaC finalizer added")
+				log.Info("PaC finalizer added", l.Action, l.ActionUpdate)
 			}
 		}
 
@@ -357,6 +357,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// Set initial build annotation to prevent next builds
 	component.Annotations[InitialBuildAnnotationName] = "processed"
 	if err := r.Client.Update(ctx, &component); err != nil {
+		log.Error(err, "failed to add initial build annotation to the Component", l.Action, l.ActionUpdate)
 		return ctrl.Result{}, err
 	}
 
@@ -366,12 +367,12 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if len(component.Annotations) > 0 {
 				delete(component.Annotations, InitialBuildAnnotationName)
 				if err := r.Client.Update(ctx, &component); err != nil {
-					log.Error(err, "failed to reschedule initial build for the Component")
+					log.Error(err, "failed to reschedule initial build for the Component", l.Action, l.ActionUpdate)
 					return ctrl.Result{}, err
 				}
 			}
 		} else {
-			log.Error(err, "failed to reschedule initial build for the Component")
+			log.Error(err, "failed to reschedule initial build for the Component", l.Action, l.ActionView)
 			return ctrl.Result{}, err
 		}
 	}
