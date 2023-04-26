@@ -514,7 +514,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 
 			err = github.SetupPaCWebhook(ghclient, webhookTargetUrl, webhookSecret, owner, repository)
 			if err != nil {
-				log.Error(err, "failed to setup PaC webhook", l.Audit, "true")
+				log.Error(err, fmt.Sprintf("failed to setup Pipelines as Code webhook %s", webhookTargetUrl), l.Audit, "true")
 				return "", err
 			} else {
 				log.Info(fmt.Sprintf("Pipelines as Code webhook \"%s\" configured for %s Component in %s namespace",
@@ -573,7 +573,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 
 		err = gitlab.SetupPaCWebhook(glclient, projectPath, webhookTargetUrl, webhookSecret)
 		if err != nil {
-			log.Error(err, "failed to setup PaC webhook", l.Audit, "true")
+			log.Error(err, fmt.Sprintf("failed to setup Pipelines as Code webhook %s", webhookTargetUrl), l.Audit, "true")
 			return "", err
 		} else {
 			log.Info(fmt.Sprintf("Pipelines as Code webhook \"%s\" configured for %s Component in %s namespace",
@@ -673,7 +673,7 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 				err = github.DeletePaCWebhook(ghclient, webhookTargetUrl, owner, repository)
 				if err != nil {
 					// Just log the error and continue with merge request creation
-					log.Error(err, "failed to delete Pipelines as Code webhook", l.Action, l.ActionDelete, l.Audit, "true")
+					log.Error(err, fmt.Sprintf("failed to delete Pipelines as Code webhook %s", webhookTargetUrl), l.Action, l.ActionDelete, l.Audit, "true")
 				} else {
 					log.Info(fmt.Sprintf("Pipelines as Code webhook \"%s\" deleted for %s Component in %s namespace",
 						webhookTargetUrl, component.GetName(), component.GetNamespace()),
