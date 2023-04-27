@@ -29,11 +29,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	"github.com/go-logr/logr"
-
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
+	l "github.com/redhat-appstudio/build-service/pkg/logs"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 )
 
@@ -42,7 +42,6 @@ import (
 type PaCPipelineRunPrunerReconciler struct {
 	Client        client.Client
 	Scheme        *runtime.Scheme
-	Log           logr.Logger
 	EventRecorder record.EventRecorder
 }
 
@@ -69,7 +68,7 @@ func (r *PaCPipelineRunPrunerReconciler) SetupWithManager(mgr ctrl.Manager) erro
 //+kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns,verbs=get;list;watch;delete;deletecollection
 
 func (r *PaCPipelineRunPrunerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := r.Log.WithValues("PaCPipelineRunPruner", req.NamespacedName)
+	log := ctrllog.FromContext(ctx).WithName("PaCPipelineRunPruner")
 
 	var component appstudiov1alpha1.Component
 	err := r.Client.Get(ctx, req.NamespacedName, &component)
@@ -83,6 +82,7 @@ func (r *PaCPipelineRunPrunerReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{}, err
 	}
 
+	ctx = ctrllog.IntoContext(ctx, log)
 	if err := r.PrunePipelineRuns(ctx, req); err != nil {
 		log.Error(err, "failed to prune PipelineRuns for the Component")
 	}
@@ -92,7 +92,7 @@ func (r *PaCPipelineRunPrunerReconciler) Reconcile(ctx context.Context, req ctrl
 
 // PrunePipelineRuns deletes PipelineRuns, if any, assocoated with the given Component.
 func (r *PaCPipelineRunPrunerReconciler) PrunePipelineRuns(ctx context.Context, req ctrl.Request) error {
-	log := r.Log.WithValues("PaCPipelineRunPruner", req.NamespacedName)
+	log := ctrllog.FromContext(ctx)
 
 	componentPipelineRunsRequirement, err := labels.NewRequirement(ComponentNameLabelName, selection.Equals, []string{req.Name})
 	if err != nil {
@@ -109,7 +109,7 @@ func (r *PaCPipelineRunPrunerReconciler) PrunePipelineRuns(ctx context.Context, 
 		return err
 	}
 	if len(componentPipelineRunsList.Items) == 0 {
-		log.Info("Nothing to prune")
+		log.Info(fmt.Sprintf("No PipelineRuns to prune for Component %s/%s", req.Namespace, req.Name))
 		return nil
 	}
 
@@ -117,10 +117,10 @@ func (r *PaCPipelineRunPrunerReconciler) PrunePipelineRuns(ctx context.Context, 
 		ListOptions: componentPipelineRunsListOptions,
 	}
 	if err := r.Client.DeleteAllOf(ctx, &tektonapi.PipelineRun{}, &deleteComponentPipelineRunsOptions); err != nil {
-		log.Error(err, "failed to delete Component's PipelineRuns")
+		log.Error(err, fmt.Sprintf("failed to delete PipelineRuns for Component %s/%s", req.Namespace, req.Name), l.Action, l.ActionDelete)
 		return err
 	}
-	log.Info(fmt.Sprintf("Pruned %d PipelineRuns", len(componentPipelineRunsList.Items)))
+	log.Info(fmt.Sprintf("Pruned %d PipelineRuns for Component %s/%s", len(componentPipelineRunsList.Items), req.Namespace, req.Name), l.Action, l.ActionDelete)
 
 	return nil
 }

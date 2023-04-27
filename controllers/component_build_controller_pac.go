@@ -26,7 +26,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-logr/logr"
 	"github.com/google/go-containerregistry/pkg/authn"
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	routev1 "github.com/openshift/api/route/v1"
@@ -37,6 +36,7 @@ import (
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 	"github.com/redhat-appstudio/build-service/pkg/github"
 	"github.com/redhat-appstudio/build-service/pkg/gitlab"
+	l "github.com/redhat-appstudio/build-service/pkg/logs"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	oci "github.com/tektoncd/pipeline/pkg/remote/oci"
 	corev1 "k8s.io/api/core/v1"
@@ -45,6 +45,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/yaml"
 
 	gogithub "github.com/google/go-github/v45/github"
@@ -70,7 +71,8 @@ const (
 // Mainly, it creates PaC configuration merge request into the component source repositotiry.
 // If GitHub PaC application is not configured, creates a webhook for PaC.
 func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context, component *appstudiov1alpha1.Component) error {
-	log := r.Log.WithValues("ComponentOnboardingForPaC", types.NamespacedName{Namespace: component.Namespace, Name: component.Name})
+	log := ctrllog.FromContext(ctx).WithName("PaC-setup")
+	ctx = ctrllog.IntoContext(ctx, log)
 
 	gitProvider, err := gitops.GetGitProvider(*component)
 	if err != nil {
@@ -138,7 +140,8 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context,
 // Deletes PaC webhook if used.
 // In case of any errors just logs them and does not block Component deletion.
 func (r *ComponentBuildReconciler) UndoPaCProvisionForComponent(ctx context.Context, component *appstudiov1alpha1.Component) {
-	log := r.Log.WithValues("ComponentPaCCleanup", types.NamespacedName{Namespace: component.Namespace, Name: component.Name})
+	log := ctrllog.FromContext(ctx).WithName("PaC-cleanup")
+	ctx = ctrllog.IntoContext(ctx, log)
 
 	gitProvider, err := gitops.GetGitProvider(*component)
 	if err != nil {
@@ -149,7 +152,7 @@ func (r *ComponentBuildReconciler) UndoPaCProvisionForComponent(ctx context.Cont
 
 	pacSecret := corev1.Secret{}
 	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: buildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}, &pacSecret); err != nil {
-		log.Error(err, "error getting git provider credentials secret")
+		log.Error(err, "error getting git provider credentials secret", l.Action, l.ActionView)
 		// Cannot continue without accessing git provider credentials.
 		return
 	}
@@ -159,14 +162,14 @@ func (r *ComponentBuildReconciler) UndoPaCProvisionForComponent(ctx context.Cont
 		webhookTargetUrl, err = r.getPaCWebhookTargetUrl(ctx)
 		if err != nil {
 			// Just log the error and continue with merge request creation
-			log.Error(err, "failed to get Pipelines as Code webhook target URL")
+			log.Error(err, "failed to get Pipelines as Code webhook target URL", l.Action, l.ActionView)
 		}
 	}
 
 	// Manage merge request for Pipelines as Code configuration removal
-	mrUrl, action, err := r.UnconfigureRepositoryForPaC(log, component, pacSecret.Data, webhookTargetUrl)
+	mrUrl, action, err := r.UnconfigureRepositoryForPaC(ctx, component, pacSecret.Data, webhookTargetUrl)
 	if err != nil {
-		log.Error(err, "failed to create merge request to remove Pipelines as Code configuration from Component source repository")
+		log.Error(err, "failed to create merge request to remove Pipelines as Code configuration from Component source repository", l.Audit, "true")
 		return
 	}
 	if action == "delete" {
@@ -233,6 +236,8 @@ func (r *ComponentBuildReconciler) ensurePaCSecret(ctx context.Context, componen
 // Returns webhook secret for given component.
 // Generates the webhook secret and saves it the k8s secret if doesn't exist.
 func (r *ComponentBuildReconciler) ensureWebhookSecret(ctx context.Context, component *appstudiov1alpha1.Component) (string, error) {
+	log := ctrllog.FromContext(ctx)
+
 	webhookSecretsSecret := &corev1.Secret{}
 	if err := r.Client.Get(ctx, types.NamespacedName{Name: gitops.PipelinesAsCodeWebhooksSecretName, Namespace: component.GetNamespace()}, webhookSecretsSecret); err != nil {
 		if errors.IsNotFound(err) {
@@ -246,13 +251,13 @@ func (r *ComponentBuildReconciler) ensureWebhookSecret(ctx context.Context, comp
 				},
 			}
 			if err := r.Client.Create(ctx, webhookSecretsSecret); err != nil {
-				r.Log.Error(err, "failed to create webhooks secrets secret")
+				log.Error(err, "failed to create webhooks secrets secret", l.Action, l.ActionAdd)
 				return "", err
 			}
 			return r.ensureWebhookSecret(ctx, component)
 		}
 
-		r.Log.Error(err, "failed to get webhook secrets secret")
+		log.Error(err, "failed to get webhook secrets secret", l.Action, l.ActionView)
 		return "", err
 	}
 
@@ -269,7 +274,7 @@ func (r *ComponentBuildReconciler) ensureWebhookSecret(ctx context.Context, comp
 	}
 	webhookSecretsSecret.Data[componentWebhookSecretKey] = []byte(webhookSecretString)
 	if err := r.Client.Update(ctx, webhookSecretsSecret); err != nil {
-		r.Log.Error(err, "failed to update webhook secrets secret")
+		log.Error(err, "failed to update webhook secrets secret", l.Action, l.ActionUpdate)
 		return "", err
 	}
 
@@ -375,6 +380,8 @@ func checkMandatoryFieldsNotEmpty(config map[string][]byte, mandatoryFields []st
 }
 
 func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, component *appstudiov1alpha1.Component, config map[string][]byte) error {
+	log := ctrllog.FromContext(ctx)
+
 	repository, err := gitops.GeneratePACRepository(*component, config)
 	if err != nil {
 		return err
@@ -387,9 +394,11 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 				return err
 			}
 			if err := r.Client.Create(ctx, repository); err != nil {
+				log.Error(err, "failed to create Component PaC repository object", l.Action, l.ActionAdd)
 				return err
 			}
 		} else {
+			log.Error(err, "failed to get Component PaC repository object", l.Action, l.ActionView)
 			return err
 		}
 	}
@@ -398,15 +407,16 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 
 // generatePaCPipelineRunConfigs generates PipelineRun YAML configs for given component.
 // The generated PipelineRun Yaml content are returned in byte string and in the order of push and pull request.
-func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigs(
-	ctx context.Context, log logr.Logger, component *appstudiov1alpha1.Component, pacTargetBranch string) ([]byte, []byte, error) {
+func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigs(ctx context.Context, component *appstudiov1alpha1.Component, pacTargetBranch string) ([]byte, []byte, error) {
+	log := ctrllog.FromContext(ctx)
 
 	pipelineRef, additionalPipelineParams, err := r.GetPipelineForComponent(ctx, component)
 	if err != nil {
 		return nil, nil, err
 	}
 	log.Info(fmt.Sprintf("Selected %s pipeline from %s bundle for %s component",
-		pipelineRef.Name, pipelineRef.Bundle, component.Name))
+		pipelineRef.Name, pipelineRef.Bundle, component.Name),
+		l.Audit, "true")
 
 	// Get pipeline from the bundle to be expanded to the PipelineRun
 	pipelineSpec, err := retrievePipelineSpec(pipelineRef.Bundle, pipelineRef.Name)
@@ -445,7 +455,8 @@ func generateMergeRequestSourceBranch(component *appstudiov1alpha1.Component) st
 // ConfigureRepositoryForPaC creates a merge request with initial Pipelines as Code configuration
 // and configures a webhook to notify in-cluster PaC unless application (on the repository side) is used.
 func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context, component *appstudiov1alpha1.Component, config map[string][]byte, webhookTargetUrl, webhookSecret string) (prUrl string, err error) {
-	log := r.Log.WithValues("Repository", component.Spec.Source.GitSource.URL)
+	log := ctrllog.FromContext(ctx).WithValues("repository", component.Spec.Source.GitSource.URL)
+	ctx = ctrllog.IntoContext(ctx, log)
 
 	gitProvider, _ := gitops.GetGitProvider(*component)
 	isAppUsed := gitops.IsPaCApplicationConfigured(gitProvider, config)
@@ -501,12 +512,14 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 			// Webhook
 			ghclient = github.NewGithubClient(accessToken)
 
-			log.Info("Setup Pipelines as Code webhook for")
 			err = github.SetupPaCWebhook(ghclient, webhookTargetUrl, webhookSecret, owner, repository)
 			if err != nil {
+				log.Error(err, fmt.Sprintf("failed to setup Pipelines as Code webhook %s", webhookTargetUrl), l.Audit, "true")
 				return "", err
 			} else {
-				r.Log.Info(fmt.Sprintf("Pipelines as Code webhook \"%s\" configured for %s component in %s namespace\n", webhookTargetUrl, component.GetName(), component.GetNamespace()))
+				log.Info(fmt.Sprintf("Pipelines as Code webhook \"%s\" configured for %s Component in %s namespace",
+					webhookTargetUrl, component.GetName(), component.GetNamespace()),
+					l.Audit, "true")
 			}
 		}
 
@@ -517,7 +530,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 			}
 		}
 
-		pipelineRunOnPushYaml, pipelineRunOnPRYaml, err := r.generatePaCPipelineRunConfigs(ctx, log, component, baseBranch)
+		pipelineRunOnPushYaml, pipelineRunOnPRYaml, err := r.generatePaCPipelineRunConfigs(ctx, component, baseBranch)
 		if err != nil {
 			return "", err
 		}
@@ -560,7 +573,12 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 
 		err = gitlab.SetupPaCWebhook(glclient, projectPath, webhookTargetUrl, webhookSecret)
 		if err != nil {
+			log.Error(err, fmt.Sprintf("failed to setup Pipelines as Code webhook %s", webhookTargetUrl), l.Audit, "true")
 			return "", err
+		} else {
+			log.Info(fmt.Sprintf("Pipelines as Code webhook \"%s\" configured for %s Component in %s namespace",
+				webhookTargetUrl, component.GetName(), component.GetNamespace()),
+				l.Audit, "true")
 		}
 
 		if baseBranch == "" {
@@ -570,7 +588,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 			}
 		}
 
-		pipelineRunOnPushYaml, pipelineRunOnPRYaml, err := r.generatePaCPipelineRunConfigs(ctx, log, component, baseBranch)
+		pipelineRunOnPushYaml, pipelineRunOnPRYaml, err := r.generatePaCPipelineRunConfigs(ctx, component, baseBranch)
 		if err != nil {
 			return "", err
 		}
@@ -603,7 +621,9 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 // Deletes PaC webhook if it's used.
 // Does not delete PaC GitHub application from the repository as its installation was done manually by the user.
 // Returns merge request web URL or empty string if it's not needed.
-func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(log logr.Logger, component *appstudiov1alpha1.Component, config map[string][]byte, webhookTargetUrl string) (prUrl string, action string, err error) {
+func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Context, component *appstudiov1alpha1.Component, config map[string][]byte, webhookTargetUrl string) (prUrl string, action string, err error) {
+	log := ctrllog.FromContext(ctx)
+
 	gitProvider, _ := gitops.GetGitProvider(*component)
 	isAppUsed := gitops.IsPaCApplicationConfigured(gitProvider, config)
 
@@ -653,9 +673,11 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(log logr.Logger, 
 				err = github.DeletePaCWebhook(ghclient, webhookTargetUrl, owner, repository)
 				if err != nil {
 					// Just log the error and continue with merge request creation
-					log.Error(err, "failed to delete Pipelines as Code webhook")
+					log.Error(err, fmt.Sprintf("failed to delete Pipelines as Code webhook %s", webhookTargetUrl), l.Action, l.ActionDelete, l.Audit, "true")
 				} else {
-					log.Info(fmt.Sprintf("Pipelines as Code webhook \"%s\" deleted for %s component in %s namespace\n", webhookTargetUrl, component.GetName(), component.GetNamespace()))
+					log.Info(fmt.Sprintf("Pipelines as Code webhook \"%s\" deleted for %s Component in %s namespace",
+						webhookTargetUrl, component.GetName(), component.GetNamespace()),
+						l.Action, l.ActionDelete)
 				}
 			}
 		}
@@ -702,15 +724,14 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(log logr.Logger, 
 		} else {
 			err := github.DeleteBranch(ghclient, owner, repository, sourceBranch)
 			if err == nil {
-				log.Info(fmt.Sprintf("pull request source branch %s is deleted", sourceBranch))
+				log.Info(fmt.Sprintf("pull request source branch %s is deleted", sourceBranch), l.Action, l.ActionDelete)
 				return prUrl, "close", nil
 			}
 			// Non-existing source branch should not be an error, just ignore it
 			// but other errors should be handled.
 			if ghErrResp, ok := err.(*gogithub.ErrorResponse); ok {
 				if ghErrResp.Response.StatusCode == 422 {
-					log.Info(fmt.Sprintf("Tried to delete source branch %s, but it does not exist in repository yet.",
-						sourceBranch))
+					log.Info(fmt.Sprintf("Tried to delete source branch %s, but it does not exist in the repository", sourceBranch))
 					return prUrl, "close", nil
 				}
 			}
@@ -730,7 +751,7 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(log logr.Logger, 
 		err = gitlab.DeletePaCWebhook(glclient, projectPath, webhookTargetUrl)
 		if err != nil {
 			// Just log the error and continue with merge request creation
-			log.Error(err, "failed to delete Pipelines as Code webhook")
+			log.Error(err, "failed to delete Pipelines as Code webhook", l.Action, l.ActionDelete, l.Audit, "true")
 		}
 
 		if baseBranch == "" {
@@ -769,13 +790,12 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(log logr.Logger, 
 		} else {
 			err := gitlab.DeleteBranch(glclient, projectPath, sourceBranch)
 			if err == nil {
-				log.Info(fmt.Sprintf("merge request source branch %s is deleted", sourceBranch))
+				log.Info(fmt.Sprintf("merge request source branch %s is deleted", sourceBranch), l.Action, l.ActionDelete)
 				return mr.WebURL, "close", nil
 			}
 			if glErrResp, ok := err.(*gogitlab.ErrorResponse); ok {
 				if glErrResp.Response.StatusCode == 404 {
-					log.Info(fmt.Sprintf("Tried to delete source branch %s, but it does not exist in repository yet.",
-						sourceBranch))
+					log.Info(fmt.Sprintf("Tried to delete source branch %s, but it does not exist in repository", sourceBranch))
 					return mr.WebURL, "close", nil
 				}
 			}

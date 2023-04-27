@@ -28,19 +28,22 @@ import (
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	"github.com/redhat-appstudio/application-service/pkg/devfile"
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
+	l "github.com/redhat-appstudio/build-service/pkg/logs"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // SubmitNewBuild creates a new PipelineRun to build a new image for the given component.
 // Is called only once on component creation if Pipelines as Code is not configured,
 // otherwise the build is handled by PaC.
 func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component *appstudiov1alpha1.Component) error {
-	log := r.Log.WithValues("Namespace", component.Namespace, "Application", component.Spec.Application, "Component", component.Name)
+	log := ctrllog.FromContext(ctx).WithName("SimpleBuild")
+	ctx = ctrllog.IntoContext(ctx, log)
 
 	// Link git secret to pipeline service account if needed
 	gitSecretName := component.Spec.Secret
@@ -49,7 +52,7 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 		err := r.Client.Get(ctx, types.NamespacedName{Name: gitSecretName, Namespace: component.Namespace}, &gitSecret)
 		if err != nil {
 			if errors.IsNotFound(err) {
-				log.Error(err, fmt.Sprintf("Secret %s is missing", gitSecretName))
+				log.Error(err, fmt.Sprintf("Secret %s is missing", gitSecretName), l.Action, l.ActionView)
 				return boerrors.NewBuildOpError(boerrors.EComponentGitSecretMissing, err)
 			}
 			return err
@@ -64,7 +67,7 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 		if gitSecret.Annotations["tekton.dev/git-0"] != gitHost {
 			gitSecret.Annotations["tekton.dev/git-0"] = gitHost
 			if err = r.Client.Update(ctx, &gitSecret); err != nil {
-				log.Error(err, fmt.Sprintf("Secret %s update failed", gitSecretName))
+				log.Error(err, fmt.Sprintf("Secret %s update failed", gitSecretName), l.Action, l.ActionUpdate)
 				return err
 			}
 		}
@@ -84,25 +87,26 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 
 	initialBuildPipelineRun, err := generateInitialPipelineRunForComponent(component, pipelineRef, additionalPipelineParams)
 	if err != nil {
-		log.Error(err, fmt.Sprintf("Unable to generate PipelineRun to build %s component in %s namespace", component.Name, component.Namespace))
+		log.Error(err, fmt.Sprintf("Failed to generate PipelineRun to build %s component in %s namespace", component.Name, component.Namespace))
 		return err
 	}
 
 	err = controllerutil.SetOwnerReference(component, initialBuildPipelineRun, r.Scheme)
 	if err != nil {
-		log.Error(err, fmt.Sprintf("Unable to set owner reference for %v", initialBuildPipelineRun))
+		log.Error(err, fmt.Sprintf("Unable to set owner reference for %v", initialBuildPipelineRun), l.Action, l.ActionUpdate)
 	}
 
 	err = r.Client.Create(ctx, initialBuildPipelineRun)
 	if err != nil {
-		log.Error(err, fmt.Sprintf("Unable to create the build PipelineRun %v", initialBuildPipelineRun))
+		log.Error(err, fmt.Sprintf("Unable to create the build PipelineRun %v", initialBuildPipelineRun), l.Action, l.ActionAdd)
 		return err
 	}
 
 	initialBuildPipelineCreationTimeMetric.Observe(time.Since(component.CreationTimestamp.Time).Seconds())
 
-	log.Info(fmt.Sprintf("Initial build pipeline %s created for component %s in %s namespace using %s pipeline from %s bundle",
-		initialBuildPipelineRun.Name, component.Name, component.Namespace, pipelineRef.Name, pipelineRef.Bundle))
+	log.Info(fmt.Sprintf("Build pipeline %s created for component %s in %s namespace using %s pipeline from %s bundle",
+		initialBuildPipelineRun.Name, component.Name, component.Namespace, pipelineRef.Name, pipelineRef.Bundle),
+		l.Action, l.ActionAdd, l.Audit, "true")
 
 	return nil
 }

@@ -27,6 +27,7 @@ import (
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	buildappstudiov1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
+	l "github.com/redhat-appstudio/build-service/pkg/logs"
 	pipelineselector "github.com/redhat-appstudio/build-service/pkg/pipeline-selector"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	corev1 "k8s.io/api/core/v1"
@@ -34,6 +35,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // GetPipelineForComponent searches for the build pipeline to use on the component.
@@ -79,11 +81,13 @@ func (r *ComponentBuildReconciler) GetPipelineForComponent(ctx context.Context, 
 }
 
 func (r *ComponentBuildReconciler) ensurePipelineServiceAccount(ctx context.Context, namespace string) (*corev1.ServiceAccount, error) {
+	log := ctrllog.FromContext(ctx)
+
 	pipelinesServiceAccount := &corev1.ServiceAccount{}
 	err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: namespace}, pipelinesServiceAccount)
 	if err != nil {
 		if !errors.IsNotFound(err) {
-			r.Log.Error(err, fmt.Sprintf("Failed to read service account %s in namespace %s", buildPipelineServiceAccountName, namespace))
+			log.Error(err, fmt.Sprintf("Failed to read service account %s in namespace %s", buildPipelineServiceAccountName, namespace), l.Action, l.ActionView)
 			return nil, err
 		}
 		// Create service account for the build pipeline
@@ -94,7 +98,7 @@ func (r *ComponentBuildReconciler) ensurePipelineServiceAccount(ctx context.Cont
 			},
 		}
 		if err := r.Client.Create(ctx, &buildPipelineSA); err != nil {
-			r.Log.Error(err, fmt.Sprintf("Failed to create service account %s in namespace %s", buildPipelineServiceAccountName, namespace))
+			log.Error(err, fmt.Sprintf("Failed to create service account %s in namespace %s", buildPipelineServiceAccountName, namespace), l.Action, l.ActionAdd)
 			return nil, err
 		}
 		return r.ensurePipelineServiceAccount(ctx, namespace)
@@ -103,7 +107,7 @@ func (r *ComponentBuildReconciler) ensurePipelineServiceAccount(ctx context.Cont
 }
 
 func (r *ComponentBuildReconciler) linkSecretToServiceAccount(ctx context.Context, secretName, serviceAccountName, namespace string, isPullSecret bool) (bool, error) {
-	log := r.Log
+	log := ctrllog.FromContext(ctx)
 
 	if secretName == "" {
 		// The secret is empty, no updates needed
@@ -116,7 +120,7 @@ func (r *ComponentBuildReconciler) linkSecretToServiceAccount(ctx context.Contex
 		if errors.IsNotFound(err) {
 			return false, nil
 		}
-		r.Log.Error(err, fmt.Sprintf("Failed to read service account %s in namespace %s", serviceAccountName, namespace))
+		log.Error(err, fmt.Sprintf("Failed to read service account %s in namespace %s", serviceAccountName, namespace), l.Action, l.ActionView)
 		return false, err
 	}
 
@@ -154,10 +158,10 @@ func (r *ComponentBuildReconciler) linkSecretToServiceAccount(ctx context.Contex
 	if isNewSecretLinked {
 		err := r.Client.Update(ctx, serviceAccount)
 		if err != nil {
-			log.Error(err, fmt.Sprintf("Unable to update service account %s", serviceAccount.Name))
+			log.Error(err, fmt.Sprintf("Unable to update service account %s", serviceAccount.Name), l.Action, l.ActionUpdate)
 			return false, err
 		}
-		log.Info(fmt.Sprintf("Service Account %s updated with secret %s", serviceAccount.Name, secretName))
+		log.Info(fmt.Sprintf("Service Account %s updated with secret %s", serviceAccount.Name, secretName), l.Action, l.ActionUpdate)
 		return true, nil
 	}
 	return false, nil
@@ -166,13 +170,15 @@ func (r *ComponentBuildReconciler) linkSecretToServiceAccount(ctx context.Contex
 // unlinkSecretFromServiceAccount ensures that the given secret is not linked with the provided service account.
 // Returns true if the secret was unlinked, false if the link didn't exist.
 func (r *ComponentBuildReconciler) unlinkSecretFromServiceAccount(ctx context.Context, secretNameToRemove, serviceAccountName, namespace string) (bool, error) {
+	log := ctrllog.FromContext(ctx)
+
 	serviceAccount := &corev1.ServiceAccount{}
 	err := r.Client.Get(ctx, types.NamespacedName{Name: serviceAccountName, Namespace: namespace}, serviceAccount)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return false, nil
 		}
-		r.Log.Error(err, fmt.Sprintf("Failed to read service account %s in namespace %s", serviceAccountName, namespace))
+		log.Error(err, fmt.Sprintf("Failed to read service account %s in namespace %s", serviceAccountName, namespace), l.Action, l.ActionView)
 		return false, err
 	}
 
@@ -206,10 +212,10 @@ func (r *ComponentBuildReconciler) unlinkSecretFromServiceAccount(ctx context.Co
 
 	if isSecretUnlinked {
 		if err := r.Client.Update(ctx, serviceAccount); err != nil {
-			r.Log.Error(err, fmt.Sprintf("Unable to update pipeline service account %v", serviceAccount))
+			log.Error(err, fmt.Sprintf("Unable to update pipeline service account %v", serviceAccount), l.Action, l.ActionUpdate)
 			return false, err
 		}
-		r.Log.Info(fmt.Sprintf("Removed %s secret link from %s service account", secretNameToRemove, serviceAccount.Name))
+		log.Info(fmt.Sprintf("Removed %s secret link from %s service account", secretNameToRemove, serviceAccount.Name), l.Action, l.ActionUpdate)
 	}
 	return isSecretUnlinked, nil
 }

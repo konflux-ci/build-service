@@ -125,7 +125,6 @@ var _ = BeforeSuite(func() {
 	err = (&ComponentBuildReconciler{
 		Client:        k8sManager.GetClient(),
 		Scheme:        k8sManager.GetScheme(),
-		Log:           ctrl.Log.WithName("controllers").WithName("ComponentOnboarding"),
 		EventRecorder: k8sManager.GetEventRecorderFor("ComponentOnboarding"),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
@@ -133,7 +132,6 @@ var _ = BeforeSuite(func() {
 	err = (&PaCPipelineRunPrunerReconciler{
 		Client:        k8sManager.GetClient(),
 		Scheme:        k8sManager.GetScheme(),
-		Log:           ctrl.Log.WithName("controllers").WithName("PaCPipelineRunPruner"),
 		EventRecorder: k8sManager.GetEventRecorderFor("PaCPipelineRunPruner"),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
@@ -141,7 +139,6 @@ var _ = BeforeSuite(func() {
 	err = (&GitTektonResourcesRenovater{
 		Client:        k8sManager.GetClient(),
 		Scheme:        k8sManager.GetScheme(),
-		Log:           ctrl.Log.WithName("controllers").WithName("GitTektonResourcesRenovater"),
 		EventRecorder: k8sManager.GetEventRecorderFor("GitTektonResourcesRenovater"),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
