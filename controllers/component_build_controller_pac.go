@@ -53,13 +53,14 @@ import (
 )
 
 const (
-	pipelineRunOnPushSuffix    = "-on-push"
-	pipelineRunOnPRSuffix      = "-on-pull-request"
-	pipelineRunOnPushFilename  = "push.yaml"
-	pipelineRunOnPRFilename    = "pull-request.yaml"
-	pipelinesAsCodeNamespace   = "pipelines-as-code"
-	pipelinesAsCodeRouteName   = "pipelines-as-code-controller"
-	pipelinesAsCodeRouteEnvVar = "PAC_WEBHOOK_URL"
+	pipelineRunOnPushSuffix          = "-on-push"
+	pipelineRunOnPRSuffix            = "-on-pull-request"
+	pipelineRunOnPushFilename        = "push.yaml"
+	pipelineRunOnPRFilename          = "pull-request.yaml"
+	pipelinesAsCodeNamespace         = "openshift-pipelines"
+	pipelinesAsCodeNamespaceFallback = "pipelines-as-code"
+	pipelinesAsCodeRouteName         = "pipelines-as-code-controller"
+	pipelinesAsCodeRouteEnvVar       = "PAC_WEBHOOK_URL"
 
 	pacMergeRequestSourceBranchPrefix = "appstudio-"
 
@@ -311,7 +312,20 @@ func (r *ComponentBuildReconciler) getPaCRoutePublicUrl(ctx context.Context) (st
 	pacWebhookRoute := &routev1.Route{}
 	pacWebhookRouteKey := types.NamespacedName{Namespace: pipelinesAsCodeNamespace, Name: pipelinesAsCodeRouteName}
 	if err := r.Client.Get(ctx, pacWebhookRouteKey, pacWebhookRoute); err != nil {
-		return "", fmt.Errorf("failed to get Pipelines as Code route: %w", err)
+		if !errors.IsNotFound(err) {
+			return "", fmt.Errorf("failed to get Pipelines as Code route in %s namespace: %w", pacWebhookRouteKey.Namespace, err)
+		}
+		// Fallback to old PaC namesapce
+		pacWebhookRouteKey.Namespace = pipelinesAsCodeNamespaceFallback
+		if err := r.Client.Get(ctx, pacWebhookRouteKey, pacWebhookRoute); err != nil {
+			if !errors.IsNotFound(err) {
+				return "", fmt.Errorf("failed to get Pipelines as Code route in %s namespace: %w", pacWebhookRouteKey.Namespace, err)
+			}
+			// Pipelines as Code public route was not found in expected namespaces
+			// Consider this error permanent
+			return "", boerrors.NewBuildOpError(boerrors.EPaCRouteDoesNotExist,
+				fmt.Errorf("PaC route not found in %s nor %s namespace", pipelinesAsCodeNamespace, pipelinesAsCodeNamespaceFallback))
+		}
 	}
 	return "https://" + pacWebhookRoute.Spec.Host, nil
 }

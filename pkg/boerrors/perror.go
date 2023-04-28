@@ -78,6 +78,8 @@ const (
 	EPaCSecretNotFound BOErrorId = 50
 	// Validation of 'pipelines-as-code-secret' secret failed
 	EPaCSecretInvalid BOErrorId = 51
+	// Pipelines as Code public route to recieve webhook events doesn't exist in expected namespaces.
+	EPaCRouteDoesNotExist BOErrorId = 52
 
 	// Happens when Component source repository is hosted on unsupported / unknown git provider.
 	// For example: https://my-gitlab.com
@@ -125,8 +127,9 @@ var boErrorMessages = map[BOErrorId]string{
 	ETransientError: "",
 	EUnknownError:   "unknown error",
 
-	EPaCSecretNotFound: "Pipelines as Code secret does not exist",
-	EPaCSecretInvalid:  "Invalid Pipelines as Code secret",
+	EPaCSecretNotFound:    "Pipelines as Code secret does not exist",
+	EPaCSecretInvalid:     "Invalid Pipelines as Code secret",
+	EPaCRouteDoesNotExist: "Pipelines as Code public route does not exist",
 
 	EUnknownGitProvider: "unknown git provider of the source repository",
 
