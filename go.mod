@@ -17,9 +17,11 @@ require (
 	sigs.k8s.io/yaml v1.3.0
 )
 
+require github.com/google/go-github/v48 v48.2.0 // indirect
+
 // If you update dependencies below you must also update controllers/suite_test.go
 require (
-	github.com/openshift-pipelines/pipelines-as-code v0.15.3
+	github.com/openshift-pipelines/pipelines-as-code v0.17.3
 	github.com/redhat-appstudio/application-api v0.0.0-20230116150710-8ead4c6952d3
 	github.com/redhat-appstudio/application-service v0.0.0-20230211102041-695765c656ab
 	github.com/tektoncd/pipeline v0.44.0
@@ -36,7 +38,7 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blendle/zapdriver v1.3.1 // indirect
 	github.com/bluekeyes/go-gitdiff v0.7.0 // indirect
-	github.com/bradleyfalzon/ghinstallation/v2 v2.1.0
+	github.com/bradleyfalzon/ghinstallation/v2 v2.1.1-0.20221216144751-8f41e6541ca6
 	github.com/census-instrumentation/opencensus-proto v0.4.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/cloudflare/circl v1.3.1 // indirect
