@@ -22,10 +22,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/google/go-containerregistry/pkg/authn"
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	routev1 "github.com/openshift/api/route/v1"
@@ -57,6 +59,8 @@ const (
 	pipelineRunOnPRSuffix            = "-on-pull-request"
 	pipelineRunOnPushFilename        = "push.yaml"
 	pipelineRunOnPRFilename          = "pull-request.yaml"
+	pipelineRunOnPRExpirationEnvVar  = "IMAGE_TAG_ON_PR_EXPIRATION"
+	pipelineRunOnPRExpirationDefault = "5d"
 	pipelinesAsCodeNamespace         = "openshift-pipelines"
 	pipelinesAsCodeNamespaceFallback = "pipelines-as-code"
 	pipelinesAsCodeRouteName         = "pipelines-as-code-controller"
@@ -440,7 +444,7 @@ func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigs(ctx context.Con
 	}
 
 	pipelineRunOnPush, err := generatePaCPipelineRunForComponent(
-		component, pipelineSpec, additionalPipelineParams, false, pacTargetBranch)
+		component, pipelineSpec, additionalPipelineParams, false, pacTargetBranch, log)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -450,7 +454,7 @@ func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigs(ctx context.Con
 	}
 
 	pipelineRunOnPR, err := generatePaCPipelineRunForComponent(
-		component, pipelineSpec, additionalPipelineParams, true, pacTargetBranch)
+		component, pipelineSpec, additionalPipelineParams, true, pacTargetBranch, log)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -831,7 +835,8 @@ func generatePaCPipelineRunForComponent(
 	pipelineSpec *tektonapi.PipelineSpec,
 	additionalPipelineParams []tektonapi.Param,
 	onPull bool,
-	pacTargetBranch string) (*tektonapi.PipelineRun, error) {
+	pacTargetBranch string,
+	log logr.Logger) (*tektonapi.PipelineRun, error) {
 
 	if pacTargetBranch == "" {
 		return nil, fmt.Errorf("target branch can't be empty for generating PaC PipelineRun for: %v", component)
@@ -868,6 +873,17 @@ func generatePaCPipelineRunForComponent(
 		{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "{{repo_url}}"}},
 		{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "{{revision}}"}},
 		{Name: "output-image", Value: tektonapi.ArrayOrString{Type: "string", StringVal: proposedImage}},
+	}
+	if onPull {
+		expiration := os.Getenv(pipelineRunOnPRExpirationEnvVar)
+		validExpiration, _ := regexp.Match("^[1-9][0-9]{0,2}[hdw]$", []byte(expiration))
+		if !validExpiration {
+			if expiration != "" {
+				log.Info(fmt.Sprintf("invalid expiration '%s' in %s envVar, using default %s", expiration, pipelineRunOnPRExpirationEnvVar, pipelineRunOnPRExpirationDefault), l.Action, l.ActionAdd)
+			}
+			expiration = pipelineRunOnPRExpirationDefault
+		}
+		params = append(params, tektonapi.Param{Name: "image-expires-after", Value: tektonapi.ArrayOrString{Type: "string", StringVal: expiration}})
 	}
 
 	dockerFile, err := devfile.SearchForDockerfile([]byte(component.Status.Devfile))
