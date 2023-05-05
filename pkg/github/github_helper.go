@@ -34,6 +34,7 @@ var DeletePaCWebhook func(g *GithubClient, webhookUrl, owner, repository string)
 var IsAppInstalledIntoRepository func(g *GithubClient, owner, repository string) (bool, error) = isAppInstalledIntoRepository
 var GetDefaultBranch func(*GithubClient, string, string) (string, error) = getDefaultBranch
 var FindUnmergedOnboardingMergeRequest func(*GithubClient, string, string, string, string, string) (*github.PullRequest, error) = findUnmergedOnboardingMergeRequest
+var GetBranchSHA func(*GithubClient, string, string, string) (string, error) = getBranchSHA
 var DeleteBranch func(*GithubClient, string, string, string) error = deleteBranch
 
 const (
@@ -306,6 +307,19 @@ func RefineGitHostingServiceError(response *http.Response, originErr error) erro
 
 func getDefaultBranch(client *GithubClient, owner string, repository string) (string, error) {
 	return client.getDefaultBranch(owner, repository)
+}
+
+// getBranchSHA returns SHA of the top commit in the given branch
+func getBranchSHA(client *GithubClient, owner, repository, branchName string) (string, error) {
+	ref, err := client.getReference(owner, repository, branchName)
+	if err != nil {
+		return "", err
+	}
+	if ref.Object == nil {
+		return "", fmt.Errorf("unexpected response")
+	}
+	sha := *ref.Object.SHA
+	return sha, nil
 }
 
 // findUnmergedOnboardingMergeRequest finds out the unmerged merge request that is opened during the component onboarding

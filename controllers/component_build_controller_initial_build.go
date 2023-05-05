@@ -22,12 +22,18 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
+	"github.com/redhat-appstudio/application-service/gitops"
+	gitopsprepare "github.com/redhat-appstudio/application-service/gitops/prepare"
 	"github.com/redhat-appstudio/application-service/pkg/devfile"
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
+	"github.com/redhat-appstudio/build-service/pkg/github"
+	"github.com/redhat-appstudio/build-service/pkg/gitlab"
 	l "github.com/redhat-appstudio/build-service/pkg/logs"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	corev1 "k8s.io/api/core/v1"
@@ -36,6 +42,15 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+)
+
+const (
+	pacShaLabelName          = "pipelinesascode.tekton.dev/sha"
+	pacShaUrlAnnotationName  = "pipelinesascode.tekton.dev/sha-url"
+	pacRepoUrlAnnotationName = "pipelinesascode.tekton.dev/repo-url"
+
+	gitCommitShaAnnotationName = "build.appstudio.redhat.com/commit_sha"
+	gitRepoAnnotationName      = "build.appstudio.openshift.io/repo"
 )
 
 // SubmitNewBuild creates a new PipelineRun to build a new image for the given component.
@@ -85,7 +100,34 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 		return err
 	}
 
-	initialBuildPipelineRun, err := generateInitialPipelineRunForComponent(component, pipelineRef, additionalPipelineParams)
+	// Find out source commit SHA to build from.
+	// This is optional for the build itself, but needed for UI to correctly display build pipeline.
+	// Skip any errors occured during SHA fetching.
+	gitSourceSHA := ""
+	revision := component.Spec.Source.GitSource.Revision
+	if revision != "" {
+		// Check if commit sha is given in the revision
+		matches, err := regexp.MatchString("[0-9a-fA-F]{40}", revision)
+		if err != nil {
+			return err
+		}
+		if matches {
+			gitSourceSHA = revision
+		}
+	}
+	if gitSourceSHA == "" {
+		pacSecret := corev1.Secret{}
+		if err := r.Client.Get(ctx, types.NamespacedName{Namespace: buildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}, &pacSecret); err == nil {
+			gitSourceSHA, err = getGitSourceShaForComponent(component, pacSecret.Data)
+			if err != nil {
+				log.Error(err, "Failed to retrieve git source commit SHA", l.Action, l.ActionView, l.Audit, "true")
+			}
+		} else {
+			log.Error(err, "error getting git provider credentials secret", l.Action, l.ActionView)
+		}
+	}
+
+	initialBuildPipelineRun, err := generateInitialPipelineRunForComponent(component, pipelineRef, additionalPipelineParams, gitSourceSHA)
 	if err != nil {
 		log.Error(err, fmt.Sprintf("Failed to generate PipelineRun to build %s component in %s namespace", component.Name, component.Namespace))
 		return err
@@ -111,7 +153,84 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 	return nil
 }
 
-func generateInitialPipelineRunForComponent(component *appstudiov1alpha1.Component, pipelineRef *tektonapi.PipelineRef, additionalPipelineParams []tektonapi.Param) (*tektonapi.PipelineRun, error) {
+func getGitSourceShaForComponent(component *appstudiov1alpha1.Component, pacConfig map[string][]byte) (string, error) {
+	gitProvider, err := gitops.GetGitProvider(*component)
+	if err != nil {
+		// There is no point to continue if git provider is not known
+		return "", fmt.Errorf("error detecting git provider: %w", err)
+	}
+
+	isAppUsed := gitops.IsPaCApplicationConfigured(gitProvider, pacConfig)
+
+	var accessToken string
+	if !isAppUsed {
+		accessToken = strings.TrimSpace(string(pacConfig[gitops.GetProviderTokenKey(gitProvider)]))
+	}
+
+	// https://github.com/owner/repository
+	gitSourceUrlParts := strings.Split(strings.TrimSuffix(component.Spec.Source.GitSource.URL, ".git"), "/")
+
+	switch gitProvider {
+	case "github":
+		owner := gitSourceUrlParts[3]
+		repository := gitSourceUrlParts[4]
+
+		var ghclient *github.GithubClient
+		if isAppUsed {
+			githubAppIdStr := string(pacConfig[gitops.PipelinesAsCode_githubAppIdKey])
+			githubAppId, err := strconv.ParseInt(githubAppIdStr, 10, 64)
+			if err != nil {
+				return "", fmt.Errorf("failed to convert %s to int: %w", githubAppIdStr, err)
+			}
+
+			privateKey := pacConfig[gitops.PipelinesAsCode_githubPrivateKey]
+			ghclient, err = github.NewGithubClientForSimpleBuildByApp(githubAppId, privateKey)
+			if err != nil {
+				return "", fmt.Errorf("failed to create GitHub client for simple build: %w", err)
+			}
+		} else {
+			ghclient = github.NewGithubClient(accessToken)
+		}
+
+		branchName := component.Spec.Source.GitSource.Revision
+		if branchName == "" {
+			branchName, err = github.GetDefaultBranch(ghclient, owner, repository)
+			if err != nil {
+				return "", nil
+			}
+		}
+
+		return github.GetBranchSHA(ghclient, owner, repository, branchName)
+
+	case "gitlab":
+		glclient, err := gitlab.NewGitlabClient(accessToken)
+		if err != nil {
+			return "", err
+		}
+
+		gitlabNamespace := gitSourceUrlParts[3]
+		gitlabProjectName := gitSourceUrlParts[4]
+		projectPath := gitlabNamespace + "/" + gitlabProjectName
+
+		branchName := component.Spec.Source.GitSource.Revision
+		if branchName == "" {
+			branchName, err = gitlab.GetDefaultBranch(glclient, projectPath)
+			if err != nil {
+				return "", nil
+			}
+		}
+
+		return gitlab.GetBranchSHA(glclient, projectPath, branchName)
+
+	case "bitbucket":
+		// TODO implement
+		return "", fmt.Errorf("git provider %s is not supported", gitProvider)
+	default:
+		return "", fmt.Errorf("git provider %s is not supported", gitProvider)
+	}
+}
+
+func generateInitialPipelineRunForComponent(component *appstudiov1alpha1.Component, pipelineRef *tektonapi.PipelineRef, additionalPipelineParams []tektonapi.Param, gitSourceSHA string) (*tektonapi.PipelineRun, error) {
 	timestamp := time.Now().Unix()
 	pipelineGenerateName := fmt.Sprintf("%s-", component.Name)
 	revision := ""
@@ -176,6 +295,34 @@ func generateInitialPipelineRunForComponent(component *appstudiov1alpha1.Compone
 				},
 			},
 		},
+	}
+
+	if gitSourceSHA != "" {
+		// https://github.com/owner/repository
+		repoUrl := strings.TrimSuffix(component.Spec.Source.GitSource.URL, ".git")
+		gitSourceUrlParts := strings.Split(repoUrl, "/")
+		gitProviderHost := "https://" + gitSourceUrlParts[2]
+
+		pipelineRun.Labels[pacShaLabelName] = gitSourceSHA
+		pipelineRun.Annotations[pacRepoUrlAnnotationName] = repoUrl
+		pipelineRun.Annotations[gitCommitShaAnnotationName] = gitSourceSHA
+
+		gitProvider, _ := gitops.GetGitProvider(*component)
+		switch gitProvider {
+		case "github":
+			owner := gitSourceUrlParts[3]
+			repository := gitSourceUrlParts[4]
+
+			pipelineRun.Annotations[pacShaUrlAnnotationName] = fmt.Sprintf("%s/%s/%s/commit/%s", gitProviderHost, owner, repository, gitSourceSHA)
+			pipelineRun.Annotations[gitRepoAnnotationName] = fmt.Sprintf("%s/%s/%s?rev=%s", gitProviderHost, owner, repository, gitSourceSHA)
+		case "gitlab":
+			gitlabNamespace := gitSourceUrlParts[3]
+			gitlabProjectName := gitSourceUrlParts[4]
+			projectPath := gitlabNamespace + "/" + gitlabProjectName
+
+			pipelineRun.Annotations[pacShaUrlAnnotationName] = fmt.Sprintf("%s/%s/-/commit/%s", gitProviderHost, projectPath, gitSourceSHA)
+			pipelineRun.Annotations[gitRepoAnnotationName] = fmt.Sprintf("%s/%s/-/tree/%s", gitProviderHost, projectPath, gitSourceSHA)
+		}
 	}
 
 	return pipelineRun, nil

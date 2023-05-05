@@ -17,6 +17,7 @@ limitations under the License.
 package gitlab
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
@@ -222,6 +223,19 @@ func RefineGitHostingServiceError(response *http.Response, originErr error) erro
 
 func getDefaultBranch(client *GitlabClient, projectPath string) (string, error) {
 	return client.getDefaultBranch(projectPath)
+}
+
+// GetBranchSHA returns SHA of the top commit in the given branch
+func GetBranchSHA(client *GitlabClient, projectPath, branchName string) (string, error) {
+	branch, err := client.getBranch(projectPath, branchName)
+	if err != nil {
+		return "", err
+	}
+	if branch.Commit == nil {
+		return "", fmt.Errorf("unexpected response")
+	}
+	sha := branch.Commit.ID
+	return sha, nil
 }
 
 // findUnmergedOnboardingMergeRequest finds out the unmerged merge request that is opened during the component onboarding
