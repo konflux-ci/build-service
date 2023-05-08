@@ -840,8 +840,8 @@ func generatePaCPipelineRunForComponent(
 	annotations := map[string]string{
 		"pipelinesascode.tekton.dev/on-target-branch": "[" + pacTargetBranch + "]",
 		"pipelinesascode.tekton.dev/max-keep-runs":    "3",
-		"build.appstudio.redhat.com/commit_sha":       "{{revision}}",
 		"build.appstudio.redhat.com/target_branch":    "{{target_branch}}",
+		gitCommitShaAnnotationName:                    "{{revision}}",
 	}
 	labels := map[string]string{
 		ApplicationNameLabelName:                component.Spec.Application,

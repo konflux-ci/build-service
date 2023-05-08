@@ -57,6 +57,9 @@ const (
 	PartOfLabelName           = "app.kubernetes.io/part-of"
 	PartOfAppStudioLabelValue = "appstudio"
 
+	gitCommitShaAnnotationName = "build.appstudio.redhat.com/commit_sha"
+	gitRepoAnnotationName      = "build.appstudio.openshift.io/repo"
+
 	ImageRepoAnnotationName         = "image.redhat.com/image"
 	ImageRepoGenerateAnnotationName = "image.redhat.com/generate"
 	buildPipelineServiceAccountName = "pipeline"

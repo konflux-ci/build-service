@@ -44,15 +44,6 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-const (
-	pacShaLabelName          = "pipelinesascode.tekton.dev/sha"
-	pacShaUrlAnnotationName  = "pipelinesascode.tekton.dev/sha-url"
-	pacRepoUrlAnnotationName = "pipelinesascode.tekton.dev/repo-url"
-
-	gitCommitShaAnnotationName = "build.appstudio.redhat.com/commit_sha"
-	gitRepoAnnotationName      = "build.appstudio.openshift.io/repo"
-)
-
 // SubmitNewBuild creates a new PipelineRun to build a new image for the given component.
 // Is called only once on component creation if Pipelines as Code is not configured,
 // otherwise the build is handled by PaC.
@@ -303,8 +294,6 @@ func generateInitialPipelineRunForComponent(component *appstudiov1alpha1.Compone
 		gitSourceUrlParts := strings.Split(repoUrl, "/")
 		gitProviderHost := "https://" + gitSourceUrlParts[2]
 
-		pipelineRun.Labels[pacShaLabelName] = gitSourceSHA
-		pipelineRun.Annotations[pacRepoUrlAnnotationName] = repoUrl
 		pipelineRun.Annotations[gitCommitShaAnnotationName] = gitSourceSHA
 
 		gitProvider, _ := gitops.GetGitProvider(*component)
@@ -313,14 +302,12 @@ func generateInitialPipelineRunForComponent(component *appstudiov1alpha1.Compone
 			owner := gitSourceUrlParts[3]
 			repository := gitSourceUrlParts[4]
 
-			pipelineRun.Annotations[pacShaUrlAnnotationName] = fmt.Sprintf("%s/%s/%s/commit/%s", gitProviderHost, owner, repository, gitSourceSHA)
 			pipelineRun.Annotations[gitRepoAnnotationName] = fmt.Sprintf("%s/%s/%s?rev=%s", gitProviderHost, owner, repository, gitSourceSHA)
 		case "gitlab":
 			gitlabNamespace := gitSourceUrlParts[3]
 			gitlabProjectName := gitSourceUrlParts[4]
 			projectPath := gitlabNamespace + "/" + gitlabProjectName
 
-			pipelineRun.Annotations[pacShaUrlAnnotationName] = fmt.Sprintf("%s/%s/-/commit/%s", gitProviderHost, projectPath, gitSourceSHA)
 			pipelineRun.Annotations[gitRepoAnnotationName] = fmt.Sprintf("%s/%s/-/tree/%s", gitProviderHost, projectPath, gitSourceSHA)
 		}
 	}

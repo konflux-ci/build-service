@@ -96,9 +96,6 @@ func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 	if pipelineRun.Labels["pipelines.appstudio.openshift.io/type"] != "build" {
 		t.Error("generateInitialPipelineRunForComponent(): wrong pipelines.appstudio.openshift.io/type label value")
 	}
-	if pipelineRun.Labels[pacShaLabelName] != commitSHA {
-		t.Errorf("generateInitialPipelineRunForComponent(): wrong %s label value", pacShaLabelName)
-	}
 
 	if pipelineRun.Annotations["build.appstudio.redhat.com/target_branch"] != "custom-branch" {
 		t.Error("generateInitialPipelineRunForComponent(): wrong build.appstudio.redhat.com/target_branch annotation value")
@@ -108,12 +105,6 @@ func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 	}
 	if pipelineRun.Annotations["build.appstudio.redhat.com/bundle"] != "pipeline-bundle" {
 		t.Error("generateInitialPipelineRunForComponent(): wrong build.appstudio.redhat.com/bundle annotation value")
-	}
-	if pipelineRun.Annotations[pacShaUrlAnnotationName] != "https://githost.com/user/repo/commit/"+commitSHA {
-		t.Errorf("generateInitialPipelineRunForComponent(): wrong %s annotation value", pacShaUrlAnnotationName)
-	}
-	if pipelineRun.Annotations[pacRepoUrlAnnotationName] != strings.TrimSuffix(component.Spec.Source.GitSource.URL, ".git") {
-		t.Errorf("generateInitialPipelineRunForComponent(): wrong %s annotation value", pacRepoUrlAnnotationName)
 	}
 	if pipelineRun.Annotations[gitCommitShaAnnotationName] != commitSHA {
 		t.Errorf("generateInitialPipelineRunForComponent(): wrong %s annotation value", gitCommitShaAnnotationName)
