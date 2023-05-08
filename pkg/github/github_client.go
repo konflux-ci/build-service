@@ -118,7 +118,7 @@ func newGithubClientByApp(appId int64, privateKeyPem []byte, owner string) (*Git
 	return NewGithubClient(token.GetToken()), nil
 }
 
-// newGithubClientForSimpleBuildByApp creates GitHub client based on an instalation token.
+// newGithubClientForSimpleBuildByApp creates GitHub client based on an installation token.
 // The installation token is generated based on a randomly picked app installation.
 // This tricky approach is required for simple builds to make requests to GitHub API. Otherwise, rate limit will be hit.
 func newGithubClientForSimpleBuildByApp(appId int64, privateKeyPem []byte) (*GithubClient, error) {

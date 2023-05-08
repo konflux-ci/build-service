@@ -1138,7 +1138,7 @@ var _ = Describe("Component initial build controller", func() {
 			// Check pipeline run labels and annotations
 			pipelineRun := listComponentPipelineRuns(resourceKey)[0]
 			Expect(pipelineRun.Annotations[gitCommitShaAnnotationName]).To(Equal(gitSourceSHA))
-			Expect(pipelineRun.Annotations[gitRepoAnnotationName]).To(
+			Expect(pipelineRun.Annotations[gitRepoAtShaAnnotationName]).To(
 				Equal("https://github.com/devfile-samples/devfile-sample-java-springboot-basic?rev=" + gitSourceSHA))
 		})
 

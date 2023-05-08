@@ -57,8 +57,9 @@ const (
 	PartOfLabelName           = "app.kubernetes.io/part-of"
 	PartOfAppStudioLabelValue = "appstudio"
 
-	gitCommitShaAnnotationName = "build.appstudio.redhat.com/commit_sha"
-	gitRepoAnnotationName      = "build.appstudio.openshift.io/repo"
+	gitCommitShaAnnotationName    = "build.appstudio.redhat.com/commit_sha"
+	gitRepoAtShaAnnotationName    = "build.appstudio.openshift.io/repo"
+	gitTargetBranchAnnotationName = "build.appstudio.redhat.com/target_branch"
 
 	ImageRepoAnnotationName         = "image.redhat.com/image"
 	ImageRepoGenerateAnnotationName = "image.redhat.com/generate"
@@ -334,18 +335,26 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if component.ObjectMeta.DeletionTimestamp.IsZero() {
 			if !controllerutil.ContainsFinalizer(&component, PaCProvisionFinalizer) {
 				controllerutil.AddFinalizer(&component, PaCProvisionFinalizer)
-				log.Info("PaC finalizer added", l.Action, l.ActionUpdate)
 			}
 		}
 
 		if err := r.Client.Update(ctx, &component); err != nil {
+			log.Error(err, "failed to add PaC finalizer to the Component", l.Action, l.ActionUpdate, l.Audit, "true")
 			return ctrl.Result{}, err
+		} else {
+			log.Info("PaC finalizer added", l.Action, l.ActionUpdate)
 		}
 
 		return ctrl.Result{}, nil
 	}
 
 	// Pipelines as Code workflow is not enabled, use plain builds.
+
+	// Reread component to avoid out of date state
+	if err := r.Client.Get(ctx, req.NamespacedName, &component); err != nil {
+		log.Error(err, "failed to get Component", l.Action, l.ActionView)
+		return ctrl.Result{}, err
+	}
 
 	// Check initial build annotation to know if any work should be done for the Component
 	if len(component.Annotations) == 0 {

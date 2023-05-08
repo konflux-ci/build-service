@@ -849,6 +849,18 @@ func generatePaCPipelineRunForComponent(
 		"pipelines.appstudio.openshift.io/type": "build",
 	}
 
+	var gitRepoAtShaUrl string
+	gitProvider, _ := gitops.GetGitProvider(*component)
+	switch gitProvider {
+	case "github":
+		gitRepoAtShaUrl = github.GetBrowseRepositoryAtShaLink(component.Spec.Source.GitSource.URL, "{{revision}}")
+	case "gitlab":
+		gitRepoAtShaUrl = gitlab.GetBrowseRepositoryAtShaLink(component.Spec.Source.GitSource.URL, "{{revision}}")
+	}
+	if gitRepoAtShaUrl != "" {
+		annotations[gitRepoAtShaAnnotationName] = gitRepoAtShaUrl
+	}
+
 	imageRepo := getContainerImageRepositoryForComponent(component)
 
 	var pipelineName string

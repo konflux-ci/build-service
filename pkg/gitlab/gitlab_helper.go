@@ -19,6 +19,7 @@ package gitlab
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 	"github.com/xanzy/go-gitlab"
@@ -232,7 +233,7 @@ func GetBranchSHA(client *GitlabClient, projectPath, branchName string) (string,
 		return "", err
 	}
 	if branch.Commit == nil {
-		return "", fmt.Errorf("unexpected response")
+		return "", fmt.Errorf("unexpected response while getting branch top commit SHA")
 	}
 	sha := branch.Commit.ID
 	return sha, nil
@@ -267,4 +268,15 @@ func deleteBranch(glclient *GitlabClient, projectPath, branch string) error {
 		return RefineGitHostingServiceError(resp.Response, err)
 	}
 	return nil
+}
+
+func GetBrowseRepositoryAtShaLink(repoUrl, sha string) string {
+	repoUrl = strings.TrimSuffix(repoUrl, ".git")
+	gitSourceUrlParts := strings.Split(repoUrl, "/")
+	gitProviderHost := "https://" + gitSourceUrlParts[2]
+	gitlabNamespace := gitSourceUrlParts[3]
+	gitlabProjectName := gitSourceUrlParts[4]
+	projectPath := gitlabNamespace + "/" + gitlabProjectName
+
+	return fmt.Sprintf("%s/%s/-/tree/%s", gitProviderHost, projectPath, sha)
 }

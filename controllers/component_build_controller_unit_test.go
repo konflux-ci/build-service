@@ -109,8 +109,8 @@ func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 	if pipelineRun.Annotations[gitCommitShaAnnotationName] != commitSHA {
 		t.Errorf("generateInitialPipelineRunForComponent(): wrong %s annotation value", gitCommitShaAnnotationName)
 	}
-	if pipelineRun.Annotations[gitRepoAnnotationName] != "https://githost.com/user/repo?rev="+commitSHA {
-		t.Errorf("generateInitialPipelineRunForComponent(): wrong %s annotation value", gitRepoAnnotationName)
+	if pipelineRun.Annotations[gitRepoAtShaAnnotationName] != "https://githost.com/user/repo?rev="+commitSHA {
+		t.Errorf("generateInitialPipelineRunForComponent(): wrong %s annotation value", gitRepoAtShaAnnotationName)
 	}
 
 	if pipelineRun.Spec.PipelineRef.Name != "pipeline-name" {

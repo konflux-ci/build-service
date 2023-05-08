@@ -315,10 +315,10 @@ func getBranchSHA(client *GithubClient, owner, repository, branchName string) (s
 	if err != nil {
 		return "", err
 	}
-	if ref.Object == nil {
-		return "", fmt.Errorf("unexpected response")
+	if ref.GetObject() == nil {
+		return "", fmt.Errorf("unexpected response while getting branch top commit SHA")
 	}
-	sha := *ref.Object.SHA
+	sha := ref.GetObject().GetSHA()
 	return sha, nil
 }
 
@@ -346,4 +346,14 @@ func findUnmergedOnboardingMergeRequest(
 
 func deleteBranch(client *GithubClient, owner, repository, branch string) error {
 	return client.deleteReference(owner, repository, branch)
+}
+
+func GetBrowseRepositoryAtShaLink(repoUrl, sha string) string {
+	repoUrl = strings.TrimSuffix(repoUrl, ".git")
+	gitSourceUrlParts := strings.Split(repoUrl, "/")
+	gitProviderHost := "https://" + gitSourceUrlParts[2]
+	owner := gitSourceUrlParts[3]
+	repository := gitSourceUrlParts[4]
+
+	return fmt.Sprintf("%s/%s/%s?rev=%s", gitProviderHost, owner, repository, sha)
 }

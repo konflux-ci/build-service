@@ -229,13 +229,23 @@ func generateInitialPipelineRunForComponent(component *appstudiov1alpha1.Compone
 		revision = component.Spec.Source.GitSource.Revision
 	}
 
+	annotations := map[string]string{
+		"build.appstudio.redhat.com/pipeline_name": pipelineRef.Name,
+		"build.appstudio.redhat.com/bundle":        pipelineRef.Bundle,
+	}
+	if revision != "" {
+		annotations[gitTargetBranchAnnotationName] = revision
+	}
+
 	imageRepo := getContainerImageRepositoryForComponent(component)
 	image := fmt.Sprintf("%s:build-%s-%d", imageRepo, getRandomString(5), timestamp)
 
 	params := []tektonapi.Param{
 		{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: component.Spec.Source.GitSource.URL}},
-		{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: revision}},
 		{Name: "output-image", Value: tektonapi.ArrayOrString{Type: "string", StringVal: image}},
+	}
+	if revision != "" {
+		params = append(params, tektonapi.Param{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: revision}})
 	}
 	if value, exists := component.Annotations["skip-initial-checks"]; exists && (value == "1" || strings.ToLower(value) == "true") {
 		params = append(params, tektonapi.Param{Name: "skip-checks", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}})
@@ -270,11 +280,7 @@ func generateInitialPipelineRunForComponent(component *appstudiov1alpha1.Compone
 				ComponentNameLabelName:                  component.Name,
 				"pipelines.appstudio.openshift.io/type": "build",
 			},
-			Annotations: map[string]string{
-				"build.appstudio.redhat.com/target_branch": revision,
-				"build.appstudio.redhat.com/pipeline_name": pipelineRef.Name,
-				"build.appstudio.redhat.com/bundle":        pipelineRef.Bundle,
-			},
+			Annotations: annotations,
 		},
 		Spec: tektonapi.PipelineRunSpec{
 			PipelineRef: pipelineRef,
@@ -289,26 +295,14 @@ func generateInitialPipelineRunForComponent(component *appstudiov1alpha1.Compone
 	}
 
 	if gitSourceSHA != "" {
-		// https://github.com/owner/repository
-		repoUrl := strings.TrimSuffix(component.Spec.Source.GitSource.URL, ".git")
-		gitSourceUrlParts := strings.Split(repoUrl, "/")
-		gitProviderHost := "https://" + gitSourceUrlParts[2]
-
 		pipelineRun.Annotations[gitCommitShaAnnotationName] = gitSourceSHA
 
 		gitProvider, _ := gitops.GetGitProvider(*component)
 		switch gitProvider {
 		case "github":
-			owner := gitSourceUrlParts[3]
-			repository := gitSourceUrlParts[4]
-
-			pipelineRun.Annotations[gitRepoAnnotationName] = fmt.Sprintf("%s/%s/%s?rev=%s", gitProviderHost, owner, repository, gitSourceSHA)
+			pipelineRun.Annotations[gitRepoAtShaAnnotationName] = github.GetBrowseRepositoryAtShaLink(component.Spec.Source.GitSource.URL, gitSourceSHA)
 		case "gitlab":
-			gitlabNamespace := gitSourceUrlParts[3]
-			gitlabProjectName := gitSourceUrlParts[4]
-			projectPath := gitlabNamespace + "/" + gitlabProjectName
-
-			pipelineRun.Annotations[gitRepoAnnotationName] = fmt.Sprintf("%s/%s/-/tree/%s", gitProviderHost, projectPath, gitSourceSHA)
+			pipelineRun.Annotations[gitRepoAtShaAnnotationName] = gitlab.GetBrowseRepositoryAtShaLink(component.Spec.Source.GitSource.URL, gitSourceSHA)
 		}
 	}
 
