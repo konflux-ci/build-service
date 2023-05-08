@@ -70,6 +70,16 @@ const (
 
 	defaultPipelineName   = "docker-build"
 	defaultPipelineBundle = "quay.io/redhat-appstudio-tekton-catalog/pipeline-docker-build:8cf8982d58a841922b687b7166f0cfdc1cc3fc72"
+
+	mergeRequestDescription = `
+# Pipelines as Code configuration proposal
+
+To start the PipelineRun, add a new comment with content ` + "`/ok-to-test`" + `
+
+For more detailed information about running a PipelineRun, please refer to Pipelines as Code documentation [Running the PipelineRun](https://pipelinesascode.com/docs/guide/running/)
+
+To customize the proposed PipelineRuns after merge, please refer to [Build Pipeline customization](https://redhat-appstudio.github.io/docs.stonesoup.io/Documentation/main/getting-started/build_service.html)
+`
 )
 
 // ProvisionPaCForComponent does Pipelines as Code provision for the given component.
@@ -490,7 +500,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 	commitMessage := "Appstudio update " + component.Name
 	branch := generateMergeRequestSourceBranch(component)
 	mrTitle := "Appstudio update " + component.Name
-	mrText := "Pipelines as Code configuration proposal"
+	mrText := mergeRequestDescription
 	authorName := "redhat-appstudio"
 	authorEmail := "appstudio@redhat.com"
 
