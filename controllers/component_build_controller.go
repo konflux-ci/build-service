@@ -59,7 +59,7 @@ const (
 
 	ImageRepoAnnotationName         = "image.redhat.com/image"
 	ImageRepoGenerateAnnotationName = "image.redhat.com/generate"
-	buildPipelineServiceAccountName = "pipeline"
+	buildPipelineServiceAccountName = "appstudio-pipeline"
 
 	buildServiceNamespaceName         = "build-service"
 	buildPipelineSelectorResourceName = "build-pipeline-selector"
