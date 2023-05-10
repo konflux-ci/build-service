@@ -63,7 +63,7 @@ const (
 
 	ImageRepoAnnotationName         = "image.redhat.com/image"
 	ImageRepoGenerateAnnotationName = "image.redhat.com/generate"
-	buildPipelineServiceAccountName = "pipeline"
+	buildPipelineServiceAccountName = "appstudio-pipeline"
 
 	buildServiceNamespaceName         = "build-service"
 	buildPipelineSelectorResourceName = "build-pipeline-selector"
@@ -198,6 +198,8 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 					if _, err := r.unlinkSecretFromServiceAccount(ctx, generatedImageRepoSecretName, pipelineSA.Name, pipelineSA.Namespace); err != nil {
 						return ctrl.Result{}, err
 					}
+					// unlink secret also to old pipeline account, can be removed when default pipeline is switched to appstudio-pipeline
+					r.unlinkSecretFromServiceAccount(ctx, generatedImageRepoSecretName, "pipeline", pipelineSA.Namespace)
 				}
 			}
 
@@ -262,6 +264,8 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if err != nil {
 				return ctrl.Result{}, err
 			}
+			// link secret also to old pipeline account, can be removed when default pipeline is switched to appstudio-pipeline
+			r.linkSecretToServiceAccount(ctx, imageRepoSecretName, "pipeline", pipelineSA.Namespace, true)
 
 			// Ensure finalizer exists to clean up image registry secret link on component deletion
 			if component.ObjectMeta.DeletionTimestamp.IsZero() {
