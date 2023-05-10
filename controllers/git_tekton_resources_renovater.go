@@ -235,7 +235,7 @@ func generateConfigJS(slug string, repositories []renovateRepository) string {
 				branchPrefix: "rhtap/",
 				commitMessageExtra: "",
 				commitMessageTopic: "RHTAP references",
-				prFooter: "",
+				prFooter: "To execute skipped test pipelines write comment ` + "`/ok-to-test`" + `",
 				prBodyColumns: ["Package", "Change", "Notes"],
 				prBodyDefinitions: { "Notes": "{{#if (or (containsString updateType 'minor') (containsString updateType 'major'))}}:warning:[migration](https://github.com/redhat-appstudio/build-definitions/blob/main/task/{{{replace '%stask-' '' packageName}}}/{{{newVersion}}}/MIGRATION.md):warning:{{/if}}" },
 				enabled: true
