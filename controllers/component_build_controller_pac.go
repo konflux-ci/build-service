@@ -845,13 +845,25 @@ func generatePaCPipelineRunForComponent(
 	annotations := map[string]string{
 		"pipelinesascode.tekton.dev/on-target-branch": "[" + pacTargetBranch + "]",
 		"pipelinesascode.tekton.dev/max-keep-runs":    "3",
-		"build.appstudio.redhat.com/commit_sha":       "{{revision}}",
 		"build.appstudio.redhat.com/target_branch":    "{{target_branch}}",
+		gitCommitShaAnnotationName:                    "{{revision}}",
 	}
 	labels := map[string]string{
 		ApplicationNameLabelName:                component.Spec.Application,
 		ComponentNameLabelName:                  component.Name,
 		"pipelines.appstudio.openshift.io/type": "build",
+	}
+
+	var gitRepoAtShaUrl string
+	gitProvider, _ := gitops.GetGitProvider(*component)
+	switch gitProvider {
+	case "github":
+		gitRepoAtShaUrl = github.GetBrowseRepositoryAtShaLink(component.Spec.Source.GitSource.URL, "{{revision}}")
+	case "gitlab":
+		gitRepoAtShaUrl = gitlab.GetBrowseRepositoryAtShaLink(component.Spec.Source.GitSource.URL, "{{revision}}")
+	}
+	if gitRepoAtShaUrl != "" {
+		annotations[gitRepoAtShaAnnotationName] = gitRepoAtShaUrl
 	}
 
 	imageRepo := getContainerImageRepositoryForComponent(component)

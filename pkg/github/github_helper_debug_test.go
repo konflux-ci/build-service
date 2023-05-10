@@ -39,6 +39,7 @@ var (
 	StubUndoPaCPullRequest           = func(g *GithubClient, d *PaCPullRequestData) (string, error) { return "", nil }
 	StubSetupPaCWebhook              = func(g *GithubClient, webhookUrl, webhookSecret, owner, repository string) error { return nil }
 	StubDeletePaCWebhook             = func(g *GithubClient, webhookUrl, owner, repository string) error { return nil }
+	StubGetBranchSHA                 = func(g *GithubClient, owner, repository, branch string) (string, error) { return "abcd", nil }
 )
 
 func TestCreatePaCPullRequest(t *testing.T) {
@@ -195,5 +196,32 @@ func TestDeletePaCWebhook(t *testing.T) {
 	err := DeletePaCWebhook(ghclient, targetWebhookUrl, owner, repository)
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestGetBranchSHA(t *testing.T) {
+	GetBranchSHA = StubGetBranchSHA
+
+	branchName := "main"
+	gitSourceUrlParts := strings.Split(repoUrl, "/")
+	owner := gitSourceUrlParts[3]
+	repository := gitSourceUrlParts[4]
+
+	githubAppPrivateKey, err := os.ReadFile(githubAppPrivateKeyPath)
+	if err != nil {
+		// Private key file by given path doesn't exist
+		return
+	}
+	ghclient, err := NewGithubClientForSimpleBuildByApp(githubAppId, []byte(githubAppPrivateKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sha, err := GetBranchSHA(ghclient, owner, repository, branchName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sha == "" {
+		t.Fatal("Commit SHA must not be empty")
 	}
 }

@@ -41,6 +41,17 @@ func newGitlabClient(accessToken string) (*GitlabClient, error) {
 	return glc, nil
 }
 
+func (c *GitlabClient) getBranch(projectPath, branchName string) (*gitlab.Branch, error) {
+	branch, resp, err := c.client.Branches.GetBranch(projectPath, branchName)
+	if err != nil {
+		if resp.StatusCode == 404 {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return branch, nil
+}
+
 func (c *GitlabClient) branchExist(projectPath, branchName string) (bool, error) {
 	_, resp, err := c.client.Branches.GetBranch(projectPath, branchName)
 	if err != nil {

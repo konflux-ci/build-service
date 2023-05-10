@@ -45,7 +45,8 @@ func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 			Name:      "my-component",
 			Namespace: "my-namespace",
 			Annotations: map[string]string{
-				"skip-initial-checks": "true",
+				"skip-initial-checks":            "true",
+				gitops.GitProviderAnnotationName: "github",
 			},
 		},
 		Spec: appstudiov1alpha1.ComponentSpec{
@@ -72,8 +73,9 @@ func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 		{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
 		{Name: "rebuild", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}},
 	}
+	commitSHA := "26239c94569cea79b32bce32f12c8abd8bbd0fd7"
 
-	pipelineRun, err := generateInitialPipelineRunForComponent(component, pipelineRef, additionalParams)
+	pipelineRun, err := generateInitialPipelineRunForComponent(component, pipelineRef, additionalParams, commitSHA)
 	if err != nil {
 		t.Error("generateInitialPipelineRunForComponent(): Failed to genertate pipeline run")
 	}
@@ -103,6 +105,12 @@ func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 	}
 	if pipelineRun.Annotations["build.appstudio.redhat.com/bundle"] != "pipeline-bundle" {
 		t.Error("generateInitialPipelineRunForComponent(): wrong build.appstudio.redhat.com/bundle annotation value")
+	}
+	if pipelineRun.Annotations[gitCommitShaAnnotationName] != commitSHA {
+		t.Errorf("generateInitialPipelineRunForComponent(): wrong %s annotation value", gitCommitShaAnnotationName)
+	}
+	if pipelineRun.Annotations[gitRepoAtShaAnnotationName] != "https://githost.com/user/repo?rev="+commitSHA {
+		t.Errorf("generateInitialPipelineRunForComponent(): wrong %s annotation value", gitRepoAtShaAnnotationName)
 	}
 
 	if pipelineRun.Spec.PipelineRef.Name != "pipeline-name" {

@@ -17,7 +17,9 @@ limitations under the License.
 package gitlab
 
 import (
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 	"github.com/xanzy/go-gitlab"
@@ -224,6 +226,19 @@ func getDefaultBranch(client *GitlabClient, projectPath string) (string, error) 
 	return client.getDefaultBranch(projectPath)
 }
 
+// GetBranchSHA returns SHA of the top commit in the given branch
+func GetBranchSHA(client *GitlabClient, projectPath, branchName string) (string, error) {
+	branch, err := client.getBranch(projectPath, branchName)
+	if err != nil {
+		return "", err
+	}
+	if branch.Commit == nil {
+		return "", fmt.Errorf("unexpected response while getting branch top commit SHA")
+	}
+	sha := branch.Commit.ID
+	return sha, nil
+}
+
 // findUnmergedOnboardingMergeRequest finds out the unmerged merge request that is opened during the component onboarding
 // An onboarding merge request fulfills all the following criteria:
 // 1) opened based on the base branch which is determined by the Revision or is the default branch of component repository
@@ -253,4 +268,15 @@ func deleteBranch(glclient *GitlabClient, projectPath, branch string) error {
 		return RefineGitHostingServiceError(resp.Response, err)
 	}
 	return nil
+}
+
+func GetBrowseRepositoryAtShaLink(repoUrl, sha string) string {
+	repoUrl = strings.TrimSuffix(repoUrl, ".git")
+	gitSourceUrlParts := strings.Split(repoUrl, "/")
+	gitProviderHost := "https://" + gitSourceUrlParts[2]
+	gitlabNamespace := gitSourceUrlParts[3]
+	gitlabProjectName := gitSourceUrlParts[4]
+	projectPath := gitlabNamespace + "/" + gitlabProjectName
+
+	return fmt.Sprintf("%s/%s/-/tree/%s", gitProviderHost, projectPath, sha)
 }

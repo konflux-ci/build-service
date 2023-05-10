@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"strings"
 	"time"
@@ -32,8 +33,9 @@ import (
 )
 
 // Allow mocking for tests
-var NewGithubClientByApp func(appId int64, privateKeyPem []byte, owner string) (*GithubClient, error) = newGithubClientByApp
 var NewGithubClient func(accessToken string) *GithubClient = newGithubClient
+var NewGithubClientByApp func(appId int64, privateKeyPem []byte, owner string) (*GithubClient, error) = newGithubClientByApp
+var NewGithubClientForSimpleBuildByApp func(appId int64, privateKeyPem []byte) (*GithubClient, error) = newGithubClientForSimpleBuildByApp
 var GetInstallations func(appId int64, privateKeyPem []byte) ([]ApplicationInstallation, string, error) = getInstallations
 
 type GithubClient struct {
@@ -103,6 +105,50 @@ func newGithubClientByApp(appId int64, privateKeyPem []byte, owner string) (*Git
 	}
 	// The user has the application installed,
 	// but it doesn't guarantee that the application is installed into all user's repositories.
+
+	token, _, err := client.Apps.CreateInstallationToken(
+		context.Background(),
+		installId,
+		&github.InstallationTokenOptions{})
+	if err != nil {
+		// TODO analyze the error
+		return nil, err
+	}
+
+	return NewGithubClient(token.GetToken()), nil
+}
+
+// newGithubClientForSimpleBuildByApp creates GitHub client based on an installation token.
+// The installation token is generated based on a randomly picked app installation.
+// This tricky approach is required for simple builds to make requests to GitHub API. Otherwise, rate limit will be hit.
+func newGithubClientForSimpleBuildByApp(appId int64, privateKeyPem []byte) (*GithubClient, error) {
+	itr, err := ghinstallation.NewAppsTransport(http.DefaultTransport, appId, privateKeyPem)
+	if err != nil {
+		// Inability to create transport based on a private key indicates that the key is bad formatted
+		return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppMalformedPrivateKey, err)
+	}
+	client := github.NewClient(&http.Client{Transport: itr})
+
+	opt := &github.RepositoryListByOrgOptions{
+		ListOptions: github.ListOptions{PerPage: 100},
+	}
+	installations, resp, err := client.Apps.ListInstallations(context.Background(), &opt.ListOptions)
+	if err != nil {
+		if resp != nil && resp.Response != nil && resp.Response.StatusCode != 0 {
+			switch resp.StatusCode {
+			case 401:
+				return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppPrivateKeyNotMatched, err)
+			case 404:
+				return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppDoesNotExist, err)
+			}
+		}
+		return nil, boerrors.NewBuildOpError(boerrors.ETransientError, err)
+	}
+
+	if len(installations) < 1 {
+		return nil, fmt.Errorf("GitHub app is not installed in any repository")
+	}
+	installId := installations[rand.Intn(len(installations))].GetID()
 
 	token, _, err := client.Apps.CreateInstallationToken(
 		context.Background(),

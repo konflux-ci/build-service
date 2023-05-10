@@ -34,6 +34,7 @@ var DeletePaCWebhook func(g *GithubClient, webhookUrl, owner, repository string)
 var IsAppInstalledIntoRepository func(g *GithubClient, owner, repository string) (bool, error) = isAppInstalledIntoRepository
 var GetDefaultBranch func(*GithubClient, string, string) (string, error) = getDefaultBranch
 var FindUnmergedOnboardingMergeRequest func(*GithubClient, string, string, string, string, string) (*github.PullRequest, error) = findUnmergedOnboardingMergeRequest
+var GetBranchSHA func(*GithubClient, string, string, string) (string, error) = getBranchSHA
 var DeleteBranch func(*GithubClient, string, string, string) error = deleteBranch
 
 const (
@@ -308,6 +309,19 @@ func getDefaultBranch(client *GithubClient, owner string, repository string) (st
 	return client.getDefaultBranch(owner, repository)
 }
 
+// getBranchSHA returns SHA of the top commit in the given branch
+func getBranchSHA(client *GithubClient, owner, repository, branchName string) (string, error) {
+	ref, err := client.getReference(owner, repository, branchName)
+	if err != nil {
+		return "", err
+	}
+	if ref.GetObject() == nil {
+		return "", fmt.Errorf("unexpected response while getting branch top commit SHA")
+	}
+	sha := ref.GetObject().GetSHA()
+	return sha, nil
+}
+
 // findUnmergedOnboardingMergeRequest finds out the unmerged merge request that is opened during the component onboarding
 // An onboarding merge request fulfills both:
 // 1) opened based on the base branch which is determined by the Revision or is the default branch of component repository
@@ -332,4 +346,14 @@ func findUnmergedOnboardingMergeRequest(
 
 func deleteBranch(client *GithubClient, owner, repository, branch string) error {
 	return client.deleteReference(owner, repository, branch)
+}
+
+func GetBrowseRepositoryAtShaLink(repoUrl, sha string) string {
+	repoUrl = strings.TrimSuffix(repoUrl, ".git")
+	gitSourceUrlParts := strings.Split(repoUrl, "/")
+	gitProviderHost := "https://" + gitSourceUrlParts[2]
+	owner := gitSourceUrlParts[3]
+	repository := gitSourceUrlParts[4]
+
+	return fmt.Sprintf("%s/%s/%s?rev=%s", gitProviderHost, owner, repository, sha)
 }

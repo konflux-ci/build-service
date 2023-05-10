@@ -103,6 +103,7 @@ var _ = Describe("Component initial build controller", func() {
 			createSecret(pacSecretKey, pacSecretData)
 
 			github.NewGithubClientByApp = func(appId int64, privateKeyPem []byte, owner string) (*github.GithubClient, error) { return nil, nil }
+			github.NewGithubClientForSimpleBuildByApp = func(appId int64, privateKeyPem []byte) (*github.GithubClient, error) { return nil, nil }
 			github.NewGithubClient = func(accessToken string) *github.GithubClient { return nil }
 			github.IsAppInstalledIntoRepository = func(g *github.GithubClient, owner, repository string) (bool, error) { return true, nil }
 			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) { return "", nil }
@@ -116,6 +117,7 @@ var _ = Describe("Component initial build controller", func() {
 			github.DeletePaCWebhook = func(g *github.GithubClient, webhookUrl, owner, repository string) error { return nil }
 			gitlab.UndoPaCMergeRequest = func(g *gitlab.GitlabClient, d *gitlab.PaCMergeRequestData) (string, error) { return "", nil }
 			gitlab.DeletePaCWebhook = func(g *gitlab.GitlabClient, projectPath, webhookUrl string) error { return nil }
+			github.GetBranchSHA = func(g *github.GithubClient, owner, repository, branchName string) (string, error) { return "hash", nil }
 
 			createComponentForPaCBuild(getSampleComponentData(resourceKey))
 		})
@@ -1094,16 +1096,64 @@ var _ = Describe("Component initial build controller", func() {
 	Context("Test initial build", func() {
 
 		_ = BeforeEach(func() {
+			github.NewGithubClientForSimpleBuildByApp = func(appId int64, privateKeyPem []byte) (*github.GithubClient, error) { return nil, nil }
+			github.GetBranchSHA = func(g *github.GithubClient, owner, repository, branchName string) (string, error) { return "hash", nil }
+
+			pacSecretData := map[string]string{
+				"github-application-id": "12345",
+				"github-private-key":    githubAppPrivateKey,
+			}
+			createSecret(pacSecretKey, pacSecretData)
+
 			createComponent(resourceKey)
 		})
 
 		_ = AfterEach(func() {
+			deleteSecret(pacSecretKey)
+
 			deleteComponentPipelineRuns(resourceKey)
 			deleteComponent(resourceKey)
 		})
 
 		It("should submit initial build", func() {
+			gitSourceSHA := "d1a9e858489d1515621398fb02942da068f1c956"
+
+			isGetBranchShaInvoked := false
+			github.GetBranchSHA = func(g *github.GithubClient, owner, repository, branchName string) (string, error) {
+				isGetBranchShaInvoked = true
+				Expect(owner).To(Equal("devfile-samples"))
+				Expect(repository).To(Equal("devfile-sample-java-springboot-basic"))
+				return gitSourceSHA, nil
+			}
+
 			setComponentDevfileModel(resourceKey)
+
+			Eventually(func() bool {
+				return isGetBranchShaInvoked
+			}, timeout, interval).Should(BeTrue())
+
+			waitOneInitialPipelineRunCreated(resourceKey)
+			ensureComponentInitialBuildAnnotationState(resourceKey, true)
+
+			// Check pipeline run labels and annotations
+			pipelineRun := listComponentPipelineRuns(resourceKey)[0]
+			Expect(pipelineRun.Annotations[gitCommitShaAnnotationName]).To(Equal(gitSourceSHA))
+			Expect(pipelineRun.Annotations[gitRepoAtShaAnnotationName]).To(
+				Equal("https://github.com/devfile-samples/devfile-sample-java-springboot-basic?rev=" + gitSourceSHA))
+		})
+
+		It("should submit initial build if retrieving of git commit SHA failed", func() {
+			isGetBranchShaInvoked := false
+			github.GetBranchSHA = func(g *github.GithubClient, owner, repository, branchName string) (string, error) {
+				isGetBranchShaInvoked = true
+				return "", fmt.Errorf("failed to get git commit SHA")
+			}
+
+			setComponentDevfileModel(resourceKey)
+
+			Eventually(func() bool {
+				return isGetBranchShaInvoked
+			}, timeout, interval).Should(BeTrue())
 
 			waitOneInitialPipelineRunCreated(resourceKey)
 			ensureComponentInitialBuildAnnotationState(resourceKey, true)
