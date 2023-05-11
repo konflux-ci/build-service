@@ -537,8 +537,8 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 				return "", boerrors.NewBuildOpError(boerrors.EGitHubAppNotInstalled, fmt.Errorf("GitHub Application is not installed into the repository"))
 			}
 
-			// Customize PR data to reflect GitHUb App name
-			if appName, appSlug, err := github.GetGitHubAppName(githubAppId, privateKey); err != nil {
+			// Customize PR data to reflect GitHub App name
+			if appName, appSlug, err := github.GetGitHubAppName(githubAppId, privateKey); err == nil {
 				commitMessage = fmt.Sprintf("%s update %s", appName, component.Name)
 				mrTitle = fmt.Sprintf("%s update %s", appName, component.Name)
 				authorName = appSlug
