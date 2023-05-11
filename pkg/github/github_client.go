@@ -89,7 +89,7 @@ func newGithubClientByApp(appId int64, privateKeyPem []byte, owner string) (*Git
 			return nil, boerrors.NewBuildOpError(boerrors.ETransientError, err)
 		}
 		for _, val := range installations {
-			if val.GetAccount().GetLogin() == owner {
+			if strings.ToLower(val.GetAccount().GetLogin()) == strings.ToLower(owner) {
 				installId = val.GetID()
 				break
 			}
