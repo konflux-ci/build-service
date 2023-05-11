@@ -82,6 +82,8 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 		if err != nil {
 			return err
 		}
+		// link secret also to old pipeline account, can be removed when default pipeline is switched to appstudio-pipeline
+		_, _ = r.linkSecretToServiceAccount(ctx, gitSecretName, "pipeline", component.Namespace, false)
 	}
 
 	// Create initial build pipeline
