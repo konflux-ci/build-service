@@ -502,7 +502,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 	mrTitle := "Appstudio update " + component.Name
 	mrText := mergeRequestDescription
 	authorName := "redhat-appstudio"
-	authorEmail := "appstudio@redhat.com"
+	authorEmail := "rhtap@redhat.com"
 
 	var baseBranch string
 	if component.Spec.Source.GitSource != nil {
@@ -536,6 +536,17 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 			if !appInstalled {
 				return "", boerrors.NewBuildOpError(boerrors.EGitHubAppNotInstalled, fmt.Errorf("GitHub Application is not installed into the repository"))
 			}
+
+			// Customize PR data to reflect GitHub App name
+			if appName, appSlug, err := github.GetGitHubAppName(githubAppId, privateKey); err == nil {
+				commitMessage = fmt.Sprintf("%s update %s", appName, component.Name)
+				mrTitle = fmt.Sprintf("%s update %s", appName, component.Name)
+				authorName = appSlug
+			} else {
+				log.Error(err, "failed to get GitHub Application name", l.Action, l.ActionView, l.Audit, "true")
+				// Do not fail PaC provision if failed to read GitHub App info
+			}
+
 		} else {
 			// Webhook
 			ghclient = github.NewGithubClient(accessToken)

@@ -199,7 +199,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 						return ctrl.Result{}, err
 					}
 					// unlink secret also to old pipeline account, can be removed when default pipeline is switched to appstudio-pipeline
-					r.unlinkSecretFromServiceAccount(ctx, generatedImageRepoSecretName, "pipeline", pipelineSA.Namespace)
+					_, _ = r.unlinkSecretFromServiceAccount(ctx, generatedImageRepoSecretName, "pipeline", pipelineSA.Namespace)
 				}
 			}
 
@@ -265,7 +265,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				return ctrl.Result{}, err
 			}
 			// link secret also to old pipeline account, can be removed when default pipeline is switched to appstudio-pipeline
-			r.linkSecretToServiceAccount(ctx, imageRepoSecretName, "pipeline", pipelineSA.Namespace, true)
+			_, _ = r.linkSecretToServiceAccount(ctx, imageRepoSecretName, "pipeline", pipelineSA.Namespace, true)
 
 			// Ensure finalizer exists to clean up image registry secret link on component deletion
 			if component.ObjectMeta.DeletionTimestamp.IsZero() {

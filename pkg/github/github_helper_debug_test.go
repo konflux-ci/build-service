@@ -40,6 +40,7 @@ var (
 	StubSetupPaCWebhook              = func(g *GithubClient, webhookUrl, webhookSecret, owner, repository string) error { return nil }
 	StubDeletePaCWebhook             = func(g *GithubClient, webhookUrl, owner, repository string) error { return nil }
 	StubGetBranchSHA                 = func(g *GithubClient, owner, repository, branch string) (string, error) { return "abcd", nil }
+	StubGetGitHubAppName             = func(appId int64, privateKeyPem []byte) (string, string, error) { return "appName", "app-slug", nil }
 )
 
 func TestCreatePaCPullRequest(t *testing.T) {
@@ -223,5 +224,26 @@ func TestGetBranchSHA(t *testing.T) {
 	}
 	if sha == "" {
 		t.Fatal("Commit SHA must not be empty")
+	}
+}
+
+func TestGetGitHubAppName(t *testing.T) {
+	GetGitHubAppName = StubGetGitHubAppName
+
+	githubAppPrivateKey, err := os.ReadFile(githubAppPrivateKeyPath)
+	if err != nil {
+		// Private key file by given path doesn't exist
+		return
+	}
+
+	appName, appSlug, err := GetGitHubAppName(githubAppId, githubAppPrivateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if appName == "" {
+		t.Fatal("GitHub Application name should not be empty")
+	}
+	if appSlug == "" {
+		t.Fatal("GitHub Application slug (URL-friendly name of GitHub App) should not be empty")
 	}
 }
