@@ -36,6 +36,7 @@ import (
 var NewGithubClient func(accessToken string) *GithubClient = newGithubClient
 var NewGithubClientByApp func(appId int64, privateKeyPem []byte, owner string) (*GithubClient, error) = newGithubClientByApp
 var NewGithubClientForSimpleBuildByApp func(appId int64, privateKeyPem []byte) (*GithubClient, error) = newGithubClientForSimpleBuildByApp
+var GetGitHubAppName func(appId int64, privateKeyPem []byte) (string, string, error) = getGitHubAppName
 var GetInstallations func(appId int64, privateKeyPem []byte) ([]ApplicationInstallation, string, error) = getInstallations
 
 type GithubClient struct {
@@ -543,4 +544,18 @@ func (c *GithubClient) deleteWebhook(owner, repository string, webhookId int64) 
 		}
 	}
 	return nil
+}
+
+func getGitHubAppName(appId int64, privateKeyPem []byte) (string, string, error) {
+	itr, err := ghinstallation.NewAppsTransport(http.DefaultTransport, appId, privateKeyPem)
+	if err != nil {
+		// Inability to create transport based on a private key indicates that the key is bad formatted
+		return "", "", boerrors.NewBuildOpError(boerrors.EGitHubAppMalformedPrivateKey, err)
+	}
+	client := github.NewClient(&http.Client{Transport: itr})
+	githubApp, _, err := client.Apps.Get(context.TODO(), "")
+	if err != nil {
+		return "", "", err
+	}
+	return githubApp.GetName(), githubApp.GetSlug(), nil
 }

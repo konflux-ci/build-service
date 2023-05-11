@@ -104,6 +104,7 @@ var _ = Describe("Component initial build controller", func() {
 
 			github.NewGithubClientByApp = func(appId int64, privateKeyPem []byte, owner string) (*github.GithubClient, error) { return nil, nil }
 			github.NewGithubClientForSimpleBuildByApp = func(appId int64, privateKeyPem []byte) (*github.GithubClient, error) { return nil, nil }
+			github.GetGitHubAppName = func(appId int64, privateKeyPem []byte) (string, string, error) { return "appName", "app-slug", nil }
 			github.NewGithubClient = func(accessToken string) *github.GithubClient { return nil }
 			github.IsAppInstalledIntoRepository = func(g *github.GithubClient, owner, repository string) (bool, error) { return true, nil }
 			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) { return "", nil }
@@ -737,6 +738,7 @@ var _ = Describe("Component initial build controller", func() {
 			createNamespace(buildServiceNamespaceName)
 
 			github.NewGithubClientByApp = func(appId int64, privateKeyPem []byte, owner string) (*github.GithubClient, error) { return nil, nil }
+			github.GetGitHubAppName = func(appId int64, privateKeyPem []byte) (string, string, error) { return "appName", "app-slug", nil }
 			github.NewGithubClient = func(accessToken string) *github.GithubClient { return nil }
 			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) { return "", nil }
 			github.SetupPaCWebhook = func(g *github.GithubClient, webhookUrl, webhookSecret, owner, repository string) error { return nil }
