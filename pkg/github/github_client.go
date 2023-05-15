@@ -90,7 +90,7 @@ func newGithubClientByApp(appId int64, privateKeyPem []byte, owner string) (*Git
 			return nil, boerrors.NewBuildOpError(boerrors.ETransientError, err)
 		}
 		for _, val := range installations {
-			if strings.ToLower(val.GetAccount().GetLogin()) == strings.ToLower(owner) {
+			if strings.EqualFold(val.GetAccount().GetLogin(), owner) {
 				installId = val.GetID()
 				break
 			}
@@ -251,7 +251,7 @@ func (c *GithubClient) isAppInstalledIntoRepository(owner, repository string) (b
 			return false, err
 		}
 		for _, repo := range repositoriesListPage.Repositories {
-			if *repo.Name == repository && *repo.Owner.Login == owner {
+			if strings.EqualFold(*repo.Name, repository) && strings.EqualFold(*repo.Owner.Login, owner) {
 				return true, nil
 			}
 		}
