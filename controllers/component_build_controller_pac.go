@@ -149,7 +149,7 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context,
 // UndoPaCProvisionForComponent creates merge request that removes Pipelines as Code configuration from component source repository.
 // Deletes PaC webhook if used.
 // In case of any errors just logs them and does not block Component deletion.
-func (r *ComponentBuildReconciler) UndoPaCProvisionForComponent(ctx context.Context, component *appstudiov1alpha1.Component) {
+func (r *ComponentBuildReconciler) UndoPaCProvisionForComponent(ctx context.Context, component *appstudiov1alpha1.Component) error {
 	log := ctrllog.FromContext(ctx).WithName("PaC-cleanup")
 	ctx = ctrllog.IntoContext(ctx, log)
 
@@ -157,22 +157,22 @@ func (r *ComponentBuildReconciler) UndoPaCProvisionForComponent(ctx context.Cont
 	if err != nil {
 		log.Error(err, "error detecting git provider")
 		// There is no point to continue if git provider is not known.
-		return
+		return err
 	}
 
 	pacSecret := corev1.Secret{}
 	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: buildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}, &pacSecret); err != nil {
 		log.Error(err, "error getting git provider credentials secret", l.Action, l.ActionView)
 		// Cannot continue without accessing git provider credentials.
-		return
+		return err
 	}
 
 	webhookTargetUrl := ""
 	if !gitops.IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
 		webhookTargetUrl, err = r.getPaCWebhookTargetUrl(ctx)
 		if err != nil {
-			// Just log the error and continue with merge request creation
-			log.Error(err, "failed to get Pipelines as Code webhook target URL", l.Action, l.ActionView)
+			// Just log the error and continue with pruning merge request creation
+			log.Error(err, "failed to get Pipelines as Code webhook target URL. Webhook will not be deleted.", l.Action, l.ActionView, l.Audit, "true")
 		}
 	}
 
@@ -180,7 +180,7 @@ func (r *ComponentBuildReconciler) UndoPaCProvisionForComponent(ctx context.Cont
 	mrUrl, action, err := r.UnconfigureRepositoryForPaC(ctx, component, pacSecret.Data, webhookTargetUrl)
 	if err != nil {
 		log.Error(err, "failed to create merge request to remove Pipelines as Code configuration from Component source repository", l.Audit, "true")
-		return
+		return err
 	}
 	if action == "delete" {
 		if mrUrl != "" {
@@ -191,6 +191,7 @@ func (r *ComponentBuildReconciler) UndoPaCProvisionForComponent(ctx context.Cont
 	} else if action == "close" {
 		log.Info(fmt.Sprintf("Pipelines as Code configuration merge request has been closed: %s", mrUrl))
 	}
+	return nil
 }
 
 func (r *ComponentBuildReconciler) ensurePaCSecret(ctx context.Context, component *appstudiov1alpha1.Component, gitProvider string) (*corev1.Secret, error) {
