@@ -92,6 +92,8 @@ const (
 	EGitHubAppNotInstalled BOErrorId = 70
 	// Bad formatted private key
 	EGitHubAppMalformedPrivateKey BOErrorId = 71
+	// GitHub Application ID is not a valid integer
+	EGitHubAppMalformedId BOErrorId = 77
 	// Private key doesn't match the GitHub Application
 	EGitHubAppPrivateKeyNotMatched BOErrorId = 72
 	// GitHub Application with specified ID does not exists.
@@ -134,7 +136,8 @@ var boErrorMessages = map[BOErrorId]string{
 	EUnknownGitProvider: "unknown git provider of the source repository",
 
 	EGitHubAppNotInstalled:         "GitHub Application is not installed in user repository",
-	EGitHubAppMalformedPrivateKey:  "invalid GitHub Application private key",
+	EGitHubAppMalformedPrivateKey:  "malformed GitHub Application private key",
+	EGitHubAppMalformedId:          "malformed GitHub Application ID",
 	EGitHubAppPrivateKeyNotMatched: "GitHub Application private key does not match Application ID",
 	EGitHubAppDoesNotExist:         "GitHub Application with given ID does not exist",
 

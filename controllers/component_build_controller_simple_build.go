@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -32,8 +31,7 @@ import (
 	gitopsprepare "github.com/redhat-appstudio/application-service/gitops/prepare"
 	"github.com/redhat-appstudio/application-service/pkg/devfile"
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
-	"github.com/redhat-appstudio/build-service/pkg/github"
-	"github.com/redhat-appstudio/build-service/pkg/gitlab"
+	"github.com/redhat-appstudio/build-service/pkg/git/gitproviderfactory"
 	l "github.com/redhat-appstudio/build-service/pkg/logs"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	corev1 "k8s.io/api/core/v1"
@@ -45,8 +43,7 @@ import (
 )
 
 // SubmitNewBuild creates a new PipelineRun to build a new image for the given component.
-// Is called only once on component creation if Pipelines as Code is not configured,
-// otherwise the build is handled by PaC.
+// Is called right ater component creation and later on user's demand.
 func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component *appstudiov1alpha1.Component) error {
 	log := ctrllog.FromContext(ctx).WithName("SimpleBuild")
 	ctx = ctrllog.IntoContext(ctx, log)
@@ -86,144 +83,106 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 		_, _ = r.linkSecretToServiceAccount(ctx, gitSecretName, "pipeline", component.Namespace, false)
 	}
 
-	// Create initial build pipeline
+	// Create build pipeline
 
 	pipelineRef, additionalPipelineParams, err := r.GetPipelineForComponent(ctx, component)
 	if err != nil {
 		return err
 	}
 
-	// Find out source commit SHA to build from.
-	// This is optional for the build itself, but needed for UI to correctly display build pipeline.
-	// Skip any errors occured during SHA fetching.
-	gitSourceSHA := ""
-	revision := component.Spec.Source.GitSource.Revision
-	if revision != "" {
-		// Check if commit sha is given in the revision
-		matches, err := regexp.MatchString("[0-9a-fA-F]{40}", revision)
+	// Find out git source commit SHA to build from and other git information.
+	// This is optional for the build itself, but needed for UI to correctly display the build pipeline.
+	// Skip any errors occured during git information fetching.
+	var pRunGitInfo *pipelineRunGitInfo
+	pacSecret := corev1.Secret{}
+	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: buildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}, &pacSecret); err == nil {
+		pRunGitInfo, err = getPipelineRunGitInfo(component, pacSecret.Data)
 		if err != nil {
-			return err
+			log.Error(err, "failed to retrieve git source information", l.Action, l.ActionView, l.Audit, "true")
 		}
-		if matches {
-			gitSourceSHA = revision
-		}
-	}
-	if gitSourceSHA == "" {
-		pacSecret := corev1.Secret{}
-		if err := r.Client.Get(ctx, types.NamespacedName{Namespace: buildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}, &pacSecret); err == nil {
-			gitSourceSHA, err = getGitSourceShaForComponent(component, pacSecret.Data)
-			if err != nil {
-				log.Error(err, "Failed to retrieve git source commit SHA", l.Action, l.ActionView, l.Audit, "true")
-			}
-		} else {
-			log.Error(err, "error getting git provider credentials secret", l.Action, l.ActionView)
-		}
+	} else {
+		log.Error(err, "error getting git provider credentials secret", l.Action, l.ActionView)
 	}
 
-	initialBuildPipelineRun, err := generateInitialPipelineRunForComponent(component, pipelineRef, additionalPipelineParams, gitSourceSHA)
+	buildPipelineRun, err := generatePipelineRunForComponent(component, pipelineRef, additionalPipelineParams, pRunGitInfo)
 	if err != nil {
 		log.Error(err, fmt.Sprintf("Failed to generate PipelineRun to build %s component in %s namespace", component.Name, component.Namespace))
 		return err
 	}
 
-	err = controllerutil.SetOwnerReference(component, initialBuildPipelineRun, r.Scheme)
+	err = controllerutil.SetOwnerReference(component, buildPipelineRun, r.Scheme)
 	if err != nil {
-		log.Error(err, fmt.Sprintf("Unable to set owner reference for %v", initialBuildPipelineRun), l.Action, l.ActionUpdate)
+		log.Error(err, fmt.Sprintf("Unable to set owner reference for %v", buildPipelineRun), l.Action, l.ActionUpdate)
 	}
 
-	err = r.Client.Create(ctx, initialBuildPipelineRun)
+	err = r.Client.Create(ctx, buildPipelineRun)
 	if err != nil {
-		log.Error(err, fmt.Sprintf("Unable to create the build PipelineRun %v", initialBuildPipelineRun), l.Action, l.ActionAdd)
+		log.Error(err, fmt.Sprintf("Unable to create the build PipelineRun %v", buildPipelineRun), l.Action, l.ActionAdd)
 		return err
 	}
 
-	initialBuildPipelineCreationTimeMetric.Observe(time.Since(component.CreationTimestamp.Time).Seconds())
+	simpleBuildPipelineCreationTimeMetric.Observe(time.Since(component.CreationTimestamp.Time).Seconds())
 
 	log.Info(fmt.Sprintf("Build pipeline %s created for component %s in %s namespace using %s pipeline from %s bundle",
-		initialBuildPipelineRun.Name, component.Name, component.Namespace, pipelineRef.Name, pipelineRef.Bundle),
+		buildPipelineRun.Name, component.Name, component.Namespace, pipelineRef.Name, pipelineRef.Bundle),
 		l.Action, l.ActionAdd, l.Audit, "true")
 
 	return nil
 }
 
-func getGitSourceShaForComponent(component *appstudiov1alpha1.Component, pacConfig map[string][]byte) (string, error) {
+type pipelineRunGitInfo struct {
+	gitSourceSha              string
+	browseRepositoryAtShaLink string
+}
+
+// getPipelineRunGitInfo find out git source information the build is done from.
+func getPipelineRunGitInfo(component *appstudiov1alpha1.Component, pacConfig map[string][]byte) (*pipelineRunGitInfo, error) {
 	gitProvider, err := gitops.GetGitProvider(*component)
 	if err != nil {
 		// There is no point to continue if git provider is not known
-		return "", fmt.Errorf("error detecting git provider: %w", err)
+		return nil, fmt.Errorf("error detecting git provider: %w", err)
 	}
 
-	isAppUsed := gitops.IsPaCApplicationConfigured(gitProvider, pacConfig)
+	repoUrl := component.Spec.Source.GitSource.URL
 
-	var accessToken string
-	if !isAppUsed {
-		accessToken = strings.TrimSpace(string(pacConfig[gitops.GetProviderTokenKey(gitProvider)]))
+	gitClient, err := gitproviderfactory.CreateGitClient(gitproviderfactory.GitClientConfig{
+		PacSecretData:             pacConfig,
+		GitProvider:               gitProvider,
+		RepoUrl:                   repoUrl,
+		IsAppInstallationExpected: false,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create git client for %s provider", gitProvider)
 	}
 
-	// https://github.com/owner/repository
-	gitSourceUrlParts := strings.Split(strings.TrimSuffix(component.Spec.Source.GitSource.URL, ".git"), "/")
-
-	switch gitProvider {
-	case "github":
-		owner := gitSourceUrlParts[3]
-		repository := gitSourceUrlParts[4]
-
-		var ghclient *github.GithubClient
-		if isAppUsed {
-			githubAppIdStr := string(pacConfig[gitops.PipelinesAsCode_githubAppIdKey])
-			githubAppId, err := strconv.ParseInt(githubAppIdStr, 10, 64)
-			if err != nil {
-				return "", fmt.Errorf("failed to convert %s to int: %w", githubAppIdStr, err)
-			}
-
-			privateKey := pacConfig[gitops.PipelinesAsCode_githubPrivateKey]
-			ghclient, err = github.NewGithubClientForSimpleBuildByApp(githubAppId, privateKey)
-			if err != nil {
-				return "", fmt.Errorf("failed to create GitHub client for simple build: %w", err)
-			}
-		} else {
-			ghclient = github.NewGithubClient(accessToken)
-		}
-
-		branchName := component.Spec.Source.GitSource.Revision
-		if branchName == "" {
-			branchName, err = github.GetDefaultBranch(ghclient, owner, repository)
-			if err != nil {
-				return "", nil
-			}
-		}
-
-		return github.GetBranchSHA(ghclient, owner, repository, branchName)
-
-	case "gitlab":
-		glclient, err := gitlab.NewGitlabClient(accessToken)
+	gitSourceSha := ""
+	revision := component.Spec.Source.GitSource.Revision
+	if revision != "" {
+		// Check if commit sha is given in the revision
+		matches, err := regexp.MatchString("[0-9a-fA-F]{7,40}", revision)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
-
-		gitlabNamespace := gitSourceUrlParts[3]
-		gitlabProjectName := gitSourceUrlParts[4]
-		projectPath := gitlabNamespace + "/" + gitlabProjectName
-
-		branchName := component.Spec.Source.GitSource.Revision
-		if branchName == "" {
-			branchName, err = gitlab.GetDefaultBranch(glclient, projectPath)
-			if err != nil {
-				return "", nil
-			}
+		if matches {
+			gitSourceSha = revision
 		}
-
-		return gitlab.GetBranchSHA(glclient, projectPath, branchName)
-
-	case "bitbucket":
-		// TODO implement
-		return "", fmt.Errorf("git provider %s is not supported", gitProvider)
-	default:
-		return "", fmt.Errorf("git provider %s is not supported", gitProvider)
 	}
+	if gitSourceSha == "" {
+		gitSourceSha, err = gitClient.GetBranchSha(repoUrl, revision)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get git branch SHA: %w", err)
+		}
+	}
+
+	browseRepositoryAtShaLink := gitClient.GetBrowseRepositoryAtShaLink(repoUrl, gitSourceSha)
+
+	return &pipelineRunGitInfo{
+		gitSourceSha:              gitSourceSha,
+		browseRepositoryAtShaLink: browseRepositoryAtShaLink,
+	}, nil
 }
 
-func generateInitialPipelineRunForComponent(component *appstudiov1alpha1.Component, pipelineRef *tektonapi.PipelineRef, additionalPipelineParams []tektonapi.Param, gitSourceSHA string) (*tektonapi.PipelineRun, error) {
+func generatePipelineRunForComponent(component *appstudiov1alpha1.Component, pipelineRef *tektonapi.PipelineRef, additionalPipelineParams []tektonapi.Param, pRunGitInfo *pipelineRunGitInfo) (*tektonapi.PipelineRun, error) {
 	timestamp := time.Now().Unix()
 	pipelineGenerateName := fmt.Sprintf("%s-", component.Name)
 	revision := ""
@@ -296,15 +255,13 @@ func generateInitialPipelineRunForComponent(component *appstudiov1alpha1.Compone
 		},
 	}
 
-	if gitSourceSHA != "" {
-		pipelineRun.Annotations[gitCommitShaAnnotationName] = gitSourceSHA
-
-		gitProvider, _ := gitops.GetGitProvider(*component)
-		switch gitProvider {
-		case "github":
-			pipelineRun.Annotations[gitRepoAtShaAnnotationName] = github.GetBrowseRepositoryAtShaLink(component.Spec.Source.GitSource.URL, gitSourceSHA)
-		case "gitlab":
-			pipelineRun.Annotations[gitRepoAtShaAnnotationName] = gitlab.GetBrowseRepositoryAtShaLink(component.Spec.Source.GitSource.URL, gitSourceSHA)
+	// Add git source info to the pipeline run
+	if pRunGitInfo != nil {
+		if pRunGitInfo.gitSourceSha != "" {
+			pipelineRun.Annotations[gitCommitShaAnnotationName] = pRunGitInfo.gitSourceSha
+		}
+		if pRunGitInfo.browseRepositoryAtShaLink != "" {
+			pipelineRun.Annotations[gitRepoAtShaAnnotationName] = pRunGitInfo.browseRepositoryAtShaLink
 		}
 	}
 

@@ -35,8 +35,8 @@ import (
 	gitopsprepare "github.com/redhat-appstudio/application-service/gitops/prepare"
 	buildappstudiov1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
-	"github.com/redhat-appstudio/build-service/pkg/github"
-	"github.com/redhat-appstudio/build-service/pkg/gitlab"
+	"github.com/redhat-appstudio/build-service/pkg/git/github"
+	"github.com/redhat-appstudio/build-service/pkg/git/gitlab"
 	"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 
 	gogithub "github.com/google/go-github/v45/github"

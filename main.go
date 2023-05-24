@@ -20,6 +20,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -53,6 +54,7 @@ import (
 
 	appstudioredhatcomv1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
 	"github.com/redhat-appstudio/build-service/controllers"
+	l "github.com/redhat-appstudio/build-service/pkg/logs"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -170,6 +172,14 @@ func main() {
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up ready check")
 		os.Exit(1)
+	}
+
+	if prImageExpiration := os.Getenv(controllers.PipelineRunOnPRExpirationEnvVar); prImageExpiration != "" {
+		validExpiration, _ := regexp.Match("^[1-9][0-9]{0,2}[hdw]$", []byte(prImageExpiration))
+		if !validExpiration {
+			setupLog.Info(fmt.Sprintf("invalid expiration '%s' in %s environment variable, using default %s",
+				prImageExpiration, controllers.PipelineRunOnPRExpirationEnvVar, controllers.PipelineRunOnPRExpirationDefault), l.Audit, "true")
+		}
 	}
 
 	setupLog.Info("starting manager")
