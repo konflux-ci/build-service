@@ -152,7 +152,7 @@ func getPipelineRunGitInfo(component *appstudiov1alpha1.Component, pacConfig map
 		IsAppInstallationExpected: false,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create git client for %s provider", gitProvider)
+		return nil, err
 	}
 
 	gitSourceSha := ""

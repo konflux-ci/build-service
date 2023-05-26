@@ -28,6 +28,8 @@ import (
 	"github.com/redhat-appstudio/build-service/pkg/git/gitprovider"
 )
 
+var CreateGitClient func(gitClientConfig GitClientConfig) (gitprovider.GitProviderClient, error) = createGitClient
+
 type GitClientConfig struct {
 	// PacSecretData are the content of Pipelines as Code secret
 	PacSecretData map[string][]byte
@@ -45,8 +47,8 @@ type GitClientConfig struct {
 	IsAppInstallationExpected bool
 }
 
-// CreateGitClient creates new git provider client for the requested config
-func CreateGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderClient, error) {
+// createGitClient creates new git provider client for the requested config
+func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderClient, error) {
 	gitProvider := gitClientConfig.GitProvider
 	config := gitClientConfig.PacSecretData
 
@@ -66,7 +68,7 @@ func CreateGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 		githubAppId, err := strconv.ParseInt(githubAppIdStr, 10, 64)
 		if err != nil {
 			return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppMalformedId,
-				fmt.Errorf("failed to convert %s to int: %w", githubAppIdStr, err))
+				fmt.Errorf("failed to create git client: failed to convert %s to int: %w", githubAppIdStr, err))
 		}
 
 		privateKey := config[gitops.PipelinesAsCode_githubPrivateKey]
@@ -87,7 +89,7 @@ func CreateGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 			}
 			if !appInstalled {
 				return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppNotInstalled,
-					fmt.Errorf("GitHub Application is not installed into the repository"))
+					fmt.Errorf("failed to create git client: GitHub Application is not installed into the repository"))
 			}
 			return githubClient, nil
 		} else {

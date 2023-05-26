@@ -167,8 +167,8 @@ func (g *GithubClient) IsAppInstalledIntoRepository(repoUrl string) (bool, error
 	return false, nil
 }
 
-// GetConfiguredGitHubAppName returns name and slug of GitHub App that created client token.
-func (g *GithubClient) GetConfiguredGitHubAppName() (string, string, error) {
+// GetConfiguredGitAppName returns name and slug of GitHub App that created client token.
+func (g *GithubClient) GetConfiguredGitAppName() (string, string, error) {
 	g.ensureAppConfigured()
 
 	itr, err := ghinstallation.NewAppsTransport(http.DefaultTransport, g.appId, g.appPrivateKeyPem)
@@ -190,7 +190,7 @@ func (g *GithubClient) isAppConfigured() bool {
 
 func (g *GithubClient) ensureAppConfigured() {
 	if !g.isAppConfigured() {
-		panic("GitHub Application is not configured for ")
+		panic("GitHub Application is not configured for this client")
 	}
 }
 

@@ -50,6 +50,10 @@ type GitProviderClient interface {
 
 	// GetBrowseRepositoryAtShaLink returns web URL of repository state at given SHA
 	GetBrowseRepositoryAtShaLink(repoUrl, sha string) string
+
+	// GetConfiguredGitAppName returns configured git application name and id.
+	// Not all git providers support applications. Currently only GitHub does.
+	GetConfiguredGitAppName() (string, string, error)
 }
 
 type MergeRequestData struct {

@@ -19,24 +19,23 @@ package gitlab
 import (
 	"strings"
 	"testing"
+
+	gp "github.com/redhat-appstudio/build-service/pkg/git/gitprovider"
 )
 
 // THIS FILE IS NOT UNIT TESTS
-// Put your own data below and comment out function override in the test to debug interactions with GitLab
+// Put your own data below and set skip tests to false to debug interactions with GitLab
 var (
 	repoUrl     = "https://gitlab.com/user/devfile-sample-go-basic"
 	accessToken = "glpat-token"
-)
 
-var (
-	StubEnsurePaCMergeRequest = func(g *GitlabClient, d *PaCMergeRequestData) (string, error) { return "", nil }
-	StubUndoPaCMergeRequest   = func(g *GitlabClient, d *PaCMergeRequestData) (string, error) { return "", nil }
-	StubSetupPaCWebhook       = func(g *GitlabClient, projectPath, webhookUrl, webhookSecret string) error { return nil }
-	StubDeletePaCWebhook      = func(g *GitlabClient, projectPath, webhookUrl string) error { return nil }
+	shouldSkipAllTests = true
 )
 
 func TestEnsurePaCMergeRequest(t *testing.T) {
-	EnsurePaCMergeRequest = StubEnsurePaCMergeRequest
+	if shouldSkipAllTests {
+		return
+	}
 
 	glclient, err := NewGitlabClient(accessToken)
 	if err != nil {
@@ -47,23 +46,21 @@ func TestEnsurePaCMergeRequest(t *testing.T) {
 	pipelineOnPR := []byte("pipelineOnMR:\n  bundle: 'test-bundle-2'\n  when: 'on-mr'\n")
 
 	componentName := "unittest-component-name"
-	gitSourceUrlParts := strings.Split(repoUrl, "/")
-	mrData := &PaCMergeRequestData{
-		ProjectPath:   gitSourceUrlParts[3] + "/" + gitSourceUrlParts[4],
-		CommitMessage: "Appstudio update " + componentName,
-		Branch:        "appstudio-" + componentName,
-		BaseBranch:    "",
-		MrTitle:       "Appstudio update " + componentName,
-		MrText:        "Pipelines as Code configuration proposal",
-		AuthorName:    "redhat-appstudio",
-		AuthorEmail:   "appstudio@redhat.com",
-		Files: []File{
+	mrData := &gp.MergeRequestData{
+		CommitMessage:  "Appstudio update " + componentName,
+		BranchName:     "appstudio-" + componentName,
+		BaseBranchName: "",
+		Title:          "Appstudio update " + componentName,
+		Text:           "Pipelines as Code configuration proposal",
+		AuthorName:     "redhat-appstudio",
+		AuthorEmail:    "rhtap@redhat.com",
+		Files: []gp.RepositoryFile{
 			{FullPath: ".tekton/" + componentName + "-push.yaml", Content: pipelineOnPush},
 			{FullPath: ".tekton/" + componentName + "-pull-request.yaml", Content: pipelineOnPR},
 		},
 	}
 
-	url, err := EnsurePaCMergeRequest(glclient, mrData)
+	url, err := glclient.EnsurePaCMergeRequest(repoUrl, mrData)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +70,9 @@ func TestEnsurePaCMergeRequest(t *testing.T) {
 }
 
 func TestUndoPaCMergeRequest(t *testing.T) {
-	UndoPaCMergeRequest = StubUndoPaCMergeRequest
+	if shouldSkipAllTests {
+		return
+	}
 
 	glclient, err := NewGitlabClient(accessToken)
 	if err != nil {
@@ -81,23 +80,21 @@ func TestUndoPaCMergeRequest(t *testing.T) {
 	}
 
 	componentName := "unittest-component-name"
-	gitSourceUrlParts := strings.Split(repoUrl, "/")
-	mrData := &PaCMergeRequestData{
-		ProjectPath:   gitSourceUrlParts[3] + "/" + gitSourceUrlParts[4],
-		CommitMessage: "Appstudio purge " + componentName,
-		Branch:        "appstudio-purge-" + componentName,
-		BaseBranch:    "",
-		MrTitle:       "Appstudio purge " + componentName,
-		MrText:        "Pipelines as Code configuration removal",
-		AuthorName:    "redhat-appstudio",
-		AuthorEmail:   "appstudio@redhat.com",
-		Files: []File{
+	mrData := &gp.MergeRequestData{
+		CommitMessage:  "Appstudio purge " + componentName,
+		BranchName:     "appstudio-purge-" + componentName,
+		BaseBranchName: "",
+		Title:          "Appstudio purge " + componentName,
+		Text:           "Pipelines as Code configuration removal",
+		AuthorName:     "redhat-appstudio",
+		AuthorEmail:    "rhtap@redhat.com",
+		Files: []gp.RepositoryFile{
 			{FullPath: ".tekton/" + componentName + "-push.yaml"},
 			{FullPath: ".tekton/" + componentName + "-pull-request.yaml"},
 		},
 	}
 
-	url, err := UndoPaCMergeRequest(glclient, mrData)
+	url, err := glclient.UndoPaCMergeRequest(repoUrl, mrData)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +104,9 @@ func TestUndoPaCMergeRequest(t *testing.T) {
 }
 
 func TestSetupPaCWebhook(t *testing.T) {
-	SetupPaCWebhook = StubSetupPaCWebhook
+	if shouldSkipAllTests {
+		return
+	}
 
 	targetWebhookUrl := "https://pac.route.my-cluster.net"
 	webhookSecretString := "d01b38971dad59514298d763f288392c08221043"
@@ -117,17 +116,16 @@ func TestSetupPaCWebhook(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	gitSourceUrlParts := strings.Split(repoUrl, "/")
-	projectPath := gitSourceUrlParts[3] + "/" + gitSourceUrlParts[4]
-
-	err = SetupPaCWebhook(glclient, projectPath, targetWebhookUrl, webhookSecretString)
+	err = glclient.SetupPaCWebhook(repoUrl, targetWebhookUrl, webhookSecretString)
 	if err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestDeletePaCWebhook(t *testing.T) {
-	DeletePaCWebhook = StubDeletePaCWebhook
+	if shouldSkipAllTests {
+		return
+	}
 
 	targetWebhookUrl := "https://pac.route.my-cluster.net"
 
@@ -136,10 +134,7 @@ func TestDeletePaCWebhook(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	gitSourceUrlParts := strings.Split(repoUrl, "/")
-	projectPath := gitSourceUrlParts[3] + "/" + gitSourceUrlParts[4]
-
-	err = DeletePaCWebhook(glclient, projectPath, targetWebhookUrl)
+	err = glclient.DeletePaCWebhook(repoUrl, targetWebhookUrl)
 	if err != nil {
 		t.Fatal(err)
 	}

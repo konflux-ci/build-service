@@ -35,7 +35,6 @@ import (
 	gitopsprepare "github.com/redhat-appstudio/application-service/gitops/prepare"
 	"github.com/redhat-appstudio/application-service/pkg/devfile"
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
-	"github.com/redhat-appstudio/build-service/pkg/git/github"
 	gp "github.com/redhat-appstudio/build-service/pkg/git/gitprovider"
 	"github.com/redhat-appstudio/build-service/pkg/git/gitproviderfactory"
 	l "github.com/redhat-appstudio/build-service/pkg/logs"
@@ -493,7 +492,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 		IsAppInstallationExpected: true,
 	})
 	if err != nil {
-		return "", fmt.Errorf("failed to create git client for %s provider", gitProvider)
+		return "", err
 	}
 
 	baseBranch := component.Spec.Source.GitSource.Revision
@@ -525,21 +524,16 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 
 	isAppUsed := gitops.IsPaCApplicationConfigured(gitProvider, pacConfig)
 	if isAppUsed {
-		// Customize PR data to reflect Application name
-
-		// Since only GitHub supports Applications right now, we may use its clinet directly here.
-		githubClient, ok := gitClient.(*github.GithubClient)
-		if !ok {
-			panic("Application client is not GitHub Application")
-		}
-
-		if appName, appSlug, err := githubClient.GetConfiguredGitHubAppName(); err == nil {
+		// Customize PR data to reflect git application name
+		if appName, appSlug, err := gitClient.GetConfiguredGitAppName(); err == nil {
 			mrData.CommitMessage = fmt.Sprintf("%s update %s", appName, component.Name)
 			mrData.Title = fmt.Sprintf("%s update %s", appName, component.Name)
 			mrData.AuthorName = appSlug
 		} else {
-			log.Error(err, "failed to get Git Application name", l.Action, l.ActionView, l.Audit, "true")
-			// Do not fail PaC provision if failed to read GitHub App info
+			if gitProvider == "github" {
+				log.Error(err, "failed to get PaC GitHub Application name", l.Action, l.ActionView, l.Audit, "true")
+				// Do not fail PaC provision if failed to read GitHub App info
+			}
 		}
 	} else {
 		// Webhook
@@ -573,7 +567,7 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 		IsAppInstallationExpected: true,
 	})
 	if err != nil {
-		return "", "", fmt.Errorf("failed to create git client for %s provider", gitProvider)
+		return "", "", err
 	}
 
 	isAppUsed := gitops.IsPaCApplicationConfigured(gitProvider, pacConfig)

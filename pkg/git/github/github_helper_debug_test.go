@@ -17,13 +17,16 @@ limitations under the License.
 package github
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
+
+	gp "github.com/redhat-appstudio/build-service/pkg/git/gitprovider"
 )
 
 // THIS FILE IS NOT UNIT TESTS
-// Put your own data below and comment out function override in the test to debug interactions with GitHub
+// Put your own data below and select a way how to create GitHub client to debug interactions with GitHub
 var (
 	repoUrl = "https://github.com/user/test-component-repository"
 	// Webhook
@@ -31,100 +34,79 @@ var (
 	// Application
 	githubAppId             int64 = 217385
 	githubAppPrivateKeyPath       = "/home/user/appstudio-build-pac-private-key.pem"
+
+	// A way how to create GitHub client
+	ghClientType = githubNone
 )
 
-var (
-	StubIsAppInstalledIntoRepository = func(g *GithubClient, owner, repository string) (bool, error) { return true, nil }
-	StubCreatePaCPullRequest         = func(g *GithubClient, d *PaCPullRequestData) (string, error) { return "", nil }
-	StubUndoPaCPullRequest           = func(g *GithubClient, d *PaCPullRequestData) (string, error) { return "", nil }
-	StubSetupPaCWebhook              = func(g *GithubClient, webhookUrl, webhookSecret, owner, repository string) error { return nil }
-	StubDeletePaCWebhook             = func(g *GithubClient, webhookUrl, owner, repository string) error { return nil }
-	StubGetBranchSHA                 = func(g *GithubClient, owner, repository, branch string) (string, error) { return "abcd", nil }
-	StubGetGitHubAppName             = func(appId int64, privateKeyPem []byte) (string, string, error) { return "appName", "app-slug", nil }
+type githubClientCreationWay string
+
+const (
+	githubApp             githubClientCreationWay = "github-app"
+	githubAppForeignToken githubClientCreationWay = "github-app-foreign"
+	githubToken           githubClientCreationWay = "token"
+	githubNone            githubClientCreationWay = "none"
 )
+
+func createClient(clientType githubClientCreationWay) *GithubClient {
+	switch clientType {
+	case githubApp:
+		githubAppPrivateKey, err := os.ReadFile(githubAppPrivateKeyPath)
+		if err != nil {
+			fmt.Printf("Cannot read private key file by path: %s", githubAppPrivateKeyPath)
+			return nil
+		}
+		owner, _ := getOwnerAndRepoFromUrl(repoUrl)
+		ghclient, err := NewGithubClientByApp(githubAppId, []byte(githubAppPrivateKey), owner)
+		if err != nil {
+			fmt.Printf("error: %v", err)
+		}
+		return ghclient
+
+	case githubAppForeignToken:
+		githubAppPrivateKey, err := os.ReadFile(githubAppPrivateKeyPath)
+		if err != nil {
+			fmt.Printf("Cannot read private key file by path: %s", githubAppPrivateKeyPath)
+			return nil
+		}
+		ghclient, err := newGithubClientForSimpleBuildByApp(githubAppId, []byte(githubAppPrivateKey))
+		if err != nil {
+			fmt.Printf("error: %v", err)
+		}
+		return ghclient
+
+	case githubToken:
+		return NewGithubClient(accessToken)
+	default:
+		return nil
+	}
+}
 
 func TestCreatePaCPullRequest(t *testing.T) {
-	CreatePaCPullRequest = StubCreatePaCPullRequest
-
-	ghclient := NewGithubClient(accessToken)
+	ghclient := createClient(ghClientType)
+	if ghclient == nil {
+		return
+	}
 
 	pipelineOnPush := []byte("pipelineOnPush:\n  bundle: 'test-bundle-1'\n  when: 'on-push'\n")
 	pipelineOnPR := []byte("pipelineOnPR:\n  bundle: 'test-bundle-2'\n  when: 'on-pr'\n")
 
 	componentName := "unittest-component-name"
-	gitSourceUrlParts := strings.Split(repoUrl, "/")
-	prData := &PaCPullRequestData{
-		Owner:         gitSourceUrlParts[3],
-		Repository:    gitSourceUrlParts[4],
-		CommitMessage: "Appstudio update " + componentName,
-		Branch:        "appstudio-" + componentName,
-		BaseBranch:    "",
-		PRTitle:       "Appstudio update " + componentName,
-		PRText:        "Pipelines as Code configuration proposal",
-		AuthorName:    "redhat-appstudio",
-		AuthorEmail:   "appstudio@redhat.com",
-		Files: []File{
+	prData := &gp.MergeRequestData{
+		CommitMessage:  "Appstudio update " + componentName,
+		BranchName:     "appstudio-" + componentName,
+		BaseBranchName: "",
+		Title:          "Appstudio update " + componentName,
+		Text:           "Pipelines as Code configuration proposal",
+		AuthorName:     "redhat-appstudio",
+		AuthorEmail:    "rhtap@redhat.com",
+		Files: []gp.RepositoryFile{
 			{FullPath: ".tekton/" + componentName + "-push.yaml", Content: pipelineOnPush},
 			{FullPath: ".tekton/" + componentName + "-pull-request.yaml", Content: pipelineOnPR},
 		},
 	}
 
-	url, err := CreatePaCPullRequest(ghclient, prData)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if url != "" && !strings.HasPrefix(url, "http") {
-		t.Fatal("Pull Request URL must not be empty")
-	}
-}
-
-func TestCreatePaCPullRequestViaGitHubApplication(t *testing.T) {
-	CreatePaCPullRequest = StubCreatePaCPullRequest
-	IsAppInstalledIntoRepository = StubIsAppInstalledIntoRepository
-
-	pipelineOnPush := []byte("pipelineOnPush:\n  bundle: 'test-bundle-1'\n  when: 'in-push'\n")
-	pipelineOnPR := []byte("pipelineOnPR:\n  bundle: 'test-bundle-2'\n  when: 'on-pr'\n")
-
-	componentName := "unittest-component-name"
-	gitSourceUrlParts := strings.Split(repoUrl, "/")
-	owner := gitSourceUrlParts[3]
-	repository := gitSourceUrlParts[4]
-
-	githubAppPrivateKey, err := os.ReadFile(githubAppPrivateKeyPath)
-	if err != nil {
-		// Private key file by given path doesn't exist
-		return
-	}
-	ghclient, err := NewGithubClientByApp(githubAppId, []byte(githubAppPrivateKey), owner)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	installed, err := IsAppInstalledIntoRepository(ghclient, owner, repository)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !installed {
-		t.Fatal("The application is not installed into given repository")
-	}
-
-	prData := &PaCPullRequestData{
-		Owner:         owner,
-		Repository:    repository,
-		CommitMessage: "Appstudio update " + componentName,
-		Branch:        "appstudio-" + componentName,
-		BaseBranch:    "",
-		PRTitle:       "Appstudio update " + componentName,
-		PRText:        "Pipelines as Code configuration proposal",
-		AuthorName:    "redhat-appstudio",
-		AuthorEmail:   "appstudio@redhat.com",
-		Files: []File{
-			{FullPath: ".tekton/" + componentName + "-push.yaml", Content: pipelineOnPush},
-			{FullPath: ".tekton/" + componentName + "-pull-request.yaml", Content: pipelineOnPR},
-		},
-	}
-
-	url, err := CreatePaCPullRequest(ghclient, prData)
+	url, err := ghclient.EnsurePaCMergeRequest(repoUrl, prData)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,29 +116,27 @@ func TestCreatePaCPullRequestViaGitHubApplication(t *testing.T) {
 }
 
 func TestUndoPaCPullRequest(t *testing.T) {
-	UndoPaCPullRequest = StubUndoPaCPullRequest
-
-	ghclient := NewGithubClient(accessToken)
+	ghclient := createClient(ghClientType)
+	if ghclient == nil {
+		return
+	}
 
 	componentName := "unittest-component-name"
-	gitSourceUrlParts := strings.Split(repoUrl, "/")
-	prData := &PaCPullRequestData{
-		Owner:         gitSourceUrlParts[3],
-		Repository:    gitSourceUrlParts[4],
-		CommitMessage: "Appstudio purge " + componentName,
-		Branch:        "appstudio-purge-" + componentName,
-		BaseBranch:    "",
-		PRTitle:       "Appstudio purge " + componentName,
-		PRText:        "Pipelines as Code configuration removal",
-		AuthorName:    "redhat-appstudio",
-		AuthorEmail:   "appstudio@redhat.com",
-		Files: []File{
+	prData := &gp.MergeRequestData{
+		CommitMessage:  "Appstudio purge " + componentName,
+		BranchName:     "appstudio-purge-" + componentName,
+		BaseBranchName: "",
+		Title:          "Appstudio purge " + componentName,
+		Text:           "Pipelines as Code configuration removal",
+		AuthorName:     "redhat-appstudio",
+		AuthorEmail:    "rhtap@redhat.com",
+		Files: []gp.RepositoryFile{
 			{FullPath: ".tekton/" + componentName + "-push.yaml"},
 			{FullPath: ".tekton/" + componentName + "-pull-request.yaml"},
 		},
 	}
 
-	url, err := UndoPaCPullRequest(ghclient, prData)
+	url, err := ghclient.UndoPaCMergeRequest(repoUrl, prData)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,59 +146,43 @@ func TestUndoPaCPullRequest(t *testing.T) {
 }
 
 func TestSetupPaCWebhook(t *testing.T) {
-	SetupPaCWebhook = StubSetupPaCWebhook
+	ghclient := createClient(ghClientType)
+	if ghclient == nil {
+		return
+	}
 
 	targetWebhookUrl := "https://pac.route.my-cluster.net"
 	webhookSecretString := "23f29e8f7fa8c58c1e8e50ecfbd49aec314f4908"
 
-	ghclient := NewGithubClient(accessToken)
-
-	gitSourceUrlParts := strings.Split(repoUrl, "/")
-	owner := gitSourceUrlParts[3]
-	repository := gitSourceUrlParts[4]
-
-	err := SetupPaCWebhook(ghclient, targetWebhookUrl, webhookSecretString, owner, repository)
+	err := ghclient.SetupPaCWebhook(repoUrl, targetWebhookUrl, webhookSecretString)
 	if err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestDeletePaCWebhook(t *testing.T) {
-	DeletePaCWebhook = StubDeletePaCWebhook
+	ghclient := createClient(ghClientType)
+	if ghclient == nil {
+		return
+	}
 
 	targetWebhookUrl := "https://pac.route.my-cluster.net"
 
-	ghclient := NewGithubClient(accessToken)
-
-	gitSourceUrlParts := strings.Split(repoUrl, "/")
-	owner := gitSourceUrlParts[3]
-	repository := gitSourceUrlParts[4]
-
-	err := DeletePaCWebhook(ghclient, targetWebhookUrl, owner, repository)
+	err := ghclient.DeletePaCWebhook(repoUrl, targetWebhookUrl)
 	if err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestGetBranchSHA(t *testing.T) {
-	GetBranchSHA = StubGetBranchSHA
-
-	branchName := "main"
-	gitSourceUrlParts := strings.Split(repoUrl, "/")
-	owner := gitSourceUrlParts[3]
-	repository := gitSourceUrlParts[4]
-
-	githubAppPrivateKey, err := os.ReadFile(githubAppPrivateKeyPath)
-	if err != nil {
-		// Private key file by given path doesn't exist
+	ghclient := createClient(ghClientType)
+	if ghclient == nil {
 		return
 	}
-	ghclient, err := NewGithubClientForSimpleBuildByApp(githubAppId, []byte(githubAppPrivateKey))
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	sha, err := GetBranchSHA(ghclient, owner, repository, branchName)
+	branchName := "main"
+
+	sha, err := ghclient.GetBranchSha(repoUrl, branchName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,16 +191,28 @@ func TestGetBranchSHA(t *testing.T) {
 	}
 }
 
-func TestGetGitHubAppName(t *testing.T) {
-	GetGitHubAppName = StubGetGitHubAppName
-
-	githubAppPrivateKey, err := os.ReadFile(githubAppPrivateKeyPath)
-	if err != nil {
-		// Private key file by given path doesn't exist
+// Only GitHub Application client is applicable for this test
+func TestIsAppInstalledIntoRepository(t *testing.T) {
+	ghclient := createClient(ghClientType)
+	if ghclient == nil {
 		return
 	}
 
-	appName, appSlug, err := GetGitHubAppName(githubAppId, githubAppPrivateKey)
+	installed, err := ghclient.IsAppInstalledIntoRepository(repoUrl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("The application is installed: %t into %s", installed, repoUrl)
+}
+
+// Only GitHub Application client is applicable for this test
+func TestGetGitHubAppName(t *testing.T) {
+	ghclient := createClient(ghClientType)
+	if ghclient == nil {
+		return
+	}
+
+	appName, appSlug, err := ghclient.GetConfiguredGitAppName()
 	if err != nil {
 		t.Fatal(err)
 	}

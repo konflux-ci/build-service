@@ -259,6 +259,10 @@ func (g *GitlabClient) GetBrowseRepositoryAtShaLink(repoUrl, sha string) string 
 	return fmt.Sprintf("%s/%s/-/tree/%s", gitProviderHost, projectPath, sha)
 }
 
+func (g *GitlabClient) GetConfiguredGitAppName() (string, string, error) {
+	return "", "", fmt.Errorf("GitLab does not support applications")
+}
+
 func newGitlabClient(accessToken string) (*GitlabClient, error) {
 	glc := &GitlabClient{}
 	c, err := gitlab.NewClient(accessToken)
