@@ -619,6 +619,21 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPRFilename},
 			},
 		}
+
+		if isAppUsed {
+			// Customize PR data to reflect git application name
+			if appName, appSlug, err := gitClient.GetConfiguredGitAppName(); err == nil {
+				mrData.CommitMessage = fmt.Sprintf("%s purge %s", appName, component.Name)
+				mrData.Title = fmt.Sprintf("%s purge %s", appName, component.Name)
+				mrData.AuthorName = appSlug
+			} else {
+				if gitProvider == "github" {
+					log.Error(err, "failed to get PaC GitHub Application name", l.Action, l.ActionView, l.Audit, "true")
+					// Do not fail PaC clean up PR if failed to read GitHub App info
+				}
+			}
+		}
+
 		prUrl, err = gitClient.UndoPaCMergeRequest(repoUrl, prData)
 		return prUrl, "delete", err
 	} else {
