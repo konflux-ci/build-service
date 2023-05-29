@@ -140,7 +140,7 @@ func newGithubClientForSimpleBuildByApp(appId int64, privateKeyPem []byte) (*Git
 	return NewGithubClient(token.GetToken()), nil
 }
 
-// isAppInstalledIntoRepository finds out if the application is installed into given repository.
+// IsAppInstalledIntoRepository finds out if the application is installed into given repository.
 // The application is identified by it's installation token, i.e. the client itself must be created
 // from an application installation token. See newGithubClientByApp for details.
 // This method should be used only with clients created by newGithubClientByApp.

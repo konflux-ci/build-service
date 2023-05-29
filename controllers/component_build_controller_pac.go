@@ -22,7 +22,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -499,7 +498,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 	if baseBranch == "" {
 		baseBranch, err = gitClient.GetDefaultBranch(repoUrl)
 		if err != nil {
-			return "", nil
+			return "", err
 		}
 	}
 
@@ -686,12 +685,9 @@ func generatePaCPipelineRunForComponent(
 		{Name: "output-image", Value: tektonapi.ArrayOrString{Type: "string", StringVal: proposedImage}},
 	}
 	if onPull {
-		prImageExpiration := PipelineRunOnPRExpirationDefault
-		if customExpiration := os.Getenv(PipelineRunOnPRExpirationEnvVar); customExpiration != "" {
-			isCustomExpirationValid, _ := regexp.Match("^[1-9][0-9]{0,2}[hdw]$", []byte(prImageExpiration))
-			if isCustomExpirationValid {
-				prImageExpiration = customExpiration
-			}
+		var prImageExpiration string
+		if customExpiration := os.Getenv(PipelineRunOnPRExpirationEnvVar); customExpiration == "" {
+			prImageExpiration = PipelineRunOnPRExpirationDefault
 		}
 		params = append(params, tektonapi.Param{Name: "image-expires-after", Value: tektonapi.ArrayOrString{Type: "string", StringVal: prImageExpiration}})
 	}

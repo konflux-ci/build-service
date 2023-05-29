@@ -179,6 +179,10 @@ func main() {
 		if !validExpiration {
 			setupLog.Info(fmt.Sprintf("invalid expiration '%s' in %s environment variable, using default %s",
 				prImageExpiration, controllers.PipelineRunOnPRExpirationEnvVar, controllers.PipelineRunOnPRExpirationDefault), l.Audit, "true")
+			if err := os.Setenv(controllers.PipelineRunOnPRExpirationEnvVar, controllers.PipelineRunOnPRExpirationDefault); err != nil {
+				setupLog.Error(err, "unable to set default PipelineRun expiration environment variable")
+				os.Exit(1)
+			}
 		}
 	}
 
