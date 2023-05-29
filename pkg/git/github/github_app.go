@@ -33,6 +33,7 @@ import (
 var NewGithubClientByApp func(appId int64, privateKeyPem []byte, repoUrl string) (*GithubClient, error) = newGithubClientByApp
 var NewGithubClientForSimpleBuildByApp func(appId int64, privateKeyPem []byte) (*GithubClient, error) = newGithubClientForSimpleBuildByApp
 
+var IsAppInstalledIntoRepository func(ghclient *GithubClient, repoUrl string) (bool, error) = isAppInstalledIntoRepository
 var GetAppInstallations func(githubAppIdStr string, appPrivateKeyPem []byte) ([]ApplicationInstallation, string, error) = getAppInstallations
 
 func newGithubClientByApp(appId int64, privateKeyPem []byte, repoUrl string) (*GithubClient, error) {
@@ -144,13 +145,17 @@ func newGithubClientForSimpleBuildByApp(appId int64, privateKeyPem []byte) (*Git
 // from an application installation token. See newGithubClientByApp for details.
 // This method should be used only with clients created by newGithubClientByApp.
 func (g *GithubClient) IsAppInstalledIntoRepository(repoUrl string) (bool, error) {
-	g.ensureAppConfigured()
+	return IsAppInstalledIntoRepository(g, repoUrl)
+}
+
+func isAppInstalledIntoRepository(ghclient *GithubClient, repoUrl string) (bool, error) {
+	ghclient.ensureAppConfigured()
 
 	owner, repository := getOwnerAndRepoFromUrl(repoUrl)
 
 	listOpts := &github.ListOptions{PerPage: 100}
 	for {
-		repositoriesListPage, resp, err := g.client.Apps.ListRepos(g.ctx, listOpts)
+		repositoriesListPage, resp, err := ghclient.client.Apps.ListRepos(ghclient.ctx, listOpts)
 		if err != nil {
 			return false, err
 		}

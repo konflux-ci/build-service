@@ -103,7 +103,7 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 
 	case "gitlab":
 		if isAppUsed {
-			panic("GitLab does not have applications")
+			return nil, fmt.Errorf("GitLab does not have applications")
 		}
 		return gitlab.NewGitlabClient(accessToken)
 
