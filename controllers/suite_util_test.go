@@ -1,5 +1,5 @@
 /*
-Copyright 2022.
+Copyright 2022-2023 Red Hat, Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -39,7 +39,7 @@ import (
 	gh "github.com/google/go-github/v45/github"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	buildappstudiov1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
-	"github.com/redhat-appstudio/build-service/pkg/github"
+	"github.com/redhat-appstudio/build-service/pkg/git/github"
 )
 
 const (
@@ -83,7 +83,7 @@ func isOwnedBy(resource []metav1.OwnerReference, component appstudiov1alpha1.Com
 }
 
 func getMinimalDevfile() string {
-	return `        
+	return `
         schemaVersion: 2.2.0
         metadata:
             name: minimal-devfile

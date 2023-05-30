@@ -18,7 +18,6 @@ package controllers
 
 import (
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 
@@ -35,12 +34,9 @@ import (
 	gitopsprepare "github.com/redhat-appstudio/application-service/gitops/prepare"
 	buildappstudiov1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
-	"github.com/redhat-appstudio/build-service/pkg/github"
-	"github.com/redhat-appstudio/build-service/pkg/gitlab"
-	"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
-
-	gogithub "github.com/google/go-github/v45/github"
-	gogitlab "github.com/xanzy/go-gitlab"
+	gp "github.com/redhat-appstudio/build-service/pkg/git/gitprovider"
+	gpf "github.com/redhat-appstudio/build-service/pkg/git/gitproviderfactory"
+	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -102,23 +98,7 @@ var _ = Describe("Component initial build controller", func() {
 			}
 			createSecret(pacSecretKey, pacSecretData)
 
-			github.NewGithubClientByApp = func(appId int64, privateKeyPem []byte, owner string) (*github.GithubClient, error) { return nil, nil }
-			github.NewGithubClientForSimpleBuildByApp = func(appId int64, privateKeyPem []byte) (*github.GithubClient, error) { return nil, nil }
-			github.GetGitHubAppName = func(appId int64, privateKeyPem []byte) (string, string, error) { return "appName", "app-slug", nil }
-			github.NewGithubClient = func(accessToken string) *github.GithubClient { return nil }
-			github.IsAppInstalledIntoRepository = func(g *github.GithubClient, owner, repository string) (bool, error) { return true, nil }
-			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) { return "", nil }
-			github.FindUnmergedOnboardingMergeRequest = func(*github.GithubClient, string, string, string, string, string) (*gogithub.PullRequest, error) {
-				return nil, nil
-			}
-			github.SetupPaCWebhook = func(g *github.GithubClient, webhookUrl, webhookSecret, owner, repository string) error { return nil }
-			gitlab.EnsurePaCMergeRequest = func(g *gitlab.GitlabClient, d *gitlab.PaCMergeRequestData) (string, error) { return "", nil }
-			gitlab.SetupPaCWebhook = func(g *gitlab.GitlabClient, projectPath, webhookUrl, webhookSecret string) error { return nil }
-			github.UndoPaCPullRequest = func(g *github.GithubClient, d *github.PaCPullRequestData) (string, error) { return "", nil }
-			github.DeletePaCWebhook = func(g *github.GithubClient, webhookUrl, owner, repository string) error { return nil }
-			gitlab.UndoPaCMergeRequest = func(g *gitlab.GitlabClient, d *gitlab.PaCMergeRequestData) (string, error) { return "", nil }
-			gitlab.DeletePaCWebhook = func(g *gitlab.GitlabClient, projectPath, webhookUrl string) error { return nil }
-			github.GetBranchSHA = func(g *github.GithubClient, owner, repository, branchName string) (string, error) { return "hash", nil }
+			ResetTestGitProviderClient()
 
 			createComponentForPaCBuild(getSampleComponentData(resourceKey))
 		})
@@ -135,24 +115,23 @@ var _ = Describe("Component initial build controller", func() {
 
 		It("should successfully submit PR with PaC definitions using GitHub application and set PaC annotation", func() {
 			isCreatePaCPullRequestInvoked := false
-			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
 				isCreatePaCPullRequestInvoked = true
-				Expect(d.Owner).To(Equal("devfile-samples"))
-				Expect(d.Repository).To(Equal("devfile-sample-java-springboot-basic"))
+				Expect(repoUrl).To(Equal(SampleRepoLink))
 				Expect(len(d.Files)).To(Equal(2))
 				for _, file := range d.Files {
 					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
 				}
 				Expect(d.CommitMessage).ToNot(BeEmpty())
-				Expect(d.Branch).ToNot(BeEmpty())
-				Expect(d.BaseBranch).To(Equal("main"))
-				Expect(d.PRTitle).ToNot(BeEmpty())
-				Expect(d.PRText).ToNot(BeEmpty())
+				Expect(d.BranchName).ToNot(BeEmpty())
+				Expect(d.BaseBranchName).To(Equal("main"))
+				Expect(d.Title).ToNot(BeEmpty())
+				Expect(d.Text).ToNot(BeEmpty())
 				Expect(d.AuthorName).ToNot(BeEmpty())
 				Expect(d.AuthorEmail).ToNot(BeEmpty())
 				return "url", nil
 			}
-			github.SetupPaCWebhook = func(g *github.GithubClient, webhookUrl, webhookSecret, owner, repository string) error {
+			SetupPaCWebhookFunc = func(string, string, string) error {
 				defer GinkgoRecover()
 				Fail("Should not create webhook if GitHub application is used")
 				return nil
@@ -167,14 +146,15 @@ var _ = Describe("Component initial build controller", func() {
 			waitComponentAnnotationValue(resourceKey, PaCProvisionAnnotationName, PaCProvisionDoneAnnotationValue)
 		})
 
-		It("should fail to submit PR if GitHub application is not installed into repo", func() {
-			github.IsAppInstalledIntoRepository = func(*github.GithubClient, string, string) (bool, error) {
-				return false, nil
+		It("should fail to submit PR if GitHub application is not installed into git repository", func() {
+			gpf.CreateGitClient = func(gpf.GitClientConfig) (gp.GitProviderClient, error) {
+				return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppNotInstalled,
+					fmt.Errorf("GitHub Application is not installed into the repository"))
 			}
 
-			isCreatePaCPullRequestInvoked := false
-			github.CreatePaCPullRequest = func(*github.GithubClient, *github.PaCPullRequestData) (string, error) {
-				isCreatePaCPullRequestInvoked = true
+			EnsurePaCMergeRequestFunc = func(string, *gp.MergeRequestData) (string, error) {
+				defer GinkgoRecover()
+				Fail("Should not invoke merge request creation if GitHub application is not installed into the repository")
 				return "url", nil
 			}
 
@@ -186,8 +166,6 @@ var _ = Describe("Component initial build controller", func() {
 				boerrors.EGitHubAppNotInstalled, fmt.Errorf("something is wrong"))
 			waitComponentAnnotationValue(resourceKey,
 				PaCProvisionErrorDetailsAnnotationName, expectedErr.ShortError())
-
-			Expect(isCreatePaCPullRequestInvoked).Should(BeFalse())
 		})
 
 		It("should fail to submit PR if unknown git provider is used", func() {
@@ -201,7 +179,7 @@ var _ = Describe("Component initial build controller", func() {
 			}, timeout, interval).Should(BeTrue())
 
 			isCreatePaCPullRequestInvoked := false
-			github.CreatePaCPullRequest = func(*github.GithubClient, *github.PaCPullRequestData) (string, error) {
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
 				isCreatePaCPullRequestInvoked = true
 				return "url", nil
 			}
@@ -220,7 +198,7 @@ var _ = Describe("Component initial build controller", func() {
 
 		It("should fail to submit PR if PaC secret is invalid", func() {
 			isCreatePaCPullRequestInvoked := false
-			github.CreatePaCPullRequest = func(*github.GithubClient, *github.PaCPullRequestData) (string, error) {
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
 				isCreatePaCPullRequestInvoked = true
 				return "url", nil
 			}
@@ -249,32 +227,30 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(isCreatePaCPullRequestInvoked).Should(BeFalse())
 		})
 
-		It("should successfully submit PR with PaC definitions using GitHub token and set PaC annotation", func() {
+		It("should successfully submit PR with PaC definitions using token and set PaC annotation", func() {
 			isCreatePaCPullRequestInvoked := false
-			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
 				isCreatePaCPullRequestInvoked = true
-				Expect(d.Owner).To(Equal("devfile-samples"))
-				Expect(d.Repository).To(Equal("devfile-sample-java-springboot-basic"))
+				Expect(repoUrl).To(Equal(SampleRepoLink))
 				Expect(len(d.Files)).To(Equal(2))
 				for _, file := range d.Files {
 					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
 				}
 				Expect(d.CommitMessage).ToNot(BeEmpty())
-				Expect(d.Branch).ToNot(BeEmpty())
-				Expect(d.BaseBranch).ToNot(BeEmpty())
-				Expect(d.PRTitle).ToNot(BeEmpty())
-				Expect(d.PRText).ToNot(BeEmpty())
+				Expect(d.BranchName).ToNot(BeEmpty())
+				Expect(d.BaseBranchName).ToNot(BeEmpty())
+				Expect(d.Title).ToNot(BeEmpty())
+				Expect(d.Text).ToNot(BeEmpty())
 				Expect(d.AuthorName).ToNot(BeEmpty())
 				Expect(d.AuthorEmail).ToNot(BeEmpty())
 				return "url", nil
 			}
 			isSetupPaCWebhookInvoked := false
-			github.SetupPaCWebhook = func(g *github.GithubClient, webhookUrl, webhookSecret, owner, repository string) error {
+			SetupPaCWebhookFunc = func(repoUrl string, webhookUrl string, webhookSecret string) error {
 				isSetupPaCWebhookInvoked = true
 				Expect(webhookUrl).To(Equal(pacWebhookUrl))
 				Expect(webhookSecret).ToNot(BeEmpty())
-				Expect(owner).To(Equal("devfile-samples"))
-				Expect(repository).To(Equal("devfile-sample-java-springboot-basic"))
+				Expect(repoUrl).To(Equal(SampleRepoLink))
 				return nil
 			}
 
@@ -295,66 +271,13 @@ var _ = Describe("Component initial build controller", func() {
 			waitComponentAnnotationValue(resourceKey, PaCProvisionAnnotationName, PaCProvisionDoneAnnotationValue)
 		})
 
-		It("should successfully submit MR with PaC definitions using GitLab token and set PaC annotation", func() {
-			isCreatePaCPullRequestInvoked := false
-			gitlab.EnsurePaCMergeRequest = func(c *gitlab.GitlabClient, d *gitlab.PaCMergeRequestData) (string, error) {
-				isCreatePaCPullRequestInvoked = true
-				Expect(d.ProjectPath).To(Equal("devfile-samples/devfile-sample-go-basic"))
-				Expect(len(d.Files)).To(Equal(2))
-				for _, file := range d.Files {
-					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
-				}
-				Expect(d.CommitMessage).ToNot(BeEmpty())
-				Expect(d.Branch).ToNot(BeEmpty())
-				Expect(d.BaseBranch).ToNot(BeEmpty())
-				Expect(d.MrTitle).ToNot(BeEmpty())
-				Expect(d.MrText).ToNot(BeEmpty())
-				Expect(d.AuthorName).ToNot(BeEmpty())
-				Expect(d.AuthorEmail).ToNot(BeEmpty())
-				return "url", nil
-			}
-			isSetupPaCWebhookInvoked := false
-			gitlab.SetupPaCWebhook = func(g *gitlab.GitlabClient, projectPath, webhookUrl, webhookSecret string) error {
-				isSetupPaCWebhookInvoked = true
-				Expect(webhookUrl).To(Equal(pacWebhookUrl))
-				Expect(webhookSecret).ToNot(BeEmpty())
-				Expect(projectPath).To(Equal("devfile-samples/devfile-sample-go-basic"))
-				return nil
-			}
-
-			pacSecretData := map[string]string{"gitlab.token": "glpat-token"}
-			createSecret(pacSecretKey, pacSecretData)
-
-			deleteComponent(resourceKey)
-
-			component := getSampleComponentData(resourceKey)
-			component.Annotations = map[string]string{
-				PaCProvisionAnnotationName: PaCProvisionRequestedAnnotationValue,
-			}
-			component.Spec.Source.GitSource.URL = "https://gitlab.com/devfile-samples/devfile-sample-go-basic"
-			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
-
-			setComponentDevfileModel(resourceKey)
-
-			waitSecretCreated(namespacePaCSecretKey)
-			waitSecretCreated(webhookSecretKey)
-			waitPaCRepositoryCreated(resourceKey)
-			Eventually(func() bool {
-				return isCreatePaCPullRequestInvoked
-			}, timeout, interval).Should(BeTrue())
-			Eventually(func() bool {
-				return isSetupPaCWebhookInvoked
-			}, timeout, interval).Should(BeTrue())
-			waitComponentAnnotationValue(resourceKey, PaCProvisionAnnotationName, PaCProvisionDoneAnnotationValue)
-		})
-
 		It("should provision PaC definitions after initial build if PaC annotation added", func() {
 			isCreatePaCPullRequestInvoked := false
-			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
 				isCreatePaCPullRequestInvoked = true
 				return "url", nil
 			}
-			github.SetupPaCWebhook = func(g *github.GithubClient, webhookUrl, webhookSecret, owner, repository string) error {
+			SetupPaCWebhookFunc = func(repoUrl string, webhookUrl string, webhookSecret string) error {
 				defer GinkgoRecover()
 				Fail("Should not create webhook if GitHub application is used")
 				return nil
@@ -394,7 +317,7 @@ var _ = Describe("Component initial build controller", func() {
 
 		It("should reuse the same webhook secret for multicomponent repository", func() {
 			var webhookSecretStrings []string
-			github.SetupPaCWebhook = func(g *github.GithubClient, webhookUrl, webhookSecret, owner, repository string) error {
+			SetupPaCWebhookFunc = func(repoUrl string, webhookUrl string, webhookSecret string) error {
 				webhookSecretStrings = append(webhookSecretStrings, webhookSecret)
 				return nil
 			}
@@ -433,7 +356,7 @@ var _ = Describe("Component initial build controller", func() {
 
 		It("should use different webhook secrets for different components of the same application", func() {
 			var webhookSecretStrings []string
-			github.SetupPaCWebhook = func(g *github.GithubClient, webhookUrl, webhookSecret, owner, repository string) error {
+			SetupPaCWebhookFunc = func(repoUrl string, webhookUrl string, webhookSecret string) error {
 				webhookSecretStrings = append(webhookSecretStrings, webhookSecret)
 				return nil
 			}
@@ -469,8 +392,8 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(webhookSecretStrings[0]).ToNot(Equal(webhookSecretStrings[1]))
 		})
 
-		It("should not set PaC annotation if PaC definitions PR submission failed", func() {
-			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+		It("should not set PaC annotation if PaC definitions merge request submission failed", func() {
+			EnsurePaCMergeRequestFunc = func(string, *gp.MergeRequestData) (string, error) {
 				return "", fmt.Errorf("Failed to submit PaC definitions PR")
 			}
 
@@ -481,7 +404,7 @@ var _ = Describe("Component initial build controller", func() {
 			ensureComponentAnnotationValue(resourceKey, PaCProvisionAnnotationName, PaCProvisionRequestedAnnotationValue)
 
 			// Clean up after the test
-			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
 				return "", nil
 			}
 			deleteComponent(resourceKey)
@@ -493,15 +416,10 @@ var _ = Describe("Component initial build controller", func() {
 
 		It("should successfully do PaC provision after error (when PaC GitHub Application was not installed)", func() {
 			appNotInstalledErr := boerrors.NewBuildOpError(boerrors.EGitHubAppNotInstalled, nil)
-			github.NewGithubClientByApp = func(appId int64, privateKeyPem []byte, owner string) (*github.GithubClient, error) {
+			gpf.CreateGitClient = func(gitClientConfig gpf.GitClientConfig) (gp.GitProviderClient, error) {
 				return nil, appNotInstalledErr
 			}
-			github.NewGithubClient = func(accessToken string) *github.GithubClient {
-				defer GinkgoRecover()
-				Fail("GitHub client should be created using PaC GitHub Application")
-				return nil
-			}
-			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
 				defer GinkgoRecover()
 				Fail("PR creation should not be invoked")
 				return "", nil
@@ -512,7 +430,7 @@ var _ = Describe("Component initial build controller", func() {
 			waitComponentAnnotationValue(resourceKey, PaCProvisionErrorDetailsAnnotationName, appNotInstalledErr.ShortError())
 
 			// Ensure no more retries after permanent error
-			github.NewGithubClientByApp = func(appId int64, privateKeyPem []byte, owner string) (*github.GithubClient, error) {
+			gpf.CreateGitClient = func(gitClientConfig gpf.GitClientConfig) (gp.GitProviderClient, error) {
 				defer GinkgoRecover()
 				Fail("Should not retry PaC provision on permanent error")
 				return nil, nil
@@ -520,11 +438,11 @@ var _ = Describe("Component initial build controller", func() {
 			ensureComponentAnnotationValue(resourceKey, PaCProvisionAnnotationName, PaCProvisionErrorAnnotationValue)
 
 			// Suppose PaC GH App is installed
-			github.NewGithubClientByApp = func(appId int64, privateKeyPem []byte, owner string) (*github.GithubClient, error) {
-				return nil, nil
+			gpf.CreateGitClient = func(gitClientConfig gpf.GitClientConfig) (gp.GitProviderClient, error) {
+				return testGitProviderClient, nil
 			}
 			isCreatePaCPullRequestInvoked := false
-			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
 				isCreatePaCPullRequestInvoked = true
 				return "url", nil
 			}
@@ -539,8 +457,8 @@ var _ = Describe("Component initial build controller", func() {
 			waitComponentAnnotationValue(resourceKey, PaCProvisionAnnotationName, PaCProvisionDoneAnnotationValue)
 		})
 
-		It("should not submit PaC definitions PR if PaC secret is missing", func() {
-			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+		It("should not submit PaC definitions merge request if PaC secret is missing", func() {
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
 				defer GinkgoRecover()
 				Fail("PR creation should not be invoked")
 				return "", nil
@@ -555,7 +473,7 @@ var _ = Describe("Component initial build controller", func() {
 		})
 
 		It("should do nothing if the component devfile model is not set", func() {
-			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
 				defer GinkgoRecover()
 				Fail("PR creation should not be invoked")
 				return "", nil
@@ -564,8 +482,8 @@ var _ = Describe("Component initial build controller", func() {
 			ensureComponentInitialBuildAnnotationState(resourceKey, false)
 		})
 
-		It("should do nothing if initial build annotation is already set", func() {
-			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+		It("should do nothing if initial build annotation is already set and PaC is not used", func() {
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
 				defer GinkgoRecover()
 				Fail("PR creation should not be invoked")
 				return "", nil
@@ -582,7 +500,7 @@ var _ = Describe("Component initial build controller", func() {
 		})
 
 		It("should do nothing if a container image source is specified in component", func() {
-			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+			EnsurePaCMergeRequestFunc = func(string, *gp.MergeRequestData) (string, error) {
 				defer GinkgoRecover()
 				Fail("PR creation should not be invoked")
 				return "", nil
@@ -622,15 +540,15 @@ var _ = Describe("Component initial build controller", func() {
 
 			const repoDefaultBranch = "cool-feature"
 
-			github.GetDefaultBranch = func(*github.GithubClient, string, string) (string, error) {
+			GetDefaultBranchFunc = func(repoUrl string) (string, error) {
 				return repoDefaultBranch, nil
 			}
 
 			isCreatePaCPullRequestInvoked := false
-			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
-				Expect(d.BaseBranch).To(Equal(repoDefaultBranch))
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				Expect(d.BaseBranchName).To(Equal(repoDefaultBranch))
 				for _, file := range d.Files {
-					var prYaml v1beta1.PipelineRun
+					var prYaml tektonapi.PipelineRun
 					if err := yaml.Unmarshal(file.Content, &prYaml); err != nil {
 						return "", err
 					}
@@ -658,7 +576,7 @@ var _ = Describe("Component initial build controller", func() {
 			pipelineSAKey := types.NamespacedName{Namespace: resourceKey.Namespace, Name: buildPipelineServiceAccountName}
 
 			checkPROutputImage := func(fileContent []byte, expectedImageRepo string) {
-				var prYaml v1beta1.PipelineRun
+				var prYaml tektonapi.PipelineRun
 				Expect(yaml.Unmarshal(fileContent, &prYaml)).To(Succeed())
 				outoutImage := ""
 				for _, param := range prYaml.Spec.Params {
@@ -672,7 +590,7 @@ var _ = Describe("Component initial build controller", func() {
 			}
 
 			isCreatePaCPullRequestInvoked := false
-			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
 				defer GinkgoRecover()
 				checkPROutputImage(d.Files[0].Content, userImageRepo)
 				isCreatePaCPullRequestInvoked = true
@@ -695,7 +613,7 @@ var _ = Describe("Component initial build controller", func() {
 			// Switch to generated image repository
 
 			isCreatePaCPullRequestInvoked = false
-			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
 				defer GinkgoRecover()
 				checkPROutputImage(d.Files[0].Content, generatedImageRepo)
 				isCreatePaCPullRequestInvoked = true
@@ -737,20 +655,7 @@ var _ = Describe("Component initial build controller", func() {
 			createRoute(pacRouteKey, "pac-host")
 			createNamespace(buildServiceNamespaceName)
 
-			github.NewGithubClientByApp = func(appId int64, privateKeyPem []byte, owner string) (*github.GithubClient, error) { return nil, nil }
-			github.GetGitHubAppName = func(appId int64, privateKeyPem []byte) (string, string, error) { return "appName", "app-slug", nil }
-			github.NewGithubClient = func(accessToken string) *github.GithubClient { return nil }
-			github.CreatePaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) { return "", nil }
-			github.SetupPaCWebhook = func(g *github.GithubClient, webhookUrl, webhookSecret, owner, repository string) error { return nil }
-			github.IsAppInstalledIntoRepository = func(g *github.GithubClient, owner, repository string) (bool, error) { return true, nil }
-			github.FindUnmergedOnboardingMergeRequest = func(*github.GithubClient, string, string, string, string, string) (*gogithub.PullRequest, error) {
-				return nil, nil
-			}
-			gitlab.EnsurePaCMergeRequest = func(g *gitlab.GitlabClient, d *gitlab.PaCMergeRequestData) (string, error) { return "", nil }
-			gitlab.SetupPaCWebhook = func(g *gitlab.GitlabClient, projectPath, webhookUrl, webhookSecret string) error { return nil }
-			gitlab.FindUnmergedOnboardingMergeRequest = func(*gitlab.GitlabClient, string, string, string, string) (*gogitlab.MergeRequest, error) {
-				return nil, nil
-			}
+			ResetTestGitProviderClient()
 		})
 
 		_ = AfterEach(func() {
@@ -763,24 +668,23 @@ var _ = Describe("Component initial build controller", func() {
 
 		It("should successfully submit PR with PaC definitions removal using GitHub application", func() {
 			isRemovePaCPullRequestInvoked := false
-			github.UndoPaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+			UndoPaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (webUrl string, err error) {
 				isRemovePaCPullRequestInvoked = true
-				Expect(d.Owner).To(Equal("devfile-samples"))
-				Expect(d.Repository).To(Equal("devfile-sample-java-springboot-basic"))
+				Expect(repoUrl).To(Equal(SampleRepoLink))
 				Expect(len(d.Files)).To(Equal(2))
 				for _, file := range d.Files {
 					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
 				}
 				Expect(d.CommitMessage).ToNot(BeEmpty())
-				Expect(d.Branch).ToNot(BeEmpty())
-				Expect(d.BaseBranch).ToNot(BeEmpty())
-				Expect(d.PRTitle).ToNot(BeEmpty())
-				Expect(d.PRText).ToNot(BeEmpty())
+				Expect(d.BranchName).ToNot(BeEmpty())
+				Expect(d.BaseBranchName).ToNot(BeEmpty())
+				Expect(d.Title).ToNot(BeEmpty())
+				Expect(d.Text).ToNot(BeEmpty())
 				Expect(d.AuthorName).ToNot(BeEmpty())
 				Expect(d.AuthorEmail).ToNot(BeEmpty())
 				return "url", nil
 			}
-			github.DeletePaCWebhook = func(g *github.GithubClient, webhookUrl, owner, repository string) error {
+			DeletePaCWebhookFunc = func(string, string) error {
 				defer GinkgoRecover()
 				Fail("Should not try to delete webhook if GitHub application is used")
 				return nil
@@ -803,91 +707,41 @@ var _ = Describe("Component initial build controller", func() {
 			}, timeout, interval).Should(BeTrue())
 		})
 
-		It("should successfully submit PR with PaC definitions removal using GitHub token", func() {
+		It("should successfully submit merge request with PaC definitions removal using token", func() {
 			isRemovePaCPullRequestInvoked := false
-			github.UndoPaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+			UndoPaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (webUrl string, err error) {
 				isRemovePaCPullRequestInvoked = true
-				Expect(d.Owner).To(Equal("devfile-samples"))
-				Expect(d.Repository).To(Equal("devfile-sample-java-springboot-basic"))
+				Expect(repoUrl).To(Equal(SampleRepoLink))
 				Expect(len(d.Files)).To(Equal(2))
 				for _, file := range d.Files {
 					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
 				}
 				Expect(d.CommitMessage).ToNot(BeEmpty())
-				Expect(d.Branch).ToNot(BeEmpty())
-				Expect(d.BaseBranch).ToNot(BeEmpty())
-				Expect(d.PRTitle).ToNot(BeEmpty())
-				Expect(d.PRText).ToNot(BeEmpty())
+				Expect(d.BranchName).ToNot(BeEmpty())
+				Expect(d.BaseBranchName).ToNot(BeEmpty())
+				Expect(d.Title).ToNot(BeEmpty())
+				Expect(d.Text).ToNot(BeEmpty())
 				Expect(d.AuthorName).ToNot(BeEmpty())
 				Expect(d.AuthorEmail).ToNot(BeEmpty())
 				return "url", nil
 			}
 			isDeletePaCWebhookInvoked := false
-			github.DeletePaCWebhook = func(g *github.GithubClient, webhookUrl, owner, repository string) error {
+			DeletePaCWebhookFunc = func(repoUrl string, webhookUrl string) error {
 				isDeletePaCWebhookInvoked = true
+				Expect(repoUrl).To(Equal(SampleRepoLink))
 				Expect(webhookUrl).To(Equal(pacWebhookUrl))
-				Expect(owner).To(Equal("devfile-samples"))
-				Expect(repository).To(Equal("devfile-sample-java-springboot-basic"))
 				return nil
+			}
+			isDeleteBranchInvoked := false
+			DeleteBranchFunc = func(repoUrl string, branchName string) (bool, error) {
+				isDeleteBranchInvoked = true
+				return true, nil
 			}
 
 			pacSecretData := map[string]string{"github.token": "ghp_token"}
 			createSecret(pacSecretKey, pacSecretData)
 
 			createComponentForPaCBuild(getSampleComponentData(resourceKey))
-			setComponentDevfileModel(resourceKey)
-			waitPaCFinalizerOnComponent(resourceKey)
-
-			deleteComponent(resourceKey)
-
-			Eventually(func() bool {
-				return isRemovePaCPullRequestInvoked
-			}, timeout, interval).Should(BeTrue())
-			Eventually(func() bool {
-				return isDeletePaCWebhookInvoked
-			}, timeout, interval).Should(BeTrue())
-		})
-
-		It("should successfully submit MR with PaC definitions removal using GitLab token", func() {
-			isRemovePaCPullRequestInvoked := false
-			gitlab.UndoPaCMergeRequest = func(c *gitlab.GitlabClient, d *gitlab.PaCMergeRequestData) (string, error) {
-				isRemovePaCPullRequestInvoked = true
-				Expect(d.ProjectPath).To(Equal("devfile-samples/devfile-sample-go-basic"))
-				Expect(len(d.Files)).To(Equal(2))
-				for _, file := range d.Files {
-					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
-				}
-				Expect(d.CommitMessage).ToNot(BeEmpty())
-				Expect(d.Branch).ToNot(BeEmpty())
-				Expect(d.BaseBranch).ToNot(BeEmpty())
-				Expect(d.MrTitle).ToNot(BeEmpty())
-				Expect(d.MrText).ToNot(BeEmpty())
-				Expect(d.AuthorName).ToNot(BeEmpty())
-				Expect(d.AuthorEmail).ToNot(BeEmpty())
-				return "url", nil
-			}
-			isDeletePaCWebhookInvoked := false
-			gitlab.DeletePaCWebhook = func(g *gitlab.GitlabClient, projectPath, webhookUrl string) error {
-				isDeletePaCWebhookInvoked = true
-				Expect(webhookUrl).To(Equal(pacWebhookUrl))
-				Expect(projectPath).To(Equal("devfile-samples/devfile-sample-go-basic"))
-				return nil
-			}
-			isDeleteBranchInvoked := false
-			gitlab.DeleteBranch = func(*gitlab.GitlabClient, string, string) error {
-				isDeleteBranchInvoked = true
-				return nil
-			}
-
-			pacSecretData := map[string]string{"gitlab.token": "glpat-token"}
-			createSecret(pacSecretKey, pacSecretData)
-
-			component := getSampleComponentData(resourceKey)
-			component.Annotations = map[string]string{
-				PaCProvisionAnnotationName: PaCProvisionRequestedAnnotationValue,
-			}
-			component.Spec.Source.GitSource.URL = "https://gitlab.com/devfile-samples/devfile-sample-go-basic"
-			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
 			setComponentDevfileModel(resourceKey)
 			waitPaCFinalizerOnComponent(resourceKey)
 
@@ -905,10 +759,10 @@ var _ = Describe("Component initial build controller", func() {
 		})
 
 		It("should not block component deletion if PaC definitions removal failed", func() {
-			github.UndoPaCPullRequest = func(c *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+			UndoPaCMergeRequestFunc = func(string, *gp.MergeRequestData) (webUrl string, err error) {
 				return "", fmt.Errorf("failed to create PR")
 			}
-			github.DeletePaCWebhook = func(g *github.GithubClient, webhookUrl, owner, repository string) error {
+			DeletePaCWebhookFunc = func(string, string) error {
 				return fmt.Errorf("failed to delete webhook")
 			}
 
@@ -919,11 +773,12 @@ var _ = Describe("Component initial build controller", func() {
 			setComponentDevfileModel(resourceKey)
 			waitPaCFinalizerOnComponent(resourceKey)
 
+			// deleteComponent waits until the component is gone
 			deleteComponent(resourceKey)
 		})
 
-		var assertCloseUnmergedPullRequest = func(expectedBaseBranch string, sourceBranchExists bool) {
-			github.UndoPaCPullRequest = func(g *github.GithubClient, d *github.PaCPullRequestData) (string, error) {
+		var assertCloseUnmergedMergeRequest = func(expectedBaseBranch string, sourceBranchExists bool) {
+			UndoPaCMergeRequestFunc = func(string, *gp.MergeRequestData) (webUrl string, err error) {
 				defer GinkgoRecover()
 				Fail("Expect to close unmerged merge request other than delete .tekton/")
 				return "", nil
@@ -935,40 +790,26 @@ var _ = Describe("Component initial build controller", func() {
 			} else {
 				component.Spec.Source.GitSource.Revision = ""
 			}
-			gitUrl := strings.TrimSuffix(component.Spec.Source.GitSource.URL, ".git")
-			gitSourceUrlParts := strings.Split(gitUrl, "/")
-			pullRequestUrl := fmt.Sprintf("%s/pull/1", gitUrl)
 
 			expectedSourceBranch := pacMergeRequestSourceBranchPrefix + component.Name
 
 			isFindOnboardingMergeRequestInvoked := false
-			github.FindUnmergedOnboardingMergeRequest = func(
-				client *github.GithubClient, owner, repository, sourceBranch, baseBranch, authorName string) (*gogithub.PullRequest, error) {
+			FindUnmergedPaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (*gp.MergeRequest, error) {
 				isFindOnboardingMergeRequestInvoked = true
-				Expect(sourceBranch).Should(Equal(expectedSourceBranch))
-				Expect(baseBranch).Should(Equal(expectedBaseBranch))
-				Expect(authorName).Should(Equal(owner))
-				Expect(gitSourceUrlParts[3]).Should(Equal(owner))
-				Expect(gitSourceUrlParts[4]).Should(Equal(repository))
-				return &gogithub.PullRequest{
-					URL: gogithub.String(pullRequestUrl),
+				Expect(repoUrl).To(Equal(SampleRepoLink))
+				Expect(d.BranchName).Should(Equal(expectedSourceBranch))
+				Expect(d.BaseBranchName).Should(Equal(expectedBaseBranch))
+				return &gp.MergeRequest{
+					WebUrl: "url",
 				}, nil
 			}
 
 			isDeleteBranchInvoked := false
-			github.DeleteBranch = func(client *github.GithubClient, owner, repository, branch string) error {
+			DeleteBranchFunc = func(repoUrl string, branchName string) (bool, error) {
 				isDeleteBranchInvoked = true
-				Expect(branch).Should(Equal(expectedSourceBranch))
-				Expect(gitSourceUrlParts[3]).Should(Equal(owner))
-				Expect(gitSourceUrlParts[4]).Should(Equal(repository))
-				if !sourceBranchExists {
-					return &gogithub.ErrorResponse{
-						Response: &http.Response{
-							StatusCode: 422,
-						},
-					}
-				}
-				return nil
+				Expect(repoUrl).To(Equal(SampleRepoLink))
+				Expect(branchName).Should(Equal(expectedSourceBranch))
+				return sourceBranchExists, nil
 			}
 
 			pacSecretData := map[string]string{
@@ -986,120 +827,34 @@ var _ = Describe("Component initial build controller", func() {
 			Eventually(func() bool {
 				return isFindOnboardingMergeRequestInvoked
 			}, timeout, interval).Should(BeTrue(),
-				"github.FindUnmergedOnboardingMergeRequest should be invoked, but not.")
+				"FindUnmergedPaCMergeRequest should have been invoked")
 			Eventually(func() bool {
 				return isDeleteBranchInvoked
 			}, timeout, interval).Should(BeTrue(),
-				"github.DeleteBranch should be invoked, but not.")
+				"DeleteBranch should have been invoked")
 		}
 
-		It("should close unmerged PaC pull request using GitHub application, opened based on branch specified in Revision", func() {
-			assertCloseUnmergedPullRequest("", true)
+		It("should close unmerged PaC pull request opened based on branch specified in Revision", func() {
+			assertCloseUnmergedMergeRequest("", true)
 		})
 
-		It("should keep silent when close unmerged PaC pull request using GitHub app by deleting a non-existing source branch", func() {
-			assertCloseUnmergedPullRequest("", false)
+		It("should not error when attempt of close unmerged PaC pull request by deleting a non-existing source branch", func() {
+			assertCloseUnmergedMergeRequest("", false)
 		})
 
-		It("should close unmerged PaC pull request using GitHub application, opened based on default branch", func() {
+		It("should close unmerged PaC pull request opened based on default branch", func() {
 			defaultBranch := "devel"
-			github.GetDefaultBranch = func(*github.GithubClient, string, string) (string, error) {
+			GetDefaultBranchFunc = func(repoUrl string) (string, error) {
 				return defaultBranch, nil
 			}
-			assertCloseUnmergedPullRequest(defaultBranch, true)
-		})
-
-		var assertCloseUnmergedMR = func(expectedBaseBranch string, sourceBranchExists bool) {
-			const gitUrl = "https://gitlab.com/devfile-samples/devfile-sample-go-basic"
-			const expectedProjectPath = "devfile-samples/devfile-sample-go-basic"
-			component := getSampleComponentData(resourceKey)
-			component.Annotations = map[string]string{
-				PaCProvisionAnnotationName: PaCProvisionRequestedAnnotationValue,
-			}
-			component.Spec.Source.GitSource.URL = gitUrl
-			if expectedBaseBranch == "" {
-				expectedBaseBranch = component.Spec.Source.GitSource.Revision
-			} else {
-				component.Spec.Source.GitSource.Revision = ""
-			}
-			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
-
-			mrUrl := fmt.Sprintf("%s/-/merge_requests/1", gitUrl)
-			existingMR := &gogitlab.MergeRequest{
-				ID:     1,
-				WebURL: mrUrl,
-			}
-
-			isUndoPaCMergeRequestInvoked := false
-			gitlab.UndoPaCMergeRequest = func(g *gitlab.GitlabClient, d *gitlab.PaCMergeRequestData) (string, error) {
-				isUndoPaCMergeRequestInvoked = true
-				return "", nil
-			}
-
-			gitlab.FindUnmergedOnboardingMergeRequest = func(
-				g *gitlab.GitlabClient, projectPath, sourceBranch, baseBranch, authorName string) (*gogitlab.MergeRequest, error) {
-				Expect(sourceBranch).Should(Equal(fmt.Sprintf("appstudio-%s", component.Name)))
-				Expect(projectPath).Should(Equal(expectedProjectPath))
-				Expect(baseBranch).Should(Equal(expectedBaseBranch))
-				Expect(authorName).Should(Equal("redhat-appstudio"))
-				return existingMR, nil
-			}
-
-			isDeleteBranchInvoked := false
-			gitlab.DeleteBranch = func(g *gitlab.GitlabClient, projectPath, sourceBranch string) error {
-				isDeleteBranchInvoked = true
-				Expect(projectPath).Should(Equal(expectedProjectPath))
-				Expect(sourceBranch).Should(Equal(pacMergeRequestSourceBranchPrefix + component.Name))
-				if !sourceBranchExists {
-					return &gogitlab.ErrorResponse{
-						Response: &http.Response{
-							StatusCode: 404,
-						},
-					}
-				}
-				return nil
-			}
-
-			pacSecretData := map[string]string{"gitlab.token": "glpat-token"}
-			createSecret(pacSecretKey, pacSecretData)
-
-			setComponentDevfileModel(resourceKey)
-			waitPaCFinalizerOnComponent(resourceKey)
-
-			deleteComponent(resourceKey)
-
-			Eventually(func() bool {
-				return isUndoPaCMergeRequestInvoked
-			}, timeout, interval).Should(BeFalse(),
-				"gitlab.UndoPaCMergeRequest should not be invoked, but it was invoked.")
-			Eventually(func() bool {
-				return isDeleteBranchInvoked
-			}, timeout, interval).Should(BeTrue(),
-				"gitlab.DeleteBranch should be invoked, but not.")
-		}
-
-		It("should close unmerged PaC merge request using GitLab token, opened based on branch specified in Revision", func() {
-			assertCloseUnmergedMR("", true)
-		})
-
-		It("should keep silent when close unmerged PaC merge request using GitLab token by deleting a non-existing source branch", func() {
-			assertCloseUnmergedMR("", false)
-		})
-
-		It("should close unmerged PaC merge request using GitLab token, opened based on default branch", func() {
-			defaultBranch := "devel"
-			gitlab.GetDefaultBranch = func(*gitlab.GitlabClient, string) (string, error) {
-				return defaultBranch, nil
-			}
-			assertCloseUnmergedMR(defaultBranch, true)
+			assertCloseUnmergedMergeRequest(defaultBranch, true)
 		})
 	})
 
 	Context("Test initial build", func() {
 
 		_ = BeforeEach(func() {
-			github.NewGithubClientForSimpleBuildByApp = func(appId int64, privateKeyPem []byte) (*github.GithubClient, error) { return nil, nil }
-			github.GetBranchSHA = func(g *github.GithubClient, owner, repository, branchName string) (string, error) { return "hash", nil }
+			ResetTestGitProviderClient()
 
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",
@@ -1121,11 +876,15 @@ var _ = Describe("Component initial build controller", func() {
 			gitSourceSHA := "d1a9e858489d1515621398fb02942da068f1c956"
 
 			isGetBranchShaInvoked := false
-			github.GetBranchSHA = func(g *github.GithubClient, owner, repository, branchName string) (string, error) {
+			GetBranchShaFunc = func(repoUrl string, branchName string) (string, error) {
 				isGetBranchShaInvoked = true
-				Expect(owner).To(Equal("devfile-samples"))
-				Expect(repository).To(Equal("devfile-sample-java-springboot-basic"))
+				Expect(repoUrl).To(Equal(SampleRepoLink))
 				return gitSourceSHA, nil
+			}
+			GetBrowseRepositoryAtShaLinkFunc = func(repoUrl, sha string) string {
+				Expect(repoUrl).To(Equal(SampleRepoLink))
+				Expect(sha).To(Equal(gitSourceSHA))
+				return "https://github.com/devfile-samples/devfile-sample-java-springboot-basic?rev=" + gitSourceSHA
 			}
 
 			setComponentDevfileModel(resourceKey)
@@ -1146,7 +905,7 @@ var _ = Describe("Component initial build controller", func() {
 
 		It("should submit initial build if retrieving of git commit SHA failed", func() {
 			isGetBranchShaInvoked := false
-			github.GetBranchSHA = func(g *github.GithubClient, owner, repository, branchName string) (string, error) {
+			GetBranchShaFunc = func(repoUrl string, branchName string) (string, error) {
 				isGetBranchShaInvoked = true
 				return "", fmt.Errorf("failed to get git commit SHA")
 			}
@@ -1310,7 +1069,7 @@ var _ = Describe("Component initial build controller", func() {
 					Selectors: []buildappstudiov1alpha1.PipelineSelector{
 						{
 							Name: "nodejs",
-							PipelineRef: v1beta1.PipelineRef{
+							PipelineRef: tektonapi.PipelineRef{
 								Name:   "nodejs-builder",
 								Bundle: defaultPipelineBundle,
 							},
@@ -1326,7 +1085,7 @@ var _ = Describe("Component initial build controller", func() {
 						},
 						{
 							Name: "Fallback",
-							PipelineRef: v1beta1.PipelineRef{
+							PipelineRef: tektonapi.PipelineRef{
 								Name:   "noop",
 								Bundle: defaultPipelineBundle,
 							},
@@ -1383,7 +1142,7 @@ var _ = Describe("Component initial build controller", func() {
 					Selectors: []buildappstudiov1alpha1.PipelineSelector{
 						{
 							Name: "nodejs",
-							PipelineRef: v1beta1.PipelineRef{
+							PipelineRef: tektonapi.PipelineRef{
 								Name:   "nodejs-builder",
 								Bundle: defaultPipelineBundle,
 							},
@@ -1399,7 +1158,7 @@ var _ = Describe("Component initial build controller", func() {
 						},
 						{
 							Name: "Fallback",
-							PipelineRef: v1beta1.PipelineRef{
+							PipelineRef: tektonapi.PipelineRef{
 								Name:   "noop",
 								Bundle: defaultPipelineBundle,
 							},
@@ -1456,7 +1215,7 @@ var _ = Describe("Component initial build controller", func() {
 					Selectors: []buildappstudiov1alpha1.PipelineSelector{
 						{
 							Name: "java",
-							PipelineRef: v1beta1.PipelineRef{
+							PipelineRef: tektonapi.PipelineRef{
 								Name:   "java-builder",
 								Bundle: defaultPipelineBundle,
 							},
@@ -1472,7 +1231,7 @@ var _ = Describe("Component initial build controller", func() {
 						},
 						{
 							Name: "Fallback",
-							PipelineRef: v1beta1.PipelineRef{
+							PipelineRef: tektonapi.PipelineRef{
 								Name:   "noop",
 								Bundle: defaultPipelineBundle,
 							},

@@ -73,14 +73,14 @@ const (
 )
 
 var (
-	initialBuildPipelineCreationTimeMetric      prometheus.Histogram
+	simpleBuildPipelineCreationTimeMetric       prometheus.Histogram
 	pipelinesAsCodeComponentProvisionTimeMetric prometheus.Histogram
 )
 
 func initMetrics() error {
 	buckets := getProvisionTimeMetricsBuckets()
 
-	initialBuildPipelineCreationTimeMetric = prometheus.NewHistogram(prometheus.HistogramOpts{
+	simpleBuildPipelineCreationTimeMetric = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Namespace: metricsNamespace,
 		Subsystem: metricsSubsystem,
 		Buckets:   buckets,
@@ -95,7 +95,7 @@ func initMetrics() error {
 		Help:      "The time in seconds spent from the moment of Component creation till Pipelines-as-Code configuration done in the Component source repository.",
 	})
 
-	if err := metrics.Registry.Register(initialBuildPipelineCreationTimeMetric); err != nil {
+	if err := metrics.Registry.Register(simpleBuildPipelineCreationTimeMetric); err != nil {
 		return fmt.Errorf("failed to register the initial_build_pipeline_creation_time metric: %w", err)
 	}
 	if err := metrics.Registry.Register(pipelinesAsCodeComponentProvisionTimeMetric); err != nil {

@@ -30,7 +30,7 @@ import (
 	"github.com/redhat-appstudio/application-service/gitops"
 	gitopsprepare "github.com/redhat-appstudio/application-service/gitops/prepare"
 	buildappstudiov1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
-	"github.com/redhat-appstudio/build-service/pkg/github"
+	"github.com/redhat-appstudio/build-service/pkg/git/github"
 	l "github.com/redhat-appstudio/build-service/pkg/logs"
 	batch "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -127,13 +127,8 @@ func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Re
 
 	// Load GitHub App and get GitHub Installations
 	githubAppIdStr := string(pacSecret.Data[gitops.PipelinesAsCode_githubAppIdKey])
-	githubAppId, err := strconv.ParseInt(githubAppIdStr, 10, 64)
-	if err != nil {
-		log.Error(err, "failed to convert %s to int: %w", githubAppIdStr, err)
-		return ctrl.Result{}, nil
-	}
 	privateKey := pacSecret.Data[gitops.PipelinesAsCode_githubPrivateKey]
-	githubAppInstallations, slug, err := github.GetInstallations(githubAppId, privateKey)
+	githubAppInstallations, slug, err := github.GetAppInstallations(githubAppIdStr, privateKey)
 	if err != nil {
 		return ctrl.Result{}, err
 	}

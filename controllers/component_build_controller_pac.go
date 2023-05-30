@@ -22,12 +22,10 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/go-logr/logr"
 	"github.com/google/go-containerregistry/pkg/authn"
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	routev1 "github.com/openshift/api/route/v1"
@@ -36,8 +34,8 @@ import (
 	gitopsprepare "github.com/redhat-appstudio/application-service/gitops/prepare"
 	"github.com/redhat-appstudio/application-service/pkg/devfile"
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
-	"github.com/redhat-appstudio/build-service/pkg/github"
-	"github.com/redhat-appstudio/build-service/pkg/gitlab"
+	gp "github.com/redhat-appstudio/build-service/pkg/git/gitprovider"
+	"github.com/redhat-appstudio/build-service/pkg/git/gitproviderfactory"
 	l "github.com/redhat-appstudio/build-service/pkg/logs"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	oci "github.com/tektoncd/pipeline/pkg/remote/oci"
@@ -49,18 +47,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/yaml"
-
-	gogithub "github.com/google/go-github/v45/github"
-	gogitlab "github.com/xanzy/go-gitlab"
 )
 
 const (
+	PipelineRunOnPRExpirationEnvVar  = "IMAGE_TAG_ON_PR_EXPIRATION"
+	PipelineRunOnPRExpirationDefault = "5d"
 	pipelineRunOnPushSuffix          = "-on-push"
 	pipelineRunOnPRSuffix            = "-on-pull-request"
 	pipelineRunOnPushFilename        = "push.yaml"
 	pipelineRunOnPRFilename          = "pull-request.yaml"
-	pipelineRunOnPRExpirationEnvVar  = "IMAGE_TAG_ON_PR_EXPIRATION"
-	pipelineRunOnPRExpirationDefault = "5d"
 	pipelinesAsCodeNamespace         = "openshift-pipelines"
 	pipelinesAsCodeNamespaceFallback = "pipelines-as-code"
 	pipelinesAsCodeRouteName         = "pipelines-as-code-controller"
@@ -435,7 +430,7 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 
 // generatePaCPipelineRunConfigs generates PipelineRun YAML configs for given component.
 // The generated PipelineRun Yaml content are returned in byte string and in the order of push and pull request.
-func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigs(ctx context.Context, component *appstudiov1alpha1.Component, pacTargetBranch string) ([]byte, []byte, error) {
+func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigs(ctx context.Context, component *appstudiov1alpha1.Component, gitClient gp.GitProviderClient, pacTargetBranch string) ([]byte, []byte, error) {
 	log := ctrllog.FromContext(ctx)
 
 	pipelineRef, additionalPipelineParams, err := r.GetPipelineForComponent(ctx, component)
@@ -454,7 +449,7 @@ func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigs(ctx context.Con
 	}
 
 	pipelineRunOnPush, err := generatePaCPipelineRunForComponent(
-		component, pipelineSpec, additionalPipelineParams, false, pacTargetBranch, log)
+		component, pipelineSpec, additionalPipelineParams, false, pacTargetBranch, gitClient)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -464,7 +459,7 @@ func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigs(ctx context.Con
 	}
 
 	pipelineRunOnPR, err := generatePaCPipelineRunForComponent(
-		component, pipelineSpec, additionalPipelineParams, true, pacTargetBranch, log)
+		component, pipelineSpec, additionalPipelineParams, true, pacTargetBranch, gitClient)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -482,136 +477,66 @@ func generateMergeRequestSourceBranch(component *appstudiov1alpha1.Component) st
 
 // ConfigureRepositoryForPaC creates a merge request with initial Pipelines as Code configuration
 // and configures a webhook to notify in-cluster PaC unless application (on the repository side) is used.
-func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context, component *appstudiov1alpha1.Component, config map[string][]byte, webhookTargetUrl, webhookSecret string) (prUrl string, err error) {
+func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context, component *appstudiov1alpha1.Component, pacConfig map[string][]byte, webhookTargetUrl, webhookSecret string) (prUrl string, err error) {
 	log := ctrllog.FromContext(ctx).WithValues("repository", component.Spec.Source.GitSource.URL)
 	ctx = ctrllog.IntoContext(ctx, log)
 
 	gitProvider, _ := gitops.GetGitProvider(*component)
-	isAppUsed := gitops.IsPaCApplicationConfigured(gitProvider, config)
+	repoUrl := component.Spec.Source.GitSource.URL
 
-	var accessToken string
-	if !isAppUsed {
-		accessToken = strings.TrimSpace(string(config[gitops.GetProviderTokenKey(gitProvider)]))
+	gitClient, err := gitproviderfactory.CreateGitClient(gitproviderfactory.GitClientConfig{
+		PacSecretData:             pacConfig,
+		GitProvider:               gitProvider,
+		RepoUrl:                   repoUrl,
+		IsAppInstallationExpected: true,
+	})
+	if err != nil {
+		return "", err
 	}
 
-	// https://github.com/owner/repository
-	gitSourceUrlParts := strings.Split(strings.TrimSuffix(component.Spec.Source.GitSource.URL, ".git"), "/")
-
-	commitMessage := "Appstudio update " + component.Name
-	branch := generateMergeRequestSourceBranch(component)
-	mrTitle := "Appstudio update " + component.Name
-	mrText := mergeRequestDescription
-	authorName := "redhat-appstudio"
-	authorEmail := "rhtap@redhat.com"
-
-	var baseBranch string
-	if component.Spec.Source.GitSource != nil {
-		baseBranch = component.Spec.Source.GitSource.Revision
+	baseBranch := component.Spec.Source.GitSource.Revision
+	if baseBranch == "" {
+		baseBranch, err = gitClient.GetDefaultBranch(repoUrl)
+		if err != nil {
+			return "", err
+		}
 	}
 
-	switch gitProvider {
-	case "github":
-		owner := gitSourceUrlParts[3]
-		repository := gitSourceUrlParts[4]
+	pipelineRunOnPushYaml, pipelineRunOnPRYaml, err := r.generatePaCPipelineRunConfigs(ctx, component, gitClient, baseBranch)
+	if err != nil {
+		return "", err
+	}
 
-		var ghclient *github.GithubClient
-		if isAppUsed {
-			githubAppIdStr := string(config[gitops.PipelinesAsCode_githubAppIdKey])
-			githubAppId, err := strconv.ParseInt(githubAppIdStr, 10, 64)
-			if err != nil {
-				return "", fmt.Errorf("failed to convert %s to int: %w", githubAppIdStr, err)
-			}
+	mrData := &gp.MergeRequestData{
+		CommitMessage:  "Appstudio update " + component.Name,
+		BranchName:     generateMergeRequestSourceBranch(component),
+		BaseBranchName: baseBranch,
+		Title:          "Appstudio update " + component.Name,
+		Text:           mergeRequestDescription,
+		AuthorName:     "redhat-appstudio",
+		AuthorEmail:    "rhtap@redhat.com",
+		Files: []gp.RepositoryFile{
+			{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPushFilename, Content: pipelineRunOnPushYaml},
+			{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPRFilename, Content: pipelineRunOnPRYaml},
+		},
+	}
 
-			privateKey := config[gitops.PipelinesAsCode_githubPrivateKey]
-			ghclient, err = github.NewGithubClientByApp(githubAppId, privateKey, owner)
-			if err != nil {
-				return "", err
-			}
-
-			// Check if the application is installed into target repository
-			appInstalled, err := github.IsAppInstalledIntoRepository(ghclient, owner, repository)
-			if err != nil {
-				return "", err
-			}
-			if !appInstalled {
-				return "", boerrors.NewBuildOpError(boerrors.EGitHubAppNotInstalled, fmt.Errorf("GitHub Application is not installed into the repository"))
-			}
-
-			// Customize PR data to reflect GitHub App name
-			if appName, appSlug, err := github.GetGitHubAppName(githubAppId, privateKey); err == nil {
-				commitMessage = fmt.Sprintf("%s update %s", appName, component.Name)
-				mrTitle = fmt.Sprintf("%s update %s", appName, component.Name)
-				authorName = appSlug
-			} else {
-				log.Error(err, "failed to get GitHub Application name", l.Action, l.ActionView, l.Audit, "true")
+	isAppUsed := gitops.IsPaCApplicationConfigured(gitProvider, pacConfig)
+	if isAppUsed {
+		// Customize PR data to reflect git application name
+		if appName, appSlug, err := gitClient.GetConfiguredGitAppName(); err == nil {
+			mrData.CommitMessage = fmt.Sprintf("%s update %s", appName, component.Name)
+			mrData.Title = fmt.Sprintf("%s update %s", appName, component.Name)
+			mrData.AuthorName = appSlug
+		} else {
+			if gitProvider == "github" {
+				log.Error(err, "failed to get PaC GitHub Application name", l.Action, l.ActionView, l.Audit, "true")
 				// Do not fail PaC provision if failed to read GitHub App info
 			}
-
-		} else {
-			// Webhook
-			ghclient = github.NewGithubClient(accessToken)
-
-			err = github.SetupPaCWebhook(ghclient, webhookTargetUrl, webhookSecret, owner, repository)
-			if err != nil {
-				log.Error(err, fmt.Sprintf("failed to setup Pipelines as Code webhook %s", webhookTargetUrl), l.Audit, "true")
-				return "", err
-			} else {
-				log.Info(fmt.Sprintf("Pipelines as Code webhook \"%s\" configured for %s Component in %s namespace",
-					webhookTargetUrl, component.GetName(), component.GetNamespace()),
-					l.Audit, "true")
-			}
 		}
-
-		if baseBranch == "" {
-			baseBranch, err = github.GetDefaultBranch(ghclient, owner, repository)
-			if err != nil {
-				return "", nil
-			}
-		}
-
-		pipelineRunOnPushYaml, pipelineRunOnPRYaml, err := r.generatePaCPipelineRunConfigs(ctx, component, baseBranch)
-		if err != nil {
-			return "", err
-		}
-		prData := &github.PaCPullRequestData{
-			Owner:         owner,
-			Repository:    repository,
-			CommitMessage: commitMessage,
-			Branch:        branch,
-			BaseBranch:    baseBranch,
-			PRTitle:       mrTitle,
-			PRText:        mrText,
-			AuthorName:    authorName,
-			AuthorEmail:   authorEmail,
-			Files: []github.File{
-				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPushFilename, Content: pipelineRunOnPushYaml},
-				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPRFilename, Content: pipelineRunOnPRYaml},
-			},
-		}
-		prUrl, err = github.CreatePaCPullRequest(ghclient, prData)
-		if err != nil {
-			// Handle case when GitHub application is not installed for the component repository
-			if strings.Contains(err.Error(), "Resource not accessible by integration") {
-				return "", fmt.Errorf(" Pipelines as Code GitHub application with %s ID is not installed for %s repository",
-					string(config[gitops.PipelinesAsCode_githubAppIdKey]), component.Spec.Source.GitSource.URL)
-			}
-			return "", err
-		}
-
-		return prUrl, nil
-
-	case "gitlab":
-		glclient, err := gitlab.NewGitlabClient(accessToken)
-		if err != nil {
-			return "", err
-		}
-
-		gitlabNamespace := gitSourceUrlParts[3]
-		gitlabProjectName := gitSourceUrlParts[4]
-		projectPath := gitlabNamespace + "/" + gitlabProjectName
-
-		err = gitlab.SetupPaCWebhook(glclient, projectPath, webhookTargetUrl, webhookSecret)
-		if err != nil {
+	} else {
+		// Webhook
+		if err := gitClient.SetupPaCWebhook(repoUrl, webhookTargetUrl, webhookSecret); err != nil {
 			log.Error(err, fmt.Sprintf("failed to setup Pipelines as Code webhook %s", webhookTargetUrl), l.Audit, "true")
 			return "", err
 		} else {
@@ -619,233 +544,109 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 				webhookTargetUrl, component.GetName(), component.GetNamespace()),
 				l.Audit, "true")
 		}
-
-		if baseBranch == "" {
-			baseBranch, err = gitlab.GetDefaultBranch(glclient, projectPath)
-			if err != nil {
-				return "", nil
-			}
-		}
-
-		pipelineRunOnPushYaml, pipelineRunOnPRYaml, err := r.generatePaCPipelineRunConfigs(ctx, component, baseBranch)
-		if err != nil {
-			return "", err
-		}
-		mrData := &gitlab.PaCMergeRequestData{
-			ProjectPath:   projectPath,
-			CommitMessage: commitMessage,
-			Branch:        branch,
-			BaseBranch:    baseBranch,
-			MrTitle:       mrTitle,
-			MrText:        mrText,
-			AuthorName:    authorName,
-			AuthorEmail:   authorEmail,
-			Files: []gitlab.File{
-				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPushFilename, Content: pipelineRunOnPushYaml},
-				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPRFilename, Content: pipelineRunOnPRYaml},
-			},
-		}
-		mrUrl, err := gitlab.EnsurePaCMergeRequest(glclient, mrData)
-		return mrUrl, err
-
-	case "bitbucket":
-		// TODO implement
-		return "", fmt.Errorf("git provider %s is not supported", gitProvider)
-	default:
-		return "", fmt.Errorf("git provider %s is not supported", gitProvider)
 	}
+
+	return gitClient.EnsurePaCMergeRequest(repoUrl, mrData)
 }
 
 // UnconfigureRepositoryForPaC creates a merge request that deletes Pipelines as Code configuration of the diven component in its repository.
 // Deletes PaC webhook if it's used.
 // Does not delete PaC GitHub application from the repository as its installation was done manually by the user.
 // Returns merge request web URL or empty string if it's not needed.
-func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Context, component *appstudiov1alpha1.Component, config map[string][]byte, webhookTargetUrl string) (prUrl string, action string, err error) {
+func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Context, component *appstudiov1alpha1.Component, pacConfig map[string][]byte, webhookTargetUrl string) (prUrl string, action string, err error) {
 	log := ctrllog.FromContext(ctx)
 
 	gitProvider, _ := gitops.GetGitProvider(*component)
-	isAppUsed := gitops.IsPaCApplicationConfigured(gitProvider, config)
+	repoUrl := component.Spec.Source.GitSource.URL
 
-	var accessToken string
+	gitClient, err := gitproviderfactory.CreateGitClient(gitproviderfactory.GitClientConfig{
+		PacSecretData:             pacConfig,
+		GitProvider:               gitProvider,
+		RepoUrl:                   repoUrl,
+		IsAppInstallationExpected: true,
+	})
+	if err != nil {
+		return "", "", err
+	}
+
+	isAppUsed := gitops.IsPaCApplicationConfigured(gitProvider, pacConfig)
 	if !isAppUsed {
-		accessToken = strings.TrimSpace(string(config[gitops.GetProviderTokenKey(gitProvider)]))
+		if webhookTargetUrl != "" {
+			err = gitClient.DeletePaCWebhook(repoUrl, webhookTargetUrl)
+			if err != nil {
+				// Just log the error and continue with merge request creation
+				log.Error(err, fmt.Sprintf("failed to delete Pipelines as Code webhook %s", webhookTargetUrl), l.Action, l.ActionDelete, l.Audit, "true")
+			} else {
+				log.Info(fmt.Sprintf("Pipelines as Code webhook \"%s\" deleted for %s Component in %s namespace",
+					webhookTargetUrl, component.GetName(), component.GetNamespace()),
+					l.Action, l.ActionDelete)
+			}
+		}
 	}
 
-	// https://github.com/owner/repository
-	gitSourceUrlParts := strings.Split(strings.TrimSuffix(component.Spec.Source.GitSource.URL, ".git"), "/")
-
-	commitMessage := "Appstudio purge " + component.Name
-	branch := "appstudio-purge-" + component.Name
-	mrTitle := "Appstudio purge " + component.Name
-	mrText := "Pipelines as Code configuration removal"
-	authorName := "redhat-appstudio"
-	authorEmail := "appstudio@redhat.com"
-
-	var baseBranch string
-	if component.Spec.Source.GitSource != nil {
-		baseBranch = component.Spec.Source.GitSource.Revision
+	sourceBranch := generateMergeRequestSourceBranch(component)
+	baseBranch := component.Spec.Source.GitSource.Revision
+	if baseBranch == "" {
+		baseBranch, err = gitClient.GetDefaultBranch(repoUrl)
+		if err != nil {
+			return "", "", nil
+		}
 	}
 
-	switch gitProvider {
-	case "github":
-		owner := gitSourceUrlParts[3]
-		repository := gitSourceUrlParts[4]
+	mrData := &gp.MergeRequestData{
+		BranchName:     sourceBranch,
+		BaseBranchName: baseBranch,
+		AuthorName:     "redhat-appstudio",
+	}
 
-		var ghclient *github.GithubClient
+	mergeRequest, err := gitClient.FindUnmergedPaCMergeRequest(repoUrl, mrData)
+	if err != nil {
+		return "", "", err
+	}
+
+	if mergeRequest == nil {
+		// Create new PaC configuration clean up merge request
+		prData := &gp.MergeRequestData{
+			CommitMessage:  "Appstudio purge " + component.Name,
+			BranchName:     "appstudio-purge-" + component.Name,
+			BaseBranchName: baseBranch,
+			Title:          "Appstudio purge " + component.Name,
+			Text:           "Pipelines as Code configuration removal",
+			AuthorName:     "redhat-appstudio",
+			AuthorEmail:    "rhtap@redhat.com",
+			Files: []gp.RepositoryFile{
+				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPushFilename},
+				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPRFilename},
+			},
+		}
+
 		if isAppUsed {
-			githubAppIdStr := string(config[gitops.PipelinesAsCode_githubAppIdKey])
-			githubAppId, err := strconv.ParseInt(githubAppIdStr, 10, 64)
-			if err != nil {
-				return "", "", fmt.Errorf("failed to convert %s to int: %w", githubAppIdStr, err)
-			}
-
-			privateKey := config[gitops.PipelinesAsCode_githubPrivateKey]
-			ghclient, err = github.NewGithubClientByApp(githubAppId, privateKey, owner)
-			if err != nil {
-				return "", "", err
-			}
-		} else {
-			// Webhook
-			ghclient = github.NewGithubClient(accessToken)
-
-			if webhookTargetUrl != "" {
-				err = github.DeletePaCWebhook(ghclient, webhookTargetUrl, owner, repository)
-				if err != nil {
-					// Just log the error and continue with merge request creation
-					log.Error(err, fmt.Sprintf("failed to delete Pipelines as Code webhook %s", webhookTargetUrl), l.Action, l.ActionDelete, l.Audit, "true")
-				} else {
-					log.Info(fmt.Sprintf("Pipelines as Code webhook \"%s\" deleted for %s Component in %s namespace",
-						webhookTargetUrl, component.GetName(), component.GetNamespace()),
-						l.Action, l.ActionDelete)
+			// Customize PR data to reflect git application name
+			if appName, appSlug, err := gitClient.GetConfiguredGitAppName(); err == nil {
+				mrData.CommitMessage = fmt.Sprintf("%s purge %s", appName, component.Name)
+				mrData.Title = fmt.Sprintf("%s purge %s", appName, component.Name)
+				mrData.AuthorName = appSlug
+			} else {
+				if gitProvider == "github" {
+					log.Error(err, "failed to get PaC GitHub Application name", l.Action, l.ActionView, l.Audit, "true")
+					// Do not fail PaC clean up PR if failed to read GitHub App info
 				}
 			}
 		}
 
-		if baseBranch == "" {
-			baseBranch, err = github.GetDefaultBranch(ghclient, owner, repository)
-			if err != nil {
-				return "", "", nil
-			}
-		}
+		prUrl, err = gitClient.UndoPaCMergeRequest(repoUrl, prData)
+		return prUrl, "delete", err
+	} else {
+		// Close merge request.
+		// To close a merge request it's enough to delete the branch.
 
-		sourceBranch := generateMergeRequestSourceBranch(component)
-		pullRequest, err := github.FindUnmergedOnboardingMergeRequest(ghclient, owner, repository, sourceBranch, baseBranch, owner)
-		if err != nil {
+		// Non-existing source branch should not be an error, just ignore it,
+		// but other errors should be handled.
+		if _, err := gitClient.DeleteBranch(repoUrl, sourceBranch); err != nil {
 			return "", "", err
 		}
-
-		if pullRequest == nil {
-			prData := &github.PaCPullRequestData{
-				Owner:         owner,
-				Repository:    repository,
-				CommitMessage: commitMessage,
-				Branch:        branch,
-				BaseBranch:    baseBranch,
-				PRTitle:       mrTitle,
-				PRText:        mrText,
-				AuthorName:    authorName,
-				AuthorEmail:   authorEmail,
-				Files: []github.File{
-					{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPushFilename},
-					{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPRFilename},
-				},
-			}
-			prUrl, err = github.UndoPaCPullRequest(ghclient, prData)
-			if err != nil {
-				// Handle case when GitHub application is not installed for the component repository
-				if strings.Contains(err.Error(), "Resource not accessible by integration") {
-					return "", "", fmt.Errorf(" Pipelines as Code GitHub application with %s ID is not installed for %s repository",
-						string(config[gitops.PipelinesAsCode_githubAppIdKey]), component.Spec.Source.GitSource.URL)
-				}
-				return "", "", err
-			}
-			return prUrl, "delete", nil
-		} else {
-			err := github.DeleteBranch(ghclient, owner, repository, sourceBranch)
-			if err == nil {
-				log.Info(fmt.Sprintf("pull request source branch %s is deleted", sourceBranch), l.Action, l.ActionDelete)
-				return prUrl, "close", nil
-			}
-			// Non-existing source branch should not be an error, just ignore it
-			// but other errors should be handled.
-			if ghErrResp, ok := err.(*gogithub.ErrorResponse); ok {
-				if ghErrResp.Response.StatusCode == 422 {
-					log.Info(fmt.Sprintf("Tried to delete source branch %s, but it does not exist in the repository", sourceBranch))
-					return prUrl, "close", nil
-				}
-			}
-			return "", "", err
-		}
-
-	case "gitlab":
-		glclient, err := gitlab.NewGitlabClient(accessToken)
-		if err != nil {
-			return "", "", err
-		}
-
-		gitlabNamespace := gitSourceUrlParts[3]
-		gitlabProjectName := gitSourceUrlParts[4]
-		projectPath := gitlabNamespace + "/" + gitlabProjectName
-
-		err = gitlab.DeletePaCWebhook(glclient, projectPath, webhookTargetUrl)
-		if err != nil {
-			// Just log the error and continue with merge request creation
-			log.Error(err, "failed to delete Pipelines as Code webhook", l.Action, l.ActionDelete, l.Audit, "true")
-		}
-
-		if baseBranch == "" {
-			baseBranch, err = gitlab.GetDefaultBranch(glclient, projectPath)
-			if err != nil {
-				return "", "", nil
-			}
-		}
-
-		sourceBranch := generateMergeRequestSourceBranch(component)
-		mr, err := gitlab.FindUnmergedOnboardingMergeRequest(glclient, projectPath, sourceBranch, baseBranch, authorName)
-		if err != nil {
-			return "", "", err
-		}
-
-		if mr == nil {
-			mrData := &gitlab.PaCMergeRequestData{
-				ProjectPath:   projectPath,
-				CommitMessage: commitMessage,
-				Branch:        branch,
-				BaseBranch:    baseBranch,
-				MrTitle:       mrTitle,
-				MrText:        mrText,
-				AuthorName:    authorName,
-				AuthorEmail:   authorEmail,
-				Files: []gitlab.File{
-					{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPushFilename},
-					{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPRFilename},
-				},
-			}
-			mrUrl, err := gitlab.UndoPaCMergeRequest(glclient, mrData)
-			if err != nil {
-				return "", "", err
-			}
-			return mrUrl, "delete", nil
-		} else {
-			err := gitlab.DeleteBranch(glclient, projectPath, sourceBranch)
-			if err == nil {
-				log.Info(fmt.Sprintf("merge request source branch %s is deleted", sourceBranch), l.Action, l.ActionDelete)
-				return mr.WebURL, "close", nil
-			}
-			if glErrResp, ok := err.(*gogitlab.ErrorResponse); ok {
-				if glErrResp.Response.StatusCode == 404 {
-					log.Info(fmt.Sprintf("Tried to delete source branch %s, but it does not exist in repository", sourceBranch))
-					return mr.WebURL, "close", nil
-				}
-			}
-			return "", "", err
-		}
-
-	case "bitbucket":
-		// TODO implement
-		return "", "", fmt.Errorf("git provider %s is not supported", gitProvider)
-	default:
-		return "", "", fmt.Errorf("git provider %s is not supported", gitProvider)
+		log.Info(fmt.Sprintf("pull request source branch %s is deleted", sourceBranch), l.Action, l.ActionDelete)
+		return prUrl, "close", nil
 	}
 }
 
@@ -857,34 +658,25 @@ func generatePaCPipelineRunForComponent(
 	additionalPipelineParams []tektonapi.Param,
 	onPull bool,
 	pacTargetBranch string,
-	log logr.Logger) (*tektonapi.PipelineRun, error) {
+	gitClient gp.GitProviderClient) (*tektonapi.PipelineRun, error) {
 
 	if pacTargetBranch == "" {
 		return nil, fmt.Errorf("target branch can't be empty for generating PaC PipelineRun for: %v", component)
 	}
+
+	repoUrl := component.Spec.Source.GitSource.URL
 
 	annotations := map[string]string{
 		"pipelinesascode.tekton.dev/on-target-branch": "[" + pacTargetBranch + "]",
 		"pipelinesascode.tekton.dev/max-keep-runs":    "3",
 		"build.appstudio.redhat.com/target_branch":    "{{target_branch}}",
 		gitCommitShaAnnotationName:                    "{{revision}}",
+		gitRepoAtShaAnnotationName:                    gitClient.GetBrowseRepositoryAtShaLink(repoUrl, "{{revision}}"),
 	}
 	labels := map[string]string{
 		ApplicationNameLabelName:                component.Spec.Application,
 		ComponentNameLabelName:                  component.Name,
 		"pipelines.appstudio.openshift.io/type": "build",
-	}
-
-	var gitRepoAtShaUrl string
-	gitProvider, _ := gitops.GetGitProvider(*component)
-	switch gitProvider {
-	case "github":
-		gitRepoAtShaUrl = github.GetBrowseRepositoryAtShaLink(component.Spec.Source.GitSource.URL, "{{revision}}")
-	case "gitlab":
-		gitRepoAtShaUrl = gitlab.GetBrowseRepositoryAtShaLink(component.Spec.Source.GitSource.URL, "{{revision}}")
-	}
-	if gitRepoAtShaUrl != "" {
-		annotations[gitRepoAtShaAnnotationName] = gitRepoAtShaUrl
 	}
 
 	imageRepo := getContainerImageRepositoryForComponent(component)
@@ -908,15 +700,11 @@ func generatePaCPipelineRunForComponent(
 		{Name: "output-image", Value: tektonapi.ArrayOrString{Type: "string", StringVal: proposedImage}},
 	}
 	if onPull {
-		expiration := os.Getenv(pipelineRunOnPRExpirationEnvVar)
-		validExpiration, _ := regexp.Match("^[1-9][0-9]{0,2}[hdw]$", []byte(expiration))
-		if !validExpiration {
-			if expiration != "" {
-				log.Info(fmt.Sprintf("invalid expiration '%s' in %s envVar, using default %s", expiration, pipelineRunOnPRExpirationEnvVar, pipelineRunOnPRExpirationDefault), l.Action, l.ActionAdd)
-			}
-			expiration = pipelineRunOnPRExpirationDefault
+		var prImageExpiration string
+		if customExpiration := os.Getenv(PipelineRunOnPRExpirationEnvVar); customExpiration == "" {
+			prImageExpiration = PipelineRunOnPRExpirationDefault
 		}
-		params = append(params, tektonapi.Param{Name: "image-expires-after", Value: tektonapi.ArrayOrString{Type: "string", StringVal: expiration}})
+		params = append(params, tektonapi.Param{Name: "image-expires-after", Value: tektonapi.ArrayOrString{Type: "string", StringVal: prImageExpiration}})
 	}
 
 	dockerFile, err := devfile.SearchForDockerfile([]byte(component.Status.Devfile))
