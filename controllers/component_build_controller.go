@@ -49,7 +49,7 @@ const (
 	PaCProvisionAnnotationName             = "appstudio.openshift.io/pac-provision"
 	PaCProvisionRequestedAnnotationValue   = "request"
 	PaCProvisionDoneAnnotationValue        = "done"
-	PaCProvisionUnconfigureAnnotationValue = "unconfigure"
+	PaCProvisionUnconfigureAnnotationValue = "delete"
 	PaCProvisionErrorAnnotationValue       = "error"
 	PaCProvisionErrorDetailsAnnotationName = "appstudio.openshift.io/pac-provision-error"
 
