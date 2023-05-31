@@ -271,16 +271,11 @@ var _ = Describe("Component initial build controller", func() {
 			waitComponentAnnotationValue(resourceKey, PaCProvisionAnnotationName, PaCProvisionDoneAnnotationValue)
 		})
 
-		It("should provision PaC definitions after initial build if PaC annotation added", func() {
-			isCreatePaCPullRequestInvoked := false
+		It("should provision PaC definitions after initial build if PaC annotation added and be able to switch back to simple build", func() {
 			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
-				isCreatePaCPullRequestInvoked = true
-				return "url", nil
-			}
-			SetupPaCWebhookFunc = func(repoUrl string, webhookUrl string, webhookSecret string) error {
 				defer GinkgoRecover()
-				Fail("Should not create webhook if GitHub application is used")
-				return nil
+				Fail("Should not create PaC configuration PR when using simple build")
+				return "url", nil
 			}
 
 			deleteComponent(resourceKey)
@@ -289,6 +284,26 @@ var _ = Describe("Component initial build controller", func() {
 			setComponentDevfileModel(resourceKey)
 			waitOneInitialPipelineRunCreated(resourceKey)
 			ensureComponentInitialBuildAnnotationState(resourceKey, true)
+
+			// Switch from simple to advanced workflow
+
+			ResetTestGitProviderClient()
+
+			isCreatePaCPullRequestInvoked := false
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				isCreatePaCPullRequestInvoked = true
+				return "url", nil
+			}
+			UndoPaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				defer GinkgoRecover()
+				Fail("Should not create undo PaC configuration PR when switching to PaC build")
+				return "url", nil
+			}
+			SetupPaCWebhookFunc = func(repoUrl string, webhookUrl string, webhookSecret string) error {
+				defer GinkgoRecover()
+				Fail("Should not create webhook if GitHub application is used")
+				return nil
+			}
 
 			// Add PaC annotation
 			component := getComponent(resourceKey)
@@ -303,6 +318,41 @@ var _ = Describe("Component initial build controller", func() {
 				return isCreatePaCPullRequestInvoked
 			}, timeout, interval).Should(BeTrue())
 			waitComponentAnnotationValue(resourceKey, PaCProvisionAnnotationName, PaCProvisionDoneAnnotationValue)
+			waitPaCFinalizerOnComponent(resourceKey)
+
+			// Now switch back to simple build
+
+			ResetTestGitProviderClient()
+
+			isRemovePaCPullRequestInvoked := false
+			UndoPaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				isRemovePaCPullRequestInvoked = true
+				return "url", nil
+			}
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				defer GinkgoRecover()
+				Fail("Should not create PaC configuration PR when switching to simple build")
+				return "url", nil
+			}
+			DeletePaCWebhookFunc = func(repoUrl string, webhookUrl string) error {
+				defer GinkgoRecover()
+				Fail("Should not delete webhook if GitHub application is used")
+				return nil
+			}
+
+			// Request PaC unprovision
+			component = getComponent(resourceKey)
+			if len(component.Annotations) == 0 {
+				component.Annotations = make(map[string]string)
+			}
+			component.Annotations[PaCProvisionAnnotationName] = PaCProvisionUnconfigureAnnotationValue
+			Expect(k8sClient.Update(ctx, component)).To(Succeed())
+
+			Eventually(func() bool {
+				return isRemovePaCPullRequestInvoked
+			}, timeout, interval).Should(BeTrue())
+			waitComponentAnnotationGone(resourceKey, PaCProvisionAnnotationName)
+			waitPaCFinalizerOnComponentGone(resourceKey)
 		})
 
 		It("should not copy PaC secret into local namespace if GitHub application is used", func() {
@@ -416,7 +466,9 @@ var _ = Describe("Component initial build controller", func() {
 
 		It("should successfully do PaC provision after error (when PaC GitHub Application was not installed)", func() {
 			appNotInstalledErr := boerrors.NewBuildOpError(boerrors.EGitHubAppNotInstalled, nil)
+			isCreateGithubClientInvoked := false
 			gpf.CreateGitClient = func(gitClientConfig gpf.GitClientConfig) (gp.GitProviderClient, error) {
+				isCreateGithubClientInvoked = true
 				return nil, appNotInstalledErr
 			}
 			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
@@ -426,6 +478,10 @@ var _ = Describe("Component initial build controller", func() {
 			}
 
 			setComponentDevfileModel(resourceKey)
+
+			Eventually(func() bool {
+				return isCreateGithubClientInvoked
+			}, timeout, interval).Should(BeTrue())
 			waitComponentAnnotationValue(resourceKey, PaCProvisionAnnotationName, PaCProvisionErrorAnnotationValue)
 			waitComponentAnnotationValue(resourceKey, PaCProvisionErrorDetailsAnnotationName, appNotInstalledErr.ShortError())
 

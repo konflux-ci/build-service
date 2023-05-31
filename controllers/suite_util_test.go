@@ -216,14 +216,27 @@ func setComponentDevfileModel(componentKey types.NamespacedName) {
 	setComponentDevfile(componentKey, devfile)
 }
 
-func waitPaCFinalizerOnComponent(componentKey types.NamespacedName) {
+func waitFinalizerOnComponent(componentKey types.NamespacedName, finalizerName string, finalizerShouldBePresent bool) {
 	component := &appstudiov1alpha1.Component{}
 	Eventually(func() bool {
 		if err := k8sClient.Get(ctx, componentKey, component); err != nil {
 			return false
 		}
-		return controllerutil.ContainsFinalizer(component, PaCProvisionFinalizer)
+
+		if finalizerShouldBePresent {
+			return controllerutil.ContainsFinalizer(component, finalizerName)
+		} else {
+			return !controllerutil.ContainsFinalizer(component, finalizerName)
+		}
 	}, timeout, interval).Should(BeTrue())
+}
+
+func waitPaCFinalizerOnComponent(componentKey types.NamespacedName) {
+	waitFinalizerOnComponent(componentKey, PaCProvisionFinalizer, true)
+}
+
+func waitPaCFinalizerOnComponentGone(componentKey types.NamespacedName) {
+	waitFinalizerOnComponent(componentKey, PaCProvisionFinalizer, false)
 }
 
 func listComponentPipelineRuns(componentKey types.NamespacedName) []tektonapi.PipelineRun {
@@ -405,6 +418,18 @@ func waitComponentAnnotationValue(componentKey types.NamespacedName, annotationN
 		component := getComponent(componentKey)
 		annotations := component.GetAnnotations()
 		return annotations != nil && annotations[annotationName] == annotationValue
+	}, timeout, interval).Should(BeTrue())
+}
+
+func waitComponentAnnotationGone(componentKey types.NamespacedName, annotationName string) {
+	Eventually(func() bool {
+		component := getComponent(componentKey)
+		annotations := component.GetAnnotations()
+		if annotations == nil {
+			return true
+		}
+		_, exists := annotations[annotationName]
+		return !exists
 	}, timeout, interval).Should(BeTrue())
 }
 
