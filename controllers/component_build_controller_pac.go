@@ -607,7 +607,7 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 
 	if mergeRequest == nil {
 		// Create new PaC configuration clean up merge request
-		prData := &gp.MergeRequestData{
+		mrData = &gp.MergeRequestData{
 			CommitMessage:  "Appstudio purge " + component.Name,
 			BranchName:     "appstudio-purge-" + component.Name,
 			BaseBranchName: baseBranch,
@@ -635,7 +635,7 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 			}
 		}
 
-		prUrl, err = gitClient.UndoPaCMergeRequest(repoUrl, prData)
+		prUrl, err = gitClient.UndoPaCMergeRequest(repoUrl, mrData)
 		return prUrl, "delete", err
 	} else {
 		// Close merge request.
