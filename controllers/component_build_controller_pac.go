@@ -701,8 +701,8 @@ func generatePaCPipelineRunForComponent(
 		{Name: "output-image", Value: tektonapi.ArrayOrString{Type: "string", StringVal: proposedImage}},
 	}
 	if onPull {
-		var prImageExpiration string
-		if customExpiration := os.Getenv(PipelineRunOnPRExpirationEnvVar); customExpiration == "" {
+		prImageExpiration := os.Getenv(PipelineRunOnPRExpirationEnvVar)
+		if prImageExpiration == "" {
 			prImageExpiration = PipelineRunOnPRExpirationDefault
 		}
 		params = append(params, tektonapi.Param{Name: "image-expires-after", Value: tektonapi.ArrayOrString{Type: "string", StringVal: prImageExpiration}})
