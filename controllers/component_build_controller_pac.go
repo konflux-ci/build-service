@@ -84,6 +84,8 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context,
 	log := ctrllog.FromContext(ctx).WithName("PaC-setup")
 	ctx = ctrllog.IntoContext(ctx, log)
 
+	log.Info("Starting Pipelines as Code provision for the Component")
+
 	gitProvider, err := gitops.GetGitProvider(*component)
 	if err != nil {
 		// Do not reconcile, because configuration must be fixed before it is possible to proceed.
@@ -152,6 +154,8 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context,
 func (r *ComponentBuildReconciler) UndoPaCProvisionForComponent(ctx context.Context, component *appstudiov1alpha1.Component) error {
 	log := ctrllog.FromContext(ctx).WithName("PaC-cleanup")
 	ctx = ctrllog.IntoContext(ctx, log)
+
+	log.Info("Starting Pipelines as Code unprovision for the Component")
 
 	gitProvider, err := gitops.GetGitProvider(*component)
 	if err != nil {

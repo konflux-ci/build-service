@@ -353,6 +353,17 @@ var _ = Describe("Component initial build controller", func() {
 			}, timeout, interval).Should(BeTrue())
 			waitComponentAnnotationGone(resourceKey, PaCProvisionAnnotationName)
 			waitPaCFinalizerOnComponentGone(resourceKey)
+
+			// Request simple build
+			deleteComponentPipelineRuns(resourceKey)
+			component = getComponent(resourceKey)
+			if len(component.Annotations) != 0 {
+				delete(component.Annotations, InitialBuildAnnotationName)
+			}
+			Expect(k8sClient.Update(ctx, component)).To(Succeed())
+
+			waitOneInitialPipelineRunCreated(resourceKey)
+			ensureComponentInitialBuildAnnotationState(resourceKey, true)
 		})
 
 		It("should not copy PaC secret into local namespace if GitHub application is used", func() {
@@ -668,14 +679,6 @@ var _ = Describe("Component initial build controller", func() {
 
 			// Switch to generated image repository
 
-			isCreatePaCPullRequestInvoked = false
-			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
-				defer GinkgoRecover()
-				checkPROutputImage(d.Files[0].Content, generatedImageRepo)
-				isCreatePaCPullRequestInvoked = true
-				return "url2", nil
-			}
-
 			component = getComponent(resourceKey)
 			component.Annotations[ImageRepoGenerateAnnotationName] = "false"
 			component.Annotations[ImageRepoAnnotationName] =
@@ -686,9 +689,6 @@ var _ = Describe("Component initial build controller", func() {
 			Eventually(func() bool {
 				component = getComponent(resourceKey)
 				return component.Spec.ContainerImage == generatedImageRepo
-			}, timeout, interval).Should(BeTrue())
-			Eventually(func() bool {
-				return isCreatePaCPullRequestInvoked
 			}, timeout, interval).Should(BeTrue())
 
 			pipelineSA := &corev1.ServiceAccount{}
@@ -710,6 +710,8 @@ var _ = Describe("Component initial build controller", func() {
 			createNamespace(pipelinesAsCodeNamespace)
 			createRoute(pacRouteKey, "pac-host")
 			createNamespace(buildServiceNamespaceName)
+
+			deleteComponent(resourceKey)
 
 			ResetTestGitProviderClient()
 		})
@@ -1068,6 +1070,7 @@ var _ = Describe("Component initial build controller", func() {
 			component := getComponent(resourceKey)
 			component.Annotations = make(map[string]string)
 			component.Annotations[InitialBuildAnnotationName] = "processed"
+			component.Annotations[BuildStatusAnnotationName] = "{simple:{\"build-start-time\": \"time\"}}"
 			Expect(k8sClient.Update(ctx, component)).Should(Succeed())
 
 			setComponentDevfileModel(resourceKey)
@@ -1152,11 +1155,11 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(k8sClient.Create(ctx, selectors)).To(Succeed())
 
 			devfile := `
-                schemaVersion: 2.2.0
-                metadata:
-                    name: devfile-nodejs
-                    language: nodejs
-            `
+                        schemaVersion: 2.2.0
+                        metadata:
+                            name: devfile-nodejs
+                            language: nodejs
+                    `
 			setComponentDevfile(resourceKey, devfile)
 
 			waitOneInitialPipelineRunCreated(resourceKey)
@@ -1225,11 +1228,11 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(k8sClient.Create(ctx, selectors)).To(Succeed())
 
 			devfile := `
-                schemaVersion: 2.2.0
-                metadata:
-                    name: devfile-nodejs
-                    language: nodejs
-            `
+                        schemaVersion: 2.2.0
+                        metadata:
+                            name: devfile-nodejs
+                            language: nodejs
+                    `
 			setComponentDevfile(resourceKey, devfile)
 
 			waitOneInitialPipelineRunCreated(resourceKey)
@@ -1298,11 +1301,11 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(k8sClient.Create(ctx, selectors)).To(Succeed())
 
 			devfile := `
-                schemaVersion: 2.2.0
-                metadata:
-                    name: devfile-java
-                    language: java
-            `
+                        schemaVersion: 2.2.0
+                        metadata:
+                            name: devfile-java
+                            language: java
+                    `
 			setComponentDevfile(resourceKey, devfile)
 
 			waitOneInitialPipelineRunCreated(resourceKey)

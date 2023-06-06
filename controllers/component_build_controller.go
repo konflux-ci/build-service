@@ -18,7 +18,9 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -41,6 +43,13 @@ import (
 )
 
 const (
+	BuildRequestAnnotationName                    = "build.appstudio.openshift.io/request"
+	BuildRequestTriggerSimpleBuildAnnotationValue = "trigger-simple-build"
+	BuildRequestConfigurePaCAnnotationValue       = "configure-pac"
+	BuildRequestUnconfigurePaCAnnotationValue     = "unconfigure-pac"
+
+	BuildStatusAnnotationName = "build.appstudio.openshift.io/status"
+
 	InitialBuildAnnotationName = "appstudio.openshift.io/component-initial-build"
 
 	PaCProvisionFinalizer            = "pac.component.appstudio.openshift.io/finalizer"
@@ -108,6 +117,34 @@ func initMetrics() error {
 
 func getProvisionTimeMetricsBuckets() []float64 {
 	return []float64{5, 10, 15, 20, 30, 60, 120, 300}
+}
+
+type BuildStatus struct {
+	Simple *SimpleBuildStatus `json:"simple,omitempty"`
+	PaC    *PaCBuildStatus    `json:"pac,omitempty"`
+	// Shows build methods agnostic messages, e.g. invalid build request.
+	Message string `json:"message,omitempty"`
+}
+
+// Describes persistent error for build request.
+type ErrorInfo struct {
+	ErrId      int    `json:"error-id,omitempty"`
+	ErrMessage string `json:"error-message,omitempty"`
+}
+
+type SimpleBuildStatus struct {
+	// BuildStartTime shows the time when last simple build was submited.
+	BuildStartTime string `json:"build-start-time,omitempty"`
+
+	ErrorInfo
+}
+
+type PaCBuildStatus struct {
+	// State shows if PaC is used.
+	// Values are: enabled, disabled.
+	State string `json:"state,omitempty"`
+
+	ErrorInfo
 }
 
 // ComponentBuildReconciler watches AppStudio Component objects in order to
@@ -199,8 +236,6 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 					if _, err := r.unlinkSecretFromServiceAccount(ctx, generatedImageRepoSecretName, pipelineSA.Name, pipelineSA.Namespace); err != nil {
 						return ctrl.Result{}, err
 					}
-					// unlink secret also to old pipeline account, can be removed when default pipeline is switched to appstudio-pipeline
-					_, _ = r.unlinkSecretFromServiceAccount(ctx, generatedImageRepoSecretName, "pipeline", pipelineSA.Namespace)
 				}
 			}
 
@@ -252,7 +287,6 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	// Link auto generated image registry secret in case of auto generated image repository is used.
-	isSwitchedImageRegistry := false
 	if !controllerutil.ContainsFinalizer(&component, ImageRegistrySecretLinkFinalizer) {
 		imageRepoGenerated, imageRepoSecretName, err := getComponentImageRepoAndSecretNameFromImageAnnotation(&component)
 		if err != nil {
@@ -265,8 +299,6 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if err != nil {
 				return ctrl.Result{}, err
 			}
-			// link secret also to old pipeline account, can be removed when default pipeline is switched to appstudio-pipeline
-			_, _ = r.linkSecretToServiceAccount(ctx, imageRepoSecretName, "pipeline", pipelineSA.Namespace, true)
 
 			// Ensure finalizer exists to clean up image registry secret link on component deletion
 			if component.ObjectMeta.DeletionTimestamp.IsZero() {
@@ -279,176 +311,227 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 					if err := r.Client.Update(ctx, &component); err != nil {
 						return ctrl.Result{}, err
 					}
-					isSwitchedImageRegistry = true
 					log.Info("Image registry secret service account link finalizer added", l.Action, l.ActionUpdate)
 				}
 			}
 		}
 	}
 
-	// Check if Pipelines as Code workflow enabled
-	if pacAnnotationValue, exists := component.Annotations[PaCProvisionAnnotationName]; exists {
-		// Always create new / update existing PaC configuration PR if image registry has changed.
-		if isSwitchedImageRegistry {
-			pacAnnotationValue = PaCProvisionRequestedAnnotationValue
-		}
+	// TODO uncoment when old annotations removed
+	// requestedAction, requestedActionExists := component.Annotations[BuildRequestAnnotationName]
+	// if !requestedActionExists {
+	// 	if _, statusExists := component.Annotations[BuildStatusAnnotationName]; statusExists {
+	// 		// Nothing to do
+	// 		return ctrl.Result{}, nil
+	// 	}
+	// 	// Automatically build component after creation
+	// 	requestedAction = BuildRequestTriggerSimpleBuildAnnotationValue
+	// }
 
-		switch pacAnnotationValue {
-		case PaCProvisionRequestedAnnotationValue:
-			log.Info("Starting Pipelines as Code provision for the Component")
+	requestedAction, requestedActionExists := component.Annotations[BuildRequestAnnotationName]
+	if !requestedActionExists {
+		// Leaving old Initial build and PaC annotations for backward compatibility.
+		// TODO Remove the annotations when UI migrates to new ones.
 
-			var pacAnnotationValue string
-			var pacPersistentErrorMessage string
-			err := r.ProvisionPaCForComponent(ctx, &component)
-			if err != nil {
-				if boErr, ok := err.(*boerrors.BuildOpError); ok && boErr.IsPersistent() {
-					log.Error(err, "Pipelines as Code provision for the Component failed")
-					pacAnnotationValue = PaCProvisionErrorAnnotationValue
-					pacPersistentErrorMessage = boErr.ShortError()
-				} else {
-					// transient error, retry
-					log.Error(err, "Pipelines as Code provision transient error")
-					return ctrl.Result{}, err
-				}
-			} else {
-				pacAnnotationValue = PaCProvisionDoneAnnotationValue
-				log.Info("Pipelines as Code provision for the Component finished successfully")
-			}
-
-			// Update component to show Pipeline as Code provision is done
-			if err := r.Client.Get(ctx, req.NamespacedName, &component); err != nil {
-				log.Error(err, "failed to get Component", l.Action, l.ActionView)
-				return ctrl.Result{}, err
-			}
-
-			// Update PaC annotation
-			if len(component.Annotations) == 0 {
-				component.Annotations = make(map[string]string)
-			}
-			component.Annotations[PaCProvisionAnnotationName] = pacAnnotationValue
-			if pacPersistentErrorMessage != "" {
-				component.Annotations[PaCProvisionErrorDetailsAnnotationName] = pacPersistentErrorMessage
-			} else {
-				delete(component.Annotations, PaCProvisionErrorDetailsAnnotationName)
-			}
-
-			// Add finalizer to clean up Pipelines as Code configuration on component deletion
-			if component.ObjectMeta.DeletionTimestamp.IsZero() {
-				if !controllerutil.ContainsFinalizer(&component, PaCProvisionFinalizer) {
-					controllerutil.AddFinalizer(&component, PaCProvisionFinalizer)
-				}
-			}
-
-			if err := r.Client.Update(ctx, &component); err != nil {
-				log.Error(err, "failed to add PaC finalizer to the Component", l.Action, l.ActionUpdate, l.Audit, "true")
-				return ctrl.Result{}, err
-			} else {
-				log.Info("PaC finalizer added", l.Action, l.ActionUpdate)
-			}
-
-		case PaCProvisionUnconfigureAnnotationValue:
-			// Remove PaC configuration from the Component repository
-
-			// Remove Pipelines as Code configuration finalizer
-			if controllerutil.ContainsFinalizer(&component, PaCProvisionFinalizer) {
-				controllerutil.RemoveFinalizer(&component, PaCProvisionFinalizer)
-
-				if err := r.Client.Update(ctx, &component); err != nil {
-					log.Error(err, "failed to remove PaC finalizer to the Component", l.Action, l.ActionUpdate)
-					return ctrl.Result{}, err
-				} else {
-					log.Info("PaC finalizer removed", l.Action, l.ActionUpdate)
-				}
-			}
-
-			log.Info("Starting Pipelines as Code unprovision for the Component")
-
-			var pacPersistentErrorMessage string
-			if err := r.UndoPaCProvisionForComponent(ctx, &component); err != nil {
-				if boErr, ok := err.(*boerrors.BuildOpError); ok && boErr.IsPersistent() {
-					log.Error(err, "Pipelines as Code unprovision for the Component failed")
-					pacPersistentErrorMessage = boErr.ShortError()
-				} else {
-					// transient error, retry
-					log.Error(err, "Pipelines as Code unprovision transient error")
-					return ctrl.Result{}, err
-				}
-			} else {
-				log.Info("Pipelines as Code unprovision for the Component finished successfully")
-			}
-
-			// Update component to show Pipeline as Code provision is undone
-			if err := r.Client.Get(ctx, req.NamespacedName, &component); err != nil {
-				log.Error(err, "failed to get Component", l.Action, l.ActionView)
-				return ctrl.Result{}, err
-			}
-
-			// Delete PaC annotation
-			delete(component.Annotations, PaCProvisionAnnotationName)
-			// Delete / update PaC error annotation
-			if pacPersistentErrorMessage != "" {
-				component.Annotations[PaCProvisionErrorDetailsAnnotationName] = pacPersistentErrorMessage
-			} else {
-				delete(component.Annotations, PaCProvisionErrorDetailsAnnotationName)
-			}
-
-			if err := r.Client.Update(ctx, &component); err != nil {
-				log.Error(err, "failed to remove PaC annotation from the Component", l.Action, l.ActionUpdate, l.Audit, "true")
-				return ctrl.Result{}, err
-			} else {
-				log.Info("Pipelines as Code annotation removed from the Component", l.Action, l.ActionUpdate)
-			}
-
-		case PaCProvisionDoneAnnotationValue, PaCProvisionErrorAnnotationValue:
-			// Do nothing
-		default:
-			message := fmt.Sprintf("Unexpected value \"%s\" for \"%s\" annotation", pacAnnotationValue, PaCProvisionAnnotationName)
-			log.Info(message)
-		}
-
-		return ctrl.Result{}, nil
-	}
-
-	// Pipelines as Code workflow is not enabled, use plain builds.
-
-	// Reread component to avoid out of date state
-	if err := r.Client.Get(ctx, req.NamespacedName, &component); err != nil {
-		log.Error(err, "failed to get Component", l.Action, l.ActionView)
-		return ctrl.Result{}, err
-	}
-
-	// Check initial build annotation to know if any work should be done for the Component
-	if len(component.Annotations) == 0 {
-		component.Annotations = make(map[string]string)
-	}
-	if _, exists := component.Annotations[InitialBuildAnnotationName]; exists {
-		// Initial build have already happend, nothing to do.
-		return ctrl.Result{}, nil
-	}
-	// The initial build is needed for the Component
-
-	// Set initial build annotation to prevent next builds
-	component.Annotations[InitialBuildAnnotationName] = "processed"
-	if err := r.Client.Update(ctx, &component); err != nil {
-		log.Error(err, "failed to add initial build annotation to the Component", l.Action, l.ActionUpdate)
-		return ctrl.Result{}, err
-	}
-
-	if err := r.SubmitNewBuild(ctx, &component); err != nil {
-		// Try to revert the initial build annotation
-		if err := r.Client.Get(ctx, req.NamespacedName, &component); err == nil {
-			if len(component.Annotations) > 0 {
-				delete(component.Annotations, InitialBuildAnnotationName)
-				if err := r.Client.Update(ctx, &component); err != nil {
-					log.Error(err, "failed to reschedule initial build for the Component", l.Action, l.ActionUpdate)
-					return ctrl.Result{}, err
-				}
+		// Check if Pipelines as Code workflow enabled
+		if pacAnnotationValue, exists := component.Annotations[PaCProvisionAnnotationName]; exists {
+			switch pacAnnotationValue {
+			case PaCProvisionRequestedAnnotationValue:
+				log.Info("PaC provision request via deprecated annotation")
+				requestedAction = BuildRequestConfigurePaCAnnotationValue
+			case PaCProvisionUnconfigureAnnotationValue:
+				log.Info("PaC unprovision request via deprecated annotation")
+				requestedAction = BuildRequestUnconfigurePaCAnnotationValue
+			case PaCProvisionDoneAnnotationValue, PaCProvisionErrorAnnotationValue:
+				// Do nothing
+			default:
+				message := fmt.Sprintf("Unexpected value \"%s\" for \"%s\" annotation", pacAnnotationValue, PaCProvisionAnnotationName)
+				log.Info(message)
 			}
 		} else {
-			log.Error(err, "failed to reschedule initial build for the Component", l.Action, l.ActionView)
-			return ctrl.Result{}, err
+			// Check if initial build was done
+			if _, exists := component.Annotations[InitialBuildAnnotationName]; !exists {
+				requestedAction = BuildRequestTriggerSimpleBuildAnnotationValue
+			}
 		}
 	}
 
+	switch requestedAction {
+	case BuildRequestTriggerSimpleBuildAnnotationValue:
+		simpleBuildStatus := &SimpleBuildStatus{}
+		if err := r.SubmitNewBuild(ctx, &component); err != nil {
+			if boErr, ok := err.(*boerrors.BuildOpError); ok && boErr.IsPersistent() {
+				log.Error(err, "simple build submition for the Component failed")
+				simpleBuildStatus.ErrId = boErr.GetErrorId()
+				simpleBuildStatus.ErrMessage = boErr.ShortError()
+			} else {
+				// transient error, retry
+				log.Error(err, "simple build submition transient error")
+				return ctrl.Result{}, err
+			}
+		} else {
+			simpleBuildStatus.BuildStartTime = time.Now().Format(time.RFC1123)
+		}
+
+		if err := r.Client.Get(ctx, req.NamespacedName, &component); err != nil {
+			log.Error(err, "failed to get Component", l.Action, l.ActionView)
+			return ctrl.Result{}, err
+		}
+
+		// Update build status annotation
+		buildStatus := readBuildStatus((&component))
+		buildStatus.Simple = simpleBuildStatus
+		buildStatus.Message = "done"
+		writeBuildStatus(&component, buildStatus)
+
+		component.Annotations[InitialBuildAnnotationName] = "processed"
+
+	case BuildRequestConfigurePaCAnnotationValue:
+		var pacAnnotationValue string
+		var pacPersistentErrorMessage string
+		pacBuildStatus := &PaCBuildStatus{}
+		if err := r.ProvisionPaCForComponent(ctx, &component); err != nil {
+			if boErr, ok := err.(*boerrors.BuildOpError); ok && boErr.IsPersistent() {
+				log.Error(err, "Pipelines as Code provision for the Component failed")
+				pacBuildStatus.State = "error"
+				pacBuildStatus.ErrId = boErr.GetErrorId()
+				pacBuildStatus.ErrMessage = boErr.ShortError()
+
+				pacAnnotationValue = PaCProvisionErrorAnnotationValue
+				pacPersistentErrorMessage = boErr.ShortError()
+			} else {
+				// transient error, retry
+				log.Error(err, "Pipelines as Code provision transient error")
+				return ctrl.Result{}, err
+			}
+		} else {
+			pacBuildStatus.State = "enabled"
+			pacAnnotationValue = PaCProvisionDoneAnnotationValue
+			log.Info("Pipelines as Code provision for the Component finished successfully")
+		}
+
+		// Update component to reflect Pipeline as Code provision status
+		if err := r.Client.Get(ctx, req.NamespacedName, &component); err != nil {
+			log.Error(err, "failed to get Component", l.Action, l.ActionView)
+			return ctrl.Result{}, err
+		}
+
+		// Add finalizer to clean up Pipelines as Code configuration on component deletion
+		if component.ObjectMeta.DeletionTimestamp.IsZero() && pacBuildStatus.ErrId == 0 {
+			if !controllerutil.ContainsFinalizer(&component, PaCProvisionFinalizer) {
+				controllerutil.AddFinalizer(&component, PaCProvisionFinalizer)
+				log.Info("adding PaC finalizer")
+			}
+		}
+
+		// Update build status annotation
+		buildStatus := readBuildStatus((&component))
+		buildStatus.PaC = pacBuildStatus
+		buildStatus.Message = "done"
+		writeBuildStatus(&component, buildStatus)
+
+		// Update PaC annotation
+		if len(component.Annotations) == 0 {
+			component.Annotations = make(map[string]string)
+		}
+		component.Annotations[PaCProvisionAnnotationName] = pacAnnotationValue
+		if pacPersistentErrorMessage != "" {
+			component.Annotations[PaCProvisionErrorDetailsAnnotationName] = pacPersistentErrorMessage
+		} else {
+			delete(component.Annotations, PaCProvisionErrorDetailsAnnotationName)
+		}
+
+	case BuildRequestUnconfigurePaCAnnotationValue:
+		// Remove Pipelines as Code configuration finalizer
+		if controllerutil.ContainsFinalizer(&component, PaCProvisionFinalizer) {
+			controllerutil.RemoveFinalizer(&component, PaCProvisionFinalizer)
+			if err := r.Client.Update(ctx, &component); err != nil {
+				log.Error(err, "failed to remove PaC finalizer to the Component", l.Action, l.ActionUpdate)
+				return ctrl.Result{}, err
+			} else {
+				log.Info("PaC finalizer removed", l.Action, l.ActionUpdate)
+			}
+		}
+
+		var pacPersistentErrorMessage string
+		pacBuildStatus := &PaCBuildStatus{}
+		if err := r.UndoPaCProvisionForComponent(ctx, &component); err != nil {
+			if boErr, ok := err.(*boerrors.BuildOpError); ok && boErr.IsPersistent() {
+				log.Error(err, "Pipelines as Code unprovision for the Component failed")
+				pacBuildStatus.ErrId = boErr.GetErrorId()
+				pacBuildStatus.ErrMessage = boErr.ShortError()
+
+				pacPersistentErrorMessage = boErr.ShortError()
+			} else {
+				// transient error, retry
+				log.Error(err, "Pipelines as Code unprovision transient error")
+				return ctrl.Result{}, err
+			}
+		} else {
+			pacBuildStatus.State = "disabled"
+			log.Info("Pipelines as Code unprovision for the Component finished successfully")
+		}
+
+		// Update component to show Pipeline as Code provision is undone
+		if err := r.Client.Get(ctx, req.NamespacedName, &component); err != nil {
+			log.Error(err, "failed to get Component", l.Action, l.ActionView)
+			return ctrl.Result{}, err
+		}
+
+		// Update build status annotation
+		buildStatus := readBuildStatus((&component))
+		buildStatus.PaC = pacBuildStatus
+		buildStatus.Message = "done"
+		writeBuildStatus(&component, buildStatus)
+
+		// Delete PaC annotation
+		delete(component.Annotations, PaCProvisionAnnotationName)
+		// Delete / update PaC error annotation
+		if pacPersistentErrorMessage != "" {
+			component.Annotations[PaCProvisionErrorDetailsAnnotationName] = pacPersistentErrorMessage
+		} else {
+			delete(component.Annotations, PaCProvisionErrorDetailsAnnotationName)
+		}
+
+	default:
+		if requestedAction == "" {
+			// Do not show error for empty annotation, consider it as noop.
+			return ctrl.Result{}, nil
+		}
+
+		buildStatus := readBuildStatus((&component))
+		buildStatus.Message = fmt.Sprintf("unexpected build request: %s", requestedAction)
+		writeBuildStatus(&component, buildStatus)
+	}
+
+	delete(component.Annotations, BuildRequestAnnotationName)
+
+	if err := r.Client.Update(ctx, &component); err != nil {
+		log.Error(err, fmt.Sprintf("failed to update component after build request: %s", requestedAction), l.Action, l.ActionUpdate, l.Audit, "true")
+		return ctrl.Result{}, err
+	}
+	log.Info(fmt.Sprintf("updated component after build request: %s", requestedAction), l.Action, l.ActionUpdate)
 	return ctrl.Result{}, nil
+}
+
+func readBuildStatus(component *appstudiov1alpha1.Component) *BuildStatus {
+	if component.Annotations == nil {
+		return &BuildStatus{}
+	}
+
+	buildStatus := &BuildStatus{}
+	buildStatusBytes := []byte(component.Annotations[BuildStatusAnnotationName])
+	if err := json.Unmarshal(buildStatusBytes, buildStatus); err == nil {
+		return buildStatus
+	}
+	return &BuildStatus{}
+}
+
+func writeBuildStatus(component *appstudiov1alpha1.Component, buildStatus *BuildStatus) {
+	if component.Annotations == nil {
+		component.Annotations = make(map[string]string)
+	}
+
+	buildStatusBytes, _ := json.Marshal(buildStatus)
+	component.Annotations[BuildStatusAnnotationName] = string(buildStatusBytes)
 }

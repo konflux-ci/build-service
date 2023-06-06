@@ -55,6 +55,10 @@ func (r BuildOpError) Error() string {
 	}
 }
 
+func (r BuildOpError) GetErrorId() int {
+	return int(r.id)
+}
+
 // ShortError returns short message with error ID in case of persistent error or
 // standard error message for transient errors.
 func (r BuildOpError) ShortError() string {
