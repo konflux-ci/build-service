@@ -233,6 +233,7 @@ func generateConfigJS(slug string, repositories []renovateRepository) string {
 				prFooter: "To execute skipped test pipelines write comment ` + "`/ok-to-test`" + `",
 				prBodyColumns: ["Package", "Change", "Notes"],
 				prBodyDefinitions: { "Notes": "{{#if (or (containsString updateType 'minor') (containsString updateType 'major'))}}:warning:[migration](https://github.com/redhat-appstudio/build-definitions/blob/main/task/{{{replace '%stask-' '' packageName}}}/{{{newVersion}}}/MIGRATION.md):warning:{{/if}}" },
+				recreateClosed: true,
 				enabled: true
 			  }
 			]
