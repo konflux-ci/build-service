@@ -537,7 +537,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				isComponentInCacheUpToDate = true
 				break
 			}
-			log.Error(err, "failed to get the compoennt", l.Action, l.ActionView)
+			log.Error(err, "failed to get the component", l.Action, l.ActionView)
 		}
 		time.Sleep(100 * time.Millisecond)
 	}

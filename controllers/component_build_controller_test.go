@@ -694,6 +694,10 @@ var _ = Describe("Component initial build controller", func() {
 			pipelineSA := &corev1.ServiceAccount{}
 			Expect(k8sClient.Get(ctx, pipelineSAKey, pipelineSA)).To(Succeed())
 			isImageRegistryGeneratedSecretLinked := false
+			if pipelineSA.Secrets == nil {
+				time.Sleep(1 * time.Second)
+				Expect(k8sClient.Get(ctx, pipelineSAKey, pipelineSA)).To(Succeed())
+			}
 			for _, secret := range pipelineSA.Secrets {
 				if secret.Name == generatedImageRepoSecretName {
 					isImageRegistryGeneratedSecretLinked = true
@@ -1314,6 +1318,10 @@ var _ = Describe("Component initial build controller", func() {
 			pipelineSA := &corev1.ServiceAccount{}
 			Expect(k8sClient.Get(ctx, pipelineSAKey, pipelineSA)).To(Succeed())
 			isImageRegistryGeneratedSecretLinked := false
+			if pipelineSA.Secrets == nil {
+				time.Sleep(1 * time.Second)
+				Expect(k8sClient.Get(ctx, pipelineSAKey, pipelineSA)).To(Succeed())
+			}
 			for _, secret := range pipelineSA.Secrets {
 				if secret.Name == generatedImageRepoSecretName {
 					isImageRegistryGeneratedSecretLinked = true
