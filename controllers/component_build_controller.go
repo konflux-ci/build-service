@@ -351,6 +351,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		} else {
 			// Check if initial build was done
 			if _, exists := component.Annotations[InitialBuildAnnotationName]; !exists {
+				log.Info("automatically requesting initial build for the new component")
 				requestedAction = BuildRequestTriggerSimpleBuildAnnotationValue
 			}
 		}
@@ -511,6 +512,39 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 	log.Info(fmt.Sprintf("updated component after build request: %s", requestedAction), l.Action, l.ActionUpdate)
+
+	// Here we do some trick.
+	// The problem is that the component update triggers both: a new reconcile and operator cache update.
+	// In other words we are getting race condition. If a new reconcile is triggered before cache update,
+	// requested build action will be repeated, because the last update has not yet visible for the operator.
+	// For example, instead of one initial pipeline run we could get two.
+	// To resolve the problem above, instead of just ending the reconcile loop here,
+	// we are waiting for the cache update. This approach prevents next reconciles with outdated cache.
+	isComponentInCacheUpToDate := false
+	for i := 0; i < 20; i++ {
+		if err := r.Client.Get(ctx, req.NamespacedName, &component); err == nil {
+			_, buildRequestAnnotationExists := component.Annotations[BuildRequestAnnotationName]
+			_, buildStatusAnnotationExists := component.Annotations[BuildStatusAnnotationName]
+			if !buildRequestAnnotationExists && buildStatusAnnotationExists {
+				// Cache contains updated component
+				isComponentInCacheUpToDate = true
+				break
+			}
+			// Outdated version of the component, wait more.
+		} else {
+			if errors.IsNotFound(err) {
+				// The component was deleted
+				isComponentInCacheUpToDate = true
+				break
+			}
+			log.Error(err, "failed to get the compoennt", l.Action, l.ActionView)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !isComponentInCacheUpToDate {
+		log.Info("failed to wait for updated cache. Requested action could be repeated.", l.Audit, "true")
+	}
+
 	return ctrl.Result{}, nil
 }
 
