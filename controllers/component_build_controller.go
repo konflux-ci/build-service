@@ -143,6 +143,8 @@ type PaCBuildStatus struct {
 	// State shows if PaC is used.
 	// Values are: enabled, disabled.
 	State string `json:"state,omitempty"`
+	// Contains link to PaC provision / unprovision pull request
+	MergeUrl string `json:"merge-url,omitempty"`
 
 	ErrorInfo
 }
@@ -265,7 +267,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			log.Info("PaC finalizer removed", l.Action, l.ActionDelete)
 
 			// Try to clean up Pipelines as Code configuration
-			_ = r.UndoPaCProvisionForComponent(ctx, &component)
+			_, _ = r.UndoPaCProvisionForComponent(ctx, &component)
 		}
 
 		return ctrl.Result{}, nil
@@ -391,7 +393,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		var pacAnnotationValue string
 		var pacPersistentErrorMessage string
 		pacBuildStatus := &PaCBuildStatus{}
-		if err := r.ProvisionPaCForComponent(ctx, &component); err != nil {
+		if mergeUrl, err := r.ProvisionPaCForComponent(ctx, &component); err != nil {
 			if boErr, ok := err.(*boerrors.BuildOpError); ok && boErr.IsPersistent() {
 				log.Error(err, "Pipelines as Code provision for the Component failed")
 				pacBuildStatus.State = "error"
@@ -407,6 +409,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			}
 		} else {
 			pacBuildStatus.State = "enabled"
+			pacBuildStatus.MergeUrl = mergeUrl
 			pacAnnotationValue = PaCProvisionDoneAnnotationValue
 			log.Info("Pipelines as Code provision for the Component finished successfully")
 		}
@@ -456,7 +459,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 		var pacPersistentErrorMessage string
 		pacBuildStatus := &PaCBuildStatus{}
-		if err := r.UndoPaCProvisionForComponent(ctx, &component); err != nil {
+		if mergeUrl, err := r.UndoPaCProvisionForComponent(ctx, &component); err != nil {
 			if boErr, ok := err.(*boerrors.BuildOpError); ok && boErr.IsPersistent() {
 				log.Error(err, "Pipelines as Code unprovision for the Component failed")
 				pacBuildStatus.ErrId = boErr.GetErrorId()
@@ -470,6 +473,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			}
 		} else {
 			pacBuildStatus.State = "disabled"
+			pacBuildStatus.MergeUrl = mergeUrl
 			log.Info("Pipelines as Code unprovision for the Component finished successfully")
 		}
 

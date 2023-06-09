@@ -129,7 +129,7 @@ var _ = Describe("Component initial build controller", func() {
 				Expect(d.Text).ToNot(BeEmpty())
 				Expect(d.AuthorName).ToNot(BeEmpty())
 				Expect(d.AuthorEmail).ToNot(BeEmpty())
-				return "url", nil
+				return "merge-url", nil
 			}
 			SetupPaCWebhookFunc = func(string, string, string) error {
 				defer GinkgoRecover()
@@ -734,6 +734,8 @@ var _ = Describe("Component initial build controller", func() {
 		})
 
 		It("should successfully submit PR with PaC definitions using GitHub application", func() {
+			mergeUrl := "merge-url"
+
 			isCreatePaCPullRequestInvoked := false
 			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
 				isCreatePaCPullRequestInvoked = true
@@ -749,7 +751,7 @@ var _ = Describe("Component initial build controller", func() {
 				Expect(d.Text).ToNot(BeEmpty())
 				Expect(d.AuthorName).ToNot(BeEmpty())
 				Expect(d.AuthorEmail).ToNot(BeEmpty())
-				return "url", nil
+				return mergeUrl, nil
 			}
 			SetupPaCWebhookFunc = func(string, string, string) error {
 				defer GinkgoRecover()
@@ -769,6 +771,7 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(buildStatus).ToNot(BeNil())
 			Expect(buildStatus.PaC).ToNot(BeNil())
 			Expect(buildStatus.PaC.State).To(Equal("enabled"))
+			Expect(buildStatus.PaC.MergeUrl).To(Equal(mergeUrl))
 			Expect(buildStatus.PaC.ErrId).To(Equal(0))
 			Expect(buildStatus.PaC.ErrMessage).To(Equal(""))
 		})
@@ -904,10 +907,11 @@ var _ = Describe("Component initial build controller", func() {
 			gpf.CreateGitClient = func(gitClientConfig gpf.GitClientConfig) (gp.GitProviderClient, error) {
 				return testGitProviderClient, nil
 			}
+			mergeUrl := "merge-url"
 			isCreatePaCPullRequestInvoked := false
 			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
 				isCreatePaCPullRequestInvoked = true
-				return "url", nil
+				return mergeUrl, nil
 			}
 
 			// Retry
@@ -922,6 +926,7 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(buildStatus).ToNot(BeNil())
 			Expect(buildStatus.PaC).ToNot(BeNil())
 			Expect(buildStatus.PaC.State).To(Equal("enabled"))
+			Expect(buildStatus.PaC.MergeUrl).To(Equal(mergeUrl))
 			Expect(buildStatus.PaC.ErrId).To(Equal(0))
 			Expect(buildStatus.PaC.ErrMessage).To(Equal(""))
 		})
@@ -1002,7 +1007,7 @@ var _ = Describe("Component initial build controller", func() {
 			isCreatePaCPullRequestInvoked := false
 			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
 				isCreatePaCPullRequestInvoked = true
-				return "url", nil
+				return "configure-merge-url", nil
 			}
 			UndoPaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
 				defer GinkgoRecover()
@@ -1028,6 +1033,7 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(buildStatus).ToNot(BeNil())
 			Expect(buildStatus.PaC).ToNot(BeNil())
 			Expect(buildStatus.PaC.State).To(Equal("enabled"))
+			Expect(buildStatus.PaC.MergeUrl).To(Equal("configure-merge-url"))
 			Expect(buildStatus.PaC.ErrId).To(Equal(0))
 			Expect(buildStatus.PaC.ErrMessage).To(Equal(""))
 
@@ -1052,7 +1058,7 @@ var _ = Describe("Component initial build controller", func() {
 			isRemovePaCPullRequestInvoked := false
 			UndoPaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
 				isRemovePaCPullRequestInvoked = true
-				return "url", nil
+				return "unconfigure-merge-url", nil
 			}
 			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
 				defer GinkgoRecover()
@@ -1078,6 +1084,7 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(buildStatus).ToNot(BeNil())
 			Expect(buildStatus.PaC).ToNot(BeNil())
 			Expect(buildStatus.PaC.State).To(Equal("disabled"))
+			Expect(buildStatus.PaC.MergeUrl).To(Equal("unconfigure-merge-url"))
 			Expect(buildStatus.PaC.ErrId).To(Equal(0))
 			Expect(buildStatus.PaC.ErrMessage).To(Equal(""))
 
@@ -1558,6 +1565,55 @@ var _ = Describe("Component initial build controller", func() {
 		})
 
 		It("should successfully submit PR with PaC definitions removal using GitHub application", func() {
+			mergeUrl := "merge-url"
+			isRemovePaCPullRequestInvoked := false
+			UndoPaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (webUrl string, err error) {
+				isRemovePaCPullRequestInvoked = true
+				Expect(repoUrl).To(Equal(SampleRepoLink))
+				Expect(len(d.Files)).To(Equal(2))
+				for _, file := range d.Files {
+					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
+				}
+				Expect(d.CommitMessage).ToNot(BeEmpty())
+				Expect(d.BranchName).ToNot(BeEmpty())
+				Expect(d.BaseBranchName).ToNot(BeEmpty())
+				Expect(d.Title).ToNot(BeEmpty())
+				Expect(d.Text).ToNot(BeEmpty())
+				Expect(d.AuthorName).ToNot(BeEmpty())
+				Expect(d.AuthorEmail).ToNot(BeEmpty())
+				return mergeUrl, nil
+			}
+			DeletePaCWebhookFunc = func(string, string) error {
+				defer GinkgoRecover()
+				Fail("Should not try to delete webhook if GitHub application is used")
+				return nil
+			}
+
+			pacSecretData := map[string]string{
+				"github-application-id": "12345",
+				"github-private-key":    githubAppPrivateKey,
+			}
+			createSecret(pacSecretKey, pacSecretData)
+
+			createComponentAndProcessBuildRequest(resourceKey, BuildRequestConfigurePaCAnnotationValue)
+			waitPaCFinalizerOnComponent(resourceKey)
+
+			setComponentBuildRequest(resourceKey, BuildRequestUnconfigurePaCAnnotationValue)
+
+			Eventually(func() bool {
+				return isRemovePaCPullRequestInvoked
+			}, timeout, interval).Should(BeTrue())
+
+			buildStatus := readBuildStatus(getComponent(resourceKey))
+			Expect(buildStatus).ToNot(BeNil())
+			Expect(buildStatus.PaC).ToNot(BeNil())
+			Expect(buildStatus.PaC.State).To(Equal("disabled"))
+			Expect(buildStatus.PaC.MergeUrl).To(Equal(mergeUrl))
+			Expect(buildStatus.PaC.ErrId).To(Equal(0))
+			Expect(buildStatus.PaC.ErrMessage).To(Equal(""))
+		})
+
+		It("should successfully submit PR with PaC definitions removal on component deletion", func() {
 			isRemovePaCPullRequestInvoked := false
 			UndoPaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (webUrl string, err error) {
 				isRemovePaCPullRequestInvoked = true
@@ -1598,6 +1654,7 @@ var _ = Describe("Component initial build controller", func() {
 		})
 
 		It("should successfully submit merge request with PaC definitions removal using token", func() {
+			mergeUrl := "merge-url"
 			isRemovePaCPullRequestInvoked := false
 			UndoPaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (webUrl string, err error) {
 				isRemovePaCPullRequestInvoked = true
@@ -1613,7 +1670,7 @@ var _ = Describe("Component initial build controller", func() {
 				Expect(d.Text).ToNot(BeEmpty())
 				Expect(d.AuthorName).ToNot(BeEmpty())
 				Expect(d.AuthorEmail).ToNot(BeEmpty())
-				return "url", nil
+				return mergeUrl, nil
 			}
 			isDeletePaCWebhookInvoked := false
 			DeletePaCWebhookFunc = func(repoUrl string, webhookUrl string) error {
@@ -1629,7 +1686,7 @@ var _ = Describe("Component initial build controller", func() {
 			createComponentAndProcessBuildRequest(resourceKey, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourceKey)
 
-			deleteComponent(resourceKey)
+			setComponentBuildRequest(resourceKey, BuildRequestUnconfigurePaCAnnotationValue)
 
 			Eventually(func() bool {
 				return isRemovePaCPullRequestInvoked
@@ -1637,6 +1694,14 @@ var _ = Describe("Component initial build controller", func() {
 			Eventually(func() bool {
 				return isDeletePaCWebhookInvoked
 			}, timeout, interval).Should(BeTrue())
+
+			buildStatus := readBuildStatus(getComponent(resourceKey))
+			Expect(buildStatus).ToNot(BeNil())
+			Expect(buildStatus.PaC).ToNot(BeNil())
+			Expect(buildStatus.PaC.State).To(Equal("disabled"))
+			Expect(buildStatus.PaC.MergeUrl).To(Equal(mergeUrl))
+			Expect(buildStatus.PaC.ErrId).To(Equal(0))
+			Expect(buildStatus.PaC.ErrMessage).To(Equal(""))
 		})
 
 		It("should not block component deletion if PaC definitions removal failed", func() {
