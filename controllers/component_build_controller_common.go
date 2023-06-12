@@ -243,7 +243,7 @@ func getContainerImageRepository(image string) string {
 
 // getComponentImageRepoAndSecretNameFromImageAnnotation parses image.redhat.com/image annotation
 // for image repository and secret name to access it.
-// If image.redhat.com/generate is not set, the procedure returns empty values.
+// If image.redhat.com/image is not set, the procedure returns empty values.
 func getComponentImageRepoAndSecretNameFromImageAnnotation(component *appstudiov1alpha1.Component) (string, string, error) {
 	type RepositoryInfo struct {
 		Image  string `json:"image"`
