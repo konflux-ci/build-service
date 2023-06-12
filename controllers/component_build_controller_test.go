@@ -86,7 +86,7 @@ var _ = Describe("Component initial build controller", func() {
 		webhookSecretKey      = types.NamespacedName{Name: gitops.PipelinesAsCodeWebhooksSecretName, Namespace: HASAppNamespace}
 	)
 
-	Context("Test Pipelines as Code build preparation", func() {
+	Context("Test Pipelines as Code build preparation [deprecated annotations]", func() {
 
 		_ = BeforeEach(func() {
 			createNamespace(pipelinesAsCodeNamespace)
@@ -129,7 +129,7 @@ var _ = Describe("Component initial build controller", func() {
 				Expect(d.Text).ToNot(BeEmpty())
 				Expect(d.AuthorName).ToNot(BeEmpty())
 				Expect(d.AuthorEmail).ToNot(BeEmpty())
-				return "url", nil
+				return "merge-url", nil
 			}
 			SetupPaCWebhookFunc = func(string, string, string) error {
 				defer GinkgoRecover()
@@ -353,6 +353,17 @@ var _ = Describe("Component initial build controller", func() {
 			}, timeout, interval).Should(BeTrue())
 			waitComponentAnnotationGone(resourceKey, PaCProvisionAnnotationName)
 			waitPaCFinalizerOnComponentGone(resourceKey)
+
+			// Request simple build
+			deleteComponentPipelineRuns(resourceKey)
+			component = getComponent(resourceKey)
+			if len(component.Annotations) != 0 {
+				delete(component.Annotations, InitialBuildAnnotationName)
+			}
+			Expect(k8sClient.Update(ctx, component)).To(Succeed())
+
+			waitOneInitialPipelineRunCreated(resourceKey)
+			ensureComponentInitialBuildAnnotationState(resourceKey, true)
 		})
 
 		It("should not copy PaC secret into local namespace if GitHub application is used", func() {
@@ -668,14 +679,6 @@ var _ = Describe("Component initial build controller", func() {
 
 			// Switch to generated image repository
 
-			isCreatePaCPullRequestInvoked = false
-			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
-				defer GinkgoRecover()
-				checkPROutputImage(d.Files[0].Content, generatedImageRepo)
-				isCreatePaCPullRequestInvoked = true
-				return "url2", nil
-			}
-
 			component = getComponent(resourceKey)
 			component.Annotations[ImageRepoGenerateAnnotationName] = "false"
 			component.Annotations[ImageRepoAnnotationName] =
@@ -687,13 +690,14 @@ var _ = Describe("Component initial build controller", func() {
 				component = getComponent(resourceKey)
 				return component.Spec.ContainerImage == generatedImageRepo
 			}, timeout, interval).Should(BeTrue())
-			Eventually(func() bool {
-				return isCreatePaCPullRequestInvoked
-			}, timeout, interval).Should(BeTrue())
 
 			pipelineSA := &corev1.ServiceAccount{}
 			Expect(k8sClient.Get(ctx, pipelineSAKey, pipelineSA)).To(Succeed())
 			isImageRegistryGeneratedSecretLinked := false
+			if pipelineSA.Secrets == nil {
+				time.Sleep(1 * time.Second)
+				Expect(k8sClient.Get(ctx, pipelineSAKey, pipelineSA)).To(Succeed())
+			}
 			for _, secret := range pipelineSA.Secrets {
 				if secret.Name == generatedImageRepoSecretName {
 					isImageRegistryGeneratedSecretLinked = true
@@ -704,7 +708,638 @@ var _ = Describe("Component initial build controller", func() {
 		})
 	})
 
-	Context("Test Pipelines as Code build clean up", func() {
+	Context("Test Pipelines as Code build preparation", func() {
+
+		_ = BeforeEach(func() {
+			createNamespace(pipelinesAsCodeNamespace)
+			createRoute(pacRouteKey, "pac-host")
+			createNamespace(buildServiceNamespaceName)
+			pacSecretData := map[string]string{
+				"github-application-id": "12345",
+				"github-private-key":    githubAppPrivateKey,
+			}
+			createSecret(pacSecretKey, pacSecretData)
+
+			ResetTestGitProviderClient()
+		})
+
+		_ = AfterEach(func() {
+			deleteComponent(resourceKey)
+
+			deleteSecret(webhookSecretKey)
+			deleteSecret(namespacePaCSecretKey)
+
+			deleteSecret(pacSecretKey)
+			deleteRoute(pacRouteKey)
+		})
+
+		It("should successfully submit PR with PaC definitions using GitHub application", func() {
+			mergeUrl := "merge-url"
+
+			isCreatePaCPullRequestInvoked := false
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				isCreatePaCPullRequestInvoked = true
+				Expect(repoUrl).To(Equal(SampleRepoLink))
+				Expect(len(d.Files)).To(Equal(2))
+				for _, file := range d.Files {
+					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
+				}
+				Expect(d.CommitMessage).ToNot(BeEmpty())
+				Expect(d.BranchName).ToNot(BeEmpty())
+				Expect(d.BaseBranchName).To(Equal("main"))
+				Expect(d.Title).ToNot(BeEmpty())
+				Expect(d.Text).ToNot(BeEmpty())
+				Expect(d.AuthorName).ToNot(BeEmpty())
+				Expect(d.AuthorEmail).ToNot(BeEmpty())
+				return mergeUrl, nil
+			}
+			SetupPaCWebhookFunc = func(string, string, string) error {
+				defer GinkgoRecover()
+				Fail("Should not create webhook if GitHub application is used")
+				return nil
+			}
+
+			createComponentAndProcessBuildRequest(resourceKey, BuildRequestConfigurePaCAnnotationValue)
+
+			waitPaCRepositoryCreated(resourceKey)
+			waitPaCFinalizerOnComponent(resourceKey)
+			Eventually(func() bool {
+				return isCreatePaCPullRequestInvoked
+			}, timeout, interval).Should(BeTrue())
+
+			buildStatus := readBuildStatus(getComponent(resourceKey))
+			Expect(buildStatus).ToNot(BeNil())
+			Expect(buildStatus.PaC).ToNot(BeNil())
+			Expect(buildStatus.PaC.State).To(Equal("enabled"))
+			Expect(buildStatus.PaC.MergeUrl).To(Equal(mergeUrl))
+			Expect(buildStatus.PaC.ErrId).To(Equal(0))
+			Expect(buildStatus.PaC.ErrMessage).To(Equal(""))
+		})
+
+		It("should fail to submit PR if GitHub application is not installed into git repository", func() {
+			gpf.CreateGitClient = func(gpf.GitClientConfig) (gp.GitProviderClient, error) {
+				return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppNotInstalled,
+					fmt.Errorf("GitHub Application is not installed into the repository"))
+			}
+
+			EnsurePaCMergeRequestFunc = func(string, *gp.MergeRequestData) (string, error) {
+				defer GinkgoRecover()
+				Fail("Should not invoke merge request creation if GitHub application is not installed into the repository")
+				return "url", nil
+			}
+
+			createComponentAndProcessBuildRequest(resourceKey, BuildRequestConfigurePaCAnnotationValue)
+
+			expectedErr := boerrors.NewBuildOpError(boerrors.EGitHubAppNotInstalled, fmt.Errorf("something is wrong"))
+			buildStatus := readBuildStatus(getComponent(resourceKey))
+			Expect(buildStatus).ToNot(BeNil())
+			Expect(buildStatus.PaC).ToNot(BeNil())
+			Expect(buildStatus.PaC.State).To(Equal("error"))
+			Expect(buildStatus.PaC.ErrId).To(Equal(expectedErr.GetErrorId()))
+			Expect(buildStatus.PaC.ErrMessage).To(Equal(expectedErr.ShortError()))
+		})
+
+		It("should fail to submit PR if unknown git provider is used", func() {
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				defer GinkgoRecover()
+				Fail("PR creation should not be invoked")
+				return "url", nil
+			}
+
+			createCustomComponentWithBuildRequest(componentConfig{
+				componentKey: resourceKey,
+				gitURL:       "https://my-git-instance.com/devfile-samples/devfile-sample-java-springboot-basic",
+			}, BuildRequestConfigurePaCAnnotationValue)
+			waitComponentAnnotationGone(resourceKey, BuildRequestAnnotationName)
+
+			expectedErr := boerrors.NewBuildOpError(boerrors.EUnknownGitProvider, fmt.Errorf("unknow git provider"))
+			buildStatus := readBuildStatus(getComponent(resourceKey))
+			Expect(buildStatus).ToNot(BeNil())
+			Expect(buildStatus.PaC).ToNot(BeNil())
+			Expect(buildStatus.PaC.State).To(Equal("error"))
+			Expect(buildStatus.PaC.ErrId).To(Equal(expectedErr.GetErrorId()))
+			Expect(buildStatus.PaC.ErrMessage).To(Equal(expectedErr.ShortError()))
+		})
+
+		It("should fail to submit PR if PaC secret is invalid", func() {
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				defer GinkgoRecover()
+				Fail("PR creation should not be invoked")
+				return "", nil
+			}
+
+			deleteSecret(pacSecretKey)
+
+			pacSecretData := map[string]string{
+				"github-application-id": "12345",
+				"github-private-key":    "secret private key",
+			}
+			createSecret(pacSecretKey, pacSecretData)
+
+			createComponentAndProcessBuildRequest(resourceKey, BuildRequestConfigurePaCAnnotationValue)
+
+			expectedErr := boerrors.NewBuildOpError(boerrors.EPaCSecretInvalid, fmt.Errorf("invalid pac secret"))
+			buildStatus := readBuildStatus(getComponent(resourceKey))
+			Expect(buildStatus).ToNot(BeNil())
+			Expect(buildStatus.PaC).ToNot(BeNil())
+			Expect(buildStatus.PaC.State).To(Equal("error"))
+			Expect(buildStatus.PaC.ErrId).To(Equal(expectedErr.GetErrorId()))
+			Expect(buildStatus.PaC.ErrMessage).To(Equal(expectedErr.ShortError()))
+		})
+
+		It("should fail to submit PR if PaC secret is missing", func() {
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				defer GinkgoRecover()
+				Fail("PR creation should not be invoked")
+				return "", nil
+			}
+
+			deleteSecret(pacSecretKey)
+			deleteSecret(namespacePaCSecretKey)
+
+			createComponentAndProcessBuildRequest(resourceKey, BuildRequestConfigurePaCAnnotationValue)
+
+			expectedErr := boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, fmt.Errorf("pac secret not found"))
+			buildStatus := readBuildStatus(getComponent(resourceKey))
+			Expect(buildStatus).ToNot(BeNil())
+			Expect(buildStatus.PaC).ToNot(BeNil())
+			Expect(buildStatus.PaC.State).To(Equal("error"))
+			Expect(buildStatus.PaC.ErrId).To(Equal(expectedErr.GetErrorId()))
+			Expect(buildStatus.PaC.ErrMessage).To(Equal(expectedErr.ShortError()))
+		})
+
+		It("should successfully do PaC provision after error (when PaC GitHub Application was not installed)", func() {
+			appNotInstalledErr := boerrors.NewBuildOpError(boerrors.EGitHubAppNotInstalled, nil)
+			isCreateGithubClientInvoked := false
+			gpf.CreateGitClient = func(gitClientConfig gpf.GitClientConfig) (gp.GitProviderClient, error) {
+				isCreateGithubClientInvoked = true
+				return nil, appNotInstalledErr
+			}
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				defer GinkgoRecover()
+				Fail("PR creation should not be invoked")
+				return "", nil
+			}
+
+			createComponentAndProcessBuildRequest(resourceKey, BuildRequestConfigurePaCAnnotationValue)
+
+			Eventually(func() bool {
+				return isCreateGithubClientInvoked
+			}, timeout, interval).Should(BeTrue())
+
+			// Ensure no more retries after permanent error
+			gpf.CreateGitClient = func(gitClientConfig gpf.GitClientConfig) (gp.GitProviderClient, error) {
+				defer GinkgoRecover()
+				Fail("Should not retry PaC provision on permanent error")
+				return nil, nil
+			}
+			Consistently(func() bool {
+				buildStatus := readBuildStatus(getComponent(resourceKey))
+				Expect(buildStatus).ToNot(BeNil())
+				Expect(buildStatus.PaC).ToNot(BeNil())
+				Expect(buildStatus.PaC.State).To(Equal("error"))
+				Expect(buildStatus.PaC.ErrId).To(Equal(appNotInstalledErr.GetErrorId()))
+				Expect(buildStatus.PaC.ErrMessage).To(Equal(appNotInstalledErr.ShortError()))
+				return true
+			}, ensureTimeout, interval).Should(BeTrue())
+
+			// Suppose PaC GH App is installed
+			gpf.CreateGitClient = func(gitClientConfig gpf.GitClientConfig) (gp.GitProviderClient, error) {
+				return testGitProviderClient, nil
+			}
+			mergeUrl := "merge-url"
+			isCreatePaCPullRequestInvoked := false
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				isCreatePaCPullRequestInvoked = true
+				return mergeUrl, nil
+			}
+
+			// Retry
+			setComponentBuildRequest(resourceKey, BuildRequestConfigurePaCAnnotationValue)
+			waitComponentAnnotationGone(resourceKey, BuildRequestAnnotationName)
+
+			Eventually(func() bool {
+				return isCreatePaCPullRequestInvoked
+			}, timeout, interval).Should(BeTrue())
+
+			buildStatus := readBuildStatus(getComponent(resourceKey))
+			Expect(buildStatus).ToNot(BeNil())
+			Expect(buildStatus.PaC).ToNot(BeNil())
+			Expect(buildStatus.PaC.State).To(Equal("enabled"))
+			Expect(buildStatus.PaC.MergeUrl).To(Equal(mergeUrl))
+			Expect(buildStatus.PaC.ErrId).To(Equal(0))
+			Expect(buildStatus.PaC.ErrMessage).To(Equal(""))
+		})
+
+		It("should not copy PaC secret into local namespace if GitHub application is used", func() {
+			deleteSecret(namespacePaCSecretKey)
+
+			createComponentAndProcessBuildRequest(resourceKey, BuildRequestConfigurePaCAnnotationValue)
+			waitPaCRepositoryCreated(resourceKey)
+
+			ensureSecretNotCreated(namespacePaCSecretKey)
+		})
+
+		It("should successfully submit PR with PaC definitions using token", func() {
+			isCreatePaCPullRequestInvoked := false
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				isCreatePaCPullRequestInvoked = true
+				Expect(repoUrl).To(Equal(SampleRepoLink))
+				Expect(len(d.Files)).To(Equal(2))
+				for _, file := range d.Files {
+					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
+				}
+				Expect(d.CommitMessage).ToNot(BeEmpty())
+				Expect(d.BranchName).ToNot(BeEmpty())
+				Expect(d.BaseBranchName).ToNot(BeEmpty())
+				Expect(d.Title).ToNot(BeEmpty())
+				Expect(d.Text).ToNot(BeEmpty())
+				Expect(d.AuthorName).ToNot(BeEmpty())
+				Expect(d.AuthorEmail).ToNot(BeEmpty())
+				return "url", nil
+			}
+			isSetupPaCWebhookInvoked := false
+			SetupPaCWebhookFunc = func(repoUrl string, webhookUrl string, webhookSecret string) error {
+				isSetupPaCWebhookInvoked = true
+				Expect(webhookUrl).To(Equal(pacWebhookUrl))
+				Expect(webhookSecret).ToNot(BeEmpty())
+				Expect(repoUrl).To(Equal(SampleRepoLink))
+				return nil
+			}
+
+			pacSecretData := map[string]string{"github.token": "ghp_token"}
+			createSecret(pacSecretKey, pacSecretData)
+
+			createComponentAndProcessBuildRequest(resourceKey, BuildRequestConfigurePaCAnnotationValue)
+
+			waitSecretCreated(namespacePaCSecretKey)
+			waitSecretCreated(webhookSecretKey)
+			waitPaCRepositoryCreated(resourceKey)
+			Eventually(func() bool {
+				return isCreatePaCPullRequestInvoked
+			}, timeout, interval).Should(BeTrue())
+			Eventually(func() bool {
+				return isSetupPaCWebhookInvoked
+			}, timeout, interval).Should(BeTrue())
+		})
+
+		It("should provision PaC definitions after initial build, use simple build while PaC enabled, and be able to switch back to simple build only", func() {
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				defer GinkgoRecover()
+				Fail("Should not create PaC configuration PR when using simple build")
+				return "url", nil
+			}
+
+			createComponentAndProcessBuildRequest(resourceKey, BuildRequestTriggerSimpleBuildAnnotationValue)
+
+			waitOneInitialPipelineRunCreated(resourceKey)
+
+			buildStatus := readBuildStatus(getComponent(resourceKey))
+			Expect(buildStatus).ToNot(BeNil())
+			Expect(buildStatus.Simple).ToNot(BeNil())
+			Expect(buildStatus.Simple.BuildStartTime).ToNot(BeEmpty())
+			Expect(buildStatus.Simple.ErrId).To(Equal(0))
+			Expect(buildStatus.Simple.ErrMessage).To(Equal(""))
+
+			// Do PaC provision
+			ResetTestGitProviderClient()
+
+			isCreatePaCPullRequestInvoked := false
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				isCreatePaCPullRequestInvoked = true
+				return "configure-merge-url", nil
+			}
+			UndoPaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				defer GinkgoRecover()
+				Fail("Should not create undo PaC configuration PR when switching to PaC build")
+				return "url", nil
+			}
+			SetupPaCWebhookFunc = func(repoUrl string, webhookUrl string, webhookSecret string) error {
+				defer GinkgoRecover()
+				Fail("Should not create webhook if GitHub application is used")
+				return nil
+			}
+
+			setComponentBuildRequest(resourceKey, BuildRequestConfigurePaCAnnotationValue)
+			waitComponentAnnotationGone(resourceKey, BuildRequestAnnotationName)
+
+			waitPaCRepositoryCreated(resourceKey)
+			waitPaCFinalizerOnComponent(resourceKey)
+			Eventually(func() bool {
+				return isCreatePaCPullRequestInvoked
+			}, timeout, interval).Should(BeTrue())
+
+			buildStatus = readBuildStatus(getComponent(resourceKey))
+			Expect(buildStatus).ToNot(BeNil())
+			Expect(buildStatus.PaC).ToNot(BeNil())
+			Expect(buildStatus.PaC.State).To(Equal("enabled"))
+			Expect(buildStatus.PaC.MergeUrl).To(Equal("configure-merge-url"))
+			Expect(buildStatus.PaC.ErrId).To(Equal(0))
+			Expect(buildStatus.PaC.ErrMessage).To(Equal(""))
+
+			// Request simple build while PaC is enabled
+			deleteComponentPipelineRuns(resourceKey)
+
+			setComponentBuildRequest(resourceKey, BuildRequestTriggerSimpleBuildAnnotationValue)
+			waitComponentAnnotationGone(resourceKey, BuildRequestAnnotationName)
+
+			waitOneInitialPipelineRunCreated(resourceKey)
+
+			buildStatus = readBuildStatus(getComponent(resourceKey))
+			Expect(buildStatus).ToNot(BeNil())
+			Expect(buildStatus.Simple).ToNot(BeNil())
+			Expect(buildStatus.Simple.BuildStartTime).ToNot(BeEmpty())
+			Expect(buildStatus.Simple.ErrId).To(Equal(0))
+			Expect(buildStatus.Simple.ErrMessage).To(Equal(""))
+
+			// Do PaC unprovision
+			ResetTestGitProviderClient()
+
+			isRemovePaCPullRequestInvoked := false
+			UndoPaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				isRemovePaCPullRequestInvoked = true
+				return "unconfigure-merge-url", nil
+			}
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				defer GinkgoRecover()
+				Fail("Should not create PaC configuration PR when switching to simple build")
+				return "url", nil
+			}
+			DeletePaCWebhookFunc = func(repoUrl string, webhookUrl string) error {
+				defer GinkgoRecover()
+				Fail("Should not delete webhook if GitHub application is used")
+				return nil
+			}
+
+			// Request PaC unprovision
+			setComponentBuildRequest(resourceKey, BuildRequestUnconfigurePaCAnnotationValue)
+			waitComponentAnnotationGone(resourceKey, BuildRequestAnnotationName)
+
+			waitPaCFinalizerOnComponentGone(resourceKey)
+			Eventually(func() bool {
+				return isRemovePaCPullRequestInvoked
+			}, timeout, interval).Should(BeTrue())
+
+			buildStatus = readBuildStatus(getComponent(resourceKey))
+			Expect(buildStatus).ToNot(BeNil())
+			Expect(buildStatus.PaC).ToNot(BeNil())
+			Expect(buildStatus.PaC.State).To(Equal("disabled"))
+			Expect(buildStatus.PaC.MergeUrl).To(Equal("unconfigure-merge-url"))
+			Expect(buildStatus.PaC.ErrId).To(Equal(0))
+			Expect(buildStatus.PaC.ErrMessage).To(Equal(""))
+
+			// Request simple build
+			deleteComponentPipelineRuns(resourceKey)
+
+			setComponentBuildRequest(resourceKey, BuildRequestTriggerSimpleBuildAnnotationValue)
+			waitComponentAnnotationGone(resourceKey, BuildRequestAnnotationName)
+
+			waitOneInitialPipelineRunCreated(resourceKey)
+
+			buildStatus = readBuildStatus(getComponent(resourceKey))
+			Expect(buildStatus).ToNot(BeNil())
+			Expect(buildStatus.Simple).ToNot(BeNil())
+			Expect(buildStatus.Simple.BuildStartTime).ToNot(BeEmpty())
+			Expect(buildStatus.Simple.ErrId).To(Equal(0))
+			Expect(buildStatus.Simple.ErrMessage).To(Equal(""))
+		})
+
+		It("should reuse the same webhook secret for multi component repository", func() {
+			var webhookSecretStrings []string
+			SetupPaCWebhookFunc = func(repoUrl string, webhookUrl string, webhookSecret string) error {
+				webhookSecretStrings = append(webhookSecretStrings, webhookSecret)
+				return nil
+			}
+
+			pacSecretData := map[string]string{"github.token": "ghp_token"}
+			createSecret(pacSecretKey, pacSecretData)
+
+			component1Key := resourceKey
+			component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
+
+			createComponentWithBuildRequest(component1Key, BuildRequestConfigurePaCAnnotationValue)
+			createCustomComponentWithBuildRequest(componentConfig{
+				componentKey:   component2Key,
+				containerImage: "registry.io/username/image2:tag2",
+			}, BuildRequestConfigurePaCAnnotationValue)
+			defer deleteComponent(component2Key)
+
+			waitSecretCreated(namespacePaCSecretKey)
+			waitSecretCreated(webhookSecretKey)
+
+			waitPaCRepositoryCreated(component1Key)
+			waitPaCRepositoryCreated(component2Key)
+
+			waitComponentAnnotationGone(component1Key, BuildRequestAnnotationName)
+			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
+
+			Expect(len(webhookSecretStrings)).To(BeNumerically(">", 0))
+			for _, webhookSecret := range webhookSecretStrings {
+				Expect(webhookSecret).To(Equal(webhookSecretStrings[0]))
+			}
+		})
+
+		It("should use different webhook secrets for different components of the same application", func() {
+			var webhookSecretStrings []string
+			SetupPaCWebhookFunc = func(repoUrl string, webhookUrl string, webhookSecret string) error {
+				webhookSecretStrings = append(webhookSecretStrings, webhookSecret)
+				return nil
+			}
+
+			pacSecretData := map[string]string{"github.token": "ghp_token"}
+			createSecret(pacSecretKey, pacSecretData)
+
+			component1Key := resourceKey
+			component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
+
+			createComponentWithBuildRequest(component1Key, BuildRequestConfigurePaCAnnotationValue)
+			createCustomComponentWithBuildRequest(componentConfig{
+				componentKey:   component2Key,
+				containerImage: "registry.io/username/image2:tag2",
+				gitURL:         "https://github.com/devfile-samples/devfile-sample-go-basic",
+			}, BuildRequestConfigurePaCAnnotationValue)
+			defer deleteComponent(component2Key)
+
+			waitSecretCreated(namespacePaCSecretKey)
+			waitSecretCreated(webhookSecretKey)
+
+			waitPaCRepositoryCreated(component1Key)
+			waitPaCRepositoryCreated(component2Key)
+
+			waitComponentAnnotationGone(component1Key, BuildRequestAnnotationName)
+			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
+
+			Expect(len(webhookSecretStrings)).To(Equal(2))
+			Expect(webhookSecretStrings[0]).ToNot(Equal(webhookSecretStrings[1]))
+		})
+
+		It("should set error in status if invalid build action requested", func() {
+			createCustomComponentWithBuildRequest(componentConfig{
+				componentKey: resourceKey,
+				annotations: map[string]string{
+					InitialBuildAnnotationName: "processed",
+				},
+			}, "non-existing-build-request")
+			waitComponentAnnotationGone(resourceKey, BuildRequestAnnotationName)
+
+			// createComponentAndProcessBuildRequest(resourceKey, "non-existing-build-request")
+
+			buildStatus := readBuildStatus(getComponent(resourceKey))
+			Expect(buildStatus).ToNot(BeNil())
+			Expect(buildStatus.Message).To(ContainSubstring("unexpected build request"))
+		})
+
+		It("should do nothing if the component devfile model is not set", func() {
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				defer GinkgoRecover()
+				Fail("PR creation should not be invoked")
+				return "", nil
+			}
+
+			createComponent(resourceKey)
+			setComponentBuildRequest(resourceKey, BuildRequestConfigurePaCAnnotationValue)
+
+			ensureComponentAnnotationValue(resourceKey, BuildRequestAnnotationName, BuildRequestConfigurePaCAnnotationValue)
+		})
+
+		It("should do nothing if a container image source is specified in component", func() {
+			EnsurePaCMergeRequestFunc = func(string, *gp.MergeRequestData) (string, error) {
+				defer GinkgoRecover()
+				Fail("PR creation should not be invoked")
+				return "", nil
+			}
+
+			component := &appstudiov1alpha1.Component{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "appstudio.redhat.com/v1alpha1",
+					Kind:       "Component",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      HASCompName,
+					Namespace: HASAppNamespace,
+				},
+				Spec: appstudiov1alpha1.ComponentSpec{
+					ComponentName:  HASCompName,
+					Application:    HASAppName,
+					ContainerImage: "quay.io/test/image:latest",
+				},
+			}
+			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
+
+			setComponentBuildRequest(resourceKey, BuildRequestConfigurePaCAnnotationValue)
+
+			ensureNoPipelineRunsCreated(resourceKey)
+		})
+
+		It("should set default branch as base branch when Revision is not set", func() {
+			const repoDefaultBranch = "default-branch"
+			GetDefaultBranchFunc = func(repoUrl string) (string, error) {
+				return repoDefaultBranch, nil
+			}
+
+			isCreatePaCPullRequestInvoked := false
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				Expect(d.BaseBranchName).To(Equal(repoDefaultBranch))
+				for _, file := range d.Files {
+					var prYaml tektonapi.PipelineRun
+					if err := yaml.Unmarshal(file.Content, &prYaml); err != nil {
+						return "", err
+					}
+					targetBranches := prYaml.Annotations["pipelinesascode.tekton.dev/on-target-branch"]
+					Expect(targetBranches).To(Equal(fmt.Sprintf("[%s]", repoDefaultBranch)))
+				}
+				isCreatePaCPullRequestInvoked = true
+				return "url", nil
+			}
+
+			component := getSampleComponentData(resourceKey)
+			// Unset Revision so that GetDefaultBranch function is called to use the default branch
+			// set in the remote component repository
+			component.Spec.Source.GitSource.Revision = ""
+			component.Annotations[InitialBuildAnnotationName] = "processed"
+			component.Annotations[BuildRequestAnnotationName] = BuildRequestConfigurePaCAnnotationValue
+			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
+			setComponentDevfileModel(resourceKey)
+			waitComponentAnnotationGone(resourceKey, BuildRequestAnnotationName)
+
+			Eventually(func() bool {
+				return isCreatePaCPullRequestInvoked
+			}, timeout, interval).Should(BeTrue())
+		})
+
+		It("should link auto generated image repository secret to pipeline service accoount", func() {
+			userImageRepo := "docker.io/user/image"
+			generatedImageRepo := "quay.io/appstudio/generated-image"
+			generatedImageRepoSecretName := "generated-image-repo-secret"
+			generatedImageRepoSecretKey := types.NamespacedName{Namespace: resourceKey.Namespace, Name: generatedImageRepoSecretName}
+			pipelineSAKey := types.NamespacedName{Namespace: resourceKey.Namespace, Name: buildPipelineServiceAccountName}
+
+			checkPROutputImage := func(fileContent []byte, expectedImageRepo string) {
+				var prYaml tektonapi.PipelineRun
+				Expect(yaml.Unmarshal(fileContent, &prYaml)).To(Succeed())
+				outoutImage := ""
+				for _, param := range prYaml.Spec.Params {
+					if param.Name == "output-image" {
+						outoutImage = param.Value.StringVal
+						break
+					}
+				}
+				Expect(outoutImage).ToNot(BeEmpty())
+				Expect(outoutImage).To(ContainSubstring(expectedImageRepo))
+			}
+
+			isCreatePaCPullRequestInvoked := false
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				defer GinkgoRecover()
+				checkPROutputImage(d.Files[0].Content, userImageRepo)
+				isCreatePaCPullRequestInvoked = true
+				return "url", nil
+			}
+
+			// Create a component with user's ContainerImage
+			createCustomComponentWithBuildRequest(componentConfig{
+				componentKey:   resourceKey,
+				containerImage: userImageRepo,
+			}, BuildRequestConfigurePaCAnnotationValue)
+
+			Eventually(func() bool {
+				return isCreatePaCPullRequestInvoked
+			}, timeout, interval).Should(BeTrue())
+
+			// Switch to generated image repository
+			createSecret(generatedImageRepoSecretKey, nil)
+			defer deleteSecret(generatedImageRepoSecretKey)
+
+			component := getComponent(resourceKey)
+			component.Annotations[ImageRepoGenerateAnnotationName] = "false"
+			component.Annotations[ImageRepoAnnotationName] =
+				fmt.Sprintf("{\"image\":\"%s\",\"secret\":\"%s\"}", generatedImageRepo, generatedImageRepoSecretName)
+			component.Spec.ContainerImage = generatedImageRepo
+			Expect(k8sClient.Update(ctx, component)).To(Succeed())
+
+			Eventually(func() bool {
+				component = getComponent(resourceKey)
+				return component.Spec.ContainerImage == generatedImageRepo
+			}, timeout, interval).Should(BeTrue())
+
+			pipelineSA := &corev1.ServiceAccount{}
+			Expect(k8sClient.Get(ctx, pipelineSAKey, pipelineSA)).To(Succeed())
+			isImageRegistryGeneratedSecretLinked := false
+			if pipelineSA.Secrets == nil {
+				time.Sleep(1 * time.Second)
+				Expect(k8sClient.Get(ctx, pipelineSAKey, pipelineSA)).To(Succeed())
+			}
+			for _, secret := range pipelineSA.Secrets {
+				if secret.Name == generatedImageRepoSecretName {
+					isImageRegistryGeneratedSecretLinked = true
+					break
+				}
+			}
+			Expect(isImageRegistryGeneratedSecretLinked).To(BeTrue())
+		})
+	})
+
+	Context("Test Pipelines as Code build clean up [deprecated annotations]", func() {
 
 		_ = BeforeEach(func() {
 			createNamespace(pipelinesAsCodeNamespace)
@@ -712,6 +1347,8 @@ var _ = Describe("Component initial build controller", func() {
 			createNamespace(buildServiceNamespaceName)
 
 			ResetTestGitProviderClient()
+
+			deleteComponent(resourceKey)
 		})
 
 		_ = AfterEach(func() {
@@ -907,6 +1544,261 @@ var _ = Describe("Component initial build controller", func() {
 		})
 	})
 
+	Context("Test Pipelines as Code build clean up", func() {
+
+		_ = BeforeEach(func() {
+			createNamespace(pipelinesAsCodeNamespace)
+			createRoute(pacRouteKey, "pac-host")
+			createNamespace(buildServiceNamespaceName)
+
+			ResetTestGitProviderClient()
+
+			deleteComponent(resourceKey)
+		})
+
+		_ = AfterEach(func() {
+			deleteSecret(webhookSecretKey)
+			deleteSecret(namespacePaCSecretKey)
+
+			deleteSecret(pacSecretKey)
+			deleteRoute(pacRouteKey)
+		})
+
+		It("should successfully submit PR with PaC definitions removal using GitHub application", func() {
+			mergeUrl := "merge-url"
+			isRemovePaCPullRequestInvoked := false
+			UndoPaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (webUrl string, err error) {
+				isRemovePaCPullRequestInvoked = true
+				Expect(repoUrl).To(Equal(SampleRepoLink))
+				Expect(len(d.Files)).To(Equal(2))
+				for _, file := range d.Files {
+					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
+				}
+				Expect(d.CommitMessage).ToNot(BeEmpty())
+				Expect(d.BranchName).ToNot(BeEmpty())
+				Expect(d.BaseBranchName).ToNot(BeEmpty())
+				Expect(d.Title).ToNot(BeEmpty())
+				Expect(d.Text).ToNot(BeEmpty())
+				Expect(d.AuthorName).ToNot(BeEmpty())
+				Expect(d.AuthorEmail).ToNot(BeEmpty())
+				return mergeUrl, nil
+			}
+			DeletePaCWebhookFunc = func(string, string) error {
+				defer GinkgoRecover()
+				Fail("Should not try to delete webhook if GitHub application is used")
+				return nil
+			}
+
+			pacSecretData := map[string]string{
+				"github-application-id": "12345",
+				"github-private-key":    githubAppPrivateKey,
+			}
+			createSecret(pacSecretKey, pacSecretData)
+
+			createComponentAndProcessBuildRequest(resourceKey, BuildRequestConfigurePaCAnnotationValue)
+			waitPaCFinalizerOnComponent(resourceKey)
+
+			setComponentBuildRequest(resourceKey, BuildRequestUnconfigurePaCAnnotationValue)
+
+			Eventually(func() bool {
+				return isRemovePaCPullRequestInvoked
+			}, timeout, interval).Should(BeTrue())
+
+			buildStatus := readBuildStatus(getComponent(resourceKey))
+			Expect(buildStatus).ToNot(BeNil())
+			Expect(buildStatus.PaC).ToNot(BeNil())
+			Expect(buildStatus.PaC.State).To(Equal("disabled"))
+			Expect(buildStatus.PaC.MergeUrl).To(Equal(mergeUrl))
+			Expect(buildStatus.PaC.ErrId).To(Equal(0))
+			Expect(buildStatus.PaC.ErrMessage).To(Equal(""))
+		})
+
+		It("should successfully submit PR with PaC definitions removal on component deletion", func() {
+			isRemovePaCPullRequestInvoked := false
+			UndoPaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (webUrl string, err error) {
+				isRemovePaCPullRequestInvoked = true
+				Expect(repoUrl).To(Equal(SampleRepoLink))
+				Expect(len(d.Files)).To(Equal(2))
+				for _, file := range d.Files {
+					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
+				}
+				Expect(d.CommitMessage).ToNot(BeEmpty())
+				Expect(d.BranchName).ToNot(BeEmpty())
+				Expect(d.BaseBranchName).ToNot(BeEmpty())
+				Expect(d.Title).ToNot(BeEmpty())
+				Expect(d.Text).ToNot(BeEmpty())
+				Expect(d.AuthorName).ToNot(BeEmpty())
+				Expect(d.AuthorEmail).ToNot(BeEmpty())
+				return "url", nil
+			}
+			DeletePaCWebhookFunc = func(string, string) error {
+				defer GinkgoRecover()
+				Fail("Should not try to delete webhook if GitHub application is used")
+				return nil
+			}
+
+			pacSecretData := map[string]string{
+				"github-application-id": "12345",
+				"github-private-key":    githubAppPrivateKey,
+			}
+			createSecret(pacSecretKey, pacSecretData)
+
+			createComponentAndProcessBuildRequest(resourceKey, BuildRequestConfigurePaCAnnotationValue)
+			waitPaCFinalizerOnComponent(resourceKey)
+
+			deleteComponent(resourceKey)
+
+			Eventually(func() bool {
+				return isRemovePaCPullRequestInvoked
+			}, timeout, interval).Should(BeTrue())
+		})
+
+		It("should successfully submit merge request with PaC definitions removal using token", func() {
+			mergeUrl := "merge-url"
+			isRemovePaCPullRequestInvoked := false
+			UndoPaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (webUrl string, err error) {
+				isRemovePaCPullRequestInvoked = true
+				Expect(repoUrl).To(Equal(SampleRepoLink))
+				Expect(len(d.Files)).To(Equal(2))
+				for _, file := range d.Files {
+					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
+				}
+				Expect(d.CommitMessage).ToNot(BeEmpty())
+				Expect(d.BranchName).ToNot(BeEmpty())
+				Expect(d.BaseBranchName).ToNot(BeEmpty())
+				Expect(d.Title).ToNot(BeEmpty())
+				Expect(d.Text).ToNot(BeEmpty())
+				Expect(d.AuthorName).ToNot(BeEmpty())
+				Expect(d.AuthorEmail).ToNot(BeEmpty())
+				return mergeUrl, nil
+			}
+			isDeletePaCWebhookInvoked := false
+			DeletePaCWebhookFunc = func(repoUrl string, webhookUrl string) error {
+				isDeletePaCWebhookInvoked = true
+				Expect(repoUrl).To(Equal(SampleRepoLink))
+				Expect(webhookUrl).To(Equal(pacWebhookUrl))
+				return nil
+			}
+
+			pacSecretData := map[string]string{"github.token": "ghp_token"}
+			createSecret(pacSecretKey, pacSecretData)
+
+			createComponentAndProcessBuildRequest(resourceKey, BuildRequestConfigurePaCAnnotationValue)
+			waitPaCFinalizerOnComponent(resourceKey)
+
+			setComponentBuildRequest(resourceKey, BuildRequestUnconfigurePaCAnnotationValue)
+
+			Eventually(func() bool {
+				return isRemovePaCPullRequestInvoked
+			}, timeout, interval).Should(BeTrue())
+			Eventually(func() bool {
+				return isDeletePaCWebhookInvoked
+			}, timeout, interval).Should(BeTrue())
+
+			buildStatus := readBuildStatus(getComponent(resourceKey))
+			Expect(buildStatus).ToNot(BeNil())
+			Expect(buildStatus.PaC).ToNot(BeNil())
+			Expect(buildStatus.PaC.State).To(Equal("disabled"))
+			Expect(buildStatus.PaC.MergeUrl).To(Equal(mergeUrl))
+			Expect(buildStatus.PaC.ErrId).To(Equal(0))
+			Expect(buildStatus.PaC.ErrMessage).To(Equal(""))
+		})
+
+		It("should not block component deletion if PaC definitions removal failed", func() {
+			UndoPaCMergeRequestFunc = func(string, *gp.MergeRequestData) (webUrl string, err error) {
+				return "", fmt.Errorf("failed to create PR")
+			}
+			DeletePaCWebhookFunc = func(string, string) error {
+				return fmt.Errorf("failed to delete webhook")
+			}
+
+			pacSecretData := map[string]string{"github.token": "ghp_token"}
+			createSecret(pacSecretKey, pacSecretData)
+
+			createComponentAndProcessBuildRequest(resourceKey, BuildRequestConfigurePaCAnnotationValue)
+			waitPaCFinalizerOnComponent(resourceKey)
+
+			// deleteComponent waits until the component is gone
+			deleteComponent(resourceKey)
+		})
+
+		var assertCloseUnmergedMergeRequest = func(expectedBaseBranch string, sourceBranchExists bool) {
+			UndoPaCMergeRequestFunc = func(string, *gp.MergeRequestData) (webUrl string, err error) {
+				defer GinkgoRecover()
+				Fail("Should close unmerged PaC configuration merge request instead of deleting .tekton/ directory")
+				return "", nil
+			}
+
+			component := getSampleComponentData(resourceKey)
+			if expectedBaseBranch == "" {
+				expectedBaseBranch = component.Spec.Source.GitSource.Revision
+			} else {
+				component.Spec.Source.GitSource.Revision = ""
+			}
+			component.Annotations[InitialBuildAnnotationName] = "processed"
+			component.Annotations[BuildRequestAnnotationName] = BuildRequestConfigurePaCAnnotationValue
+
+			expectedSourceBranch := pacMergeRequestSourceBranchPrefix + component.Name
+
+			isFindOnboardingMergeRequestInvoked := false
+			FindUnmergedPaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (*gp.MergeRequest, error) {
+				isFindOnboardingMergeRequestInvoked = true
+				Expect(repoUrl).To(Equal(SampleRepoLink))
+				Expect(d.BranchName).Should(Equal(expectedSourceBranch))
+				Expect(d.BaseBranchName).Should(Equal(expectedBaseBranch))
+				return &gp.MergeRequest{
+					WebUrl: "url",
+				}, nil
+			}
+
+			isDeleteBranchInvoked := false
+			DeleteBranchFunc = func(repoUrl string, branchName string) (bool, error) {
+				isDeleteBranchInvoked = true
+				Expect(repoUrl).To(Equal(SampleRepoLink))
+				Expect(branchName).Should(Equal(expectedSourceBranch))
+				return sourceBranchExists, nil
+			}
+
+			pacSecretData := map[string]string{
+				"github-application-id": "12345",
+				"github-private-key":    githubAppPrivateKey,
+			}
+			createSecret(pacSecretKey, pacSecretData)
+
+			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
+			setComponentDevfileModel(resourceKey)
+			waitComponentAnnotationGone(resourceKey, BuildRequestAnnotationName)
+			waitPaCFinalizerOnComponent(resourceKey)
+
+			deleteComponent(resourceKey)
+
+			Eventually(func() bool {
+				return isFindOnboardingMergeRequestInvoked
+			}, timeout, interval).Should(BeTrue(),
+				"FindUnmergedPaCMergeRequest should have been invoked")
+			Eventually(func() bool {
+				return isDeleteBranchInvoked
+			}, timeout, interval).Should(BeTrue(),
+				"DeleteBranch should have been invoked")
+		}
+
+		It("should close unmerged PaC pull request opened based on branch specified in Revision", func() {
+			assertCloseUnmergedMergeRequest("", true)
+		})
+
+		It("should not error when attempt of close unmerged PaC pull request by deleting a non-existing source branch", func() {
+			assertCloseUnmergedMergeRequest("", false)
+		})
+
+		It("should close unmerged PaC pull request opened based on default branch", func() {
+			defaultBranch := "devel"
+			GetDefaultBranchFunc = func(repoUrl string) (string, error) {
+				return defaultBranch, nil
+			}
+			assertCloseUnmergedMergeRequest(defaultBranch, true)
+		})
+	})
+
 	Context("Test initial build", func() {
 
 		_ = BeforeEach(func() {
@@ -928,7 +1820,7 @@ var _ = Describe("Component initial build controller", func() {
 			deleteComponent(resourceKey)
 		})
 
-		It("should submit initial build", func() {
+		It("should submit initial build on component creation", func() {
 			gitSourceSHA := "d1a9e858489d1515621398fb02942da068f1c956"
 
 			isGetBranchShaInvoked := false
@@ -950,6 +1842,7 @@ var _ = Describe("Component initial build controller", func() {
 			}, timeout, interval).Should(BeTrue())
 
 			waitOneInitialPipelineRunCreated(resourceKey)
+			waitComponentAnnotationGone(resourceKey, BuildRequestAnnotationName)
 			ensureComponentInitialBuildAnnotationState(resourceKey, true)
 
 			// Check pipeline run labels and annotations
@@ -957,6 +1850,20 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(pipelineRun.Annotations[gitCommitShaAnnotationName]).To(Equal(gitSourceSHA))
 			Expect(pipelineRun.Annotations[gitRepoAtShaAnnotationName]).To(
 				Equal("https://github.com/devfile-samples/devfile-sample-java-springboot-basic?rev=" + gitSourceSHA))
+		})
+
+		It("should be able to retrigger simple build", func() {
+			setComponentDevfileModel(resourceKey)
+
+			waitOneInitialPipelineRunCreated(resourceKey)
+			ensureComponentInitialBuildAnnotationState(resourceKey, true)
+
+			deleteComponentPipelineRuns(resourceKey)
+
+			setComponentBuildRequest(resourceKey, BuildRequestTriggerSimpleBuildAnnotationValue)
+			waitComponentAnnotationGone(resourceKey, BuildRequestAnnotationName)
+			waitOneInitialPipelineRunCreated(resourceKey)
+			ensureComponentInitialBuildAnnotationState(resourceKey, true)
 		})
 
 		It("should submit initial build if retrieving of git commit SHA failed", func() {
@@ -973,6 +1880,7 @@ var _ = Describe("Component initial build controller", func() {
 			}, timeout, interval).Should(BeTrue())
 
 			waitOneInitialPipelineRunCreated(resourceKey)
+			waitComponentAnnotationGone(resourceKey, BuildRequestAnnotationName)
 			ensureComponentInitialBuildAnnotationState(resourceKey, true)
 		})
 
@@ -997,6 +1905,7 @@ var _ = Describe("Component initial build controller", func() {
 
 			// Wait until all resources created
 			waitOneInitialPipelineRunCreated(resourceKey)
+			waitComponentAnnotationGone(resourceKey, BuildRequestAnnotationName)
 			ensureComponentInitialBuildAnnotationState(resourceKey, true)
 
 			// Check that git credentials secret is annotated
@@ -1064,13 +1973,20 @@ var _ = Describe("Component initial build controller", func() {
 			ensureNoPipelineRunsCreated(resourceKey)
 		})
 
-		It("should not submit initial build if initial build annotation on the component is set", func() {
-			component := getComponent(resourceKey)
-			component.Annotations = make(map[string]string)
-			component.Annotations[InitialBuildAnnotationName] = "processed"
-			Expect(k8sClient.Update(ctx, component)).Should(Succeed())
+		It("should do nothing if simple build already happened (and PaC is not used)", func() {
+			deleteComponent(resourceKey)
 
-			setComponentDevfileModel(resourceKey)
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				defer GinkgoRecover()
+				Fail("PR creation should not be invoked")
+				return "", nil
+			}
+
+			component := getSampleComponentData(resourceKey)
+			component.Annotations = make(map[string]string)
+			component.Annotations[BuildStatusAnnotationName] = "{simple:{\"build-start-time\": \"time\"}}"
+			component.Annotations[InitialBuildAnnotationName] = "processed"
+			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
 
 			ensureNoPipelineRunsCreated(resourceKey)
 		})
@@ -1102,7 +2018,7 @@ var _ = Describe("Component initial build controller", func() {
 
 	})
 
-	Context("Resolve the correct build bundle during the component's creation", func() {
+	Context("Resolve the correct build bundle during the component creation", func() {
 
 		BeforeEach(func() {
 			createNamespace(buildServiceNamespaceName)
@@ -1152,11 +2068,11 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(k8sClient.Create(ctx, selectors)).To(Succeed())
 
 			devfile := `
-                schemaVersion: 2.2.0
-                metadata:
-                    name: devfile-nodejs
-                    language: nodejs
-            `
+                        schemaVersion: 2.2.0
+                        metadata:
+                            name: devfile-nodejs
+                            language: nodejs
+                    `
 			setComponentDevfile(resourceKey, devfile)
 
 			waitOneInitialPipelineRunCreated(resourceKey)
@@ -1225,11 +2141,11 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(k8sClient.Create(ctx, selectors)).To(Succeed())
 
 			devfile := `
-                schemaVersion: 2.2.0
-                metadata:
-                    name: devfile-nodejs
-                    language: nodejs
-            `
+                        schemaVersion: 2.2.0
+                        metadata:
+                            name: devfile-nodejs
+                            language: nodejs
+                    `
 			setComponentDevfile(resourceKey, devfile)
 
 			waitOneInitialPipelineRunCreated(resourceKey)
@@ -1298,11 +2214,11 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(k8sClient.Create(ctx, selectors)).To(Succeed())
 
 			devfile := `
-                schemaVersion: 2.2.0
-                metadata:
-                    name: devfile-java
-                    language: java
-            `
+                        schemaVersion: 2.2.0
+                        metadata:
+                            name: devfile-java
+                            language: java
+                    `
 			setComponentDevfile(resourceKey, devfile)
 
 			waitOneInitialPipelineRunCreated(resourceKey)

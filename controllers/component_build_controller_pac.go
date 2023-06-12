@@ -80,26 +80,28 @@ To customize the proposed PipelineRuns after merge, please refer to [Build Pipel
 // ProvisionPaCForComponent does Pipelines as Code provision for the given component.
 // Mainly, it creates PaC configuration merge request into the component source repositotiry.
 // If GitHub PaC application is not configured, creates a webhook for PaC.
-func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context, component *appstudiov1alpha1.Component) error {
+func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context, component *appstudiov1alpha1.Component) (string, error) {
 	log := ctrllog.FromContext(ctx).WithName("PaC-setup")
 	ctx = ctrllog.IntoContext(ctx, log)
+
+	log.Info("Starting Pipelines as Code provision for the Component")
 
 	gitProvider, err := gitops.GetGitProvider(*component)
 	if err != nil {
 		// Do not reconcile, because configuration must be fixed before it is possible to proceed.
-		return boerrors.NewBuildOpError(boerrors.EUnknownGitProvider,
+		return "", boerrors.NewBuildOpError(boerrors.EUnknownGitProvider,
 			fmt.Errorf("error detecting git provider: %w", err))
 	}
 
 	pacSecret, err := r.ensurePaCSecret(ctx, component, gitProvider)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	if err := validatePaCConfiguration(gitProvider, pacSecret.Data); err != nil {
 		r.EventRecorder.Event(pacSecret, "Warning", "ErrorValidatingPaCSecret", err.Error())
 		// Do not reconcile, because configuration must be fixed before it is possible to proceed.
-		return boerrors.NewBuildOpError(boerrors.EPaCSecretInvalid,
+		return "", boerrors.NewBuildOpError(boerrors.EPaCSecretInvalid,
 			fmt.Errorf("invalid configuration in Pipelines as Code secret: %w", err))
 	}
 
@@ -109,25 +111,25 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context,
 		// and stores it in the corresponding k8s secret.
 		webhookSecretString, err = r.ensureWebhookSecret(ctx, component)
 		if err != nil {
-			return err
+			return "", err
 		}
 
 		// Obtain Pipelines as Code callback URL
 		webhookTargetUrl, err = r.getPaCWebhookTargetUrl(ctx)
 		if err != nil {
-			return err
+			return "", err
 		}
 	}
 
 	if err := r.ensurePaCRepository(ctx, component, pacSecret.Data); err != nil {
-		return err
+		return "", err
 	}
 
 	// Manage merge request for Pipelines as Code configuration
 	mrUrl, err := r.ConfigureRepositoryForPaC(ctx, component, pacSecret.Data, webhookTargetUrl, webhookSecretString)
 	if err != nil {
 		r.EventRecorder.Event(component, "Warning", "ErrorConfiguringPaCForComponentRepository", err.Error())
-		return err
+		return "", err
 	}
 	var mrMessage string
 	if mrUrl != "" {
@@ -143,28 +145,30 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context,
 		pipelinesAsCodeComponentProvisionTimeMetric.Observe(time.Since(component.CreationTimestamp.Time).Seconds())
 	}
 
-	return nil
+	return mrUrl, nil
 }
 
 // UndoPaCProvisionForComponent creates merge request that removes Pipelines as Code configuration from component source repository.
 // Deletes PaC webhook if used.
 // In case of any errors just logs them and does not block Component deletion.
-func (r *ComponentBuildReconciler) UndoPaCProvisionForComponent(ctx context.Context, component *appstudiov1alpha1.Component) error {
+func (r *ComponentBuildReconciler) UndoPaCProvisionForComponent(ctx context.Context, component *appstudiov1alpha1.Component) (string, error) {
 	log := ctrllog.FromContext(ctx).WithName("PaC-cleanup")
 	ctx = ctrllog.IntoContext(ctx, log)
+
+	log.Info("Starting Pipelines as Code unprovision for the Component")
 
 	gitProvider, err := gitops.GetGitProvider(*component)
 	if err != nil {
 		log.Error(err, "error detecting git provider")
 		// There is no point to continue if git provider is not known.
-		return err
+		return "", err
 	}
 
 	pacSecret := corev1.Secret{}
 	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: buildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}, &pacSecret); err != nil {
 		log.Error(err, "error getting git provider credentials secret", l.Action, l.ActionView)
 		// Cannot continue without accessing git provider credentials.
-		return err
+		return "", err
 	}
 
 	webhookTargetUrl := ""
@@ -180,7 +184,7 @@ func (r *ComponentBuildReconciler) UndoPaCProvisionForComponent(ctx context.Cont
 	mrUrl, action, err := r.UnconfigureRepositoryForPaC(ctx, component, pacSecret.Data, webhookTargetUrl)
 	if err != nil {
 		log.Error(err, "failed to create merge request to remove Pipelines as Code configuration from Component source repository", l.Audit, "true")
-		return err
+		return "", err
 	}
 	if action == "delete" {
 		if mrUrl != "" {
@@ -191,7 +195,7 @@ func (r *ComponentBuildReconciler) UndoPaCProvisionForComponent(ctx context.Cont
 	} else if action == "close" {
 		log.Info(fmt.Sprintf("Pipelines as Code configuration merge request has been closed: %s", mrUrl))
 	}
-	return nil
+	return mrUrl, nil
 }
 
 func (r *ComponentBuildReconciler) ensurePaCSecret(ctx context.Context, component *appstudiov1alpha1.Component, gitProvider string) (*corev1.Secret, error) {

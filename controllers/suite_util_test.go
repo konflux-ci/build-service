@@ -68,6 +68,7 @@ type componentConfig struct {
 	gitURL         string
 	gitRevision    string
 	application    string
+	annotations    map[string]string
 }
 
 func isOwnedBy(resource []metav1.OwnerReference, component appstudiov1alpha1.Component) bool {
@@ -115,14 +116,19 @@ func getComponentData(config componentConfig) *appstudiov1alpha1.Component {
 	if application == "" {
 		application = HASAppName
 	}
+	annotations := make(map[string]string)
+	if config.annotations != nil {
+		annotations = config.annotations
+	}
 	return &appstudiov1alpha1.Component{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "appstudio.redhat.com/v1alpha1",
 			Kind:       "Component",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
+			Name:        name,
+			Namespace:   namespace,
+			Annotations: annotations,
 		},
 		Spec: appstudiov1alpha1.ComponentSpec{
 			ComponentName:  name,
@@ -144,7 +150,43 @@ func getSampleComponentData(componentKey types.NamespacedName) *appstudiov1alpha
 	return getComponentData(componentConfig{componentKey: componentKey})
 }
 
-// createComponent creates sample component resource and verifies it was properly created
+// createComponentAndProcessBuildRequest create a component with specified build request and
+// waits until the request annotation is removed, which means the request was processed by the operator.
+// Use createCustomComponentWithBuildRequest if there is no need to wait.
+func createComponentAndProcessBuildRequest(componentKey types.NamespacedName, buildRequest string) {
+	createCustomComponentWithBuildRequest(componentConfig{componentKey: componentKey}, buildRequest)
+	waitComponentAnnotationGone(componentKey, BuildRequestAnnotationName)
+}
+
+// createComponentWithBuildRequest create a component with specified build request.
+// This method also sets devfile model, so the component is ready to be processed.
+func createComponentWithBuildRequest(componentKey types.NamespacedName, buildRequest string) {
+	createCustomComponentWithBuildRequest(componentConfig{componentKey: componentKey}, buildRequest)
+}
+
+func createCustomComponentWithBuildRequest(config componentConfig, buildRequest string) {
+	component := getComponentData(config)
+	if component.Annotations == nil {
+		component.Annotations = make(map[string]string)
+	}
+	component.Annotations[BuildRequestAnnotationName] = buildRequest
+
+	Expect(k8sClient.Create(ctx, component)).Should(Succeed())
+	getComponent(config.componentKey)
+	setComponentDevfileModel(config.componentKey)
+}
+
+func setComponentBuildRequest(componentKey types.NamespacedName, buildRequest string) {
+	component := getComponent(componentKey)
+	if component.Annotations == nil {
+		component.Annotations = make(map[string]string)
+	}
+	component.Annotations[BuildRequestAnnotationName] = buildRequest
+
+	Expect(k8sClient.Update(ctx, component)).To(Succeed())
+}
+
+// createComponentForPaCBuild is deprecated
 func createComponentForPaCBuild(sampleComponentData *appstudiov1alpha1.Component) types.NamespacedName {
 	sampleComponentData.Annotations = map[string]string{
 		PaCProvisionAnnotationName: PaCProvisionRequestedAnnotationValue,
@@ -172,7 +214,9 @@ func createComponent(componentLookupKey types.NamespacedName) {
 func getComponent(componentKey types.NamespacedName) *appstudiov1alpha1.Component {
 	component := &appstudiov1alpha1.Component{}
 	Eventually(func() bool {
-		Expect(k8sClient.Get(ctx, componentKey, component)).Should(Succeed())
+		if err := k8sClient.Get(ctx, componentKey, component); err != nil {
+			return false
+		}
 		return component.ResourceVersion != ""
 	}, timeout, interval).Should(BeTrue())
 	return component
@@ -189,7 +233,9 @@ func deleteComponent(componentKey types.NamespacedName) {
 
 	// Delete
 	Eventually(func() error {
-		Expect(k8sClient.Get(ctx, componentKey, component)).To(Succeed())
+		if err := k8sClient.Get(ctx, componentKey, component); err != nil {
+			return err
+		}
 		return k8sClient.Delete(ctx, component)
 	}, timeout, interval).Should(Succeed())
 
@@ -336,6 +382,11 @@ func createSecret(resourceKey types.NamespacedName, data map[string]string) {
 		secret.ResourceVersion = ""
 		Expect(k8sClient.Create(ctx, secret)).Should(Succeed())
 	}
+
+	Eventually(func() error {
+		secret := &corev1.Secret{}
+		return k8sClient.Get(ctx, resourceKey, secret)
+	}, timeout, interval).Should(Succeed())
 }
 
 func deleteSecret(resourceKey types.NamespacedName) {

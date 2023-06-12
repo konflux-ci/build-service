@@ -39,6 +39,149 @@ func TestGetProvisionTimeMetricsBuckets(t *testing.T) {
 	}
 }
 
+func TestReadBuildStatus(t *testing.T) {
+	tests := []struct {
+		name                       string
+		buildStatusAnnotationValue string
+		want                       *BuildStatus
+	}{
+		{
+			name:                       "should be able to read build status with all fields",
+			buildStatusAnnotationValue: "{\"simple\":{\"build-start-time\":\"time\",\"error-id\":1,\"error-message\":\"simple-build-error\"},\"pac\":{\"state\":\"enabled\",\"error-id\":5,\"error-message\":\"pac-error\"},\"message\":\"done\"}",
+			want: &BuildStatus{
+				Simple: &SimpleBuildStatus{
+					BuildStartTime: "time",
+					ErrorInfo: ErrorInfo{
+						ErrId:      1,
+						ErrMessage: "simple-build-error",
+					},
+				},
+				PaC: &PaCBuildStatus{
+					State: "enabled",
+					ErrorInfo: ErrorInfo{
+						ErrId:      5,
+						ErrMessage: "pac-error",
+					},
+				},
+				Message: "done",
+			},
+		},
+		{
+			name:                       "should return empty build status if annotation is empty or not set",
+			buildStatusAnnotationValue: "",
+			want:                       &BuildStatus{},
+		},
+		{
+			name:                       "should return empty build status if curent one is not valid JSON",
+			buildStatusAnnotationValue: "{\"simple\":{\"build-start-time\":\"time\"}",
+			want:                       &BuildStatus{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			component := &appstudiov1alpha1.Component{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-component",
+					Namespace: "my-namespace",
+					Annotations: map[string]string{
+						BuildStatusAnnotationName: tt.buildStatusAnnotationValue,
+					},
+				},
+			}
+			got := readBuildStatus(component)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("readBuildStatus(): actual: %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestWriteBuildStatus(t *testing.T) {
+	tests := []struct {
+		name        string
+		component   *appstudiov1alpha1.Component
+		buildStatus *BuildStatus
+		want        string
+	}{
+		{
+			name: "should be able to write build status with all fields",
+			component: &appstudiov1alpha1.Component{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "my-component",
+					Namespace:   "my-namespace",
+					Annotations: map[string]string{},
+				},
+			},
+			buildStatus: &BuildStatus{
+				Simple: &SimpleBuildStatus{
+					BuildStartTime: "time",
+					ErrorInfo: ErrorInfo{
+						ErrId:      1,
+						ErrMessage: "simple-build-error",
+					},
+				},
+				PaC: &PaCBuildStatus{
+					State: "enabled",
+					ErrorInfo: ErrorInfo{
+						ErrId:      5,
+						ErrMessage: "pac-error",
+					},
+				},
+				Message: "done",
+			},
+			want: "{\"simple\":{\"build-start-time\":\"time\",\"error-id\":1,\"error-message\":\"simple-build-error\"},\"pac\":{\"state\":\"enabled\",\"error-id\":5,\"error-message\":\"pac-error\"},\"message\":\"done\"}",
+		},
+		{
+			name: "should be able to write build status when annotations is nil",
+			component: &appstudiov1alpha1.Component{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-component",
+					Namespace: "my-namespace",
+				},
+			},
+			buildStatus: &BuildStatus{
+				Simple: &SimpleBuildStatus{
+					BuildStartTime: "time",
+				},
+				Message: "done",
+			},
+			want: "{\"simple\":{\"build-start-time\":\"time\"},\"message\":\"done\"}",
+		},
+		{
+			name: "should be able to overwrite build status",
+			component: &appstudiov1alpha1.Component{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-component",
+					Namespace: "my-namespace",
+					Annotations: map[string]string{
+						BuildStatusAnnotationName: "{\"simple\":{\"build-start-time\":\"time\"},\"message\":\"done\"}",
+					},
+				},
+			},
+			buildStatus: &BuildStatus{
+				PaC: &PaCBuildStatus{
+					State: "error",
+					ErrorInfo: ErrorInfo{
+						ErrId:      10,
+						ErrMessage: "error-ion-pac",
+					},
+				},
+				Message: "done",
+			},
+			want: "{\"pac\":{\"state\":\"error\",\"error-id\":10,\"error-message\":\"error-ion-pac\"},\"message\":\"done\"}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			writeBuildStatus(tt.component, tt.buildStatus)
+			got := tt.component.Annotations[BuildStatusAnnotationName]
+			if got != tt.want {
+				t.Errorf("writeBuildStatus(): actual: %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 	component := &appstudiov1alpha1.Component{
 		ObjectMeta: metav1.ObjectMeta{
