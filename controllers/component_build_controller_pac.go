@@ -73,7 +73,7 @@ To start the PipelineRun, add a new comment with content ` + "`/ok-to-test`" + `
 
 For more detailed information about running a PipelineRun, please refer to Pipelines as Code documentation [Running the PipelineRun](https://pipelinesascode.com/docs/guide/running/)
 
-To customize the proposed PipelineRuns after merge, please refer to [Build Pipeline customization](https://redhat-appstudio.github.io/docs.stonesoup.io/Documentation/main/getting-started/build_service.html)
+To customize the proposed PipelineRuns after merge, please refer to [Build Pipeline customization](https://redhat-appstudio.github.io/docs.appstudio.io/Documentation/main/how-to-guides/configuring-builds/proc_customize_build_pipeline/)
 `
 )
 
