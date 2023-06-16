@@ -1,8 +1,7 @@
 comment: off
 
 ignore:
-  - "pkg/github"
-  - "pkg/gitlab"
+  - "pkg/git"
 
 coverage:
   status:
