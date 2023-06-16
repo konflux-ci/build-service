@@ -32,8 +32,7 @@ var _ = Describe("Git tekton resources renovater", func() {
 
 	var (
 		// All related to the component resources have the same key (but different type)
-		pacSecretKey    = types.NamespacedName{Name: gitopsprepare.PipelinesAsCodeSecretName, Namespace: buildServiceNamespaceName}
-		defaultSelector = types.NamespacedName{Name: buildPipelineSelectorResourceName, Namespace: buildServiceNamespaceName}
+		pacSecretKey = types.NamespacedName{Name: gitopsprepare.PipelinesAsCodeSecretName, Namespace: buildServiceNamespaceName}
 	)
 
 	Context("Test Renovate jobs creation", Label("renovater"), func() {
@@ -48,7 +47,7 @@ var _ = Describe("Git tekton resources renovater", func() {
 		})
 
 		_ = AfterEach(func() {
-			deleteBuildPipelineRunSelector(defaultSelector)
+			deleteBuildPipelineRunSelector(defaultSelectorKey)
 			deleteJobs(buildServiceNamespaceName)
 			os.Unsetenv(InstallationsPerJobEnvName)
 		})
@@ -63,7 +62,7 @@ var _ = Describe("Git tekton resources renovater", func() {
 				return []github.ApplicationInstallation{generateInstallation(repositories)}, "slug", nil
 			}
 			componentNamespacedName := createComponentForPaCBuild(getComponentData(componentConfig{gitURL: "https://github/test/repo3"}))
-			createBuildPipelineRunSelector(defaultSelector)
+			createBuildPipelineRunSelector(defaultSelectorKey)
 			time.Sleep(time.Second)
 			Expect(listJobs(buildServiceNamespaceName)).Should(BeEmpty())
 			deleteComponent(componentNamespacedName)
@@ -78,7 +77,7 @@ var _ = Describe("Git tekton resources renovater", func() {
 				return []github.ApplicationInstallation{generateInstallation(repositories)}, "slug", nil
 			}
 			componentNamespacedName := createComponentForPaCBuild(getComponentData(componentConfig{gitURL: "https://github/test/repo1"}))
-			createBuildPipelineRunSelector(defaultSelector)
+			createBuildPipelineRunSelector(defaultSelectorKey)
 			time.Sleep(time.Second)
 			Expect(listJobs(buildServiceNamespaceName)).Should(HaveLen(1))
 			deleteComponent(componentNamespacedName)
@@ -123,7 +122,7 @@ var _ = Describe("Git tekton resources renovater", func() {
 			componentNamespacedName4 := createComponentForPaCBuild(getComponentData(componentConfig{componentKey: types.NamespacedName{Name: "test4"}, gitURL: "https://github/test3/repo2"}))
 			// Set 2 installations per job
 			os.Setenv(InstallationsPerJobEnvName, "2")
-			createBuildPipelineRunSelector(defaultSelector)
+			createBuildPipelineRunSelector(defaultSelectorKey)
 			time.Sleep(time.Second)
 			Expect(listJobs(buildServiceNamespaceName)).Should(HaveLen(2))
 			deleteComponent(componentNamespacedName1)

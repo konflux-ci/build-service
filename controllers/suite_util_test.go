@@ -62,6 +62,10 @@ const (
 	SelectorDefaultName     = "default"
 )
 
+var (
+	defaultSelectorKey = types.NamespacedName{Name: buildPipelineSelectorResourceName, Namespace: buildServiceNamespaceName}
+)
+
 type componentConfig struct {
 	componentKey   types.NamespacedName
 	containerImage string
@@ -558,6 +562,7 @@ func createBuildPipelineRunSelector(selectorKey types.NamespacedName) {
 		Fail(err.Error())
 	}
 }
+
 func deleteBuildPipelineRunSelector(selectorKey types.NamespacedName) {
 	buildPipelineSelector := buildappstudiov1alpha1.BuildPipelineSelector{}
 	if err := k8sClient.Get(ctx, selectorKey, &buildPipelineSelector); err != nil {

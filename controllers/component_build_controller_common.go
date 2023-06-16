@@ -68,9 +68,10 @@ func (r *ComponentBuildReconciler) GetPipelineForComponent(ctx context.Context, 
 		if err != nil {
 			return nil, nil, err
 		}
-		if pipelineRef != nil {
-			return pipelineRef, pipelineParams, nil
+		if pipelineRef == nil {
+			return nil, nil, boerrors.NewBuildOpError(boerrors.ENoPipelineIsSelected, nil)
 		}
+		return pipelineRef, pipelineParams, nil
 	}
 
 	// Fallback to the default pipeline
