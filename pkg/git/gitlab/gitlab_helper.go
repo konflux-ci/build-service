@@ -307,7 +307,7 @@ func (g *GitlabClient) deleteWebhook(projectPath string, webhookId int) error {
 }
 
 func getPaCWebhookOpts(webhookTargetUrl, webhookSecret string) *gitlab.AddProjectHookOptions {
-	enableSSLVerification := false
+	enableSSLVerification := !gp.IsInsecureSSL()
 
 	mergeRequestsEvents := true
 	pushEvents := true
