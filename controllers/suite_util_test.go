@@ -551,8 +551,11 @@ func createBuildPipelineRunSelector(selectorKey types.NamespacedName) {
 		Spec: buildappstudiov1alpha1.BuildPipelineSelectorSpec{
 			Selectors: []buildappstudiov1alpha1.PipelineSelector{
 				{
-					Name:           SelectorDefaultName,
-					PipelineRef:    tektonapi.PipelineRef{},
+					Name: SelectorDefaultName,
+					PipelineRef: tektonapi.PipelineRef{
+						Name:   defaultPipelineName,
+						Bundle: defaultPipelineBundle,
+					},
 					PipelineParams: []buildappstudiov1alpha1.PipelineParam{},
 					WhenConditions: buildappstudiov1alpha1.WhenCondition{},
 				}}},

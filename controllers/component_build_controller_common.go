@@ -74,11 +74,7 @@ func (r *ComponentBuildReconciler) GetPipelineForComponent(ctx context.Context, 
 		return pipelineRef, pipelineParams, nil
 	}
 
-	// Fallback to the default pipeline
-	return &tektonapi.PipelineRef{
-		Name:   defaultPipelineName,
-		Bundle: defaultPipelineBundle,
-	}, nil, nil
+	return nil, nil, boerrors.NewBuildOpError(boerrors.EBuildPipelineSelectorNotDefined, nil)
 }
 
 func (r *ComponentBuildReconciler) ensurePipelineServiceAccount(ctx context.Context, namespace string) (*corev1.ServiceAccount, error) {

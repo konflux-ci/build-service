@@ -68,6 +68,9 @@ JujhAoGAVdNMYdamHOJlkjYjYJmWOHPIFBMTDYk8pDATLOlqthV+fzlD2SlF0wxm
 OlxbwEr3BSQlE3GFPHe+J3JV3BbJFsVkM8KdMUpQCl+aD/3nWaGBYHz4yvJc0i9h
 duAFIZgXeivAZQAqys4JanG81cg4/d4urI3Qk9stlhB5CNCJR4k=
 -----END RSA PRIVATE KEY-----`
+
+	defaultPipelineName   = "docker-build"
+	defaultPipelineBundle = "quay.io/redhat-appstudio-tekton-catalog/pipeline-docker-build:8cf8982d58a841922b687b7166f0cfdc1cc3fc72"
 )
 
 var _ = Describe("Component initial build controller", func() {
@@ -85,6 +88,15 @@ var _ = Describe("Component initial build controller", func() {
 		namespacePaCSecretKey = types.NamespacedName{Name: gitopsprepare.PipelinesAsCodeSecretName, Namespace: HASAppNamespace}
 		webhookSecretKey      = types.NamespacedName{Name: gitops.PipelinesAsCodeWebhooksSecretName, Namespace: HASAppNamespace}
 	)
+
+	BeforeEach(func() {
+		createNamespace(buildServiceNamespaceName)
+		createBuildPipelineRunSelector(defaultSelectorKey)
+	})
+
+	AfterEach(func() {
+		deleteBuildPipelineRunSelector(defaultSelectorKey)
+	})
 
 	Context("Test Pipelines as Code build preparation [deprecated annotations]", func() {
 
@@ -1802,9 +1814,6 @@ var _ = Describe("Component initial build controller", func() {
 	Context("Test initial build", func() {
 
 		_ = BeforeEach(func() {
-			// For creating build pipeline selector
-			createNamespace(buildServiceNamespaceName)
-
 			ResetTestGitProviderClient()
 
 			pacSecretData := map[string]string{
@@ -2021,6 +2030,7 @@ var _ = Describe("Component initial build controller", func() {
 		})
 
 		It("should fail when no pipeline is selected based on predefined build pipeline selector", func() {
+			deleteBuildPipelineRunSelector(defaultSelectorKey)
 			selector := &buildappstudiov1alpha1.BuildPipelineSelector{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      defaultSelectorKey.Name,
@@ -2071,6 +2081,35 @@ var _ = Describe("Component initial build controller", func() {
 			// Check expected errors
 			statusAnnotation := component.Annotations[BuildStatusAnnotationName]
 			Expect(strings.Contains(statusAnnotation, "No pipeline is selected")).To(BeTrue())
+		})
+
+		// Always keep this test as the last one in current context
+		It("should fail when no build pipeline selector is not defined yet", func() {
+			// There should be only one predefined selector so far. Remove it.
+			deleteBuildPipelineRunSelector(defaultSelectorKey)
+
+			deleteComponent(resourceKey)
+			component := getSampleComponentData(resourceKey)
+			component.Annotations[BuildRequestAnnotationName] = BuildRequestTriggerSimpleBuildAnnotationValue
+			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
+
+			// devfile is about nodejs rather than Java, which causes failure of selecting a pipeline.
+			devfile := `
+                        schemaVersion: 2.2.0
+                        metadata:
+                            name: devfile-nodejs
+                            language: nodejs
+                    `
+			setComponentDevfile(resourceKey, devfile)
+
+			ensureNoPipelineRunsCreated(resourceKey)
+
+			component = getComponent(resourceKey)
+			Expect(component.Annotations[InitialBuildAnnotationName]).To(Equal("processed"))
+
+			// Check expected errors
+			statusAnnotation := component.Annotations[BuildStatusAnnotationName]
+			Expect(strings.Contains(statusAnnotation, "Build pipeline selector is not defined")).To(BeTrue())
 		})
 	})
 
@@ -2234,6 +2273,7 @@ var _ = Describe("Component initial build controller", func() {
 		})
 
 		It("should use the global build bundle", func() {
+			deleteBuildPipelineRunSelector(defaultSelectorKey)
 			selectors := &buildappstudiov1alpha1.BuildPipelineSelector{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      buildPipelineSelectorResourceName,
