@@ -257,13 +257,17 @@ func (g *GithubClient) SetupPaCWebhook(repoUrl, webhookUrl, webhookSecret string
 }
 
 func getDefaultWebhookConfig(webhookUrl, webhookSecret string) *github.Hook {
+	insecureSSL := "0"
+	if gp.IsInsecureSSL() {
+		insecureSSL = "1"
+	}
 	return &github.Hook{
 		Events: appStudioPaCWebhookEvents[:],
 		Config: map[string]interface{}{
 			"url":          webhookUrl,
 			"content_type": webhookContentType,
 			"secret":       webhookSecret,
-			"insecure_ssl": "1", // TODO make this field configurable and set defaults to 0
+			"insecure_ssl": insecureSSL,
 		},
 		Active: github.Bool(true),
 	}
