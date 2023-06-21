@@ -1802,6 +1802,7 @@ var _ = Describe("Component initial build controller", func() {
 	Context("Test initial build", func() {
 
 		_ = BeforeEach(func() {
+			createNamespace(buildServiceNamespaceName)
 			ResetTestGitProviderClient()
 
 			pacSecretData := map[string]string{
