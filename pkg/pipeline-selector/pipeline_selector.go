@@ -26,7 +26,7 @@ import (
 	buildappstudiov1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
 )
 
-// SelectPipelineForComponent evaluates given list of pipeline selectors aginst specified component
+// SelectPipelineForComponent evaluates given list of pipeline selectors against specified component
 // to find the build pipeline for the component.
 // The first match is returned.
 func SelectPipelineForComponent(component *appstudiov1alpha1.Component, selectors []buildappstudiov1alpha1.BuildPipelineSelector) (*tektonapi.PipelineRef, []tektonapi.Param, error) {

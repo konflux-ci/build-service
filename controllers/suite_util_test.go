@@ -60,6 +60,13 @@ const (
 	GitSecretName           = "git-secret"
 	ComponentContainerImage = "registry.io/username/image:tag"
 	SelectorDefaultName     = "default"
+
+	defaultPipelineName   = "docker-build"
+	defaultPipelineBundle = "quay.io/redhat-appstudio-tekton-catalog/pipeline-docker-build:8cf8982d58a841922b687b7166f0cfdc1cc3fc72"
+)
+
+var (
+	defaultSelectorKey = types.NamespacedName{Name: buildPipelineSelectorResourceName, Namespace: buildServiceNamespaceName}
 )
 
 type componentConfig struct {
@@ -547,8 +554,11 @@ func createBuildPipelineRunSelector(selectorKey types.NamespacedName) {
 		Spec: buildappstudiov1alpha1.BuildPipelineSelectorSpec{
 			Selectors: []buildappstudiov1alpha1.PipelineSelector{
 				{
-					Name:           SelectorDefaultName,
-					PipelineRef:    tektonapi.PipelineRef{},
+					Name: SelectorDefaultName,
+					PipelineRef: tektonapi.PipelineRef{
+						Name:   defaultPipelineName,
+						Bundle: defaultPipelineBundle,
+					},
 					PipelineParams: []buildappstudiov1alpha1.PipelineParam{},
 					WhenConditions: buildappstudiov1alpha1.WhenCondition{},
 				}}},
@@ -558,6 +568,7 @@ func createBuildPipelineRunSelector(selectorKey types.NamespacedName) {
 		Fail(err.Error())
 	}
 }
+
 func deleteBuildPipelineRunSelector(selectorKey types.NamespacedName) {
 	buildPipelineSelector := buildappstudiov1alpha1.BuildPipelineSelector{}
 	if err := k8sClient.Get(ctx, selectorKey, &buildPipelineSelector); err != nil {

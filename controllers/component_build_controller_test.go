@@ -86,6 +86,15 @@ var _ = Describe("Component initial build controller", func() {
 		webhookSecretKey      = types.NamespacedName{Name: gitops.PipelinesAsCodeWebhooksSecretName, Namespace: HASAppNamespace}
 	)
 
+	BeforeEach(func() {
+		createNamespace(buildServiceNamespaceName)
+		createBuildPipelineRunSelector(defaultSelectorKey)
+	})
+
+	AfterEach(func() {
+		deleteBuildPipelineRunSelector(defaultSelectorKey)
+	})
+
 	Context("Test Pipelines as Code build preparation [deprecated annotations]", func() {
 
 		_ = BeforeEach(func() {
@@ -1817,6 +1826,7 @@ var _ = Describe("Component initial build controller", func() {
 		_ = AfterEach(func() {
 			deleteSecret(pacSecretKey)
 
+			deleteBuildPipelineRunSelector(defaultSelectorKey)
 			deleteComponentPipelineRuns(resourceKey)
 			deleteComponent(resourceKey)
 		})
@@ -2016,7 +2026,6 @@ var _ = Describe("Component initial build controller", func() {
 
 			ensureNoPipelineRunsCreated(resourceKey)
 		})
-
 	})
 
 	Context("Resolve the correct build bundle during the component creation", func() {
@@ -2179,6 +2188,7 @@ var _ = Describe("Component initial build controller", func() {
 		})
 
 		It("should use the global build bundle", func() {
+			deleteBuildPipelineRunSelector(defaultSelectorKey)
 			selectors := &buildappstudiov1alpha1.BuildPipelineSelector{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      buildPipelineSelectorResourceName,
@@ -2252,4 +2262,99 @@ var _ = Describe("Component initial build controller", func() {
 		})
 	})
 
+	Context("Test build pipeline failure if no matched pipeline is selected", func() {
+		BeforeEach(func() {
+			deleteBuildPipelineRunSelector(defaultSelectorKey)
+
+			pacSecretData := map[string]string{
+				"github-application-id": "12345",
+				"github-private-key":    githubAppPrivateKey,
+			}
+			createSecret(pacSecretKey, pacSecretData)
+			ResetTestGitProviderClient()
+		})
+
+		AfterEach(func() {
+			deleteComponent(resourceKey)
+			deleteSecret(pacSecretKey)
+		})
+
+		createBuildPipelineSelector := func() {
+			selector := &buildappstudiov1alpha1.BuildPipelineSelector{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      defaultSelectorKey.Name,
+					Namespace: defaultSelectorKey.Namespace,
+				},
+				Spec: buildappstudiov1alpha1.BuildPipelineSelectorSpec{
+					Selectors: []buildappstudiov1alpha1.PipelineSelector{
+						{
+							Name: "java",
+							PipelineRef: tektonapi.PipelineRef{
+								Name:   "java-builder",
+								Bundle: defaultPipelineBundle,
+							},
+							PipelineParams: []buildappstudiov1alpha1.PipelineParam{
+								{
+									Name:  "additional-param",
+									Value: "additional-param-value-global",
+								},
+							},
+							WhenConditions: buildappstudiov1alpha1.WhenCondition{
+								Language: "java",
+							},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, selector)).To(Succeed())
+		}
+
+		assertBuildFail := func(doInitialBuild bool, expectedErrMsg string) {
+			component := getSampleComponentData(resourceKey)
+			if doInitialBuild {
+				component.Annotations[BuildRequestAnnotationName] = BuildRequestTriggerSimpleBuildAnnotationValue
+			} else {
+				component.Annotations[BuildRequestAnnotationName] = BuildRequestConfigurePaCAnnotationValue
+			}
+			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
+
+			// devfile is about nodejs rather than Java, which causes failure of selecting a pipeline.
+			devfile := `
+                        schemaVersion: 2.2.0
+                        metadata:
+                            name: devfile-nodejs
+                            language: nodejs
+                    `
+			setComponentDevfile(resourceKey, devfile)
+
+			ensureNoPipelineRunsCreated(resourceKey)
+
+			component = getComponent(resourceKey)
+			if doInitialBuild {
+				Expect(component.Annotations[InitialBuildAnnotationName]).To(Equal("processed"))
+			}
+
+			// Check expected errors
+			statusAnnotation := component.Annotations[BuildStatusAnnotationName]
+			Expect(strings.Contains(statusAnnotation, expectedErrMsg)).To(BeTrue())
+		}
+
+		It("initial build should fail when Component CR does not match any predefined pipeline", func() {
+			createBuildPipelineSelector()
+			assertBuildFail(true, "No pipeline is selected")
+		})
+
+		It("PaC provision should fail when Component CR does not match any predefined pipeline", func() {
+			createBuildPipelineSelector()
+			assertBuildFail(false, "No pipeline is selected")
+		})
+
+		It("initial build should fail when no BuildPipelineSelector CR is defined", func() {
+			assertBuildFail(true, "Build pipeline selector is not defined")
+		})
+
+		It("PaC provision should fail when no BuildPipelineSelector CR is defined", func() {
+			assertBuildFail(false, "Build pipeline selector is not defined")
+		})
+	})
 })

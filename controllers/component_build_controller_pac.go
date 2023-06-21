@@ -63,9 +63,6 @@ const (
 
 	pacMergeRequestSourceBranchPrefix = "appstudio-"
 
-	defaultPipelineName   = "docker-build"
-	defaultPipelineBundle = "quay.io/redhat-appstudio-tekton-catalog/pipeline-docker-build:8cf8982d58a841922b687b7166f0cfdc1cc3fc72"
-
 	mergeRequestDescription = `
 # Pipelines as Code configuration proposal
 
