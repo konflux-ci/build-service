@@ -128,7 +128,9 @@ const (
 	// The secret with image registry credentials specified in 'image.redhat.com/image' annotation does not exist in the user's namespace.
 	EComponentImageRegistrySecretMissing BOErrorId = 202
 
-	ENoPipelineIsSelected            BOErrorId = 300
+	// ENoPipelineIsSelected no pipeline can be selected based on a component repository
+	ENoPipelineIsSelected BOErrorId = 300
+	// EBuildPipelineSelectorNotDefined A BuildPipelineSelector CR cannot be found from all supported search places and with supported names.
 	EBuildPipelineSelectorNotDefined BOErrorId = 301
 )
 

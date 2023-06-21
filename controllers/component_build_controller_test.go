@@ -68,9 +68,6 @@ JujhAoGAVdNMYdamHOJlkjYjYJmWOHPIFBMTDYk8pDATLOlqthV+fzlD2SlF0wxm
 OlxbwEr3BSQlE3GFPHe+J3JV3BbJFsVkM8KdMUpQCl+aD/3nWaGBYHz4yvJc0i9h
 duAFIZgXeivAZQAqys4JanG81cg4/d4urI3Qk9stlhB5CNCJR4k=
 -----END RSA PRIVATE KEY-----`
-
-	defaultPipelineName   = "docker-build"
-	defaultPipelineBundle = "quay.io/redhat-appstudio-tekton-catalog/pipeline-docker-build:8cf8982d58a841922b687b7166f0cfdc1cc3fc72"
 )
 
 var _ = Describe("Component initial build controller", func() {
@@ -2028,89 +2025,6 @@ var _ = Describe("Component initial build controller", func() {
 
 			ensureNoPipelineRunsCreated(resourceKey)
 		})
-
-		It("should fail when no pipeline is selected based on predefined build pipeline selector", func() {
-			deleteBuildPipelineRunSelector(defaultSelectorKey)
-			selector := &buildappstudiov1alpha1.BuildPipelineSelector{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      defaultSelectorKey.Name,
-					Namespace: defaultSelectorKey.Namespace,
-				},
-				Spec: buildappstudiov1alpha1.BuildPipelineSelectorSpec{
-					Selectors: []buildappstudiov1alpha1.PipelineSelector{
-						{
-							Name: "java",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "java-builder",
-								Bundle: defaultPipelineBundle,
-							},
-							PipelineParams: []buildappstudiov1alpha1.PipelineParam{
-								{
-									Name:  "additional-param",
-									Value: "additional-param-value-global",
-								},
-							},
-							WhenConditions: buildappstudiov1alpha1.WhenCondition{
-								Language: "java",
-							},
-						},
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, selector)).To(Succeed())
-
-			deleteComponent(resourceKey)
-			component := getSampleComponentData(resourceKey)
-			component.Annotations[BuildRequestAnnotationName] = BuildRequestTriggerSimpleBuildAnnotationValue
-			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
-
-			// devfile is about nodejs rather than Java, which causes failure of selecting a pipeline.
-			devfile := `
-                        schemaVersion: 2.2.0
-                        metadata:
-                            name: devfile-nodejs
-                            language: nodejs
-                    `
-			setComponentDevfile(resourceKey, devfile)
-
-			ensureNoPipelineRunsCreated(resourceKey)
-
-			component = getComponent(resourceKey)
-			Expect(component.Annotations[InitialBuildAnnotationName]).To(Equal("processed"))
-
-			// Check expected errors
-			statusAnnotation := component.Annotations[BuildStatusAnnotationName]
-			Expect(strings.Contains(statusAnnotation, "No pipeline is selected")).To(BeTrue())
-		})
-
-		// Always keep this test as the last one in current context
-		It("should fail when no build pipeline selector is not defined yet", func() {
-			// There should be only one predefined selector so far. Remove it.
-			deleteBuildPipelineRunSelector(defaultSelectorKey)
-
-			deleteComponent(resourceKey)
-			component := getSampleComponentData(resourceKey)
-			component.Annotations[BuildRequestAnnotationName] = BuildRequestTriggerSimpleBuildAnnotationValue
-			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
-
-			// devfile is about nodejs rather than Java, which causes failure of selecting a pipeline.
-			devfile := `
-                        schemaVersion: 2.2.0
-                        metadata:
-                            name: devfile-nodejs
-                            language: nodejs
-                    `
-			setComponentDevfile(resourceKey, devfile)
-
-			ensureNoPipelineRunsCreated(resourceKey)
-
-			component = getComponent(resourceKey)
-			Expect(component.Annotations[InitialBuildAnnotationName]).To(Equal("processed"))
-
-			// Check expected errors
-			statusAnnotation := component.Annotations[BuildStatusAnnotationName]
-			Expect(strings.Contains(statusAnnotation, "Build pipeline selector is not defined")).To(BeTrue())
-		})
 	})
 
 	Context("Resolve the correct build bundle during the component creation", func() {
@@ -2347,4 +2261,99 @@ var _ = Describe("Component initial build controller", func() {
 		})
 	})
 
+	Context("Test build pipeline failure if no matched pipeline is selected", func() {
+		BeforeEach(func() {
+			deleteBuildPipelineRunSelector(defaultSelectorKey)
+
+			pacSecretData := map[string]string{
+				"github-application-id": "12345",
+				"github-private-key":    githubAppPrivateKey,
+			}
+			createSecret(pacSecretKey, pacSecretData)
+			ResetTestGitProviderClient()
+		})
+
+		AfterEach(func() {
+			deleteComponent(resourceKey)
+			deleteSecret(pacSecretKey)
+		})
+
+		createBuildPipelineSelector := func() {
+			selector := &buildappstudiov1alpha1.BuildPipelineSelector{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      defaultSelectorKey.Name,
+					Namespace: defaultSelectorKey.Namespace,
+				},
+				Spec: buildappstudiov1alpha1.BuildPipelineSelectorSpec{
+					Selectors: []buildappstudiov1alpha1.PipelineSelector{
+						{
+							Name: "java",
+							PipelineRef: tektonapi.PipelineRef{
+								Name:   "java-builder",
+								Bundle: defaultPipelineBundle,
+							},
+							PipelineParams: []buildappstudiov1alpha1.PipelineParam{
+								{
+									Name:  "additional-param",
+									Value: "additional-param-value-global",
+								},
+							},
+							WhenConditions: buildappstudiov1alpha1.WhenCondition{
+								Language: "java",
+							},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, selector)).To(Succeed())
+		}
+
+		assertBuildFail := func(doInitialBuild bool, expectedErrMsg string) {
+			component := getSampleComponentData(resourceKey)
+			if doInitialBuild {
+				component.Annotations[BuildRequestAnnotationName] = BuildRequestTriggerSimpleBuildAnnotationValue
+			} else {
+				component.Annotations[BuildRequestAnnotationName] = BuildRequestConfigurePaCAnnotationValue
+			}
+			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
+
+			// devfile is about nodejs rather than Java, which causes failure of selecting a pipeline.
+			devfile := `
+                        schemaVersion: 2.2.0
+                        metadata:
+                            name: devfile-nodejs
+                            language: nodejs
+                    `
+			setComponentDevfile(resourceKey, devfile)
+
+			ensureNoPipelineRunsCreated(resourceKey)
+
+			component = getComponent(resourceKey)
+			if doInitialBuild {
+				Expect(component.Annotations[InitialBuildAnnotationName]).To(Equal("processed"))
+			}
+
+			// Check expected errors
+			statusAnnotation := component.Annotations[BuildStatusAnnotationName]
+			Expect(strings.Contains(statusAnnotation, expectedErrMsg)).To(BeTrue())
+		}
+
+		It("initial build should fail when Component CR does not match any predefined pipeline", func() {
+			createBuildPipelineSelector()
+			assertBuildFail(true, "No pipeline is selected")
+		})
+
+		It("PaC provision should fail when Component CR does not match any predefined pipeline", func() {
+			createBuildPipelineSelector()
+			assertBuildFail(false, "No pipeline is selected")
+		})
+
+		It("initial build should fail when no BuildPipelineSelector CR is defined", func() {
+			assertBuildFail(true, "Build pipeline selector is not defined")
+		})
+
+		It("PaC provision should fail when no BuildPipelineSelector CR is defined", func() {
+			assertBuildFail(false, "Build pipeline selector is not defined")
+		})
+	})
 })

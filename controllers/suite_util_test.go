@@ -60,6 +60,9 @@ const (
 	GitSecretName           = "git-secret"
 	ComponentContainerImage = "registry.io/username/image:tag"
 	SelectorDefaultName     = "default"
+
+	defaultPipelineName   = "docker-build"
+	defaultPipelineBundle = "quay.io/redhat-appstudio-tekton-catalog/pipeline-docker-build:8cf8982d58a841922b687b7166f0cfdc1cc3fc72"
 )
 
 var (
