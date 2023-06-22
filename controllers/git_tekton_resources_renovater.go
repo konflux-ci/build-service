@@ -55,7 +55,7 @@ const (
 	DefaultRenovateMatchPattern = "^quay.io/redhat-appstudio-tekton-catalog/"
 	RenovateMatchPatternEnvName = "RENOVATE_PATTERN"
 	TimeToLiveOfJob             = 24 * time.Hour
-	NextReconcile               = 10 * time.Hour
+	NextReconcile               = 1 * time.Hour
 	InstallationsPerJob         = 20
 	InstallationsPerJobEnvName  = "RENOVATE_INSTALLATIONS_PER_JOB"
 )
@@ -233,6 +233,7 @@ func generateConfigJS(slug string, repositories []renovateRepository) string {
 				prFooter: "To execute skipped test pipelines write comment ` + "`/ok-to-test`" + `",
 				prBodyColumns: ["Package", "Change", "Notes"],
 				prBodyDefinitions: { "Notes": "{{#if (or (containsString updateType 'minor') (containsString updateType 'major'))}}:warning:[migration](https://github.com/redhat-appstudio/build-definitions/blob/main/task/{{{replace '%stask-' '' packageName}}}/{{{newVersion}}}/MIGRATION.md):warning:{{/if}}" },
+				prBodyTemplate: "{{{header}}}{{{table}}}{{{notes}}}{{{changelogs}}}{{{configDescription}}}{{{footer}}}",
 				recreateClosed: true,
 				enabled: true
 			  }
