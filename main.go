@@ -228,6 +228,9 @@ func ensureRequiredAPIGroupsAndResourcesExist(restConfig *rest.Config) {
 			"components",
 			"applications",
 		},
+		"pipelinesascode.tekton.dev": {
+			"repositories",
+		},
 	}
 
 	discoveryClient, err := discovery.NewDiscoveryClientForConfig(restConfig)
