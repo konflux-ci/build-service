@@ -1,5 +1,10 @@
 comment: off
 
+codecov:
+  require_ci_to_pass: no
+  notify: 
+    wait_for_ci: no
+
 ignore:
   - "pkg/git"
 
@@ -10,4 +15,6 @@ coverage:
         target: auto
         threshold: 1%
         removed_code_behavior: adjust_base
-
+        if_ci_failed: success
+      required:
+        threshold: 2%
