@@ -51,7 +51,7 @@ import (
 const (
 	RenovateConfigName          = "renovate-config"
 	RenovateImageEnvName        = "RENOVATE_IMAGE"
-	DefaultRenovateImageUrl     = "quay.io/redhat-appstudio/renovate:35.47-slim"
+	DefaultRenovateImageUrl     = "quay.io/redhat-appstudio/renovate:35.115-slim"
 	DefaultRenovateMatchPattern = "^quay.io/redhat-appstudio-tekton-catalog/"
 	RenovateMatchPatternEnvName = "RENOVATE_PATTERN"
 	TimeToLiveOfJob             = 24 * time.Hour
@@ -227,14 +227,16 @@ func generateConfigJS(slug string, repositories []renovateRepository) string {
 				matchPackagePatterns: ["%s"],
 				matchDepPatterns: ["%s"],
 				groupName: "RHTAP references",
-				branchPrefix: "rhtap/",
+				branchName: "rhtap/references/{{baseBranch}}",
 				commitMessageExtra: "",
 				commitMessageTopic: "RHTAP references",
 				prFooter: "To execute skipped test pipelines write comment ` + "`/ok-to-test`" + `",
 				prBodyColumns: ["Package", "Change", "Notes"],
 				prBodyDefinitions: { "Notes": "{{#if (or (containsString updateType 'minor') (containsString updateType 'major'))}}:warning:[migration](https://github.com/redhat-appstudio/build-definitions/blob/main/task/{{{replace '%stask-' '' packageName}}}/{{{newVersion}}}/MIGRATION.md):warning:{{/if}}" },
-				prBodyTemplate: "{{{header}}}{{{table}}}{{{notes}}}{{{changelogs}}}{{{configDescription}}}{{{footer}}}",
+				prBodyTemplate: "{{{header}}}{{{table}}}{{{notes}}}{{{changelogs}}}{{{footer}}}",
 				recreateClosed: true,
+				recreateWhen: "always",
+				rebaseWhen: "behind-base-branch",
 				enabled: true
 			  }
 			]
