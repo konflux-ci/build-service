@@ -58,6 +58,7 @@ const (
 	NextReconcile               = 1 * time.Hour
 	InstallationsPerJob         = 20
 	InstallationsPerJobEnvName  = "RENOVATE_INSTALLATIONS_PER_JOB"
+	InternalDefaultBranch       = "$DEFAULTBRANCH"
 )
 
 // GitTektonResourcesRenovater watches AppStudio BuildPipelineSelector object in order to update
@@ -139,12 +140,14 @@ func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Re
 		log.Error(err, "failed to list Components", l.Action, l.ActionView)
 		return ctrl.Result{}, err
 	}
-	componentUrlToBranchMap := make(map[string]string)
+	componentUrlToBranchesMap := make(map[string][]string)
 	for _, component := range componentList.Items {
-		if component.Spec.Source.GitSource != nil {
-			url := strings.TrimSuffix(strings.TrimSuffix(component.Spec.Source.GitSource.URL, ".git"), "/")
-			componentUrlToBranchMap[url] = component.Spec.Source.GitSource.Revision
+		url := strings.TrimSuffix(strings.TrimSuffix(component.Spec.Source.GitSource.URL, ".git"), "/")
+		branch := component.Spec.Source.GitSource.Revision
+		if branch == "" {
+			branch = InternalDefaultBranch
 		}
+		componentUrlToBranchesMap[url] = append(componentUrlToBranchesMap[url], branch)
 	}
 
 	// Match installed repositories with Components and get custom branch if defined
@@ -152,17 +155,19 @@ func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Re
 	for _, githubAppInstallation := range githubAppInstallations {
 		repositories := []renovateRepository{}
 		for _, repository := range githubAppInstallation.Repositories {
-			branch, ok := componentUrlToBranchMap[repository.GetHTMLURL()]
+			branches, ok := componentUrlToBranchesMap[repository.GetHTMLURL()]
 			// Filter repositories with installed GH App but missing Component
 			if !ok {
 				continue
 			}
-			baseBranches := []string{}
-			if branch != "" {
-				baseBranches = append(baseBranches, branch)
+			for i := range branches {
+				if branches[i] == InternalDefaultBranch {
+					branches[i] = repository.GetDefaultBranch()
+				}
 			}
+
 			repositories = append(repositories, renovateRepository{
-				BaseBranches: baseBranches,
+				BaseBranches: branches,
 				Repository:   repository.GetFullName(),
 			})
 		}
