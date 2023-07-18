@@ -145,6 +145,8 @@ type PaCBuildStatus struct {
 	State string `json:"state,omitempty"`
 	// Contains link to PaC provision / unprovision pull request
 	MergeUrl string `json:"merge-url,omitempty"`
+	// Time of the last PaC configuration
+	ConfigurationTime string `json:"configuration-time,omitempty"`
 
 	ErrorInfo
 }
@@ -410,6 +412,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		} else {
 			pacBuildStatus.State = "enabled"
 			pacBuildStatus.MergeUrl = mergeUrl
+			pacBuildStatus.ConfigurationTime = time.Now().Format(time.RFC1123)
 			pacAnnotationValue = PaCProvisionDoneAnnotationValue
 			log.Info("Pipelines as Code provision for the Component finished successfully")
 		}

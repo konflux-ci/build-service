@@ -47,7 +47,7 @@ func TestReadBuildStatus(t *testing.T) {
 	}{
 		{
 			name:                       "should be able to read build status with all fields",
-			buildStatusAnnotationValue: "{\"simple\":{\"build-start-time\":\"time\",\"error-id\":1,\"error-message\":\"simple-build-error\"},\"pac\":{\"state\":\"enabled\",\"error-id\":5,\"error-message\":\"pac-error\"},\"message\":\"done\"}",
+			buildStatusAnnotationValue: "{\"simple\":{\"build-start-time\":\"time\",\"error-id\":1,\"error-message\":\"simple-build-error\"},\"pac\":{\"state\":\"enabled\",\"configuration-time\":\"time\",\"error-id\":5,\"error-message\":\"pac-error\"},\"message\":\"done\"}",
 			want: &BuildStatus{
 				Simple: &SimpleBuildStatus{
 					BuildStartTime: "time",
@@ -57,7 +57,8 @@ func TestReadBuildStatus(t *testing.T) {
 					},
 				},
 				PaC: &PaCBuildStatus{
-					State: "enabled",
+					State:             "enabled",
+					ConfigurationTime: "time",
 					ErrorInfo: ErrorInfo{
 						ErrId:      5,
 						ErrMessage: "pac-error",
@@ -126,10 +127,11 @@ func TestWriteBuildStatus(t *testing.T) {
 						ErrId:      5,
 						ErrMessage: "pac-error",
 					},
+					ConfigurationTime: "time",
 				},
 				Message: "done",
 			},
-			want: "{\"simple\":{\"build-start-time\":\"time\",\"error-id\":1,\"error-message\":\"simple-build-error\"},\"pac\":{\"state\":\"enabled\",\"error-id\":5,\"error-message\":\"pac-error\"},\"message\":\"done\"}",
+			want: "{\"simple\":{\"build-start-time\":\"time\",\"error-id\":1,\"error-message\":\"simple-build-error\"},\"pac\":{\"state\":\"enabled\",\"configuration-time\":\"time\",\"error-id\":5,\"error-message\":\"pac-error\"},\"message\":\"done\"}",
 		},
 		{
 			name: "should be able to write build status when annotations is nil",
@@ -165,10 +167,11 @@ func TestWriteBuildStatus(t *testing.T) {
 						ErrId:      10,
 						ErrMessage: "error-ion-pac",
 					},
+					ConfigurationTime: "time",
 				},
 				Message: "done",
 			},
-			want: "{\"pac\":{\"state\":\"error\",\"error-id\":10,\"error-message\":\"error-ion-pac\"},\"message\":\"done\"}",
+			want: "{\"pac\":{\"state\":\"error\",\"configuration-time\":\"time\",\"error-id\":10,\"error-message\":\"error-ion-pac\"},\"message\":\"done\"}",
 		},
 	}
 	for _, tt := range tests {
