@@ -450,7 +450,32 @@ func TestGetPipelineSelectionParametersForComponent(t *testing.T) {
                 components:
                   - name: outerloop-deploy
                     kubernetes:
-                        uri: outerloop-deploy.yaml				  
+                      inlined: |-
+                        kind: Deployment
+                        apiVersion: apps/v1
+                        metadata:
+                          name: quarkus
+                          spec:
+                            replicas: 1
+                            selector:
+                              matchLabels:
+                                app: quarkus
+                            template:
+                              metadata:
+                                labels:
+                                  app: quarkus
+                              spec:
+                                containers:
+                                - name: quarkus
+                                  image: hello-world:latest
+                                  ports:
+                                  - name: http
+                                    containerPort: 8080
+                                    protocol: TCP
+                                  resources:
+                                    limits:
+                                      memory: "1024Mi"
+                                      cpu: "500m"
                   - name: tools
                     container:
                         dedicatedPod: true

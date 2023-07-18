@@ -69,8 +69,8 @@ var _ = BeforeSuite(func() {
 	log = ctrl.Log.WithName("testdebug")
 
 	By("bootstrapping test environment")
-	applicationServiceDepVersion := "v0.0.0-20230211102041-695765c656ab"
-	applicationApiDepVersion := "v0.0.0-20230116150710-8ead4c6952d3"
+	applicationServiceDepVersion := "v0.0.0-20230717184417-67d31a01a776"
+	applicationApiDepVersion := "v0.0.0-20230704143842-035c661f115f"
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
 			filepath.Join("..", "config", "crd", "bases"),
