@@ -145,7 +145,7 @@ type PaCBuildStatus struct {
 	State string `json:"state,omitempty"`
 	// Contains link to PaC provision / unprovision pull request
 	MergeUrl string `json:"merge-url,omitempty"`
-	// Time of the last PaC configuration
+	// Time of the last successful PaC configuration in RFC1123 format
 	ConfigurationTime string `json:"configuration-time,omitempty"`
 
 	ErrorInfo
