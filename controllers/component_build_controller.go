@@ -433,6 +433,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 		// Update build status annotation
 		buildStatus := readBuildStatus((&component))
+		pacBuildStatus.ConfigurationTime = buildStatus.PaC.ConfigurationTime
 		buildStatus.PaC = pacBuildStatus
 		buildStatus.Message = "done"
 		writeBuildStatus(&component, buildStatus)
