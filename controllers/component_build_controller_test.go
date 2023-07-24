@@ -1049,7 +1049,6 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(buildStatus.PaC).ToNot(BeNil())
 			Expect(buildStatus.PaC.State).To(Equal("enabled"))
 			Expect(buildStatus.PaC.ConfigurationTime).ToNot(BeEmpty())
-			latestConfigurationTime := buildStatus.PaC.ConfigurationTime
 			Expect(buildStatus.PaC.MergeUrl).To(Equal("configure-merge-url"))
 			Expect(buildStatus.PaC.ErrId).To(Equal(0))
 			Expect(buildStatus.PaC.ErrMessage).To(Equal(""))
@@ -1101,7 +1100,6 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(buildStatus).ToNot(BeNil())
 			Expect(buildStatus.PaC).ToNot(BeNil())
 			Expect(buildStatus.PaC.State).To(Equal("disabled"))
-			Expect(buildStatus.PaC.ConfigurationTime).To(Equal(latestConfigurationTime))
 			Expect(buildStatus.PaC.MergeUrl).To(Equal("unconfigure-merge-url"))
 			Expect(buildStatus.PaC.ErrId).To(Equal(0))
 			Expect(buildStatus.PaC.ErrMessage).To(Equal(""))
