@@ -433,9 +433,6 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 		// Update build status annotation
 		buildStatus := readBuildStatus((&component))
-		if pacBuildStatus.ConfigurationTime == "" && buildStatus.PaC != nil && buildStatus.PaC.ConfigurationTime != "" {
-			pacBuildStatus.ConfigurationTime = buildStatus.PaC.ConfigurationTime
-		}
 		buildStatus.PaC = pacBuildStatus
 		buildStatus.Message = "done"
 		writeBuildStatus(&component, buildStatus)
@@ -491,9 +488,6 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 		// Update build status annotation
 		buildStatus := readBuildStatus((&component))
-		if pacBuildStatus.ConfigurationTime == "" && buildStatus.PaC != nil && buildStatus.PaC.ConfigurationTime != "" {
-			pacBuildStatus.ConfigurationTime = buildStatus.PaC.ConfigurationTime
-		}
 		buildStatus.PaC = pacBuildStatus
 		buildStatus.Message = "done"
 		writeBuildStatus(&component, buildStatus)
