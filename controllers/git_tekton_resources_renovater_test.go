@@ -63,8 +63,7 @@ var _ = Describe("Git tekton resources renovater", func() {
 			}
 			componentNamespacedName := createComponentForPaCBuild(getComponentData(componentConfig{gitURL: "https://github/test/repo3"}))
 			createBuildPipelineRunSelector(defaultSelectorKey)
-			time.Sleep(time.Second)
-			Expect(listJobs(buildServiceNamespaceName)).Should(BeEmpty())
+			Eventually(listJobs).WithArguments(buildServiceNamespaceName).WithTimeout(10 * time.Second).Should(BeEmpty())
 			deleteComponent(componentNamespacedName)
 		})
 		It("It should trigger job", func() {
@@ -78,8 +77,7 @@ var _ = Describe("Git tekton resources renovater", func() {
 			}
 			componentNamespacedName := createComponentForPaCBuild(getComponentData(componentConfig{gitURL: "https://github/test/repo1"}))
 			createBuildPipelineRunSelector(defaultSelectorKey)
-			time.Sleep(time.Second)
-			Expect(listJobs(buildServiceNamespaceName)).Should(HaveLen(1))
+			Eventually(listJobs).WithArguments(buildServiceNamespaceName).WithTimeout(10 * time.Second).Should(HaveLen(1))
 			deleteComponent(componentNamespacedName)
 		})
 		It("It should trigger 2 jobs", func() {
@@ -123,8 +121,7 @@ var _ = Describe("Git tekton resources renovater", func() {
 			// Set 2 installations per job
 			os.Setenv(InstallationsPerJobEnvName, "2")
 			createBuildPipelineRunSelector(defaultSelectorKey)
-			time.Sleep(time.Second)
-			Expect(listJobs(buildServiceNamespaceName)).Should(HaveLen(2))
+			Eventually(listJobs).WithArguments(buildServiceNamespaceName).WithTimeout(10 * time.Second).Should(HaveLen(2))
 			deleteComponent(componentNamespacedName1)
 			deleteComponent(componentNamespacedName2)
 			deleteComponent(componentNamespacedName3)
