@@ -36,6 +36,7 @@ import (
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 	gp "github.com/redhat-appstudio/build-service/pkg/git/gitprovider"
 	gpf "github.com/redhat-appstudio/build-service/pkg/git/gitproviderfactory"
+	appstudiospiapiv1beta1 "github.com/redhat-appstudio/service-provider-integration-operator/api/v1beta1"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	//+kubebuilder:scaffold:imports
 )
@@ -1903,47 +1904,35 @@ var _ = Describe("Component initial build controller", func() {
 		})
 
 		It("should submit initial build for private git repository", func() {
-			deleteComponent(resourceKey)
+			gitSecretName := "git-secret"
 
-			gitSecretKey := types.NamespacedName{Name: GitSecretName, Namespace: resourceKey.Namespace}
-			gitSecret := &corev1.Secret{
+			isGetBranchShaInvoked := false
+			GetBranchShaFunc = func(repoUrl string, branchName string) (string, error) {
+				isGetBranchShaInvoked = true
+				return "", fmt.Errorf("failed to get git commit SHA")
+			}
+
+			spiAccessTokenBinding := &appstudiospiapiv1beta1.SPIAccessTokenBinding{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      gitSecretKey.Name,
-					Namespace: gitSecretKey.Namespace,
+					Name:      "spi-access-token-binding",
+					Namespace: resourceKey.Namespace,
+				},
+				Spec: appstudiospiapiv1beta1.SPIAccessTokenBindingSpec{
+					RepoUrl: SampleRepoLink,
 				},
 			}
-			Expect(k8sClient.Create(ctx, gitSecret)).Should(Succeed())
+			Expect(k8sClient.Create(ctx, spiAccessTokenBinding)).To(Succeed())
+			spiAccessTokenBinding.Status.SyncedObjectRef.Name = gitSecretName
+			Expect(k8sClient.Status().Update(ctx, spiAccessTokenBinding)).To(Succeed())
 
-			// Create component that refers to the git secret
-			component := getSampleComponentData(resourceKey)
-			component.Spec.ContainerImage = "docker.io/foo/customized:default-test-component"
-			component.Spec.Secret = GitSecretName
-			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
 			setComponentDevfileModel(resourceKey)
+
+			Eventually(func() bool { return isGetBranchShaInvoked }, timeout, interval).Should(BeTrue())
 
 			// Wait until all resources created
 			waitOneInitialPipelineRunCreated(resourceKey)
 			waitComponentAnnotationGone(resourceKey, BuildRequestAnnotationName)
 			ensureComponentInitialBuildAnnotationState(resourceKey, true)
-
-			// Check that git credentials secret is annotated
-			Expect(k8sClient.Get(ctx, gitSecretKey, gitSecret)).Should(Succeed())
-			tektonGitAnnotation := gitSecret.ObjectMeta.Annotations["tekton.dev/git-0"]
-			Expect(tektonGitAnnotation).To(Equal("https://github.com"))
-
-			// Check that the pipeline service account has been linked with the Github authentication credentials
-			var pipelineSA corev1.ServiceAccount
-			pipelineSAKey := types.NamespacedName{Namespace: resourceKey.Namespace, Name: buildPipelineServiceAccountName}
-			Expect(k8sClient.Get(ctx, pipelineSAKey, &pipelineSA)).Should(Succeed())
-
-			secretFound := false
-			for _, secret := range pipelineSA.Secrets {
-				if secret.Name == GitSecretName {
-					secretFound = true
-					break
-				}
-			}
-			Expect(secretFound).To(BeTrue())
 
 			// Check the pipeline run and its resources
 			pipelineRuns := listComponentPipelineRuns(resourceKey)
@@ -1981,10 +1970,12 @@ var _ = Describe("Component initial build controller", func() {
 					Expect(w.VolumeClaimTemplate).NotTo(
 						Equal(nil), "PipelineRun should have its own volumeClaimTemplate.")
 				}
+				if w.Name == "git-auth" {
+					Expect(w.Secret.SecretName).To(Equal(gitSecretName))
+				}
 			}
 
-			// Clean up
-			deleteSecret(gitSecretKey)
+			k8sClient.Delete(ctx, spiAccessTokenBinding)
 		})
 
 		It("should not submit initial build if the component devfile model is not set", func() {

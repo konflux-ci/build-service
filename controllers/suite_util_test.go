@@ -57,7 +57,6 @@ const (
 	HASCompName             = "test-component"
 	HASAppNamespace         = "default"
 	SampleRepoLink          = "https://github.com/devfile-samples/devfile-sample-java-springboot-basic"
-	GitSecretName           = "git-secret"
 	ComponentContainerImage = "registry.io/username/image:tag"
 	SelectorDefaultName     = "default"
 
