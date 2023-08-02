@@ -326,6 +326,21 @@ func (g *GithubClient) GetBranchSha(repoUrl, branchName string) (string, error) 
 	return sha, nil
 }
 
+// IsRepositoryPublic returns true if the repository could be accessed without authentication
+func (g *GithubClient) IsRepositoryPublic(repoUrl string) (bool, error) {
+	owner, repository := getOwnerAndRepoFromUrl(repoUrl)
+
+	repoInfo, err := g.getRepositoryInfo(owner, repository)
+	if err != nil {
+		return false, err
+	}
+	if repoInfo == nil {
+		// There is no difference between private and not found for GitHub unless the user is the owner.
+		return false, nil
+	}
+	return !*repoInfo.Private, nil
+}
+
 func (g *GithubClient) GetBrowseRepositoryAtShaLink(repoUrl, sha string) string {
 	repoUrl = strings.TrimSuffix(repoUrl, ".git")
 	gitSourceUrlParts := strings.Split(repoUrl, "/")

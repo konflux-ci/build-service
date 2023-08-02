@@ -48,6 +48,9 @@ type GitProviderClient interface {
 	// GetBranchSha returns SHA of top commit in the given branch
 	GetBranchSha(repoUrl, branchName string) (string, error)
 
+	// IsRepositoryPublic returns true if the repository could be accessed without authentication
+	IsRepositoryPublic(repoUrl string) (bool, error)
+
 	// GetBrowseRepositoryAtShaLink returns web URL of repository state at given SHA
 	GetBrowseRepositoryAtShaLink(repoUrl, sha string) string
 

@@ -30,6 +30,7 @@ import (
 	"github.com/redhat-appstudio/application-service/gitops"
 	gitopsprepare "github.com/redhat-appstudio/application-service/gitops/prepare"
 	"github.com/redhat-appstudio/application-service/pkg/devfile"
+	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 	"github.com/redhat-appstudio/build-service/pkg/git/gitproviderfactory"
 	l "github.com/redhat-appstudio/build-service/pkg/logs"
 	appstudiospiapiv1beta1 "github.com/redhat-appstudio/service-provider-integration-operator/api/v1beta1"
@@ -53,33 +54,17 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 		return err
 	}
 
-	// Find out git source commit SHA to build from and other git information.
-	// This is optional for the build itself, but needed for UI to correctly display the build pipeline.
-	// Skip any errors occured during git information fetching.
-	var pRunGitInfo *pipelineRunGitInfo
 	pacSecret := corev1.Secret{}
-	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: buildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}, &pacSecret); err == nil {
-		pRunGitInfo, err = getPipelineRunGitInfo(component, pacSecret.Data)
-		if err != nil {
-			log.Error(err, "failed to retrieve git source information", l.Action, l.ActionView, l.Audit, "true")
-		}
-	} else {
-		log.Error(err, "error getting git provider credentials secret", l.Action, l.ActionView)
-	}
-
-	// Try to find git secret in case private git repository is used
-	gitSecretName, err := r.findGitSecretName(ctx, component)
-	if err != nil {
-		log.Error(err, "failed to find git secret name")
+	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: buildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}, &pacSecret); err != nil {
+		log.Error(err, "failed to get git provider credentials secret", l.Action, l.ActionView)
 		return err
 	}
-	if pRunGitInfo == nil {
-		pRunGitInfo = &pipelineRunGitInfo{}
+	buildGitInfo, err := r.getBuildGitInfo(ctx, component, pacSecret.Data)
+	if err != nil {
+		return err
 	}
-	pRunGitInfo.gitSecretName = gitSecretName
-	log.Info("Git secret found", "GitSecretName", gitSecretName)
 
-	buildPipelineRun, err := generatePipelineRunForComponent(component, pipelineRef, additionalPipelineParams, pRunGitInfo)
+	buildPipelineRun, err := generatePipelineRunForComponent(component, pipelineRef, additionalPipelineParams, buildGitInfo)
 	if err != nil {
 		log.Error(err, fmt.Sprintf("Failed to generate PipelineRun to build %s component in %s namespace", component.Name, component.Namespace))
 		return err
@@ -105,11 +90,91 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 	return nil
 }
 
-type pipelineRunGitInfo struct {
+type buildGitInfo struct {
+	isPublic      bool
+	gitSecretName string
+
 	gitSourceSha              string
 	browseRepositoryAtShaLink string
+}
 
-	gitSecretName string
+// getBuildGitInfo find out git source information the build is done from.
+func (r *ComponentBuildReconciler) getBuildGitInfo(ctx context.Context, component *appstudiov1alpha1.Component, pacConfig map[string][]byte) (*buildGitInfo, error) {
+	log := ctrllog.FromContext(ctx).WithName("getBuildGitInfo")
+
+	gitProvider, err := gitops.GetGitProvider(*component)
+	if err != nil {
+		// There is no point to continue if git provider is not known
+		return nil, fmt.Errorf("error detecting git provider: %w", err)
+	}
+
+	repoUrl := component.Spec.Source.GitSource.URL
+
+	gitClient, err := gitproviderfactory.CreateGitClient(gitproviderfactory.GitClientConfig{
+		PacSecretData:             pacConfig,
+		GitProvider:               gitProvider,
+		RepoUrl:                   repoUrl,
+		IsAppInstallationExpected: false,
+	})
+	if err != nil {
+		log.Error(err, "failed to instantiate git client")
+		return nil, err
+	}
+
+	var gitSecretName string
+	isPublic, err := gitClient.IsRepositoryPublic(repoUrl)
+	if err != nil {
+		log.Error(err, "failed to determine whether component git repository public or private")
+		return nil, err
+	}
+	if !isPublic {
+		// Try to find git secret in case private git repository is used
+		gitSecretName, err = r.findGitSecretName(ctx, component)
+		if err != nil {
+			log.Error(err, "failed to find git secret name")
+			return nil, err
+		}
+		if gitSecretName == "" {
+			// The repository is private and no git secret provided
+			return nil, boerrors.NewBuildOpError(boerrors.EComponentGitSecretMissing, nil)
+		}
+		log.Info("Git secret found", "GitSecretName", gitSecretName)
+	}
+
+	// Find out git source commit SHA to build from and repositopry link.
+	// This is optional for the build itself, but needed for UI to correctly display the build pipeline.
+	// Skip any errors occured during git information fetching.
+	gitSourceSha := ""
+	revision := component.Spec.Source.GitSource.Revision
+	if revision != "" {
+		// Check if commit sha is given in the revision
+		matches, err := regexp.MatchString("[0-9a-fA-F]{7,40}", revision)
+		if err != nil {
+			panic("invalid regexp")
+		}
+		if matches {
+			gitSourceSha = revision
+		}
+	}
+	if gitSourceSha == "" {
+		gitSourceSha, err = gitClient.GetBranchSha(repoUrl, revision)
+		if err != nil {
+			log.Error(err, "failed to get git branch SHA")
+		}
+	}
+
+	var browseRepositoryAtShaLink string
+	if gitSourceSha != "" {
+		browseRepositoryAtShaLink = gitClient.GetBrowseRepositoryAtShaLink(repoUrl, gitSourceSha)
+	}
+
+	return &buildGitInfo{
+		isPublic:      isPublic,
+		gitSecretName: gitSecretName,
+
+		gitSourceSha:              gitSourceSha,
+		browseRepositoryAtShaLink: browseRepositoryAtShaLink,
+	}, nil
 }
 
 func (r *ComponentBuildReconciler) findGitSecretName(ctx context.Context, component *appstudiov1alpha1.Component) (string, error) {
@@ -130,54 +195,7 @@ func (r *ComponentBuildReconciler) findGitSecretName(ctx context.Context, compon
 	return "", nil
 }
 
-// getPipelineRunGitInfo find out git source information the build is done from.
-func getPipelineRunGitInfo(component *appstudiov1alpha1.Component, pacConfig map[string][]byte) (*pipelineRunGitInfo, error) {
-	gitProvider, err := gitops.GetGitProvider(*component)
-	if err != nil {
-		// There is no point to continue if git provider is not known
-		return nil, fmt.Errorf("error detecting git provider: %w", err)
-	}
-
-	repoUrl := component.Spec.Source.GitSource.URL
-
-	gitClient, err := gitproviderfactory.CreateGitClient(gitproviderfactory.GitClientConfig{
-		PacSecretData:             pacConfig,
-		GitProvider:               gitProvider,
-		RepoUrl:                   repoUrl,
-		IsAppInstallationExpected: false,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	gitSourceSha := ""
-	revision := component.Spec.Source.GitSource.Revision
-	if revision != "" {
-		// Check if commit sha is given in the revision
-		matches, err := regexp.MatchString("[0-9a-fA-F]{7,40}", revision)
-		if err != nil {
-			return nil, err
-		}
-		if matches {
-			gitSourceSha = revision
-		}
-	}
-	if gitSourceSha == "" {
-		gitSourceSha, err = gitClient.GetBranchSha(repoUrl, revision)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get git branch SHA: %w", err)
-		}
-	}
-
-	browseRepositoryAtShaLink := gitClient.GetBrowseRepositoryAtShaLink(repoUrl, gitSourceSha)
-
-	return &pipelineRunGitInfo{
-		gitSourceSha:              gitSourceSha,
-		browseRepositoryAtShaLink: browseRepositoryAtShaLink,
-	}, nil
-}
-
-func generatePipelineRunForComponent(component *appstudiov1alpha1.Component, pipelineRef *tektonapi.PipelineRef, additionalPipelineParams []tektonapi.Param, pRunGitInfo *pipelineRunGitInfo) (*tektonapi.PipelineRun, error) {
+func generatePipelineRunForComponent(component *appstudiov1alpha1.Component, pipelineRef *tektonapi.PipelineRef, additionalPipelineParams []tektonapi.Param, pRunGitInfo *buildGitInfo) (*tektonapi.PipelineRun, error) {
 	timestamp := time.Now().Unix()
 	pipelineGenerateName := fmt.Sprintf("%s-", component.Name)
 	revision := ""

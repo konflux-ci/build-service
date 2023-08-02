@@ -322,3 +322,15 @@ func getPaCWebhookOpts(webhookTargetUrl, webhookSecret string) *gitlab.AddProjec
 		NoteEvents:            &noteEvents,
 	}
 }
+
+// IsRepositoryPublic returns true if the repository could be accessed without authentication
+func (g *GitlabClient) getProjectInfo(projectPath string) (*gitlab.Project, error) {
+	project, resp, err := g.client.Projects.GetProject(projectPath, &gitlab.GetProjectOptions{})
+	if err != nil {
+		if resp.StatusCode == 404 {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return project, nil
+}

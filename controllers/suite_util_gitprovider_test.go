@@ -33,6 +33,7 @@ var (
 	DeleteBranchFunc                 func(repoUrl string, branchName string) (bool, error)
 	GetBranchShaFunc                 func(repoUrl string, branchName string) (string, error)
 	GetBrowseRepositoryAtShaLinkFunc func(repoUrl string, sha string) string
+	IsRepositoryPublicFunc           func(repoUrl string) (bool, error)
 	GetConfiguredGitAppNameFunc      func() (string, string, error)
 )
 
@@ -67,6 +68,9 @@ func ResetTestGitProviderClient() {
 	}
 	GetBrowseRepositoryAtShaLinkFunc = func(repoUrl string, sha string) string {
 		return "https://githost.com/files?sha=" + sha
+	}
+	IsRepositoryPublicFunc = func(repoUrl string) (bool, error) {
+		return true, nil
 	}
 	GetConfiguredGitAppNameFunc = func() (string, string, error) {
 		return "git-app-name", "slug", nil
@@ -103,6 +107,9 @@ func (*TestGitProviderClient) GetBranchSha(repoUrl string, branchName string) (s
 }
 func (*TestGitProviderClient) GetBrowseRepositoryAtShaLink(repoUrl string, sha string) string {
 	return GetBrowseRepositoryAtShaLinkFunc(repoUrl, sha)
+}
+func (*TestGitProviderClient) IsRepositoryPublic(repoUrl string) (bool, error) {
+	return IsRepositoryPublicFunc(repoUrl)
 }
 func (*TestGitProviderClient) GetConfiguredGitAppName() (string, string, error) {
 	return GetConfiguredGitAppNameFunc()

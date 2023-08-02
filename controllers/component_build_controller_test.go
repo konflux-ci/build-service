@@ -1978,6 +1978,23 @@ var _ = Describe("Component initial build controller", func() {
 			k8sClient.Delete(ctx, spiAccessTokenBinding)
 		})
 
+		It("should fail to submit initial build for private git repository if SPIAccessTokenBinding is missing", func() {
+			isRepositoryPublicInvoked := false
+			IsRepositoryPublicFunc = func(repoUrl string) (bool, error) {
+				isRepositoryPublicInvoked = true
+				return false, nil
+			}
+
+			setComponentDevfileModel(resourceKey)
+
+			Eventually(func() bool { return isRepositoryPublicInvoked }, timeout, interval).Should(BeTrue())
+
+			buildStatus := readBuildStatus(getComponent(resourceKey))
+			Expect(buildStatus).ToNot(BeNil())
+			Expect(buildStatus.Simple).ToNot(BeNil())
+			Expect(buildStatus.Simple.ErrId).To(Equal(int(boerrors.EComponentGitSecretMissing)))
+		})
+
 		It("should not submit initial build if the component devfile model is not set", func() {
 			ensureNoPipelineRunsCreated(resourceKey)
 		})
@@ -2030,6 +2047,11 @@ var _ = Describe("Component initial build controller", func() {
 
 		BeforeEach(func() {
 			createNamespace(buildServiceNamespaceName)
+			pacSecretData := map[string]string{
+				"github-application-id": "12345",
+				"github-private-key":    githubAppPrivateKey,
+			}
+			createSecret(pacSecretKey, pacSecretData)
 
 			createComponent(resourceKey)
 		})
@@ -2037,6 +2059,7 @@ var _ = Describe("Component initial build controller", func() {
 		AfterEach(func() {
 			deleteComponent(resourceKey)
 			deleteComponentPipelineRuns(resourceKey)
+			deleteSecret(pacSecretKey)
 		})
 
 		It("should use the build bundle specified for application", func() {

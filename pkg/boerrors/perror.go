@@ -158,7 +158,7 @@ var boErrorMessages = map[BOErrorId]string{
 	EGitLabTokenUnauthorized:      "Access token is unrecognizable by remote GitLab service",
 
 	EFailedToParseImageAnnotation:        "Failed to parse image.redhat.com/image annotation value",
-	EComponentGitSecretMissing:           "Specified secret with git credential not found",
+	EComponentGitSecretMissing:           "Secret with git credential not found",
 	EComponentImageRegistrySecretMissing: "Component image repository secret not found",
 
 	ENoPipelineIsSelected:            "No pipeline is selected for component repository based on predefined selectors.",
