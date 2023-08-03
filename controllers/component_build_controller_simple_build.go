@@ -91,9 +91,12 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 }
 
 type buildGitInfo struct {
-	isPublic      bool
+	// isPublic shows if component git repository publicly accessible.
+	isPublic bool
+	// gitSecretName contains name of the k8s secret with credentials to access component private git repository.
 	gitSecretName string
 
+	// These fields are optional for the build and are shown on UI only.
 	gitSourceSha              string
 	browseRepositoryAtShaLink string
 }
@@ -159,7 +162,7 @@ func (r *ComponentBuildReconciler) getBuildGitInfo(ctx context.Context, componen
 	if gitSourceSha == "" {
 		gitSourceSha, err = gitClient.GetBranchSha(repoUrl, revision)
 		if err != nil {
-			log.Error(err, "failed to get git branch SHA")
+			log.Error(err, "failed to get git branch SHA, continue without it")
 		}
 	}
 
