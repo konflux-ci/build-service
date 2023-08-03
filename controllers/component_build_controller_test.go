@@ -1975,7 +1975,7 @@ var _ = Describe("Component initial build controller", func() {
 				}
 			}
 
-			k8sClient.Delete(ctx, spiAccessTokenBinding)
+			Expect(k8sClient.Delete(ctx, spiAccessTokenBinding)).To(Succeed())
 		})
 
 		It("should fail to submit initial build for private git repository if SPIAccessTokenBinding is missing", func() {
