@@ -1906,6 +1906,11 @@ var _ = Describe("Component initial build controller", func() {
 		It("should submit initial build for private git repository", func() {
 			gitSecretName := "git-secret"
 
+			isRepositoryPublicInvoked := false
+			IsRepositoryPublicFunc = func(repoUrl string) (bool, error) {
+				isRepositoryPublicInvoked = true
+				return false, nil
+			}
 			isGetBranchShaInvoked := false
 			GetBranchShaFunc = func(repoUrl string, branchName string) (string, error) {
 				isGetBranchShaInvoked = true
@@ -1927,6 +1932,7 @@ var _ = Describe("Component initial build controller", func() {
 
 			setComponentDevfileModel(resourceKey)
 
+			Eventually(func() bool { return isRepositoryPublicInvoked }, timeout, interval).Should(BeTrue())
 			Eventually(func() bool { return isGetBranchShaInvoked }, timeout, interval).Should(BeTrue())
 
 			// Wait until all resources created
@@ -1965,15 +1971,21 @@ var _ = Describe("Component initial build controller", func() {
 			}
 
 			Expect(pipelineRun.Spec.Workspaces).To(Not(BeEmpty()))
+			isWorkspaceWorkspaceExist := false
+			isWorkspaceGitAuthExist := false
 			for _, w := range pipelineRun.Spec.Workspaces {
 				if w.Name == "workspace" {
+					isWorkspaceWorkspaceExist = true
 					Expect(w.VolumeClaimTemplate).NotTo(
 						Equal(nil), "PipelineRun should have its own volumeClaimTemplate.")
 				}
 				if w.Name == "git-auth" {
+					isWorkspaceGitAuthExist = true
 					Expect(w.Secret.SecretName).To(Equal(gitSecretName))
 				}
 			}
+			Expect(isWorkspaceWorkspaceExist).To(BeTrue())
+			Expect(isWorkspaceGitAuthExist).To(BeTrue())
 
 			Expect(k8sClient.Delete(ctx, spiAccessTokenBinding)).To(Succeed())
 		})
