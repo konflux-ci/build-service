@@ -191,6 +191,19 @@ func TestGetBranchSHA(t *testing.T) {
 	}
 }
 
+func TestIsRepositoryPublic(t *testing.T) {
+	ghclient := createClient(ghClientType)
+	if ghclient == nil {
+		return
+	}
+
+	isPublic, err := ghclient.IsRepositoryPublic(repoUrl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println(isPublic)
+}
+
 // Only GitHub Application client is applicable for this test
 func TestIsAppInstalledIntoRepository(t *testing.T) {
 	ghclient := createClient(ghClientType)

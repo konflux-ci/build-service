@@ -247,6 +247,20 @@ func (g *GitlabClient) GetBranchSha(repoUrl, branchName string) (string, error) 
 	return sha, nil
 }
 
+// IsRepositoryPublic returns true if the repository could be accessed without authentication
+func (g *GitlabClient) IsRepositoryPublic(repoUrl string) (bool, error) {
+	projectPath := getProjectPathFromRepoUrl(repoUrl)
+
+	projectInfo, err := g.getProjectInfo(projectPath)
+	if err != nil {
+		return false, err
+	}
+	if projectInfo == nil {
+		return false, nil
+	}
+	return projectInfo.Visibility == "public", nil
+}
+
 // GetBrowseRepositoryAtShaLink returns web URL of repository state at given SHA
 func (g *GitlabClient) GetBrowseRepositoryAtShaLink(repoUrl, sha string) string {
 	repoUrl = strings.TrimSuffix(repoUrl, ".git")

@@ -356,3 +356,14 @@ func (g *GithubClient) deleteWebhook(owner, repository string, webhookId int64) 
 	}
 	return nil
 }
+
+func (g *GithubClient) getRepositoryInfo(owner, repository string) (*github.Repository, error) {
+	repo, resp, err := g.client.Repositories.Get(g.ctx, owner, repository)
+	if err != nil {
+		if resp.StatusCode == 404 {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return repo, nil
+}

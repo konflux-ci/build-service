@@ -221,7 +221,7 @@ func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 	}
 	commitSha := "26239c94569cea79b32bce32f12c8abd8bbd0fd7"
 
-	pRunGitInfo := &pipelineRunGitInfo{
+	pRunGitInfo := &buildGitInfo{
 		gitSourceSha:              commitSha,
 		browseRepositoryAtShaLink: "https://githost.com/user/repo?rev=" + commitSha,
 	}

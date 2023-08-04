@@ -17,6 +17,7 @@ limitations under the License.
 package gitlab
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -138,4 +139,21 @@ func TestDeletePaCWebhook(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestIsRepositoryPublic(t *testing.T) {
+	if shouldSkipAllTests {
+		return
+	}
+
+	glclient, err := NewGitlabClient(accessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	isPublic, err := glclient.IsRepositoryPublic(repoUrl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println(isPublic)
 }

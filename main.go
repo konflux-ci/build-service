@@ -40,7 +40,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/selection"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/apimachinery/pkg/util/wait"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -55,6 +54,7 @@ import (
 	appstudioredhatcomv1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
 	"github.com/redhat-appstudio/build-service/controllers"
 	l "github.com/redhat-appstudio/build-service/pkg/logs"
+	appstudiospiapiv1beta1 "github.com/redhat-appstudio/service-provider-integration-operator/api/v1beta1"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -68,6 +68,7 @@ func init() {
 
 	utilruntime.Must(appstudiov1alpha1.AddToScheme(scheme))
 	utilruntime.Must(appstudioredhatcomv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(appstudiospiapiv1beta1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -239,49 +240,58 @@ func ensureRequiredAPIGroupsAndResourcesExist(restConfig *rest.Config) {
 		os.Exit(1)
 	}
 
-	if err := wait.PollImmediate(time.Second*5, time.Minute*5, func() (done bool, err error) {
-		apiGroups, apiResources, err := discoveryClient.ServerGroupsAndResources()
-		if err != nil {
-			setupLog.Error(err, "failed to get ServerGroups using discovery client")
-			return false, nil
+	delay := 5 * time.Second
+	attempts := 60
+	for i := 0; i < attempts; i++ {
+		if isRequiredAPIGroupsAndResourcesExist(requiredGroupsAndResources, discoveryClient) {
+			return
 		}
-
-	NextGroup:
-		for requiredGroupName, requiredGroupResources := range requiredGroupsAndResources {
-			// Search for the given group in all groups list
-			for _, group := range apiGroups {
-				if group.Name == requiredGroupName {
-					// Required group exists
-					// Check for required resources of the group
-				NextResource:
-					for _, requiredGroupResource := range requiredGroupResources {
-						for _, apiResource := range apiResources {
-							groupName := strings.Split(apiResource.GroupVersion, "/")[0]
-							if groupName == requiredGroupName {
-								for _, apiResourceInGroup := range apiResource.APIResources {
-									if apiResourceInGroup.Name == requiredGroupResource {
-										continue NextResource
-									}
-								}
-								// The resource is not found in this version of the group
-							}
-						}
-						// Required API resource is not found in the list of available API resources
-						setupLog.Info(fmt.Sprintf("Waiting for %s API Resourse under %s API Group", requiredGroupResource, requiredGroupName))
-						return false, nil
-					}
-					// All API resources from the group is available
-					continue NextGroup
-				}
-			}
-			// Required group is not found in the list of available groups
-			setupLog.Info(fmt.Sprintf("Waiting for %s API Group", requiredGroupName))
-			return false, nil
-		}
-
-		return true, nil
-	}); err != nil {
-		setupLog.Error(err, "timed out waiting for required API Groups and Resources")
-		os.Exit(1)
+		time.Sleep(delay)
 	}
+
+	setupLog.Error(err, "timed out waiting for required API Groups and Resources")
+	os.Exit(1)
+}
+
+func isRequiredAPIGroupsAndResourcesExist(requiredGroupsAndResources map[string][]string, discoveryClient *discovery.DiscoveryClient) bool {
+	apiGroups, apiResources, err := discoveryClient.ServerGroupsAndResources()
+	if err != nil {
+		setupLog.Error(err, "failed to get ServerGroups using discovery client")
+		return false
+	}
+
+NextGroup:
+	for requiredGroupName, requiredGroupResources := range requiredGroupsAndResources {
+		// Search for the given group in all groups list
+		for _, group := range apiGroups {
+			if group.Name == requiredGroupName {
+				// Required group exists
+				// Check for required resources of the group
+			NextResource:
+				for _, requiredGroupResource := range requiredGroupResources {
+					for _, apiResource := range apiResources {
+						groupName := strings.Split(apiResource.GroupVersion, "/")[0]
+						if groupName == requiredGroupName {
+							for _, apiResourceInGroup := range apiResource.APIResources {
+								if apiResourceInGroup.Name == requiredGroupResource {
+									continue NextResource
+								}
+							}
+							// The resource is not found in this version of the group
+						}
+					}
+					// Required API resource is not found in the list of available API resources
+					setupLog.Info(fmt.Sprintf("Waiting for %s API Resourse under %s API Group", requiredGroupResource, requiredGroupName))
+					return false
+				}
+				// All API resources from the group is available
+				continue NextGroup
+			}
+		}
+		// Required group is not found in the list of available groups
+		setupLog.Info(fmt.Sprintf("Waiting for %s API Group", requiredGroupName))
+		return false
+	}
+
+	return true
 }

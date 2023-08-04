@@ -40,6 +40,7 @@ import (
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
+	appstudiospiapiv1beta1 "github.com/redhat-appstudio/service-provider-integration-operator/api/v1beta1"
 
 	appstudioredhatcomv1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
 	//+kubebuilder:scaffold:imports
@@ -71,11 +72,13 @@ var _ = BeforeSuite(func() {
 	By("bootstrapping test environment")
 	applicationServiceDepVersion := "v0.0.0-20230717184417-67d31a01a776"
 	applicationApiDepVersion := "v0.0.0-20230704143842-035c661f115f"
+	spiApiDepVersion := "v0.2023.22-0.20230731122342-dfc17adc9829"
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
 			filepath.Join("..", "config", "crd", "bases"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "redhat-appstudio", "application-api@"+applicationApiDepVersion, "config", "crd", "bases"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "redhat-appstudio", "application-service@"+applicationServiceDepVersion, "hack", "routecrd", "route.yaml"),
+			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "redhat-appstudio", "service-provider-integration-operator@"+spiApiDepVersion, "config", "crd", "bases"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "tektoncd", "pipeline@v0.44.0", "config"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "openshift-pipelines", "pipelines-as-code@v0.17.3", "config"),
 		},
@@ -100,6 +103,9 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 
 	err = appstudioredhatcomv1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	err = appstudiospiapiv1beta1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	//+kubebuilder:scaffold:scheme
