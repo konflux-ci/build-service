@@ -71,13 +71,13 @@ func TestNestedErrorMessage(t *testing.T) {
 			expectedNestedErrorMessage: "invalid credentials",
 		},
 		{
-			name:                       "should return empty string if nested error is nil",
+			name:                       "should return persistent error id and short error description if nested error is nil",
 			nestedError:                nil,
 			extraInfo:                  "",
-			expectedNestedErrorMessage: "",
+			expectedNestedErrorMessage: "1: unknown error",
 		},
 		{
-			name:                       "should include extra information when there is",
+			name:                       "should include extra information when it's defined",
 			nestedError:                fmt.Errorf("404 no resource []"),
 			extraInfo:                  "permission denied",
 			expectedNestedErrorMessage: "404 no resource [] permission denied",

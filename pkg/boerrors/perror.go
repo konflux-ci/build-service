@@ -46,7 +46,7 @@ func NewBuildOpError(id BOErrorId, err error) *BuildOpError {
 
 func (r BuildOpError) Error() string {
 	if r.err == nil {
-		return ""
+		return r.ShortError()
 	}
 	if r.ExtraInfo == "" {
 		return r.err.Error()
@@ -63,7 +63,10 @@ func (r BuildOpError) GetErrorId() int {
 // standard error message for transient errors.
 func (r BuildOpError) ShortError() string {
 	if r.id == ETransientError {
-		return r.Error()
+		if r.err != nil {
+			return r.err.Error()
+		}
+		return "transient error"
 	}
 	return fmt.Sprintf("%d: %s", r.id, boErrorMessages[r.id])
 }
