@@ -189,8 +189,10 @@ func (r *ComponentBuildReconciler) findGitSecretName(ctx context.Context, compon
 		return "", err
 	}
 
+	componentGitUrl := strings.TrimSuffix(strings.TrimSuffix(component.Spec.Source.GitSource.URL, ".git"), "/")
 	for _, atb := range spiAccessTokensList.Items {
-		if atb.Spec.RepoUrl == component.Spec.Source.GitSource.URL {
+		tokenGitUrl := strings.TrimSuffix(strings.TrimSuffix(atb.Spec.RepoUrl, ".git"), "/")
+		if tokenGitUrl == componentGitUrl {
 			return atb.Status.SyncedObjectRef.Name, nil
 		}
 	}
