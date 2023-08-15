@@ -53,6 +53,10 @@ func TestPersistentErrorDetection(t *testing.T) {
 			if boErr.IsPersistent() != tt.isPersitent {
 				t.Errorf("Wrong error persistance")
 			}
+
+			if boErr.GetErrorId() != int(tt.errId) {
+				t.Errorf("Wrong error id")
+			}
 		})
 	}
 }

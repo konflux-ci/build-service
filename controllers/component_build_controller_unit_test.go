@@ -22,7 +22,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/devfile/api/v2/pkg/apis/workspaces/v1alpha2"
 	"github.com/redhat-appstudio/application-service/gitops"
+	"github.com/redhat-appstudio/application-service/pkg/devfile"
+	"gotest.tools/v3/assert"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -185,6 +189,125 @@ func TestWriteBuildStatus(t *testing.T) {
 	}
 }
 
+func TestGenerateInitialPipelineRunForComponentDevfileError(t *testing.T) {
+	component := &appstudiov1alpha1.Component{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-component",
+			Namespace: "my-namespace",
+			Annotations: map[string]string{
+				"skip-initial-checks":            "true",
+				gitops.GitProviderAnnotationName: "github",
+			},
+		},
+		Spec: appstudiov1alpha1.ComponentSpec{
+			Application:    "my-application",
+			ContainerImage: "registry.io/username/image:tag",
+			Source: appstudiov1alpha1.ComponentSource{
+				ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
+					GitSource: &appstudiov1alpha1.GitSource{
+						URL:      "https://githost.com/user/repo.git",
+						Revision: "custom-branch",
+					},
+				},
+			},
+		},
+		Status: appstudiov1alpha1.ComponentStatus{
+			Devfile: "wrong",
+		},
+	}
+	pipelineRef := &tektonapi.PipelineRef{
+		Name:   "pipeline-name",
+		Bundle: "pipeline-bundle",
+	}
+	additionalParams := []tektonapi.Param{
+		{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
+		{Name: "rebuild", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}},
+	}
+	commitSha := "26239c94569cea79b32bce32f12c8abd8bbd0fd7"
+
+	pRunGitInfo := &buildGitInfo{
+		gitSourceSha:              commitSha,
+		browseRepositoryAtShaLink: "https://githost.com/user/repo?rev=" + commitSha,
+	}
+
+	_, err := generatePipelineRunForComponent(component, pipelineRef, additionalParams, pRunGitInfo)
+	if err == nil {
+		t.Error("generateInitialPipelineRunForComponentDevfileError(): Didn't return error")
+	} else {
+		assert.ErrorContains(t, err, "failed to populateAndParseDevfile: failed to decode devfile json")
+	}
+}
+
+func TestGenerateInitialPipelineRunForComponentDockerfileContext(t *testing.T) {
+	component := &appstudiov1alpha1.Component{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-component",
+			Namespace: "my-namespace",
+			Annotations: map[string]string{
+				"skip-initial-checks":            "true",
+				gitops.GitProviderAnnotationName: "github",
+			},
+		},
+		Spec: appstudiov1alpha1.ComponentSpec{
+			Application:    "my-application",
+			ContainerImage: "registry.io/username/image:tag",
+			Source: appstudiov1alpha1.ComponentSource{
+				ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
+					GitSource: &appstudiov1alpha1.GitSource{
+						URL:      "https://githost.com/user/repo.git",
+						Revision: "custom-branch",
+					},
+				},
+			},
+		},
+		Status: appstudiov1alpha1.ComponentStatus{},
+	}
+	pipelineRef := &tektonapi.PipelineRef{
+		Name:   "pipeline-name",
+		Bundle: "pipeline-bundle",
+	}
+	additionalParams := []tektonapi.Param{
+		{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
+		{Name: "rebuild", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}},
+	}
+	commitSha := "26239c94569cea79b32bce32f12c8abd8bbd0fd7"
+
+	pRunGitInfo := &buildGitInfo{
+		gitSourceSha:              commitSha,
+		browseRepositoryAtShaLink: "https://githost.com/user/repo?rev=" + commitSha,
+	}
+
+	dockerfileContext := "some_context"
+	dockerfileURI := "some_uri"
+	DevfileSearchForDockerfile = func(devfileBytes []byte) (*v1alpha2.DockerfileImage, error) {
+		dockerfileImage := v1alpha2.DockerfileImage{
+			BaseImage:     v1alpha2.BaseImage{},
+			DockerfileSrc: v1alpha2.DockerfileSrc{Uri: dockerfileURI},
+			Dockerfile:    v1alpha2.Dockerfile{BuildContext: dockerfileContext},
+		}
+		return &dockerfileImage, nil
+	}
+
+	pipelineRun, err := generatePipelineRunForComponent(component, pipelineRef, additionalParams, pRunGitInfo)
+
+	if err != nil {
+		t.Error("generateInitialPipelineRunForComponentDockerfileContext(): Failed to generate pipeline run")
+	}
+
+	for _, param := range pipelineRun.Spec.Params {
+		switch param.Name {
+		case "path-context":
+			if param.Value.StringVal != dockerfileContext {
+				t.Errorf("generateInitialPipelineRunForComponentDockerfileContext(): wrong pipeline parameter %s", param.Name)
+			}
+		case "dockerfile":
+			if param.Value.StringVal != dockerfileURI {
+				t.Errorf("generateInitialPipelineRunForComponentDockerfileContext(): wrong pipeline parameter %s", param.Name)
+			}
+		}
+	}
+}
+
 func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 	component := &appstudiov1alpha1.Component{
 		ObjectMeta: metav1.ObjectMeta{
@@ -225,6 +348,7 @@ func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 		gitSourceSha:              commitSha,
 		browseRepositoryAtShaLink: "https://githost.com/user/repo?rev=" + commitSha,
 	}
+	DevfileSearchForDockerfile = devfile.SearchForDockerfile
 	pipelineRun, err := generatePipelineRunForComponent(component, pipelineRef, additionalParams, pRunGitInfo)
 	if err != nil {
 		t.Error("generateInitialPipelineRunForComponent(): Failed to genertate pipeline run")
