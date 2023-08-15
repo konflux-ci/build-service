@@ -55,13 +55,6 @@ const (
 	PaCProvisionFinalizer            = "pac.component.appstudio.openshift.io/finalizer"
 	ImageRegistrySecretLinkFinalizer = "image-registry-secret-sa-link.component.appstudio.openshift.io/finalizer"
 
-	PaCProvisionAnnotationName             = "appstudio.openshift.io/pac-provision"
-	PaCProvisionRequestedAnnotationValue   = "request"
-	PaCProvisionDoneAnnotationValue        = "done"
-	PaCProvisionUnconfigureAnnotationValue = "delete"
-	PaCProvisionErrorAnnotationValue       = "error"
-	PaCProvisionErrorDetailsAnnotationName = "appstudio.openshift.io/pac-provision-error"
-
 	ApplicationNameLabelName  = "appstudio.openshift.io/application"
 	ComponentNameLabelName    = "appstudio.openshift.io/component"
 	PartOfLabelName           = "app.kubernetes.io/part-of"
@@ -322,44 +315,15 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
-	// TODO uncoment when old annotations removed
-	// requestedAction, requestedActionExists := component.Annotations[BuildRequestAnnotationName]
-	// if !requestedActionExists {
-	// 	if _, statusExists := component.Annotations[BuildStatusAnnotationName]; statusExists {
-	// 		// Nothing to do
-	// 		return ctrl.Result{}, nil
-	// 	}
-	// 	// Automatically build component after creation
-	// 	requestedAction = BuildRequestTriggerSimpleBuildAnnotationValue
-	// }
-
 	requestedAction, requestedActionExists := component.Annotations[BuildRequestAnnotationName]
 	if !requestedActionExists {
-		// Leaving old Initial build and PaC annotations for backward compatibility.
-		// TODO Remove the annotations when UI migrates to new ones.
-
-		// Check if Pipelines as Code workflow enabled
-		if pacAnnotationValue, exists := component.Annotations[PaCProvisionAnnotationName]; exists {
-			switch pacAnnotationValue {
-			case PaCProvisionRequestedAnnotationValue:
-				log.Info("PaC provision request via deprecated annotation")
-				requestedAction = BuildRequestConfigurePaCAnnotationValue
-			case PaCProvisionUnconfigureAnnotationValue:
-				log.Info("PaC unprovision request via deprecated annotation")
-				requestedAction = BuildRequestUnconfigurePaCAnnotationValue
-			case PaCProvisionDoneAnnotationValue, PaCProvisionErrorAnnotationValue:
-				// Do nothing
-			default:
-				message := fmt.Sprintf("Unexpected value \"%s\" for \"%s\" annotation", pacAnnotationValue, PaCProvisionAnnotationName)
-				log.Info(message)
-			}
-		} else {
-			// Check if initial build was done
-			if _, exists := component.Annotations[InitialBuildAnnotationName]; !exists {
-				log.Info("automatically requesting initial build for the new component")
-				requestedAction = BuildRequestTriggerSimpleBuildAnnotationValue
-			}
+		if _, statusExists := component.Annotations[BuildStatusAnnotationName]; statusExists {
+			// Nothing to do
+			return ctrl.Result{}, nil
 		}
+		// Automatically build component after creation
+		log.Info("automatically requesting initial build for the new component")
+		requestedAction = BuildRequestTriggerSimpleBuildAnnotationValue
 	}
 
 	switch requestedAction {
@@ -393,8 +357,6 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		component.Annotations[InitialBuildAnnotationName] = "processed"
 
 	case BuildRequestConfigurePaCAnnotationValue:
-		var pacAnnotationValue string
-		var pacPersistentErrorMessage string
 		pacBuildStatus := &PaCBuildStatus{}
 		if mergeUrl, err := r.ProvisionPaCForComponent(ctx, &component); err != nil {
 			if boErr, ok := err.(*boerrors.BuildOpError); ok && boErr.IsPersistent() {
@@ -402,9 +364,6 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				pacBuildStatus.State = "error"
 				pacBuildStatus.ErrId = boErr.GetErrorId()
 				pacBuildStatus.ErrMessage = boErr.ShortError()
-
-				pacAnnotationValue = PaCProvisionErrorAnnotationValue
-				pacPersistentErrorMessage = boErr.ShortError()
 			} else {
 				// transient error, retry
 				log.Error(err, "Pipelines as Code provision transient error")
@@ -414,7 +373,6 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			pacBuildStatus.State = "enabled"
 			pacBuildStatus.MergeUrl = mergeUrl
 			pacBuildStatus.ConfigurationTime = time.Now().Format(time.RFC1123)
-			pacAnnotationValue = PaCProvisionDoneAnnotationValue
 			log.Info("Pipelines as Code provision for the Component finished successfully")
 		}
 
@@ -442,12 +400,6 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if len(component.Annotations) == 0 {
 			component.Annotations = make(map[string]string)
 		}
-		component.Annotations[PaCProvisionAnnotationName] = pacAnnotationValue
-		if pacPersistentErrorMessage != "" {
-			component.Annotations[PaCProvisionErrorDetailsAnnotationName] = pacPersistentErrorMessage
-		} else {
-			delete(component.Annotations, PaCProvisionErrorDetailsAnnotationName)
-		}
 
 	case BuildRequestUnconfigurePaCAnnotationValue:
 		// Remove Pipelines as Code configuration finalizer
@@ -461,15 +413,12 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			}
 		}
 
-		var pacPersistentErrorMessage string
 		pacBuildStatus := &PaCBuildStatus{}
 		if mergeUrl, err := r.UndoPaCProvisionForComponent(ctx, &component); err != nil {
 			if boErr, ok := err.(*boerrors.BuildOpError); ok && boErr.IsPersistent() {
 				log.Error(err, "Pipelines as Code unprovision for the Component failed")
 				pacBuildStatus.ErrId = boErr.GetErrorId()
 				pacBuildStatus.ErrMessage = boErr.ShortError()
-
-				pacPersistentErrorMessage = boErr.ShortError()
 			} else {
 				// transient error, retry
 				log.Error(err, "Pipelines as Code unprovision transient error")
@@ -492,15 +441,6 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		buildStatus.PaC = pacBuildStatus
 		buildStatus.Message = "done"
 		writeBuildStatus(&component, buildStatus)
-
-		// Delete PaC annotation
-		delete(component.Annotations, PaCProvisionAnnotationName)
-		// Delete / update PaC error annotation
-		if pacPersistentErrorMessage != "" {
-			component.Annotations[PaCProvisionErrorDetailsAnnotationName] = pacPersistentErrorMessage
-		} else {
-			delete(component.Annotations, PaCProvisionErrorDetailsAnnotationName)
-		}
 
 	default:
 		if requestedAction == "" {
