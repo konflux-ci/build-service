@@ -9,6 +9,7 @@ require (
 	github.com/openshift/api v0.0.0-20221013123534-96eec44e1979
 	github.com/prometheus/client_golang v1.16.0
 	github.com/xanzy/go-gitlab v0.88.0
+	gotest.tools/v3 v3.4.0
 	k8s.io/api v0.26.1
 	k8s.io/apimachinery v0.27.3
 	k8s.io/client-go v0.26.1
@@ -44,7 +45,7 @@ require (
 	github.com/containerd/containerd v1.6.18 // indirect
 	github.com/containerd/typeurl v1.0.2 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
-	github.com/devfile/api/v2 v2.2.1-alpha.0.20230413012049-a6c32fca0dbd // indirect
+	github.com/devfile/api/v2 v2.2.1-alpha.0.20230413012049-a6c32fca0dbd
 	github.com/devfile/library/v2 v2.2.1-0.20230418160146-e75481b7eebd // indirect
 	github.com/devfile/registry-support/index/generator v0.0.0-20230123181701-4de4dadb13e7 // indirect
 	github.com/devfile/registry-support/registry-library v0.0.0-20230123181701-4de4dadb13e7 // indirect

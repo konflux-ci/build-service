@@ -43,6 +43,9 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
+// That way it can be mocked in tests
+var DevfileSearchForDockerfile = devfile.SearchForDockerfile
+
 // SubmitNewBuild creates a new PipelineRun to build a new image for the given component.
 // Is called right ater component creation and later on user's demand.
 func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component *appstudiov1alpha1.Component) error {
@@ -230,7 +233,8 @@ func generatePipelineRunForComponent(component *appstudiov1alpha1.Component, pip
 		params = append(params, tektonapi.Param{Name: "skip-checks", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}})
 	}
 
-	dockerFile, err := devfile.SearchForDockerfile([]byte(component.Status.Devfile))
+	dockerFile, err := DevfileSearchForDockerfile([]byte(component.Status.Devfile))
+
 	if err != nil {
 		return nil, err
 	}
