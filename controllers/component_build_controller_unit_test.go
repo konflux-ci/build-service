@@ -797,6 +797,23 @@ func TestValidatePaCConfiguration(t *testing.T) {
 		},
 		{
 			name:        "should reject empty Bitbucket webhook token",
+			gitProvider: "bitbucket",
+			config: map[string][]byte{
+				"bitbucket.token": []byte(""),
+			},
+			expectError: true,
+		},
+		{
+			name:        "test should reject empty Bitbucket username",
+			gitProvider: "bitbucket",
+			config: map[string][]byte{
+				"bitbucket.token": []byte("token"),
+				"username":        []byte(""),
+			},
+			expectError: true,
+		},
+		{
+			name:        "should reject empty Bitbucket webhook token",
 			gitProvider: "gitlab",
 			config: map[string][]byte{
 				"bitbucket.token": []byte(""),
@@ -810,6 +827,12 @@ func TestValidatePaCConfiguration(t *testing.T) {
 			config: map[string][]byte{
 				"bitbucket.token": []byte("token"),
 			},
+			expectError: true,
+		},
+		{
+			name:        "should reject unknown application configuration",
+			gitProvider: "unknown",
+			config:      map[string][]byte{},
 			expectError: true,
 		},
 	}

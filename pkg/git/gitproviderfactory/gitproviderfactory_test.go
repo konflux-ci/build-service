@@ -151,6 +151,45 @@ func TestGetContainerImageRepository(t *testing.T) {
 			expectError: false,
 		},
 		{
+			name: "should not create GitHub client from app if client call fails",
+			gitClientConfig: GitClientConfig{
+				PacSecretData: map[string][]byte{
+					gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
+					gitops.PipelinesAsCode_githubPrivateKey: []byte("private key"),
+				},
+				GitProvider:               "github",
+				RepoUrl:                   repoUrl,
+				IsAppInstallationExpected: false,
+			},
+			allowConstructors: func() {
+				github.NewGithubClientForSimpleBuildByApp = func(appId int64, privateKeyPem []byte) (*github.GithubClient, error) {
+					return nil, fmt.Errorf("wrong key")
+				}
+			},
+			expectError: true,
+		},
+		{
+			name: "should create GitHub client, but fail when check if the application is installed into target repository fails",
+			gitClientConfig: GitClientConfig{
+				PacSecretData: map[string][]byte{
+					gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
+					gitops.PipelinesAsCode_githubPrivateKey: []byte("private key"),
+				},
+				GitProvider:               "github",
+				RepoUrl:                   repoUrl,
+				IsAppInstallationExpected: true,
+			},
+			allowConstructors: func() {
+				github.IsAppInstalledIntoRepository = func(ghclient *github.GithubClient, repoUrl string) (bool, error) {
+					return false, fmt.Errorf("application check failed")
+				}
+				github.NewGithubClientByApp = func(appId int64, privateKeyPem []byte, repoUrl string) (*github.GithubClient, error) {
+					return &github.GithubClient{}, nil
+				}
+			},
+			expectError: true,
+		},
+		{
 			name: "should create GitHub client from token",
 			gitClientConfig: GitClientConfig{
 				PacSecretData: map[string][]byte{
@@ -183,6 +222,34 @@ func TestGetContainerImageRepository(t *testing.T) {
 				}
 			},
 			expectError: false,
+		},
+		{
+			name: "should not create BitBucket client",
+			gitClientConfig: GitClientConfig{
+				PacSecretData: map[string][]byte{
+					"bitbucket_token": []byte("token"),
+				},
+				GitProvider:               "bitbucket",
+				RepoUrl:                   repoUrl,
+				IsAppInstallationExpected: true,
+			},
+			allowConstructors: func() {
+			},
+			expectError: true,
+		},
+		{
+			name: "should not create unknown client",
+			gitClientConfig: GitClientConfig{
+				PacSecretData: map[string][]byte{
+					"unknonw_token": []byte("token"),
+				},
+				GitProvider:               "unknown",
+				RepoUrl:                   repoUrl,
+				IsAppInstallationExpected: true,
+			},
+			allowConstructors: func() {
+			},
+			expectError: true,
 		},
 	}
 	for _, tt := range tests {
