@@ -195,7 +195,7 @@ func setComponentBuildRequest(componentKey types.NamespacedName, buildRequest st
 // createComponentForPaCBuild is deprecated
 func createComponentForPaCBuild(sampleComponentData *appstudiov1alpha1.Component) types.NamespacedName {
 	sampleComponentData.Annotations = map[string]string{
-		PaCProvisionAnnotationName: PaCProvisionRequestedAnnotationValue,
+		BuildRequestAnnotationName: BuildRequestConfigurePaCAnnotationValue,
 	}
 
 	Expect(k8sClient.Create(ctx, sampleComponentData)).Should(Succeed())
@@ -467,14 +467,6 @@ func waitPaCRepositoryCreated(resourceKey types.NamespacedName) {
 	Eventually(func() bool {
 		err := k8sClient.Get(ctx, resourceKey, pacRepository)
 		return err == nil && pacRepository.ResourceVersion != ""
-	}, timeout, interval).Should(BeTrue())
-}
-
-func waitComponentAnnotationValue(componentKey types.NamespacedName, annotationName string, annotationValue string) {
-	Eventually(func() bool {
-		component := getComponent(componentKey)
-		annotations := component.GetAnnotations()
-		return annotations != nil && annotations[annotationName] == annotationValue
 	}, timeout, interval).Should(BeTrue())
 }
 
