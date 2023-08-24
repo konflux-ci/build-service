@@ -18,7 +18,6 @@ package controllers
 
 import (
 	"os"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -50,6 +49,7 @@ var _ = Describe("Git tekton resources renovater", func() {
 			deleteBuildPipelineRunSelector(defaultSelectorKey)
 			deleteJobs(buildServiceNamespaceName)
 			os.Unsetenv(InstallationsPerJobEnvName)
+			deleteSecret(pacSecretKey)
 		})
 
 		It("It should not trigger job", func() {
@@ -61,11 +61,12 @@ var _ = Describe("Git tekton resources renovater", func() {
 				repositories := generateRepositories(installedRepositoryUrls)
 				return []github.ApplicationInstallation{generateInstallation(repositories)}, "slug", nil
 			}
-			componentNamespacedName := createComponentForPaCBuild(getComponentData(componentConfig{gitURL: "https://github/test/repo3"}))
+			componentNamespacedName := createComponentForPaCBuild(getComponentData(componentConfig{componentKey: types.NamespacedName{Name: "testnottrigger"}, gitURL: "https://github/test/repo3"}))
 			createBuildPipelineRunSelector(defaultSelectorKey)
-			Eventually(listJobs).WithArguments(buildServiceNamespaceName).WithTimeout(10 * time.Second).Should(BeEmpty())
+			Eventually(listJobs).WithArguments(buildServiceNamespaceName).WithTimeout(timeout).Should(BeEmpty())
 			deleteComponent(componentNamespacedName)
 		})
+
 		It("It should trigger job", func() {
 			installedRepositoryUrls := []string{
 				"https://github/test/repo1",
@@ -75,11 +76,30 @@ var _ = Describe("Git tekton resources renovater", func() {
 				repositories := generateRepositories(installedRepositoryUrls)
 				return []github.ApplicationInstallation{generateInstallation(repositories)}, "slug", nil
 			}
-			componentNamespacedName := createComponentForPaCBuild(getComponentData(componentConfig{gitURL: "https://github/test/repo1"}))
+			componentNamespacedName := createComponentForPaCBuild(getComponentData(componentConfig{componentKey: types.NamespacedName{Name: "testtrigger"}, gitURL: "https://github/test/repo1"}))
 			createBuildPipelineRunSelector(defaultSelectorKey)
-			Eventually(listJobs).WithArguments(buildServiceNamespaceName).WithTimeout(10 * time.Second).Should(HaveLen(1))
+			Eventually(listJobs).WithArguments(buildServiceNamespaceName).WithTimeout(timeout).Should(HaveLen(1))
 			deleteComponent(componentNamespacedName)
 		})
+
+		It("It should trigger job, use default branch and default installation per job", func() {
+			installedRepositoryUrls := []string{
+				"https://github/test/repo1",
+				"https://github/test/repo2",
+			}
+			github.GetAppInstallations = func(appIdStr string, privateKeyPem []byte) ([]github.ApplicationInstallation, string, error) {
+				repositories := generateRepositories(installedRepositoryUrls)
+				return []github.ApplicationInstallation{generateInstallation(repositories)}, "slug", nil
+			}
+			componentsData := getComponentData(componentConfig{componentKey: types.NamespacedName{Name: "testdefault"}, gitURL: "https://github/test/repo1"})
+			componentsData.Spec.Source.GitSource.Revision = ""
+			componentNamespacedName := createComponentForPaCBuild(componentsData)
+			os.Setenv(InstallationsPerJobEnvName, "0")
+			createBuildPipelineRunSelector(defaultSelectorKey)
+			Eventually(listJobs).WithArguments(buildServiceNamespaceName).WithTimeout(timeout).Should(HaveLen(1))
+			deleteComponent(componentNamespacedName)
+		})
+
 		It("It should trigger 2 jobs", func() {
 			installedRepositoryUrls1 := []string{
 				"https://github/test1/repo1",
@@ -121,11 +141,30 @@ var _ = Describe("Git tekton resources renovater", func() {
 			// Set 2 installations per job
 			os.Setenv(InstallationsPerJobEnvName, "2")
 			createBuildPipelineRunSelector(defaultSelectorKey)
-			Eventually(listJobs).WithArguments(buildServiceNamespaceName).WithTimeout(10 * time.Second).Should(HaveLen(2))
+			Eventually(listJobs).WithArguments(buildServiceNamespaceName).WithTimeout(timeout).Should(HaveLen(2))
 			deleteComponent(componentNamespacedName1)
 			deleteComponent(componentNamespacedName2)
 			deleteComponent(componentNamespacedName3)
 			deleteComponent(componentNamespacedName4)
+		})
+
+		It("It should trigger job, because pac secret is missing", func() {
+			installedRepositoryUrls := []string{
+				"https://github/test/repo1",
+				"https://github/test/repo2",
+			}
+			github.GetAppInstallations = func(appIdStr string, privateKeyPem []byte) ([]github.ApplicationInstallation, string, error) {
+				repositories := generateRepositories(installedRepositoryUrls)
+				return []github.ApplicationInstallation{generateInstallation(repositories)}, "slug", nil
+			}
+			componentNamespacedName := createComponentForPaCBuild(getComponentData(componentConfig{componentKey: types.NamespacedName{Name: "testpacmissing"}, gitURL: "https://github/test/repo1"}))
+
+			deleteSecret(pacSecretKey)
+			createBuildPipelineRunSelector(defaultSelectorKey)
+			Eventually(listEvents).WithArguments("default").WithTimeout(timeout).ShouldNot(HaveLen(0))
+			allEvents := listEvents("default")
+			Expect(allEvents[0].Reason).To(Equal("ErrorReadingPaCSecret"))
+			deleteComponent(componentNamespacedName)
 		})
 	})
 })

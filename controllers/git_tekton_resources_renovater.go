@@ -114,11 +114,13 @@ func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Re
 	pacSecret := corev1.Secret{}
 	globalPaCSecretKey := types.NamespacedName{Namespace: buildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}
 	if err := r.Client.Get(ctx, globalPaCSecretKey, &pacSecret); err != nil {
-		if !errors.IsNotFound(err) {
-			r.EventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
+		r.EventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
+		if errors.IsNotFound(err) {
+			log.Error(err, "not found Pipelines as Code secret in %s namespace: %w", globalPaCSecretKey.Namespace, err, l.Action, l.ActionView)
+		} else {
 			log.Error(err, "failed to get Pipelines as Code secret in %s namespace: %w", globalPaCSecretKey.Namespace, err, l.Action, l.ActionView)
-			return ctrl.Result{}, nil
 		}
+		return ctrl.Result{}, nil
 	}
 	isApp := gitops.IsPaCApplicationConfigured("github", pacSecret.Data)
 	if !isApp {
