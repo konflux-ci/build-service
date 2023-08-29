@@ -44,6 +44,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/yaml"
@@ -407,6 +408,29 @@ func checkMandatoryFieldsNotEmpty(config map[string][]byte, mandatoryFields []st
 func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, component *appstudiov1alpha1.Component, config map[string][]byte) error {
 	log := ctrllog.FromContext(ctx)
 
+	// Check multi-component git repository scenario
+	if component.Spec.Source.GitSource.Context != "" {
+		repository, err := r.findPaCRepositoryForComponent(ctx, component)
+		if err != nil {
+			return err
+		}
+		if repository != nil {
+			pacRepositoryOwnersNumber := len(repository.OwnerReferences)
+			if err := controllerutil.SetOwnerReference(component, repository, r.Scheme); err != nil {
+				log.Error(err, "failed to add owner reference to existing PaC repository", "PaCRepositoryName", repository.Name)
+				return err
+			}
+			if len(repository.OwnerReferences) > pacRepositoryOwnersNumber {
+				if err := r.Client.Update(ctx, repository); err != nil {
+					log.Error(err, "failed to update existing PaC repository with component owner reference", "PaCRepositoryName", repository.Name)
+					return err
+				}
+				log.Info("Added current component to owners of the PaC repository", "PaCRepositoryName", repository.Name, l.Action, l.ActionUpdate)
+			}
+			return nil
+		}
+	}
+
 	repository, err := gitops.GeneratePACRepository(*component, config)
 	if err != nil {
 		return err
@@ -419,6 +443,12 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 				return err
 			}
 			if err := r.Client.Create(ctx, repository); err != nil {
+				if strings.Contains(err.Error(), "repository already exist with url") {
+					// PaC admission webhook denied creation of the PaC repository,
+					// because PaC repository object that references the same git repository already exists.
+					log.Info("An attempt to create second PaC Repository for the same git repository", "GitRepository", repository.Spec.URL, l.Action, l.ActionAdd, l.Audit, "true")
+					return boerrors.NewBuildOpError(boerrors.EPaCDuplicateRepository, err)
+				}
 				log.Error(err, "failed to create Component PaC repository object", l.Action, l.ActionAdd)
 				return err
 			}
@@ -428,6 +458,27 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 		}
 	}
 	return nil
+}
+
+// findPaCRepositoryForComponent searches for existing matching PaC repository object for given component.
+// The search makes sense only in the same namespace.
+func (r *ComponentBuildReconciler) findPaCRepositoryForComponent(ctx context.Context, component *appstudiov1alpha1.Component) (*pacv1alpha1.Repository, error) {
+	log := ctrllog.FromContext(ctx)
+
+	pacRepositoriesList := &pacv1alpha1.RepositoryList{}
+	err := r.Client.List(ctx, pacRepositoriesList, &client.ListOptions{Namespace: component.Namespace})
+	if err != nil {
+		log.Error(err, "failed to list PaC repositories")
+		return nil, err
+	}
+
+	gitUrl := strings.TrimSuffix(strings.TrimSuffix(component.Spec.Source.GitSource.URL, ".git"), "/")
+	for _, pacRepository := range pacRepositoriesList.Items {
+		if pacRepository.Spec.URL == gitUrl {
+			return &pacRepository, nil
+		}
+	}
+	return nil, nil
 }
 
 // generatePaCPipelineRunConfigs generates PipelineRun YAML configs for given component.
