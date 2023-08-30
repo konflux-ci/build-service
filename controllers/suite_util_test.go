@@ -573,6 +573,14 @@ func deleteBuildPipelineRunSelector(selectorKey types.NamespacedName) {
 	}
 }
 
+func listEvents(namespace string) []corev1.Event {
+	events := &corev1.EventList{}
+
+	err := k8sClient.List(ctx, events, client.InNamespace(namespace))
+	Expect(err).ToNot(HaveOccurred())
+	return events.Items
+}
+
 func listJobs(namespace string) []batch.Job {
 	jobs := &batch.JobList{}
 
