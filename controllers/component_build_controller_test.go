@@ -21,11 +21,14 @@ import (
 	"strings"
 	"time"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -34,6 +37,7 @@ import (
 	gitopsprepare "github.com/redhat-appstudio/application-service/gitops/prepare"
 	buildappstudiov1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
+	"github.com/redhat-appstudio/build-service/pkg/git/github"
 	gp "github.com/redhat-appstudio/build-service/pkg/git/gitprovider"
 	gpf "github.com/redhat-appstudio/build-service/pkg/git/gitproviderfactory"
 	appstudiospiapiv1beta1 "github.com/redhat-appstudio/service-provider-integration-operator/api/v1beta1"
@@ -90,6 +94,9 @@ var _ = Describe("Component initial build controller", func() {
 	BeforeEach(func() {
 		createNamespace(buildServiceNamespaceName)
 		createBuildPipelineRunSelector(defaultSelectorKey)
+		github.GetAppInstallations = func(githubAppIdStr string, appPrivateKeyPem []byte) ([]github.ApplicationInstallation, string, error) {
+			return nil, "slug", nil
+		}
 	})
 
 	AfterEach(func() {
@@ -989,7 +996,104 @@ var _ = Describe("Component initial build controller", func() {
 		})
 	})
 
-	Context("Test initial build", func() {
+	Context("Test Pipelines as Code multi component git repository", func() {
+		const (
+			multiComponentGitRepositoryUrl = "https://github.com/samples/multi-component-repository"
+		)
+
+		_ = BeforeEach(func() {
+			deleteAllPaCRepositories(resourceKey.Namespace)
+
+			createNamespace(buildServiceNamespaceName)
+			ResetTestGitProviderClient()
+
+			pacSecretData := map[string]string{
+				"github-application-id": "12345",
+				"github-private-key":    githubAppPrivateKey,
+			}
+			createSecret(pacSecretKey, pacSecretData)
+
+			createComponentWithBuildRequest(resourceKey, BuildRequestConfigurePaCAnnotationValue)
+			waitComponentAnnotationGone(resourceKey, BuildRequestAnnotationName)
+			waitPaCRepositoryCreated(resourceKey)
+		})
+
+		_ = AfterEach(func() {
+			ResetTestGitProviderClient()
+			deleteComponentPipelineRuns(resourceKey)
+			deleteComponent(resourceKey)
+			deleteSecret(pacSecretKey)
+			deletePaCRepository(resourceKey)
+		})
+
+		It("should reuse existing PaC repository for multi component git repository", func() {
+			component1Key := types.NamespacedName{Name: "test-multi-component1", Namespace: HASAppNamespace}
+			component2Key := types.NamespacedName{Name: "test-multi-component2", Namespace: HASAppNamespace}
+
+			pacRepositoriesList := &pacv1alpha1.RepositoryList{}
+			pacRepository := &pacv1alpha1.Repository{}
+			err := k8sClient.Get(ctx, component1Key, pacRepository)
+			Expect(k8sErrors.IsNotFound(err)).To(BeTrue())
+			err = k8sClient.Get(ctx, component2Key, pacRepository)
+			Expect(k8sErrors.IsNotFound(err)).To(BeTrue())
+
+			component1PaCMergeRequestCreated := false
+			component2PaCMergeRequestCreated := false
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				defer GinkgoRecover()
+				if strings.Contains(d.Files[0].FullPath, component1Key.Name) {
+					component1PaCMergeRequestCreated = true
+					return "url1", nil
+				} else if strings.Contains(d.Files[0].FullPath, component2Key.Name) {
+					component2PaCMergeRequestCreated = true
+					return "url2", nil
+				} else {
+					Fail("Unknown component in EnsurePaCMergeRequest")
+				}
+				return "", nil
+			}
+
+			createCustomComponentWithBuildRequest(componentConfig{
+				componentKey:     component1Key,
+				gitURL:           multiComponentGitRepositoryUrl,
+				gitSourceContext: "component1/path",
+			}, BuildRequestConfigurePaCAnnotationValue)
+			defer deleteComponent(component1Key)
+			waitComponentAnnotationGone(component1Key, BuildRequestAnnotationName)
+			Eventually(func() bool { return component1PaCMergeRequestCreated }, timeout, interval).Should(BeTrue())
+			waitPaCRepositoryCreated(component1Key)
+			defer deletePaCRepository(component1Key)
+			Expect(k8sClient.Get(ctx, component1Key, pacRepository)).To(Succeed())
+			Expect(pacRepository.OwnerReferences).To(HaveLen(1))
+			Expect(pacRepository.OwnerReferences[0].Name).To(Equal(component1Key.Name))
+			Expect(pacRepository.OwnerReferences[0].Kind).To(Equal("Component"))
+			err = k8sClient.Get(ctx, component2Key, pacRepository)
+			Expect(k8sErrors.IsNotFound(err)).To(BeTrue())
+			Expect(k8sClient.List(ctx, pacRepositoriesList, &client.ListOptions{Namespace: component1Key.Namespace})).To(Succeed())
+			Expect(pacRepositoriesList.Items).To(HaveLen(2)) // 2-nd repository for the resourceKey component
+
+			createCustomComponentWithBuildRequest(componentConfig{
+				componentKey:     component2Key,
+				gitURL:           multiComponentGitRepositoryUrl,
+				gitSourceContext: "component2/path",
+			}, BuildRequestConfigurePaCAnnotationValue)
+			defer deleteComponent(component2Key)
+			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
+			Eventually(func() bool { return component2PaCMergeRequestCreated }, timeout, interval).Should(BeTrue())
+			Expect(k8sClient.Get(ctx, component1Key, pacRepository)).To(Succeed())
+			Expect(pacRepository.OwnerReferences).To(HaveLen(2))
+			Expect(pacRepository.OwnerReferences[0].Name).To(Equal(component1Key.Name))
+			Expect(pacRepository.OwnerReferences[0].Kind).To(Equal("Component"))
+			Expect(pacRepository.OwnerReferences[1].Name).To(Equal(component2Key.Name))
+			Expect(pacRepository.OwnerReferences[1].Kind).To(Equal("Component"))
+			err = k8sClient.Get(ctx, component2Key, pacRepository)
+			Expect(k8sErrors.IsNotFound(err)).To(BeTrue())
+			Expect(k8sClient.List(ctx, pacRepositoriesList, &client.ListOptions{Namespace: component1Key.Namespace})).To(Succeed())
+			Expect(pacRepositoriesList.Items).To(HaveLen(2)) // 2-nd repository for the resourceKey component
+		})
+	})
+
+	Context("Test simple build flow", func() {
 
 		_ = BeforeEach(func() {
 			createNamespace(buildServiceNamespaceName)

@@ -69,12 +69,13 @@ var (
 )
 
 type componentConfig struct {
-	componentKey   types.NamespacedName
-	containerImage string
-	gitURL         string
-	gitRevision    string
-	application    string
-	annotations    map[string]string
+	componentKey     types.NamespacedName
+	containerImage   string
+	gitURL           string
+	gitRevision      string
+	gitSourceContext string
+	application      string
+	annotations      map[string]string
 }
 
 func isOwnedBy(resource []metav1.OwnerReference, component appstudiov1alpha1.Component) bool {
@@ -145,6 +146,7 @@ func getComponentData(config componentConfig) *appstudiov1alpha1.Component {
 					GitSource: &appstudiov1alpha1.GitSource{
 						URL:      gitUrl,
 						Revision: gitRevision,
+						Context:  config.gitSourceContext,
 					},
 				},
 			},
@@ -468,6 +470,34 @@ func waitPaCRepositoryCreated(resourceKey types.NamespacedName) {
 		err := k8sClient.Get(ctx, resourceKey, pacRepository)
 		return err == nil && pacRepository.ResourceVersion != ""
 	}, timeout, interval).Should(BeTrue())
+}
+
+func deletePaCRepository(resourceKey types.NamespacedName) {
+	pacRepository := &pacv1alpha1.Repository{}
+	if err := k8sClient.Get(ctx, resourceKey, pacRepository); err != nil {
+		if k8sErrors.IsNotFound(err) {
+			return
+		}
+		Fail(err.Error())
+	}
+	if err := k8sClient.Delete(ctx, pacRepository); err != nil {
+		if !k8sErrors.IsNotFound(err) {
+			Fail(err.Error())
+		}
+		return
+	}
+	Eventually(func() bool {
+		return k8sErrors.IsNotFound(k8sClient.Get(ctx, resourceKey, pacRepository))
+	}, timeout, interval).Should(BeTrue())
+}
+
+func deleteAllPaCRepositories(namesapce string) {
+	opts := &client.DeleteAllOfOptions{
+		ListOptions: client.ListOptions{
+			Namespace: namesapce,
+		},
+	}
+	Expect(k8sClient.DeleteAllOf(ctx, &pacv1alpha1.Repository{}, opts)).To(Succeed())
 }
 
 func waitComponentAnnotationGone(componentKey types.NamespacedName, annotationName string) {
