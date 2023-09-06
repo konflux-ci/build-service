@@ -234,9 +234,8 @@ func generatePipelineRunForComponent(component *appstudiov1alpha1.Component, pip
 	}
 
 	dockerFile, err := DevfileSearchForDockerfile([]byte(component.Status.Devfile))
-
 	if err != nil {
-		return nil, err
+		return nil, boerrors.NewBuildOpError(boerrors.EInvalidDevfile, err)
 	}
 	if dockerFile != nil {
 		if dockerFile.Uri != "" {

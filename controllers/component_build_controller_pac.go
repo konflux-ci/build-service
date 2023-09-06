@@ -762,7 +762,7 @@ func generatePaCPipelineRunForComponent(
 
 	dockerFile, err := devfile.SearchForDockerfile([]byte(component.Status.Devfile))
 	if err != nil {
-		return nil, err
+		return nil, boerrors.NewBuildOpError(boerrors.EInvalidDevfile, err)
 	}
 	if dockerFile != nil {
 		if dockerFile.Uri != "" {

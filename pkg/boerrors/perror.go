@@ -133,6 +133,9 @@ const (
 	// The secret with image registry credentials specified in 'image.redhat.com/image' annotation does not exist in the user's namespace.
 	EComponentImageRegistrySecretMissing BOErrorId = 202
 
+	// EInvalidDevfile devfile of the component is not valid.
+	EInvalidDevfile BOErrorId = 220
+
 	// ENoPipelineIsSelected no pipeline can be selected based on a component repository
 	ENoPipelineIsSelected BOErrorId = 300
 	// EBuildPipelineSelectorNotDefined A BuildPipelineSelector CR cannot be found from all supported search places and with supported names.
@@ -166,6 +169,8 @@ var boErrorMessages = map[BOErrorId]string{
 	EFailedToParseImageAnnotation:        "Failed to parse image.redhat.com/image annotation value",
 	EComponentGitSecretMissing:           "Secret with git credential not found",
 	EComponentImageRegistrySecretMissing: "Component image repository secret not found",
+
+	EInvalidDevfile: "Component Devfile is invalid",
 
 	ENoPipelineIsSelected:            "No pipeline is selected for component repository based on predefined selectors.",
 	EBuildPipelineSelectorNotDefined: "Build pipeline selector is not defined yet.",
