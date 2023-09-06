@@ -67,7 +67,7 @@ func ResetTestGitProviderClient() {
 		return "abcd890", nil
 	}
 	GetBrowseRepositoryAtShaLinkFunc = func(repoUrl string, sha string) string {
-		return "https://githost.com/files?sha=" + sha
+		return "https://githost.com/user/repo?rev=" + sha
 	}
 	IsRepositoryPublicFunc = func(repoUrl string) (bool, error) {
 		return true, nil
