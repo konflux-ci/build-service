@@ -24,6 +24,7 @@ import (
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	devfile "github.com/redhat-appstudio/application-service/pkg/devfile"
 	buildappstudiov1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
+	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 )
 
 // SelectPipelineForComponent evaluates given list of pipeline selectors against specified component
@@ -57,7 +58,7 @@ func getPipelineSelectionParametersForComponent(component *appstudiov1alpha1.Com
 
 	devfileData, err := devfile.ParseDevfile(devfileSrc)
 	if err != nil {
-		return nil, err
+		return nil, boerrors.NewBuildOpError(boerrors.EInvalidDevfile, err)
 	}
 
 	devfileMetadata := devfileData.GetMetadata()
@@ -66,7 +67,11 @@ func getPipelineSelectionParametersForComponent(component *appstudiov1alpha1.Com
 	parameters.ProjectType = devfileMetadata.ProjectType
 
 	var dockerfileRequired bool
-	if dockerfile, err := devfile.SearchForDockerfile([]byte(component.Status.Devfile)); err == nil && dockerfile != nil {
+	dockerfile, err := devfile.SearchForDockerfile([]byte(component.Status.Devfile))
+	if err != nil {
+		return nil, boerrors.NewBuildOpError(boerrors.EInvalidDevfile, err)
+	}
+	if dockerfile != nil {
 		dockerfileRequired = true
 		parameters.DockerfileRequired = &dockerfileRequired
 	} else {

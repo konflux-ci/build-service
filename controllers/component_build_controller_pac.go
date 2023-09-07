@@ -32,7 +32,6 @@ import (
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	"github.com/redhat-appstudio/application-service/gitops"
 	gitopsprepare "github.com/redhat-appstudio/application-service/gitops/prepare"
-	"github.com/redhat-appstudio/application-service/pkg/devfile"
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 	gp "github.com/redhat-appstudio/build-service/pkg/git/gitprovider"
 	"github.com/redhat-appstudio/build-service/pkg/git/gitproviderfactory"
@@ -760,9 +759,9 @@ func generatePaCPipelineRunForComponent(
 		params = append(params, tektonapi.Param{Name: "image-expires-after", Value: tektonapi.ArrayOrString{Type: "string", StringVal: prImageExpiration}})
 	}
 
-	dockerFile, err := devfile.SearchForDockerfile([]byte(component.Status.Devfile))
+	dockerFile, err := DevfileSearchForDockerfile([]byte(component.Status.Devfile))
 	if err != nil {
-		return nil, err
+		return nil, boerrors.NewBuildOpError(boerrors.EInvalidDevfile, err)
 	}
 	if dockerFile != nil {
 		if dockerFile.Uri != "" {
