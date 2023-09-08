@@ -56,7 +56,7 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 	pacSecret := corev1.Secret{}
 	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: buildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}, &pacSecret); err != nil {
 		log.Error(err, "failed to get git provider credentials secret", l.Action, l.ActionView)
-		return err
+		return boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, err)
 	}
 	buildGitInfo, err := r.getBuildGitInfo(ctx, component, pacSecret.Data)
 	if err != nil {
@@ -107,7 +107,8 @@ func (r *ComponentBuildReconciler) getBuildGitInfo(ctx context.Context, componen
 	gitProvider, err := gitops.GetGitProvider(*component)
 	if err != nil {
 		// There is no point to continue if git provider is not known
-		return nil, fmt.Errorf("error detecting git provider: %w", err)
+		log.Error(err, "error detecting git provider")
+		return nil, boerrors.NewBuildOpError(boerrors.EUnknownGitProvider, err)
 	}
 
 	repoUrl := component.Spec.Source.GitSource.URL

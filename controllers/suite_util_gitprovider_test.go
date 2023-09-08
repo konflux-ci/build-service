@@ -22,7 +22,8 @@ import (
 )
 
 var (
-	testGitProviderClient = &TestGitProviderClient{}
+	testGitProviderClient   = &TestGitProviderClient{}
+	DefaultBrowseRepository = "https://githost.com/user/repo?rev="
 
 	EnsurePaCMergeRequestFunc        func(repoUrl string, data *gp.MergeRequestData) (webUrl string, err error)
 	UndoPaCMergeRequestFunc          func(repoUrl string, data *gp.MergeRequestData) (webUrl string, err error)
@@ -67,7 +68,7 @@ func ResetTestGitProviderClient() {
 		return "abcd890", nil
 	}
 	GetBrowseRepositoryAtShaLinkFunc = func(repoUrl string, sha string) string {
-		return "https://githost.com/user/repo?rev=" + sha
+		return DefaultBrowseRepository + sha
 	}
 	IsRepositoryPublicFunc = func(repoUrl string) (bool, error) {
 		return true, nil
