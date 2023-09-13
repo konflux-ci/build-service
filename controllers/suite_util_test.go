@@ -214,9 +214,19 @@ func createComponentForPaCBuild(sampleComponentData *appstudiov1alpha1.Component
 func createComponent(componentLookupKey types.NamespacedName) {
 	component := getSampleComponentData(componentLookupKey)
 
-	Expect(k8sClient.Create(ctx, component)).Should(Succeed())
+	createComponentCustom(component)
+}
 
-	getComponent(componentLookupKey)
+// createComponentCustom creates custom component resource and verifies it was properly created
+func createComponentCustom(sampleComponentData *appstudiov1alpha1.Component) {
+	Expect(k8sClient.Create(ctx, sampleComponentData)).Should(Succeed())
+
+	lookupKey := types.NamespacedName{
+		Name:      sampleComponentData.Name,
+		Namespace: sampleComponentData.Namespace,
+	}
+
+	getComponent(lookupKey)
 }
 
 func getComponent(componentKey types.NamespacedName) *appstudiov1alpha1.Component {
@@ -298,6 +308,34 @@ func waitDoneMessageOnComponent(componentKey types.NamespacedName) {
 		buildStatus := readBuildStatus(getComponent(componentKey))
 		return buildStatus.Message == "done"
 	}, timeout, interval).Should(BeTrue())
+}
+
+func expectPacBuildStatus(componentKey types.NamespacedName, state string, errID int, errMessage string, mergeURL string) {
+	buildStatus := readBuildStatus(getComponent(componentKey))
+	Expect(buildStatus).ToNot(BeNil())
+	Expect(buildStatus.PaC).ToNot(BeNil())
+	Expect(buildStatus.PaC.State).To(Equal(state))
+	Expect(buildStatus.PaC.ErrId).To(Equal(errID))
+	Expect(buildStatus.PaC.ErrMessage).To(Equal(errMessage))
+	Expect(buildStatus.PaC.MergeUrl).To(Equal(mergeURL))
+	if state == "enabled" {
+		Expect(buildStatus.PaC.ConfigurationTime).ToNot(BeEmpty())
+	} else {
+		Expect(buildStatus.PaC.ConfigurationTime).To(BeEmpty())
+	}
+}
+
+func expectSimpleBuildStatus(componentKey types.NamespacedName, errID int, errMessage string, startTimeEmpty bool) {
+	buildStatus := readBuildStatus(getComponent(componentKey))
+	Expect(buildStatus).ToNot(BeNil())
+	Expect(buildStatus.Simple).ToNot(BeNil())
+	Expect(buildStatus.Simple.ErrId).To(Equal(errID))
+	Expect(buildStatus.Simple.ErrMessage).To(Equal(errMessage))
+	if startTimeEmpty {
+		Expect(buildStatus.Simple.BuildStartTime).To(Equal(""))
+	} else {
+		Expect(buildStatus.Simple.BuildStartTime).ToNot(BeEmpty())
+	}
 }
 
 func listComponentPipelineRuns(componentKey types.NamespacedName) []tektonapi.PipelineRun {

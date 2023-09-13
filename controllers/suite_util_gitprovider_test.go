@@ -24,6 +24,7 @@ import (
 var (
 	testGitProviderClient   = &TestGitProviderClient{}
 	DefaultBrowseRepository = "https://githost.com/user/repo?rev="
+	UndoPacMergeRequestURL  = "https://githost.com/mr/5678"
 
 	EnsurePaCMergeRequestFunc        func(repoUrl string, data *gp.MergeRequestData) (webUrl string, err error)
 	UndoPaCMergeRequestFunc          func(repoUrl string, data *gp.MergeRequestData) (webUrl string, err error)
@@ -47,7 +48,7 @@ func ResetTestGitProviderClient() {
 		return "https://githost.com/mr/1234", nil
 	}
 	UndoPaCMergeRequestFunc = func(repoUrl string, data *gp.MergeRequestData) (webUrl string, err error) {
-		return "https://githost.com/mr/5678", nil
+		return UndoPacMergeRequestURL, nil
 	}
 	FindUnmergedPaCMergeRequestFunc = func(repoUrl string, data *gp.MergeRequestData) (*gp.MergeRequest, error) {
 		return nil, nil
