@@ -50,8 +50,6 @@ const (
 
 	BuildStatusAnnotationName = "build.appstudio.openshift.io/status"
 
-	InitialBuildAnnotationName = "appstudio.openshift.io/component-initial-build"
-
 	PaCProvisionFinalizer            = "pac.component.appstudio.openshift.io/finalizer"
 	ImageRegistrySecretLinkFinalizer = "image-registry-secret-sa-link.component.appstudio.openshift.io/finalizer"
 
@@ -213,9 +211,9 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
-	// Do not run any builds for any container-image components
-	if component.Spec.ContainerImage != "" && (component.Spec.Source.GitSource == nil || component.Spec.Source.GitSource.URL == "") {
-		log.Info("Nothing to do for container image component")
+	// Do not run any builds if component doesn't have gitsource
+	if component.Spec.Source.GitSource == nil || component.Spec.Source.GitSource.URL == "" {
+		log.Info("Nothing to do for container image component without source")
 		return ctrl.Result{}, nil
 	}
 
@@ -354,8 +352,6 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		buildStatus.Message = "done"
 		writeBuildStatus(&component, buildStatus)
 
-		component.Annotations[InitialBuildAnnotationName] = "processed"
-
 	case BuildRequestConfigurePaCAnnotationValue:
 		pacBuildStatus := &PaCBuildStatus{}
 		if mergeUrl, err := r.ProvisionPaCForComponent(ctx, &component); err != nil {
@@ -417,6 +413,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if mergeUrl, err := r.UndoPaCProvisionForComponent(ctx, &component); err != nil {
 			if boErr, ok := err.(*boerrors.BuildOpError); ok && boErr.IsPersistent() {
 				log.Error(err, "Pipelines as Code unprovision for the Component failed")
+				pacBuildStatus.State = "error"
 				pacBuildStatus.ErrId = boErr.GetErrorId()
 				pacBuildStatus.ErrMessage = boErr.ShortError()
 			} else {

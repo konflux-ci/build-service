@@ -158,14 +158,14 @@ func (r *ComponentBuildReconciler) UndoPaCProvisionForComponent(ctx context.Cont
 	if err != nil {
 		log.Error(err, "error detecting git provider")
 		// There is no point to continue if git provider is not known.
-		return "", err
+		return "", boerrors.NewBuildOpError(boerrors.EUnknownGitProvider, err)
 	}
 
 	pacSecret := corev1.Secret{}
 	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: buildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}, &pacSecret); err != nil {
 		log.Error(err, "error getting git provider credentials secret", l.Action, l.ActionView)
 		// Cannot continue without accessing git provider credentials.
-		return "", err
+		return "", boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, err)
 	}
 
 	webhookTargetUrl := ""

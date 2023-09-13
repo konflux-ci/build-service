@@ -32,9 +32,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
+	"github.com/devfile/api/v2/pkg/apis/workspaces/v1alpha2"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	"github.com/redhat-appstudio/application-service/gitops"
 	gitopsprepare "github.com/redhat-appstudio/application-service/gitops/prepare"
+	"github.com/redhat-appstudio/application-service/pkg/devfile"
 	buildappstudiov1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 	"github.com/redhat-appstudio/build-service/pkg/git/github"
@@ -578,13 +580,8 @@ var _ = Describe("Component initial build controller", func() {
 		It("should set error in status if invalid build action requested", func() {
 			createCustomComponentWithBuildRequest(componentConfig{
 				componentKey: resourceKey,
-				annotations: map[string]string{
-					InitialBuildAnnotationName: "processed",
-				},
 			}, "non-existing-build-request")
 			waitComponentAnnotationGone(resourceKey, BuildRequestAnnotationName)
-
-			// createComponentAndProcessBuildRequest(resourceKey, "non-existing-build-request")
 
 			buildStatus := readBuildStatus(getComponent(resourceKey))
 			Expect(buildStatus).ToNot(BeNil())
@@ -627,7 +624,7 @@ var _ = Describe("Component initial build controller", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
-
+			getComponent(resourceKey)
 			setComponentBuildRequest(resourceKey, BuildRequestConfigurePaCAnnotationValue)
 
 			ensureNoPipelineRunsCreated(resourceKey)
@@ -658,9 +655,9 @@ var _ = Describe("Component initial build controller", func() {
 			// Unset Revision so that GetDefaultBranch function is called to use the default branch
 			// set in the remote component repository
 			component.Spec.Source.GitSource.Revision = ""
-			component.Annotations[InitialBuildAnnotationName] = "processed"
 			component.Annotations[BuildRequestAnnotationName] = BuildRequestConfigurePaCAnnotationValue
 			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
+			getComponent(resourceKey)
 			setComponentDevfileModel(resourceKey)
 			waitComponentAnnotationGone(resourceKey, BuildRequestAnnotationName)
 
@@ -759,6 +756,58 @@ var _ = Describe("Component initial build controller", func() {
 
 			deleteSecret(pacSecretKey)
 			deleteRoute(pacRouteKey)
+		})
+
+		It("should successfully unconfigure PaC even when it isn't able to get PaC webhook", func() {
+			pacSecretData := map[string]string{
+				"github-application-id": "12345",
+				"github-private-key":    githubAppPrivateKey,
+			}
+			createSecret(pacSecretKey, pacSecretData)
+			createComponentAndProcessBuildRequest(resourceKey, BuildRequestConfigurePaCAnnotationValue)
+			waitPaCFinalizerOnComponent(resourceKey)
+
+			pacSecretData = map[string]string{}
+			deleteSecret(pacSecretKey)
+			createSecret(pacSecretKey, pacSecretData)
+			deleteRoute(pacRouteKey)
+
+			setComponentBuildRequest(resourceKey, BuildRequestUnconfigurePaCAnnotationValue)
+			waitPaCFinalizerOnComponentGone(resourceKey)
+			waitDoneMessageOnComponent(resourceKey)
+
+			buildStatus := readBuildStatus(getComponent(resourceKey))
+			Expect(buildStatus).ToNot(BeNil())
+			Expect(buildStatus.PaC).ToNot(BeNil())
+			Expect(buildStatus.PaC.State).To(Equal("disabled"))
+			Expect(buildStatus.PaC.ErrId).To(Equal(0))
+			Expect(buildStatus.PaC.ErrMessage).To(Equal(""))
+
+		})
+
+		It("should successfully unconfigure PaC, removal MR not needed", func() {
+			pacSecretData := map[string]string{
+				"github-application-id": "12345",
+				"github-private-key":    githubAppPrivateKey,
+			}
+			createSecret(pacSecretKey, pacSecretData)
+			createComponentAndProcessBuildRequest(resourceKey, BuildRequestConfigurePaCAnnotationValue)
+			waitPaCFinalizerOnComponent(resourceKey)
+			UndoPaCMergeRequestFunc = func(repoUrl string, data *gp.MergeRequestData) (webUrl string, err error) {
+				return "", nil
+			}
+
+			setComponentBuildRequest(resourceKey, BuildRequestUnconfigurePaCAnnotationValue)
+			waitPaCFinalizerOnComponentGone(resourceKey)
+			waitDoneMessageOnComponent(resourceKey)
+
+			buildStatus := readBuildStatus(getComponent(resourceKey))
+			Expect(buildStatus).ToNot(BeNil())
+			Expect(buildStatus.PaC).ToNot(BeNil())
+			Expect(buildStatus.PaC.State).To(Equal("disabled"))
+			Expect(buildStatus.PaC.ErrId).To(Equal(0))
+			Expect(buildStatus.PaC.ErrMessage).To(Equal(""))
+
 		})
 
 		It("should successfully submit PR with PaC definitions removal using GitHub application", func() {
@@ -932,7 +981,6 @@ var _ = Describe("Component initial build controller", func() {
 			} else {
 				component.Spec.Source.GitSource.Revision = ""
 			}
-			component.Annotations[InitialBuildAnnotationName] = "processed"
 			component.Annotations[BuildRequestAnnotationName] = BuildRequestConfigurePaCAnnotationValue
 
 			expectedSourceBranch := pacMergeRequestSourceBranchPrefix + component.Name
@@ -963,6 +1011,7 @@ var _ = Describe("Component initial build controller", func() {
 			createSecret(pacSecretKey, pacSecretData)
 
 			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
+			getComponent(resourceKey)
 			setComponentDevfileModel(resourceKey)
 			waitComponentAnnotationGone(resourceKey, BuildRequestAnnotationName)
 			waitPaCFinalizerOnComponent(resourceKey)
@@ -994,6 +1043,58 @@ var _ = Describe("Component initial build controller", func() {
 			}
 			assertCloseUnmergedMergeRequest(defaultBranch, true)
 		})
+
+		It("should fail to unconfigure PaC when pac secret is missing", func() {
+			pacSecretData := map[string]string{
+				"github-application-id": "12345",
+				"github-private-key":    githubAppPrivateKey,
+			}
+			createSecret(pacSecretKey, pacSecretData)
+
+			createComponentAndProcessBuildRequest(resourceKey, BuildRequestConfigurePaCAnnotationValue)
+			waitPaCFinalizerOnComponent(resourceKey)
+			deleteSecret(pacSecretKey)
+
+			setComponentBuildRequest(resourceKey, BuildRequestUnconfigurePaCAnnotationValue)
+			waitPaCFinalizerOnComponentGone(resourceKey)
+			waitDoneMessageOnComponent(resourceKey)
+			expectError := boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, nil)
+
+			buildStatus := readBuildStatus(getComponent(resourceKey))
+			Expect(buildStatus).ToNot(BeNil())
+			Expect(buildStatus.PaC).ToNot(BeNil())
+			Expect(buildStatus.PaC.State).To(Equal("error"))
+			Expect(buildStatus.PaC.ErrId).To(Equal(expectError.GetErrorId()))
+			Expect(buildStatus.PaC.ErrMessage).To(Equal(expectError.ShortError()))
+		})
+
+		It("should fail to unconfigure PaC if it isn't able to detect git provider", func() {
+			pacSecretData := map[string]string{
+				"github-application-id": "12345",
+				"github-private-key":    githubAppPrivateKey,
+			}
+			createSecret(pacSecretKey, pacSecretData)
+			createComponentAndProcessBuildRequest(resourceKey, BuildRequestConfigurePaCAnnotationValue)
+
+			component := getComponent(resourceKey)
+			component.Spec.Source.GitSource.URL = "wrong"
+			Expect(k8sClient.Update(ctx, component)).To(Succeed())
+			waitPaCFinalizerOnComponent(resourceKey)
+
+			setComponentBuildRequest(resourceKey, BuildRequestUnconfigurePaCAnnotationValue)
+			waitPaCFinalizerOnComponentGone(resourceKey)
+			waitDoneMessageOnComponent(resourceKey)
+			expectError := boerrors.NewBuildOpError(boerrors.EUnknownGitProvider, nil)
+
+			buildStatus := readBuildStatus(getComponent(resourceKey))
+			Expect(buildStatus).ToNot(BeNil())
+			Expect(buildStatus.PaC).ToNot(BeNil())
+			Expect(buildStatus.PaC.State).To(Equal("error"))
+			Expect(buildStatus.PaC.ErrId).To(Equal(expectError.GetErrorId()))
+			Expect(buildStatus.PaC.ErrMessage).To(Equal(expectError.ShortError()))
+			deleteComponent(resourceKey)
+		})
+
 	})
 
 	Context("Test Pipelines as Code multi component git repository", func() {
@@ -1104,7 +1205,6 @@ var _ = Describe("Component initial build controller", func() {
 				"github-private-key":    githubAppPrivateKey,
 			}
 			createSecret(pacSecretKey, pacSecretData)
-
 			createComponent(resourceKey)
 		})
 
@@ -1114,6 +1214,9 @@ var _ = Describe("Component initial build controller", func() {
 			deleteBuildPipelineRunSelector(defaultSelectorKey)
 			deleteComponentPipelineRuns(resourceKey)
 			deleteComponent(resourceKey)
+			// wait for pruner operator to finish, so it won't prune runs from new test
+			time.Sleep(time.Second)
+			DevfileSearchForDockerfile = devfile.SearchForDockerfile
 		})
 
 		It("should submit initial build on component creation", func() {
@@ -1139,7 +1242,6 @@ var _ = Describe("Component initial build controller", func() {
 
 			waitOneInitialPipelineRunCreated(resourceKey)
 			waitComponentAnnotationGone(resourceKey, BuildRequestAnnotationName)
-			ensureComponentInitialBuildAnnotationState(resourceKey, true)
 
 			// Check pipeline run labels and annotations
 			pipelineRun := listComponentPipelineRuns(resourceKey)[0]
@@ -1148,18 +1250,35 @@ var _ = Describe("Component initial build controller", func() {
 				Equal("https://github.com/devfile-samples/devfile-sample-java-springboot-basic?rev=" + gitSourceSHA))
 		})
 
+		It("should submit initial build on component creation with sha revision", func() {
+			deleteComponent(resourceKey)
+
+			gitSourceSHA := "d1a9e858489d1515621398fb02942da068f1c956"
+			component := getSampleComponentData(resourceKey)
+			component.Spec.Source.GitSource.Revision = gitSourceSHA
+			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
+			getComponent(resourceKey)
+			setComponentDevfileModel(resourceKey)
+
+			waitOneInitialPipelineRunCreated(resourceKey)
+			waitComponentAnnotationGone(resourceKey, BuildRequestAnnotationName)
+
+			// Check pipeline run labels and annotations
+			pipelineRun := listComponentPipelineRuns(resourceKey)[0]
+			Expect(pipelineRun.Annotations[gitCommitShaAnnotationName]).To(Equal(gitSourceSHA))
+			Expect(pipelineRun.Annotations[gitRepoAtShaAnnotationName]).To(Equal(DefaultBrowseRepository + gitSourceSHA))
+		})
+
 		It("should be able to retrigger simple build", func() {
 			setComponentDevfileModel(resourceKey)
 
 			waitOneInitialPipelineRunCreated(resourceKey)
-			ensureComponentInitialBuildAnnotationState(resourceKey, true)
 
 			deleteComponentPipelineRuns(resourceKey)
 
 			setComponentBuildRequest(resourceKey, BuildRequestTriggerSimpleBuildAnnotationValue)
 			waitComponentAnnotationGone(resourceKey, BuildRequestAnnotationName)
 			waitOneInitialPipelineRunCreated(resourceKey)
-			ensureComponentInitialBuildAnnotationState(resourceKey, true)
 		})
 
 		It("should submit initial build if retrieving of git commit SHA failed", func() {
@@ -1177,7 +1296,6 @@ var _ = Describe("Component initial build controller", func() {
 
 			waitOneInitialPipelineRunCreated(resourceKey)
 			waitComponentAnnotationGone(resourceKey, BuildRequestAnnotationName)
-			ensureComponentInitialBuildAnnotationState(resourceKey, true)
 		})
 
 		It("should submit initial build for private git repository", func() {
@@ -1215,7 +1333,6 @@ var _ = Describe("Component initial build controller", func() {
 			// Wait until all resources created
 			waitOneInitialPipelineRunCreated(resourceKey)
 			waitComponentAnnotationGone(resourceKey, BuildRequestAnnotationName)
-			ensureComponentInitialBuildAnnotationState(resourceKey, true)
 
 			// Check the pipeline run and its resources
 			pipelineRuns := listComponentPipelineRuns(resourceKey)
@@ -1288,6 +1405,20 @@ var _ = Describe("Component initial build controller", func() {
 			ensureNoPipelineRunsCreated(resourceKey)
 		})
 
+		It("should not submit initial build if pac secret is missing", func() {
+			deleteSecret(pacSecretKey)
+			setComponentDevfileModel(resourceKey)
+			waitDoneMessageOnComponent(resourceKey)
+
+			expectError := boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, nil)
+			buildStatus := readBuildStatus(getComponent(resourceKey))
+			Expect(buildStatus).ToNot(BeNil())
+			Expect(buildStatus.Simple).ToNot(BeNil())
+			Expect(buildStatus.Simple.BuildStartTime).To(Equal(""))
+			Expect(buildStatus.Simple.ErrId).To(Equal(expectError.GetErrorId()))
+			Expect(buildStatus.Simple.ErrMessage).To(Equal(expectError.ShortError()))
+		})
+
 		It("should do nothing if simple build already happened (and PaC is not used)", func() {
 			deleteComponent(resourceKey)
 
@@ -1300,13 +1431,12 @@ var _ = Describe("Component initial build controller", func() {
 			component := getSampleComponentData(resourceKey)
 			component.Annotations = make(map[string]string)
 			component.Annotations[BuildStatusAnnotationName] = "{simple:{\"build-start-time\": \"time\"}}"
-			component.Annotations[InitialBuildAnnotationName] = "processed"
 			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
 
 			ensureNoPipelineRunsCreated(resourceKey)
 		})
 
-		It("should not submit initial build if a container image source is specified in component", func() {
+		It("should not submit initial build if a gitsource is missing from component", func() {
 			deleteComponent(resourceKey)
 
 			component := &appstudiov1alpha1.Component{
@@ -1325,7 +1455,68 @@ var _ = Describe("Component initial build controller", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
+			getComponent(resourceKey)
+			setComponentDevfileModel(resourceKey)
 
+			ensureNoPipelineRunsCreated(resourceKey)
+		})
+
+		It("should not submit initial build if Dockerfile is wrong", func() {
+			DevfileSearchForDockerfile = func(devfileBytes []byte) (*v1alpha2.DockerfileImage, error) {
+				return nil, fmt.Errorf("wrong dockerfile")
+			}
+			setComponentDevfileModel(resourceKey)
+			waitDoneMessageOnComponent(resourceKey)
+
+			expectError := boerrors.NewBuildOpError(boerrors.EInvalidDevfile, nil)
+			buildStatus := readBuildStatus(getComponent(resourceKey))
+			Expect(buildStatus).ToNot(BeNil())
+			Expect(buildStatus.Simple).ToNot(BeNil())
+			Expect(buildStatus.Simple.BuildStartTime).To(Equal(""))
+			Expect(buildStatus.Simple.ErrId).To(Equal(expectError.GetErrorId()))
+			Expect(buildStatus.Simple.ErrMessage).To(Equal(expectError.ShortError()))
+		})
+
+		It("should not submit initial simple build if git provider can't be detected)", func() {
+			deleteComponent(resourceKey)
+
+			component := getSampleComponentData(resourceKey)
+			component.Spec.Source.GitSource.URL = "wrong"
+			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
+			getComponent(resourceKey)
+			setComponentDevfileModel(resourceKey)
+			waitDoneMessageOnComponent(resourceKey)
+
+			expectError := boerrors.NewBuildOpError(boerrors.EUnknownGitProvider, nil)
+			buildStatus := readBuildStatus(getComponent(resourceKey))
+			Expect(buildStatus).ToNot(BeNil())
+			Expect(buildStatus.Simple).ToNot(BeNil())
+			Expect(buildStatus.Simple.BuildStartTime).To(Equal(""))
+			Expect(buildStatus.Simple.ErrId).To(Equal(expectError.GetErrorId()))
+			Expect(buildStatus.Simple.ErrMessage).To(Equal(expectError.ShortError()))
+		})
+
+		It("should not submit initial simple build if public repository check fails", func() {
+			isRepositoryPublicInvoked := false
+			IsRepositoryPublicFunc = func(repoUrl string) (bool, error) {
+				isRepositoryPublicInvoked = true
+				return false, fmt.Errorf("failed to check repository")
+			}
+
+			setComponentDevfileModel(resourceKey)
+			Eventually(func() bool { return isRepositoryPublicInvoked }, timeout, interval).Should(BeTrue())
+
+			ensureNoPipelineRunsCreated(resourceKey)
+		})
+
+		It("should not submit initial build if ContainerImage is not set)", func() {
+			deleteComponent(resourceKey)
+
+			component := getSampleComponentData(resourceKey)
+			component.Spec.ContainerImage = ""
+
+			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
+			getComponent(resourceKey)
 			setComponentDevfileModel(resourceKey)
 
 			ensureNoPipelineRunsCreated(resourceKey)
@@ -1349,6 +1540,8 @@ var _ = Describe("Component initial build controller", func() {
 			deleteComponent(resourceKey)
 			deleteComponentPipelineRuns(resourceKey)
 			deleteSecret(pacSecretKey)
+			// wait for pruner operator to finish, so it won't prune runs from new test
+			time.Sleep(time.Second)
 		})
 
 		It("should use the build bundle specified for application", func() {
@@ -1386,6 +1579,7 @@ var _ = Describe("Component initial build controller", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, selectors)).To(Succeed())
+			getComponent(resourceKey)
 
 			devfile := `
                         schemaVersion: 2.2.0
@@ -1533,6 +1727,7 @@ var _ = Describe("Component initial build controller", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, selectors)).To(Succeed())
+			getComponent(resourceKey)
 
 			devfile := `
                         schemaVersion: 2.2.0
@@ -1627,7 +1822,7 @@ var _ = Describe("Component initial build controller", func() {
 				component.Annotations[BuildRequestAnnotationName] = BuildRequestConfigurePaCAnnotationValue
 			}
 			Expect(k8sClient.Create(ctx, component)).Should(Succeed())
-
+			getComponent(resourceKey)
 			// devfile is about nodejs rather than Java, which causes failure of selecting a pipeline.
 			devfile := `
                         schemaVersion: 2.2.0
@@ -1640,9 +1835,6 @@ var _ = Describe("Component initial build controller", func() {
 			ensureNoPipelineRunsCreated(resourceKey)
 
 			component = getComponent(resourceKey)
-			if doInitialBuild {
-				Expect(component.Annotations[InitialBuildAnnotationName]).To(Equal("processed"))
-			}
 
 			// Check expected errors
 			statusAnnotation := component.Annotations[BuildStatusAnnotationName]

@@ -293,6 +293,13 @@ func waitPaCFinalizerOnComponentGone(componentKey types.NamespacedName) {
 	waitFinalizerOnComponent(componentKey, PaCProvisionFinalizer, false)
 }
 
+func waitDoneMessageOnComponent(componentKey types.NamespacedName) {
+	Eventually(func() bool {
+		buildStatus := readBuildStatus(getComponent(componentKey))
+		return buildStatus.Message == "done"
+	}, timeout, interval).Should(BeTrue())
+}
+
 func listComponentPipelineRuns(componentKey types.NamespacedName) []tektonapi.PipelineRun {
 	pipelineRuns := &tektonapi.PipelineRunList{}
 	labelSelectors := client.ListOptions{
@@ -518,26 +525,6 @@ func ensureComponentAnnotationValue(componentKey types.NamespacedName, annotatio
 		annotations := component.GetAnnotations()
 		return annotations != nil && annotations[annotationName] == annotationValue
 	}, ensureTimeout, interval).Should(BeTrue())
-}
-
-func ensureComponentInitialBuildAnnotationState(componentKey types.NamespacedName, initialBuildAnnotation bool) {
-	if initialBuildAnnotation {
-		Eventually(func() bool {
-			component := getComponent(componentKey)
-			annotations := component.GetAnnotations()
-			return annotations != nil && annotations[InitialBuildAnnotationName] != ""
-		}, timeout, interval).Should(BeTrue())
-	} else {
-		Consistently(func() bool {
-			component := getComponent(componentKey)
-			annotations := component.GetAnnotations()
-			if annotations == nil {
-				return true
-			}
-			_, exists := annotations[InitialBuildAnnotationName]
-			return !exists
-		}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
-	}
 }
 
 func createRoute(routeKey types.NamespacedName, host string) {
