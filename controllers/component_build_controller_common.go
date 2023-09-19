@@ -187,7 +187,7 @@ func (r *ComponentBuildReconciler) unlinkSecretFromServiceAccount(ctx context.Co
 	// Remove secret from secrets list
 	for index, credentialSecret := range serviceAccount.Secrets {
 		if credentialSecret.Name == secretNameToRemove {
-			secrets := make([]corev1.ObjectReference, 0, len(serviceAccount.Secrets))
+			secrets := make([]corev1.ObjectReference, 0, len(serviceAccount.Secrets)-1)
 			if len(serviceAccount.Secrets) != 1 {
 				secrets = append(secrets, serviceAccount.Secrets[:index]...)
 				secrets = append(secrets, serviceAccount.Secrets[index+1:]...)
@@ -200,8 +200,8 @@ func (r *ComponentBuildReconciler) unlinkSecretFromServiceAccount(ctx context.Co
 	// Remove secret from pull secrets list
 	for index, pullSecret := range serviceAccount.ImagePullSecrets {
 		if pullSecret.Name == secretNameToRemove {
-			secrets := make([]corev1.LocalObjectReference, 0, len(serviceAccount.ImagePullSecrets))
-			if len(serviceAccount.Secrets) != 1 {
+			secrets := make([]corev1.LocalObjectReference, 0, len(serviceAccount.ImagePullSecrets)-1)
+			if len(serviceAccount.ImagePullSecrets) != 1 {
 				secrets = append(secrets, serviceAccount.ImagePullSecrets[:index]...)
 				secrets = append(secrets, serviceAccount.ImagePullSecrets[index+1:]...)
 			}

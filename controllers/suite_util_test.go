@@ -311,6 +311,19 @@ func waitDoneMessageOnComponent(componentKey types.NamespacedName) {
 }
 
 func expectPacBuildStatus(componentKey types.NamespacedName, state string, errID int, errMessage string, mergeURL string) {
+	// in 1 test component is usually created (which triggers reconcile and adds message=done)
+	// and then component is updated (and waits for message=done apart from other things)
+	// we should wait for desired state as well, as there is small time window when
+	// message might be still done from previous reconcile, but even though requested action already finished,
+	// it didn't update status yet so it will get status from previous reconcile
+	Eventually(func() bool {
+		buildStatus := readBuildStatus(getComponent(componentKey))
+		Expect(buildStatus).ToNot(BeNil())
+		Expect(buildStatus.PaC).ToNot(BeNil())
+
+		return buildStatus.PaC.State == state
+	}, timeout, interval).Should(BeTrue())
+
 	buildStatus := readBuildStatus(getComponent(componentKey))
 	Expect(buildStatus).ToNot(BeNil())
 	Expect(buildStatus.PaC).ToNot(BeNil())
