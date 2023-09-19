@@ -17,6 +17,7 @@ limitations under the License.
 package controllers
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -593,7 +594,7 @@ var _ = Describe("Component initial build controller", func() {
 			}, timeout, interval).Should(BeTrue())
 		})
 
-		It("should link auto generated image repository secret to pipeline service accoount", func() {
+		assertLinkSecretToSa := func(secretNotEmpty bool) {
 			userImageRepo := "docker.io/user/image"
 			generatedImageRepo := "quay.io/appstudio/generated-image"
 			generatedImageRepoSecretName := "generated-image-repo-secret"
@@ -638,8 +639,15 @@ var _ = Describe("Component initial build controller", func() {
 
 			component := getComponent(resourcePacPrepKey)
 			component.Annotations[ImageRepoGenerateAnnotationName] = "false"
-			component.Annotations[ImageRepoAnnotationName] =
-				fmt.Sprintf("{\"image\":\"%s\",\"secret\":\"%s\"}", generatedImageRepo, generatedImageRepoSecretName)
+
+			if secretNotEmpty {
+				component.Annotations[ImageRepoAnnotationName] =
+					fmt.Sprintf("{\"image\":\"%s\",\"secret\":\"%s\"}", generatedImageRepo, generatedImageRepoSecretName)
+
+			} else {
+				component.Annotations[ImageRepoAnnotationName] =
+					fmt.Sprintf("{\"image\":\"%s\",\"secret\":\"\"}", generatedImageRepo)
+			}
 			component.Spec.ContainerImage = generatedImageRepo
 			Expect(k8sClient.Update(ctx, component)).To(Succeed())
 
@@ -661,7 +669,59 @@ var _ = Describe("Component initial build controller", func() {
 					break
 				}
 			}
-			Expect(isImageRegistryGeneratedSecretLinked).To(BeTrue())
+			isImageRegistryGeneratedPullSecretLinked := false
+			for _, secret := range pipelineSA.ImagePullSecrets {
+				if secret.Name == generatedImageRepoSecretName {
+					isImageRegistryGeneratedPullSecretLinked = true
+					break
+				}
+			}
+
+			if secretNotEmpty {
+				Expect(isImageRegistryGeneratedSecretLinked).To(BeTrue())
+				Expect(isImageRegistryGeneratedPullSecretLinked).To(BeTrue())
+			} else {
+				Expect(isImageRegistryGeneratedSecretLinked).To(BeFalse())
+				Expect(isImageRegistryGeneratedPullSecretLinked).To(BeFalse())
+			}
+		}
+
+		It("should link auto generated image repository secret to pipeline service account", func() {
+			assertLinkSecretToSa(true)
+		})
+
+		It("should not link auto generated image repository secret to pipeline service account, when it is linked already, also check that it keeps other secrets", func() {
+			generatedImageRepoSecretName := "generated-image-repo-secret"
+			serviceAccountName := types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: "default"}
+			serviceAccount := &corev1.ServiceAccount{}
+			Expect(k8sClient.Get(ctx, serviceAccountName, serviceAccount)).To(Succeed())
+
+			anotherSecretName := "anothersecret"
+			// add secret to the SA
+			serviceAccount.Secrets = []corev1.ObjectReference{{Name: generatedImageRepoSecretName, Namespace: "default"}, {Name: anotherSecretName, Namespace: "default"}}
+			serviceAccount.ImagePullSecrets = []corev1.LocalObjectReference{{Name: generatedImageRepoSecretName}, {Name: anotherSecretName}}
+			Expect(k8sClient.Update(ctx, serviceAccount)).Should(Succeed())
+
+			assertLinkSecretToSa(true)
+
+			// will remove just generate image repo secret from SA and keep anothersecret
+			deleteComponent(resourcePacPrepKey)
+
+			Expect(k8sClient.Get(ctx, serviceAccountName, serviceAccount)).To(Succeed())
+			Expect(len(serviceAccount.Secrets)).To(Equal(1))
+			Expect(len(serviceAccount.ImagePullSecrets)).To(Equal(1))
+			Expect(serviceAccount.Secrets[0].Name).To(Equal(anotherSecretName))
+			Expect(serviceAccount.ImagePullSecrets[0].Name).To(Equal(anotherSecretName))
+
+			// cleanup, remove anothersecret from the SA
+			Expect(k8sClient.Get(ctx, serviceAccountName, serviceAccount)).To(Succeed())
+			serviceAccount.Secrets = []corev1.ObjectReference{}
+			serviceAccount.ImagePullSecrets = []corev1.LocalObjectReference{}
+			Expect(k8sClient.Update(ctx, serviceAccount)).Should(Succeed())
+		})
+
+		It("should not link auto generated image repository secret to pipeline service account, when secret is missing", func() {
+			assertLinkSecretToSa(false)
 		})
 	})
 
@@ -1133,6 +1193,7 @@ var _ = Describe("Component initial build controller", func() {
 
 			waitOneInitialPipelineRunCreated(resourceSimpleKey)
 			waitComponentAnnotationGone(resourceSimpleKey, BuildRequestAnnotationName)
+			expectSimpleBuildStatus(resourceSimpleKey, 0, "", false)
 
 			// Check pipeline run labels and annotations
 			pipelineRun := listComponentPipelineRuns(resourceSimpleKey)[0]
@@ -1152,6 +1213,7 @@ var _ = Describe("Component initial build controller", func() {
 
 			waitOneInitialPipelineRunCreated(resourceSimpleKey)
 			waitComponentAnnotationGone(resourceSimpleKey, BuildRequestAnnotationName)
+			expectSimpleBuildStatus(resourceSimpleKey, 0, "", false)
 
 			// Check pipeline run labels and annotations
 			pipelineRun := listComponentPipelineRuns(resourceSimpleKey)[0]
@@ -1169,6 +1231,25 @@ var _ = Describe("Component initial build controller", func() {
 			setComponentBuildRequest(resourceSimpleKey, BuildRequestTriggerSimpleBuildAnnotationValue)
 			waitComponentAnnotationGone(resourceSimpleKey, BuildRequestAnnotationName)
 			waitOneInitialPipelineRunCreated(resourceSimpleKey)
+			expectSimpleBuildStatus(resourceSimpleKey, 0, "", false)
+		})
+
+		It("should run simple build and create pipeline service account when it doesn't exist", func() {
+			serviceAccountName := types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: "default"}
+			serviceAccount := &corev1.ServiceAccount{}
+			Expect(k8sClient.Get(ctx, serviceAccountName, serviceAccount)).To(Succeed())
+
+			// remove pipeline service account so it can be re-created
+			Expect(k8sClient.Delete(ctx, serviceAccount)).Should(Succeed())
+			Eventually(func() bool {
+				return k8sErrors.IsNotFound(k8sClient.Get(ctx, serviceAccountName, serviceAccount))
+			}, timeout, interval).Should(BeTrue())
+
+			setComponentDevfileModel(resourceSimpleKey)
+			waitOneInitialPipelineRunCreated(resourceSimpleKey)
+			waitComponentAnnotationGone(resourceSimpleKey, BuildRequestAnnotationName)
+			waitDoneMessageOnComponent(resourceSimpleKey)
+			expectSimpleBuildStatus(resourceSimpleKey, 0, "", false)
 		})
 
 		It("should submit initial build if retrieving of git commit SHA failed", func() {
@@ -1186,6 +1267,7 @@ var _ = Describe("Component initial build controller", func() {
 
 			waitOneInitialPipelineRunCreated(resourceSimpleKey)
 			waitComponentAnnotationGone(resourceSimpleKey, BuildRequestAnnotationName)
+			expectSimpleBuildStatus(resourceSimpleKey, 0, "", false)
 		})
 
 		It("should submit initial build for private git repository", func() {
@@ -1272,6 +1354,29 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(isWorkspaceGitAuthExist).To(BeTrue())
 
 			Expect(k8sClient.Delete(ctx, spiAccessTokenBinding)).To(Succeed())
+			expectSimpleBuildStatus(resourceSimpleKey, 0, "", false)
+		})
+
+		It("should submit initial simple build, even when containerimage is missing, but is found in image repo annotation", func() {
+			deleteComponent(resourceSimpleKey)
+
+			component := getSampleComponentData(resourceSimpleKey)
+			component.Spec.ContainerImage = ""
+
+			type RepositoryInfo struct {
+				Image  string `json:"image"`
+				Secret string `json:"secret"`
+			}
+			repoInfo := RepositoryInfo{Image: ComponentContainerImage, Secret: ""}
+			repoInfoBytes, _ := json.Marshal(repoInfo)
+			component.Annotations[ImageRepoAnnotationName] = string(repoInfoBytes)
+
+			createComponentCustom(component)
+			setComponentDevfileModel(resourceSimpleKey)
+			waitOneInitialPipelineRunCreated(resourceSimpleKey)
+			waitComponentAnnotationGone(resourceSimpleKey, BuildRequestAnnotationName)
+			waitDoneMessageOnComponent(resourceSimpleKey)
+			expectSimpleBuildStatus(resourceSimpleKey, 0, "", false)
 		})
 
 		It("should fail to submit initial build for private git repository if SPIAccessTokenBinding is missing", func() {
@@ -1387,6 +1492,18 @@ var _ = Describe("Component initial build controller", func() {
 
 			component := getSampleComponentData(resourceSimpleKey)
 			component.Spec.ContainerImage = ""
+
+			createComponentCustom(component)
+			setComponentDevfileModel(resourceSimpleKey)
+
+			ensureNoPipelineRunsCreated(resourceSimpleKey)
+		})
+
+		It("should not submit initial build when request is empty)", func() {
+			deleteComponent(resourceSimpleKey)
+
+			component := getSampleComponentData(resourceSimpleKey)
+			component.Annotations[BuildRequestAnnotationName] = ""
 
 			createComponentCustom(component)
 			setComponentDevfileModel(resourceSimpleKey)
