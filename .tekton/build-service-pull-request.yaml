@@ -12,6 +12,8 @@ spec:
       value: "{{repo_url}}"
     - name: revision
       value: "{{revision}}"
+    - name: output-image
+      value: 'quay.io/redhat-appstudio-qe/pull-request-builds:buildserv-{{revision}}'
     - name: slack-webhook-notification-team
       value: pipeline
   pipelineRef:
