@@ -19,8 +19,10 @@ package controllers
 import (
 	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/hex"
 	"fmt"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -39,6 +41,7 @@ import (
 	l "github.com/redhat-appstudio/build-service/pkg/logs"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	oci "github.com/tektoncd/pipeline/pkg/remote/oci"
+	"golang.org/x/exp/slices"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -63,6 +66,8 @@ const (
 	pipelinesAsCodeRouteEnvVar       = "PAC_WEBHOOK_URL"
 
 	pacCelExpressionAnnotationName = "pipelinesascode.tekton.dev/on-cel-expression"
+	pacIncomingSecretNameSuffix    = "-incoming"
+	pacIncomingSecretKey           = "incoming-secret"
 
 	pacMergeRequestSourceBranchPrefix = "appstudio-"
 
@@ -76,6 +81,9 @@ For more detailed information about running a PipelineRun, please refer to Pipel
 To customize the proposed PipelineRuns after merge, please refer to [Build Pipeline customization](https://redhat-appstudio.github.io/docs.appstudio.io/Documentation/main/how-to-guides/configuring-builds/proc_customize_build_pipeline/)
 `
 )
+
+// That way it can be mocked in tests
+var GetHttpClientFunction = getHttpClient
 
 // ProvisionPaCForComponent does Pipelines as Code provision for the given component.
 // Mainly, it creates PaC configuration merge request into the component source repositotiry.
@@ -148,6 +156,253 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context,
 	return mrUrl, nil
 }
 
+func getHttpClient() *http.Client { // #nosec G402 // dev instances need insecure, because they have self signed certificates
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: gp.IsInsecureSSL()},
+	}
+	client := &http.Client{Transport: tr}
+	return client
+}
+
+// ensureIncomingSecret is ensuring that incoming secret for PaC trigger exists
+// if secret doesn't exists it will create it and also add repository as owner
+// Returns:
+// pointer to secret object
+// bool which indicates if reconcile is required (which is required when we just created secret)
+func (r *ComponentBuildReconciler) ensureIncomingSecret(ctx context.Context, component *appstudiov1alpha1.Component) (*corev1.Secret, bool, error) {
+	log := ctrllog.FromContext(ctx)
+
+	repository, err := r.findPaCRepositoryForComponent(ctx, component)
+	if err != nil {
+		return nil, false, err
+	}
+
+	incomingSecretName := fmt.Sprintf("%s%s", repository.Name, pacIncomingSecretNameSuffix)
+	incomingSecretPassword := generatePaCWebhookSecretString()
+	incomingSecretData := map[string]string{
+		pacIncomingSecretKey: incomingSecretPassword,
+	}
+
+	secret := corev1.Secret{}
+	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: component.Namespace, Name: incomingSecretName}, &secret); err != nil {
+		if !errors.IsNotFound(err) {
+			log.Error(err, "failed to get incoming secret", l.Action, l.ActionView)
+			return nil, false, err
+		}
+		// Create incoming secret
+		secret = corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      incomingSecretName,
+				Namespace: component.Namespace,
+			},
+			Type:       corev1.SecretTypeOpaque,
+			StringData: incomingSecretData,
+		}
+
+		if err := controllerutil.SetOwnerReference(repository, &secret, r.Scheme); err != nil {
+			log.Error(err, "failed to set owner for incoming secret")
+			return nil, false, err
+		}
+
+		if err := r.Client.Create(ctx, &secret); err != nil {
+			log.Error(err, "failed to create incoming secret", l.Action, l.ActionAdd)
+			return nil, false, err
+		}
+
+		log.Info("incoming secret created")
+		return &secret, true, nil
+	}
+	return &secret, false, nil
+}
+
+func (r *ComponentBuildReconciler) TriggerPaCBuild(ctx context.Context, component *appstudiov1alpha1.Component) (bool, error) {
+	log := ctrllog.FromContext(ctx).WithName("TriggerPaCBuild")
+	ctx = ctrllog.IntoContext(ctx, log)
+
+	incomingSecret, reconcileRequired, err := r.ensureIncomingSecret(ctx, component)
+	if err != nil {
+		return false, err
+	}
+
+	repository, err := r.findPaCRepositoryForComponent(ctx, component)
+	if err != nil {
+		return false, err
+	}
+
+	if repository == nil {
+		return false, fmt.Errorf("PaC repository not found for component %s", component.Name)
+	}
+
+	repoUrl := component.Spec.Source.GitSource.URL
+	gitProvider, err := gitops.GetGitProvider(*component)
+	if err != nil {
+		log.Error(err, "error detecting git provider")
+		// There is no point to continue if git provider is not known.
+		return false, boerrors.NewBuildOpError(boerrors.EUnknownGitProvider, err)
+	}
+
+	pacSecret, err := r.ensurePaCSecret(ctx, component, gitProvider)
+	if err != nil {
+		return false, err
+	}
+
+	gitClient, err := gitproviderfactory.CreateGitClient(gitproviderfactory.GitClientConfig{
+		PacSecretData:             pacSecret.Data,
+		GitProvider:               gitProvider,
+		RepoUrl:                   repoUrl,
+		IsAppInstallationExpected: true,
+	})
+	if err != nil {
+		return false, err
+	}
+
+	// get target branch for incoming hook
+	targetBranch := component.Spec.Source.GitSource.Revision
+	if targetBranch == "" {
+		targetBranch, err = gitClient.GetDefaultBranch(repoUrl)
+		if err != nil {
+			return false, err
+		}
+	}
+
+	incomingUpdated := updateIncoming(repository, incomingSecret.Name, pacIncomingSecretKey, targetBranch)
+	if incomingUpdated {
+		if err := r.Client.Update(ctx, repository); err != nil {
+			log.Error(err, "failed to update PaC repository with incomings", "PaCRepositoryName", repository.Name)
+			return false, err
+		}
+		log.Info("Added incomings to the PaC repository", "PaCRepositoryName", repository.Name, l.Action, l.ActionUpdate)
+
+		// reconcile to be sure that Repository is updated, as Repository needs to have correct incomings for trigger to work
+		return true, nil
+	}
+
+	// reconcile to be sure that Secret is created
+	if reconcileRequired {
+		return true, nil
+	}
+
+	webhookTargetUrl, err := r.getPaCWebhookTargetUrl(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	secretValue := string(incomingSecret.Data[pacIncomingSecretKey][:])
+
+	pipelineRunName := component.Name + pipelineRunOnPushSuffix
+
+	triggerURL := fmt.Sprintf("%s/incoming?secret=%s&repository=%s&branch=%s&pipelinerun=%s", webhookTargetUrl, secretValue, repository.Name, targetBranch, pipelineRunName)
+	HttpClient := GetHttpClientFunction()
+
+	resp, err := HttpClient.Post(triggerURL, "application/json", nil)
+	if err != nil {
+		return false, err
+	}
+
+	if resp.StatusCode != 200 && resp.StatusCode != 202 {
+		return false, fmt.Errorf("PaC incoming endpoint returned HTTP %d", resp.StatusCode)
+	}
+
+	log.Info(fmt.Sprintf("PaC build manually triggered push pipeline for component: %s", component.Name))
+	return false, nil
+}
+
+// cleanupPaCRepositoryIncomingsAndSecret is cleaning up incomings in Repository
+// for unprovisioned component, and also removes incoming secret when no longer required
+func (r *ComponentBuildReconciler) cleanupPaCRepositoryIncomingsAndSecret(ctx context.Context, component *appstudiov1alpha1.Component, baseBranch string) error {
+	log := ctrllog.FromContext(ctx)
+
+	// check if more components are using same repo with PaC enabled for incomings removal from repository
+	incomingsRepoTargetBranchCount := 0
+	incomingsRepoAllBranchesCount := 0
+	componentList := &appstudiov1alpha1.ComponentList{}
+	if err := r.Client.List(ctx, componentList, &client.ListOptions{Namespace: component.Namespace}); err != nil {
+		log.Error(err, "failed to list Components", l.Action, l.ActionView)
+		return err
+	}
+	buildStatus := &BuildStatus{}
+	for _, comp := range componentList.Items {
+		if comp.Spec.Source.GitSource.URL == component.Spec.Source.GitSource.URL {
+			buildStatus = readBuildStatus(component)
+			if buildStatus.PaC != nil && buildStatus.PaC.State == "enabled" {
+				incomingsRepoAllBranchesCount += 1
+
+				// revision can be empty and then use default branch
+				if comp.Spec.Source.GitSource.Revision == component.Spec.Source.GitSource.Revision || comp.Spec.Source.GitSource.Revision == baseBranch {
+					incomingsRepoTargetBranchCount += 1
+				}
+			}
+		}
+	}
+
+	repository, err := r.findPaCRepositoryForComponent(ctx, component)
+	if err != nil {
+		return err
+	}
+	incomingSecretName := ""
+	if repository != nil {
+		incomingSecretName = fmt.Sprintf("%s%s", repository.Name, pacIncomingSecretNameSuffix)
+		incomingUpdated := false
+		// update first in case there is multiple incoming entries, and it will be converted to incomings with just 1 entry
+		_ = updateIncoming(repository, incomingSecretName, pacIncomingSecretKey, baseBranch)
+
+		if len((*repository.Spec.Incomings)[0].Targets) > 1 {
+			// incoming contains target from the current component only
+			if slices.Contains((*repository.Spec.Incomings)[0].Targets, baseBranch) && incomingsRepoTargetBranchCount <= 1 {
+				newTargets := []string{}
+				for _, target := range (*repository.Spec.Incomings)[0].Targets {
+					if target != baseBranch {
+						newTargets = append(newTargets, target)
+					}
+				}
+				(*repository.Spec.Incomings)[0].Targets = newTargets
+				incomingUpdated = true
+			}
+			// remove secret from incomings if just current component is using incomings in repository
+			if incomingsRepoAllBranchesCount <= 1 && incomingsRepoTargetBranchCount <= 1 {
+				(*repository.Spec.Incomings)[0].Secret = pacv1alpha1.Secret{}
+				incomingUpdated = true
+			}
+
+		} else {
+			// incomings has just 1 target and that target is from the current component only
+			if (*repository.Spec.Incomings)[0].Targets[0] == baseBranch && incomingsRepoTargetBranchCount <= 1 {
+				repository.Spec.Incomings = nil
+				incomingUpdated = true
+			}
+		}
+
+		if incomingUpdated {
+			if err := r.Client.Update(ctx, repository); err != nil {
+				log.Error(err, "failed to update existing PaC repository with incomings", "PaCRepositoryName", repository.Name)
+				return err
+			}
+			log.Info("Removed incomings from the PaC repository", "PaCRepositoryName", repository.Name, l.Action, l.ActionUpdate)
+		}
+	}
+
+	// remove incoming secret if just current component is using incomings in repository
+	if incomingsRepoAllBranchesCount <= 1 && incomingsRepoTargetBranchCount <= 1 {
+		secret := &corev1.Secret{}
+		if err := r.Client.Get(ctx, types.NamespacedName{Namespace: component.Namespace, Name: incomingSecretName}, secret); err != nil {
+			if !errors.IsNotFound(err) {
+				log.Error(err, "failed to get incoming secret", l.Action, l.ActionView)
+				return err
+			}
+			log.Info("incoming secret doesn't exist anymore, removal isn't required")
+		} else {
+			if err := r.Client.Delete(ctx, secret); err != nil {
+				if !errors.IsNotFound(err) {
+					log.Error(err, "failed to remove incoming secret", l.Action, l.ActionView)
+					return err
+				}
+			}
+			log.Info("incoming secret removed")
+		}
+	}
+	return nil
+}
+
 // UndoPaCProvisionForComponent creates merge request that removes Pipelines as Code configuration from component source repository.
 // Deletes PaC webhook if used.
 // In case of any errors just logs them and does not block Component deletion.
@@ -181,11 +436,18 @@ func (r *ComponentBuildReconciler) UndoPaCProvisionForComponent(ctx context.Cont
 	}
 
 	// Manage merge request for Pipelines as Code configuration removal
-	mrUrl, action, err := r.UnconfigureRepositoryForPaC(ctx, component, pacSecret.Data, webhookTargetUrl)
+	baseBranch, mrUrl, action, err := r.UnconfigureRepositoryForPaC(ctx, component, pacSecret.Data, webhookTargetUrl)
 	if err != nil {
 		log.Error(err, "failed to create merge request to remove Pipelines as Code configuration from Component source repository", l.Audit, "true")
 		return "", err
 	}
+
+	err = r.cleanupPaCRepositoryIncomingsAndSecret(ctx, component, baseBranch)
+	if err != nil {
+		log.Error(err, "failed cleanup incomings from repo and incoming secret")
+		return "", err
+	}
+
 	if action == "delete" {
 		if mrUrl != "" {
 			log.Info(fmt.Sprintf("Pipelines as Code configuration removal merge request: %s", mrUrl))
@@ -407,7 +669,7 @@ func checkMandatoryFieldsNotEmpty(config map[string][]byte, mandatoryFields []st
 	return nil
 }
 
-func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, component *appstudiov1alpha1.Component, config map[string][]byte) error {
+func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, component *appstudiov1alpha1.Component, pacConfig map[string][]byte) error {
 	log := ctrllog.FromContext(ctx)
 
 	// Check multi component git repository scenario.
@@ -439,7 +701,7 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 	}
 
 	// This is the first Component that does PaC provision for the git repository
-	repository, err = gitops.GeneratePACRepository(*component, config)
+	repository, err = gitops.GeneratePACRepository(*component, pacConfig)
 	if err != nil {
 		return err
 	}
@@ -616,7 +878,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 // Deletes PaC webhook if it's used.
 // Does not delete PaC GitHub application from the repository as its installation was done manually by the user.
 // Returns merge request web URL or empty string if it's not needed.
-func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Context, component *appstudiov1alpha1.Component, pacConfig map[string][]byte, webhookTargetUrl string) (prUrl string, action string, err error) {
+func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Context, component *appstudiov1alpha1.Component, pacConfig map[string][]byte, webhookTargetUrl string) (baseBranch string, prUrl string, action string, err error) {
 	log := ctrllog.FromContext(ctx)
 
 	gitProvider, _ := gitops.GetGitProvider(*component)
@@ -629,7 +891,7 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 		IsAppInstallationExpected: true,
 	})
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 
 	isAppUsed := gitops.IsPaCApplicationConfigured(gitProvider, pacConfig)
@@ -648,11 +910,11 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 	}
 
 	sourceBranch := generateMergeRequestSourceBranch(component)
-	baseBranch := component.Spec.Source.GitSource.Revision
+	baseBranch = component.Spec.Source.GitSource.Revision
 	if baseBranch == "" {
 		baseBranch, err = gitClient.GetDefaultBranch(repoUrl)
 		if err != nil {
-			return "", "", nil
+			return "", "", "", nil
 		}
 	}
 
@@ -664,7 +926,7 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 
 	mergeRequest, err := gitClient.FindUnmergedPaCMergeRequest(repoUrl, mrData)
 	if err != nil {
-		return "", "", err
+		return baseBranch, "", "", err
 	}
 
 	if mergeRequest == nil {
@@ -698,7 +960,7 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 		}
 
 		prUrl, err = gitClient.UndoPaCMergeRequest(repoUrl, mrData)
-		return prUrl, "delete", err
+		return baseBranch, prUrl, "delete", err
 	} else {
 		// Close merge request.
 		// To close a merge request it's enough to delete the branch.
@@ -706,10 +968,10 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 		// Non-existing source branch should not be an error, just ignore it,
 		// but other errors should be handled.
 		if _, err := gitClient.DeleteBranch(repoUrl, sourceBranch); err != nil {
-			return "", "", err
+			return baseBranch, "", "", err
 		}
 		log.Info(fmt.Sprintf("pull request source branch %s is deleted", sourceBranch), l.Action, l.ActionDelete)
-		return prUrl, "close", nil
+		return baseBranch, prUrl, "close", nil
 	}
 }
 
@@ -901,4 +1163,65 @@ func retrievePipelineSpec(bundleUri, pipelineName string) (*tektonapi.PipelineSp
 	}
 	pipelineSpec := pipelineSpecObj.PipelineSpec()
 	return &pipelineSpec, nil
+}
+
+// updateIncoming updates incomings in repository, adds new incoming for provided branch with incoming secret
+// if repository contains multiple incoming entries, it will merge them to one, and combine Targets and add incoming secret to incoming
+// if repository contains one incoming entry, it will add new target and add incoming secret to incoming
+// if repository doesn't have any incoming entry, it will add new incoming entry with target and add incoming secret to incoming
+// Returns bool, indicating if incomings in repository was updated or not
+func updateIncoming(repository *pacv1alpha1.Repository, incomingSecretName string, pacIncomingSecretKey string, targetBranch string) bool {
+	foundSecretName := false
+	foundTarget := false
+	multiple_incomings := false
+	all_targets := []string{}
+
+	if repository.Spec.Incomings != nil {
+		if len(*repository.Spec.Incomings) > 1 {
+			multiple_incomings = true
+		}
+
+		for idx, key := range *repository.Spec.Incomings {
+			if multiple_incomings { // for multiple incomings gather all targets
+				for _, target := range key.Targets {
+					all_targets = append(all_targets, target)
+					if target == targetBranch {
+						foundTarget = true
+					}
+				}
+			} else { // for single incoming add target & secret if missing
+				for _, target := range key.Targets {
+					if target == targetBranch {
+						foundTarget = true
+						break
+					}
+				}
+				// add missing target branch
+				if !foundTarget {
+					(*repository.Spec.Incomings)[idx].Targets = append((*repository.Spec.Incomings)[idx].Targets, targetBranch)
+				}
+
+				if key.Secret.Name == incomingSecretName {
+					foundSecretName = true
+				} else {
+					(*repository.Spec.Incomings)[idx].Secret = pacv1alpha1.Secret{Name: incomingSecretName, Key: pacIncomingSecretKey}
+				}
+			}
+		}
+
+		// combine multiple incomings into one and add secret
+		if multiple_incomings {
+			if !foundTarget {
+				all_targets = append(all_targets, targetBranch)
+			}
+			incoming := []pacv1alpha1.Incoming{{Type: "webhook-url", Secret: pacv1alpha1.Secret{Name: incomingSecretName, Key: pacIncomingSecretKey}, Targets: all_targets}}
+			repository.Spec.Incomings = &incoming
+		}
+	} else {
+		// create incomings when missing
+		incoming := []pacv1alpha1.Incoming{{Type: "webhook-url", Secret: pacv1alpha1.Secret{Name: incomingSecretName, Key: pacIncomingSecretKey}, Targets: []string{targetBranch}}}
+		repository.Spec.Incomings = &incoming
+	}
+
+	return multiple_incomings || !(foundSecretName && foundTarget)
 }

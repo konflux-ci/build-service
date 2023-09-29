@@ -17,17 +17,21 @@ limitations under the License.
 package controllers
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
+	"github.com/h2non/gock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
+	routev1 "github.com/openshift/api/route/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -123,6 +127,7 @@ var _ = Describe("Component initial build controller", func() {
 
 		_ = AfterEach(func() {
 			deleteComponent(resourcePacPrepKey)
+			deletePaCRepository(resourcePacPrepKey)
 
 			deleteSecret(webhookSecretKey)
 			deleteSecret(namespacePaCSecretKey)
@@ -137,7 +142,7 @@ var _ = Describe("Component initial build controller", func() {
 			isCreatePaCPullRequestInvoked := false
 			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
 				isCreatePaCPullRequestInvoked = true
-				Expect(repoUrl).To(Equal(SampleRepoLink))
+				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resourcePacPrepKey.Name))
 				Expect(len(d.Files)).To(Equal(2))
 				for _, file := range d.Files {
 					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
@@ -305,7 +310,7 @@ var _ = Describe("Component initial build controller", func() {
 			isCreatePaCPullRequestInvoked := false
 			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
 				isCreatePaCPullRequestInvoked = true
-				Expect(repoUrl).To(Equal(SampleRepoLink))
+				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resourcePacPrepKey.Name))
 				Expect(len(d.Files)).To(Equal(2))
 				for _, file := range d.Files {
 					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
@@ -324,7 +329,7 @@ var _ = Describe("Component initial build controller", func() {
 				isSetupPaCWebhookInvoked = true
 				Expect(webhookUrl).To(Equal(pacWebhookUrl))
 				Expect(webhookSecret).ToNot(BeEmpty())
-				Expect(repoUrl).To(Equal(SampleRepoLink))
+				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resourcePacPrepKey.Name))
 				return nil
 			}
 
@@ -450,11 +455,11 @@ var _ = Describe("Component initial build controller", func() {
 
 			component1Key := resourcePacPrepKey
 			component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
-
 			deleteAllPaCRepositories(component1Key.Namespace)
 
 			createComponentWithBuildRequest(component1Key, BuildRequestConfigurePaCAnnotationValue)
-			createComponentWithBuildRequest(component2Key, BuildRequestConfigurePaCAnnotationValue)
+			createComponentWithBuildRequestAndGit(component2Key, BuildRequestConfigurePaCAnnotationValue, SampleRepoLink+"-"+resourcePacPrepKey.Name, "main")
+			defer deletePaCRepository(component2Key)
 			defer deleteComponent(component2Key)
 
 			waitComponentAnnotationGone(component1Key, BuildRequestAnnotationName)
@@ -491,6 +496,7 @@ var _ = Describe("Component initial build controller", func() {
 				containerImage: "registry.io/username/image2:tag2",
 				gitURL:         "https://github.com/devfile-samples/devfile-sample-go-basic",
 			}, BuildRequestConfigurePaCAnnotationValue)
+			defer deletePaCRepository(component2Key)
 			defer deleteComponent(component2Key)
 
 			waitSecretCreated(namespacePaCSecretKey)
@@ -702,10 +708,22 @@ var _ = Describe("Component initial build controller", func() {
 			serviceAccount.ImagePullSecrets = []corev1.LocalObjectReference{{Name: generatedImageRepoSecretName}, {Name: anotherSecretName}}
 			Expect(k8sClient.Update(ctx, serviceAccount)).Should(Succeed())
 
+			generatedImageRepoSecretKey := types.NamespacedName{Namespace: resourcePacPrepKey.Namespace, Name: generatedImageRepoSecretName}
+			// wait for secret to be removed because component was removed in afterEach
+			waitSecretGone(generatedImageRepoSecretKey)
 			assertLinkSecretToSa(true)
 
 			// will remove just generate image repo secret from SA and keep anothersecret
 			deleteComponent(resourcePacPrepKey)
+			waitSecretGone(generatedImageRepoSecretKey)
+
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, serviceAccountName, serviceAccount)
+				if err != nil {
+					return false
+				}
+				return len(serviceAccount.Secrets) == 1
+			}, timeout, interval).Should(BeTrue())
 
 			Expect(k8sClient.Get(ctx, serviceAccountName, serviceAccount)).To(Succeed())
 			Expect(len(serviceAccount.Secrets)).To(Equal(1))
@@ -721,6 +739,11 @@ var _ = Describe("Component initial build controller", func() {
 		})
 
 		It("should not link auto generated image repository secret to pipeline service account, when secret is missing", func() {
+			// wait for secret to be removed because component was removed in afterEach
+			generatedImageRepoSecretName := "generated-image-repo-secret"
+			generatedImageRepoSecretKey := types.NamespacedName{Namespace: resourcePacPrepKey.Namespace, Name: generatedImageRepoSecretName}
+			waitSecretGone(generatedImageRepoSecretKey)
+
 			assertLinkSecretToSa(false)
 		})
 	})
@@ -783,12 +806,12 @@ var _ = Describe("Component initial build controller", func() {
 			expectPacBuildStatus(resourceCleanupKey, "disabled", 0, "", "")
 		})
 
-		It("should successfully submit PR with PaC definitions removal using GitHub application", func() {
+		It("should successfully submit PR with PaC definitions removal using GitHub application, remove all incomings and incoming secret (only current component is using)", func() {
 			mergeUrl := "merge-url"
 			isRemovePaCPullRequestInvoked := false
 			UndoPaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (webUrl string, err error) {
 				isRemovePaCPullRequestInvoked = true
-				Expect(repoUrl).To(Equal(SampleRepoLink))
+				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resourceCleanupKey.Name))
 				Expect(len(d.Files)).To(Equal(2))
 				for _, file := range d.Files {
 					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
@@ -814,9 +837,28 @@ var _ = Describe("Component initial build controller", func() {
 			}
 			createSecret(pacSecretKey, pacSecretData)
 
+			// provision component
 			createComponentAndProcessBuildRequest(resourceCleanupKey, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourceCleanupKey)
 
+			repository := waitPaCRepositoryCreated(resourceCleanupKey)
+			incomingSecretName := fmt.Sprintf("%s%s", repository.Name, pacIncomingSecretNameSuffix)
+
+			// update repository with multiple incomings
+			incoming := []pacv1alpha1.Incoming{{Type: "webhook-url", Secret: pacv1alpha1.Secret{Name: incomingSecretName, Key: pacIncomingSecretKey}, Targets: []string{"main"}}}
+			repository.Spec.Incomings = &incoming
+			Expect(k8sClient.Update(ctx, repository)).Should(Succeed())
+
+			// create incoming secret
+			component := getComponent(resourceCleanupKey)
+			incomingSecretData := map[string]string{
+				pacIncomingSecretKey: "secret password",
+			}
+			incomingSecretResourceKey := types.NamespacedName{Namespace: component.Namespace, Name: incomingSecretName}
+			createSecret(incomingSecretResourceKey, incomingSecretData)
+			defer deleteSecret(incomingSecretResourceKey)
+
+			// unprovision
 			setComponentBuildRequest(resourceCleanupKey, BuildRequestUnconfigurePaCAnnotationValue)
 
 			Eventually(func() bool {
@@ -824,13 +866,82 @@ var _ = Describe("Component initial build controller", func() {
 			}, timeout, interval).Should(BeTrue())
 
 			expectPacBuildStatus(resourceCleanupKey, "disabled", 0, "", mergeUrl)
+			waitComponentAnnotationGone(resourceCleanupKey, BuildRequestAnnotationName)
+			waitSecretGone(incomingSecretResourceKey)
+
+			repository = waitPaCRepositoryCreated(resourceCleanupKey)
+			Expect(repository.Spec.Incomings).To(BeNil())
+		})
+
+		It("should successfully submit PR with PaC definitions removal, remove 1 incoming and keep secret for another component", func() {
+			// tests multiple entries in incomings for components (when incomings are manually updated)
+			mergeUrl := "merge-url"
+			UndoPaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (webUrl string, err error) {
+				return mergeUrl, nil
+			}
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				return mergeUrl, nil
+			}
+
+			pacSecretData := map[string]string{
+				"github-application-id": "12345",
+				"github-private-key":    githubAppPrivateKey,
+			}
+			createSecret(pacSecretKey, pacSecretData)
+
+			// provision 1st component
+			createComponentAndProcessBuildRequest(resourceCleanupKey, BuildRequestConfigurePaCAnnotationValue)
+			waitPaCFinalizerOnComponent(resourceCleanupKey)
+			expectPacBuildStatus(resourceCleanupKey, "enabled", 0, "", mergeUrl)
+
+			// provision 2nd component
+			component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
+			createComponentWithBuildRequestAndGit(component2Key, BuildRequestConfigurePaCAnnotationValue, SampleRepoLink+"-"+resourceCleanupKey.Name, "another")
+			waitPaCFinalizerOnComponent(component2Key)
+			expectPacBuildStatus(component2Key, "enabled", 0, "", mergeUrl)
+			defer deleteComponent(component2Key)
+
+			component := getComponent(resourceCleanupKey)
+			repository := waitPaCRepositoryCreated(resourceCleanupKey)
+			incomingSecretName := fmt.Sprintf("%s%s", repository.Name, pacIncomingSecretNameSuffix)
+
+			// update repository with multiple incomings
+			incoming := []pacv1alpha1.Incoming{
+				// 2 components using same repository and different branches
+				{Type: "webhook-url", Secret: pacv1alpha1.Secret{Name: incomingSecretName, Key: pacIncomingSecretKey}, Targets: []string{"main"}},
+				{Type: "webhook-url", Secret: pacv1alpha1.Secret{Name: incomingSecretName, Key: pacIncomingSecretKey}, Targets: []string{"another"}}}
+			repository.Spec.Incomings = &incoming
+			Expect(k8sClient.Update(ctx, repository)).Should(Succeed())
+
+			// create incoming secret
+			incomingSecretData := map[string]string{
+				pacIncomingSecretKey: "secret password",
+			}
+			incomingSecretResourceKey := types.NamespacedName{Namespace: component.Namespace, Name: incomingSecretName}
+			createSecret(incomingSecretResourceKey, incomingSecretData)
+			defer deleteSecret(incomingSecretResourceKey)
+
+			// unprovision 1st component
+			setComponentBuildRequest(resourceCleanupKey, BuildRequestUnconfigurePaCAnnotationValue)
+			expectPacBuildStatus(resourceCleanupKey, "disabled", 0, "", mergeUrl)
+			waitComponentAnnotationGone(resourceCleanupKey, BuildRequestAnnotationName)
+
+			// secret will still be there for another component
+			waitSecretCreated(incomingSecretResourceKey)
+
+			repository = waitPaCRepositoryCreated(resourceCleanupKey)
+			Expect(repository.Spec.Incomings).ToNot(BeNil())
+			Expect(len(*repository.Spec.Incomings)).To(Equal(1))
+			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
+			Expect((*repository.Spec.Incomings)[0].Secret.Key).To(Equal(pacIncomingSecretKey))
+			Expect((*repository.Spec.Incomings)[0].Targets).To(Equal([]string{"another"}))
 		})
 
 		It("should successfully submit PR with PaC definitions removal on component deletion", func() {
 			isRemovePaCPullRequestInvoked := false
 			UndoPaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (webUrl string, err error) {
 				isRemovePaCPullRequestInvoked = true
-				Expect(repoUrl).To(Equal(SampleRepoLink))
+				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resourceCleanupKey.Name))
 				Expect(len(d.Files)).To(Equal(2))
 				for _, file := range d.Files {
 					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
@@ -871,7 +982,7 @@ var _ = Describe("Component initial build controller", func() {
 			isRemovePaCPullRequestInvoked := false
 			UndoPaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (webUrl string, err error) {
 				isRemovePaCPullRequestInvoked = true
-				Expect(repoUrl).To(Equal(SampleRepoLink))
+				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resourceCleanupKey.Name))
 				Expect(len(d.Files)).To(Equal(2))
 				for _, file := range d.Files {
 					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
@@ -888,7 +999,7 @@ var _ = Describe("Component initial build controller", func() {
 			isDeletePaCWebhookInvoked := false
 			DeletePaCWebhookFunc = func(repoUrl string, webhookUrl string) error {
 				isDeletePaCWebhookInvoked = true
-				Expect(repoUrl).To(Equal(SampleRepoLink))
+				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resourceCleanupKey.Name))
 				Expect(webhookUrl).To(Equal(pacWebhookUrl))
 				return nil
 			}
@@ -949,7 +1060,7 @@ var _ = Describe("Component initial build controller", func() {
 			isFindOnboardingMergeRequestInvoked := false
 			FindUnmergedPaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (*gp.MergeRequest, error) {
 				isFindOnboardingMergeRequestInvoked = true
-				Expect(repoUrl).To(Equal(SampleRepoLink))
+				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resourceCleanupKey.Name))
 				Expect(d.BranchName).Should(Equal(expectedSourceBranch))
 				Expect(d.BaseBranchName).Should(Equal(expectedBaseBranch))
 				return &gp.MergeRequest{
@@ -960,7 +1071,7 @@ var _ = Describe("Component initial build controller", func() {
 			isDeleteBranchInvoked := false
 			DeleteBranchFunc = func(repoUrl string, branchName string) (bool, error) {
 				isDeleteBranchInvoked = true
-				Expect(repoUrl).To(Equal(SampleRepoLink))
+				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resourceCleanupKey.Name))
 				Expect(branchName).Should(Equal(expectedSourceBranch))
 				return sourceBranchExists, nil
 			}
@@ -1055,6 +1166,8 @@ var _ = Describe("Component initial build controller", func() {
 		_ = BeforeEach(func() {
 			deleteAllPaCRepositories(anotherComponentKey.Namespace)
 
+			createNamespace(pipelinesAsCodeNamespace)
+			createRoute(pacRouteKey, "pac-host")
 			createNamespace(buildServiceNamespaceName)
 			ResetTestGitProviderClient()
 
@@ -1074,6 +1187,7 @@ var _ = Describe("Component initial build controller", func() {
 			deleteComponentPipelineRuns(anotherComponentKey)
 			deleteComponent(anotherComponentKey)
 			deleteSecret(pacSecretKey)
+			deleteRoute(pacRouteKey)
 			deletePaCRepository(anotherComponentKey)
 		})
 
@@ -1143,7 +1257,7 @@ var _ = Describe("Component initial build controller", func() {
 	})
 
 	Context("Test simple build flow", func() {
-		var resourceSimpleKey = types.NamespacedName{Name: HASCompName + "-simple", Namespace: HASAppNamespace}
+		var resouceSimpleBuildKey = types.NamespacedName{Name: HASCompName + "-simple", Namespace: HASAppNamespace}
 
 		_ = BeforeEach(func() {
 			createNamespace(buildServiceNamespaceName)
@@ -1154,15 +1268,15 @@ var _ = Describe("Component initial build controller", func() {
 				"github-private-key":    githubAppPrivateKey,
 			}
 			createSecret(pacSecretKey, pacSecretData)
-			createComponent(resourceSimpleKey)
+			createComponent(resouceSimpleBuildKey)
 		})
 
 		_ = AfterEach(func() {
 			deleteSecret(pacSecretKey)
 
 			deleteBuildPipelineRunSelector(defaultSelectorKey)
-			deleteComponentPipelineRuns(resourceSimpleKey)
-			deleteComponent(resourceSimpleKey)
+			deleteComponentPipelineRuns(resouceSimpleBuildKey)
+			deleteComponent(resouceSimpleBuildKey)
 			// wait for pruner operator to finish, so it won't prune runs from new test
 			time.Sleep(time.Second)
 			DevfileSearchForDockerfile = devfile.SearchForDockerfile
@@ -1174,62 +1288,62 @@ var _ = Describe("Component initial build controller", func() {
 			isGetBranchShaInvoked := false
 			GetBranchShaFunc = func(repoUrl string, branchName string) (string, error) {
 				isGetBranchShaInvoked = true
-				Expect(repoUrl).To(Equal(SampleRepoLink))
+				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resouceSimpleBuildKey.Name))
 				return gitSourceSHA, nil
 			}
 			GetBrowseRepositoryAtShaLinkFunc = func(repoUrl, sha string) string {
-				Expect(repoUrl).To(Equal(SampleRepoLink))
+				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resouceSimpleBuildKey.Name))
 				Expect(sha).To(Equal(gitSourceSHA))
 				return "https://github.com/devfile-samples/devfile-sample-java-springboot-basic?rev=" + gitSourceSHA
 			}
 
-			setComponentDevfileModel(resourceSimpleKey)
+			setComponentDevfileModel(resouceSimpleBuildKey)
 
 			Eventually(func() bool {
 				return isGetBranchShaInvoked
 			}, timeout, interval).Should(BeTrue())
 
-			waitOneInitialPipelineRunCreated(resourceSimpleKey)
-			waitComponentAnnotationGone(resourceSimpleKey, BuildRequestAnnotationName)
-			expectSimpleBuildStatus(resourceSimpleKey, 0, "", false)
+			waitOneInitialPipelineRunCreated(resouceSimpleBuildKey)
+			waitComponentAnnotationGone(resouceSimpleBuildKey, BuildRequestAnnotationName)
+			expectSimpleBuildStatus(resouceSimpleBuildKey, 0, "", false)
 
 			// Check pipeline run labels and annotations
-			pipelineRun := listComponentPipelineRuns(resourceSimpleKey)[0]
+			pipelineRun := listComponentPipelineRuns(resouceSimpleBuildKey)[0]
 			Expect(pipelineRun.Annotations[gitCommitShaAnnotationName]).To(Equal(gitSourceSHA))
 			Expect(pipelineRun.Annotations[gitRepoAtShaAnnotationName]).To(
 				Equal("https://github.com/devfile-samples/devfile-sample-java-springboot-basic?rev=" + gitSourceSHA))
 		})
 
 		It("should submit initial build on component creation with sha revision", func() {
-			deleteComponent(resourceSimpleKey)
+			deleteComponent(resouceSimpleBuildKey)
 
 			gitSourceSHA := "d1a9e858489d1515621398fb02942da068f1c956"
-			component := getSampleComponentData(resourceSimpleKey)
+			component := getSampleComponentData(resouceSimpleBuildKey)
 			component.Spec.Source.GitSource.Revision = gitSourceSHA
 			createComponentCustom(component)
-			setComponentDevfileModel(resourceSimpleKey)
+			setComponentDevfileModel(resouceSimpleBuildKey)
 
-			waitOneInitialPipelineRunCreated(resourceSimpleKey)
-			waitComponentAnnotationGone(resourceSimpleKey, BuildRequestAnnotationName)
-			expectSimpleBuildStatus(resourceSimpleKey, 0, "", false)
+			waitOneInitialPipelineRunCreated(resouceSimpleBuildKey)
+			waitComponentAnnotationGone(resouceSimpleBuildKey, BuildRequestAnnotationName)
+			expectSimpleBuildStatus(resouceSimpleBuildKey, 0, "", false)
 
 			// Check pipeline run labels and annotations
-			pipelineRun := listComponentPipelineRuns(resourceSimpleKey)[0]
+			pipelineRun := listComponentPipelineRuns(resouceSimpleBuildKey)[0]
 			Expect(pipelineRun.Annotations[gitCommitShaAnnotationName]).To(Equal(gitSourceSHA))
 			Expect(pipelineRun.Annotations[gitRepoAtShaAnnotationName]).To(Equal(DefaultBrowseRepository + gitSourceSHA))
 		})
 
 		It("should be able to retrigger simple build", func() {
-			setComponentDevfileModel(resourceSimpleKey)
+			setComponentDevfileModel(resouceSimpleBuildKey)
 
-			waitOneInitialPipelineRunCreated(resourceSimpleKey)
+			waitOneInitialPipelineRunCreated(resouceSimpleBuildKey)
 
-			deleteComponentPipelineRuns(resourceSimpleKey)
+			deleteComponentPipelineRuns(resouceSimpleBuildKey)
 
-			setComponentBuildRequest(resourceSimpleKey, BuildRequestTriggerSimpleBuildAnnotationValue)
-			waitComponentAnnotationGone(resourceSimpleKey, BuildRequestAnnotationName)
-			waitOneInitialPipelineRunCreated(resourceSimpleKey)
-			expectSimpleBuildStatus(resourceSimpleKey, 0, "", false)
+			setComponentBuildRequest(resouceSimpleBuildKey, BuildRequestTriggerSimpleBuildAnnotationValue)
+			waitComponentAnnotationGone(resouceSimpleBuildKey, BuildRequestAnnotationName)
+			waitOneInitialPipelineRunCreated(resouceSimpleBuildKey)
+			expectSimpleBuildStatus(resouceSimpleBuildKey, 0, "", false)
 		})
 
 		It("should run simple build and create pipeline service account when it doesn't exist", func() {
@@ -1243,11 +1357,11 @@ var _ = Describe("Component initial build controller", func() {
 				return k8sErrors.IsNotFound(k8sClient.Get(ctx, serviceAccountName, serviceAccount))
 			}, timeout, interval).Should(BeTrue())
 
-			setComponentDevfileModel(resourceSimpleKey)
-			waitOneInitialPipelineRunCreated(resourceSimpleKey)
-			waitComponentAnnotationGone(resourceSimpleKey, BuildRequestAnnotationName)
-			waitDoneMessageOnComponent(resourceSimpleKey)
-			expectSimpleBuildStatus(resourceSimpleKey, 0, "", false)
+			setComponentDevfileModel(resouceSimpleBuildKey)
+			waitOneInitialPipelineRunCreated(resouceSimpleBuildKey)
+			waitComponentAnnotationGone(resouceSimpleBuildKey, BuildRequestAnnotationName)
+			waitDoneMessageOnComponent(resouceSimpleBuildKey)
+			expectSimpleBuildStatus(resouceSimpleBuildKey, 0, "", false)
 		})
 
 		It("should submit initial build if retrieving of git commit SHA failed", func() {
@@ -1257,15 +1371,15 @@ var _ = Describe("Component initial build controller", func() {
 				return "", fmt.Errorf("failed to get git commit SHA")
 			}
 
-			setComponentDevfileModel(resourceSimpleKey)
+			setComponentDevfileModel(resouceSimpleBuildKey)
 
 			Eventually(func() bool {
 				return isGetBranchShaInvoked
 			}, timeout, interval).Should(BeTrue())
 
-			waitOneInitialPipelineRunCreated(resourceSimpleKey)
-			waitComponentAnnotationGone(resourceSimpleKey, BuildRequestAnnotationName)
-			expectSimpleBuildStatus(resourceSimpleKey, 0, "", false)
+			waitOneInitialPipelineRunCreated(resouceSimpleBuildKey)
+			waitComponentAnnotationGone(resouceSimpleBuildKey, BuildRequestAnnotationName)
+			expectSimpleBuildStatus(resouceSimpleBuildKey, 0, "", false)
 		})
 
 		It("should submit initial build for private git repository", func() {
@@ -1285,32 +1399,32 @@ var _ = Describe("Component initial build controller", func() {
 			spiAccessTokenBinding := &appstudiospiapiv1beta1.SPIAccessTokenBinding{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "spi-access-token-binding",
-					Namespace: resourceSimpleKey.Namespace,
+					Namespace: resouceSimpleBuildKey.Namespace,
 				},
 				Spec: appstudiospiapiv1beta1.SPIAccessTokenBindingSpec{
-					RepoUrl: SampleRepoLink,
+					RepoUrl: SampleRepoLink + "-" + resouceSimpleBuildKey.Name,
 				},
 			}
 			Expect(k8sClient.Create(ctx, spiAccessTokenBinding)).To(Succeed())
 			spiAccessTokenBinding.Status.SyncedObjectRef.Name = gitSecretName
 			Expect(k8sClient.Status().Update(ctx, spiAccessTokenBinding)).To(Succeed())
 
-			setComponentDevfileModel(resourceSimpleKey)
+			setComponentDevfileModel(resouceSimpleBuildKey)
 
 			Eventually(func() bool { return isRepositoryPublicInvoked }, timeout, interval).Should(BeTrue())
 			Eventually(func() bool { return isGetBranchShaInvoked }, timeout, interval).Should(BeTrue())
 
 			// Wait until all resources created
-			waitOneInitialPipelineRunCreated(resourceSimpleKey)
-			waitComponentAnnotationGone(resourceSimpleKey, BuildRequestAnnotationName)
+			waitOneInitialPipelineRunCreated(resouceSimpleBuildKey)
+			waitComponentAnnotationGone(resouceSimpleBuildKey, BuildRequestAnnotationName)
 
 			// Check the pipeline run and its resources
-			pipelineRuns := listComponentPipelineRuns(resourceSimpleKey)
+			pipelineRuns := listComponentPipelineRuns(resouceSimpleBuildKey)
 			Expect(len(pipelineRuns)).To(Equal(1))
 			pipelineRun := pipelineRuns[0]
 
 			Expect(pipelineRun.Labels[ApplicationNameLabelName]).To(Equal(HASAppName))
-			Expect(pipelineRun.Labels[ComponentNameLabelName]).To(Equal(resourceSimpleKey.Name))
+			Expect(pipelineRun.Labels[ComponentNameLabelName]).To(Equal(resouceSimpleBuildKey.Name))
 
 			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/pipeline_name"]).To(Equal(defaultPipelineName))
 			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(defaultPipelineBundle))
@@ -1326,9 +1440,9 @@ var _ = Describe("Component initial build controller", func() {
 				switch p.Name {
 				case "output-image":
 					Expect(p.Value.StringVal).ToNot(BeEmpty())
-					Expect(strings.HasPrefix(p.Value.StringVal, "docker.io/foo/customized:"+resourceSimpleKey.Name+"-build-"))
+					Expect(strings.HasPrefix(p.Value.StringVal, "docker.io/foo/customized:"+resouceSimpleBuildKey.Name+"-build-"))
 				case "git-url":
-					Expect(p.Value.StringVal).To(Equal(SampleRepoLink))
+					Expect(p.Value.StringVal).To(Equal(SampleRepoLink + "-" + resouceSimpleBuildKey.Name))
 				case "revision":
 					Expect(p.Value.StringVal).To(Equal("main"))
 				}
@@ -1352,13 +1466,13 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(isWorkspaceGitAuthExist).To(BeTrue())
 
 			Expect(k8sClient.Delete(ctx, spiAccessTokenBinding)).To(Succeed())
-			expectSimpleBuildStatus(resourceSimpleKey, 0, "", false)
+			expectSimpleBuildStatus(resouceSimpleBuildKey, 0, "", false)
 		})
 
 		It("should submit initial simple build, even when containerimage is missing, but is found in image repo annotation", func() {
-			deleteComponent(resourceSimpleKey)
+			deleteComponent(resouceSimpleBuildKey)
 
-			component := getSampleComponentData(resourceSimpleKey)
+			component := getSampleComponentData(resouceSimpleBuildKey)
 			component.Spec.ContainerImage = ""
 
 			type RepositoryInfo struct {
@@ -1370,11 +1484,11 @@ var _ = Describe("Component initial build controller", func() {
 			component.Annotations[ImageRepoAnnotationName] = string(repoInfoBytes)
 
 			createComponentCustom(component)
-			setComponentDevfileModel(resourceSimpleKey)
-			waitOneInitialPipelineRunCreated(resourceSimpleKey)
-			waitComponentAnnotationGone(resourceSimpleKey, BuildRequestAnnotationName)
-			waitDoneMessageOnComponent(resourceSimpleKey)
-			expectSimpleBuildStatus(resourceSimpleKey, 0, "", false)
+			setComponentDevfileModel(resouceSimpleBuildKey)
+			waitOneInitialPipelineRunCreated(resouceSimpleBuildKey)
+			waitComponentAnnotationGone(resouceSimpleBuildKey, BuildRequestAnnotationName)
+			waitDoneMessageOnComponent(resouceSimpleBuildKey)
+			expectSimpleBuildStatus(resouceSimpleBuildKey, 0, "", false)
 		})
 
 		It("should fail to submit initial build for private git repository if SPIAccessTokenBinding is missing", func() {
@@ -1384,31 +1498,31 @@ var _ = Describe("Component initial build controller", func() {
 				return false, nil
 			}
 
-			setComponentDevfileModel(resourceSimpleKey)
+			setComponentDevfileModel(resouceSimpleBuildKey)
 
 			Eventually(func() bool { return isRepositoryPublicInvoked }, timeout, interval).Should(BeTrue())
 
-			waitDoneMessageOnComponent(resourceSimpleKey)
+			waitDoneMessageOnComponent(resouceSimpleBuildKey)
 
 			expectError := boerrors.NewBuildOpError(boerrors.EComponentGitSecretMissing, nil)
-			expectSimpleBuildStatus(resourceSimpleKey, expectError.GetErrorId(), expectError.ShortError(), true)
+			expectSimpleBuildStatus(resouceSimpleBuildKey, expectError.GetErrorId(), expectError.ShortError(), true)
 		})
 
 		It("should not submit initial build if the component devfile model is not set", func() {
-			ensureNoPipelineRunsCreated(resourceSimpleKey)
+			ensureNoPipelineRunsCreated(resouceSimpleBuildKey)
 		})
 
 		It("should not submit initial build if pac secret is missing", func() {
 			deleteSecret(pacSecretKey)
-			setComponentDevfileModel(resourceSimpleKey)
-			waitDoneMessageOnComponent(resourceSimpleKey)
+			setComponentDevfileModel(resouceSimpleBuildKey)
+			waitDoneMessageOnComponent(resouceSimpleBuildKey)
 
 			expectError := boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, nil)
-			expectSimpleBuildStatus(resourceSimpleKey, expectError.GetErrorId(), expectError.ShortError(), true)
+			expectSimpleBuildStatus(resouceSimpleBuildKey, expectError.GetErrorId(), expectError.ShortError(), true)
 		})
 
 		It("should do nothing if simple build already happened (and PaC is not used)", func() {
-			deleteComponent(resourceSimpleKey)
+			deleteComponent(resouceSimpleBuildKey)
 
 			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
 				defer GinkgoRecover()
@@ -1416,16 +1530,16 @@ var _ = Describe("Component initial build controller", func() {
 				return "", nil
 			}
 
-			component := getSampleComponentData(resourceSimpleKey)
+			component := getSampleComponentData(resouceSimpleBuildKey)
 			component.Annotations = make(map[string]string)
 			component.Annotations[BuildStatusAnnotationName] = "{simple:{\"build-start-time\": \"time\"}}"
 			createComponentCustom(component)
 
-			ensureNoPipelineRunsCreated(resourceSimpleKey)
+			ensureNoPipelineRunsCreated(resouceSimpleBuildKey)
 		})
 
 		It("should not submit initial build if a gitsource is missing from component", func() {
-			deleteComponent(resourceSimpleKey)
+			deleteComponent(resouceSimpleBuildKey)
 
 			component := &appstudiov1alpha1.Component{
 				TypeMeta: metav1.TypeMeta{
@@ -1433,43 +1547,43 @@ var _ = Describe("Component initial build controller", func() {
 					Kind:       "Component",
 				},
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      resourceSimpleKey.Name,
+					Name:      resouceSimpleBuildKey.Name,
 					Namespace: HASAppNamespace,
 				},
 				Spec: appstudiov1alpha1.ComponentSpec{
-					ComponentName:  resourceSimpleKey.Name,
+					ComponentName:  resouceSimpleBuildKey.Name,
 					Application:    HASAppName,
 					ContainerImage: "quay.io/test/image:latest",
 				},
 			}
 			createComponentCustom(component)
-			setComponentDevfileModel(resourceSimpleKey)
+			setComponentDevfileModel(resouceSimpleBuildKey)
 
-			ensureNoPipelineRunsCreated(resourceSimpleKey)
+			ensureNoPipelineRunsCreated(resouceSimpleBuildKey)
 		})
 
 		It("should not submit initial build if Dockerfile is wrong", func() {
 			DevfileSearchForDockerfile = func(devfileBytes []byte) (*v1alpha2.DockerfileImage, error) {
 				return nil, fmt.Errorf("wrong dockerfile")
 			}
-			setComponentDevfileModel(resourceSimpleKey)
-			waitDoneMessageOnComponent(resourceSimpleKey)
+			setComponentDevfileModel(resouceSimpleBuildKey)
+			waitDoneMessageOnComponent(resouceSimpleBuildKey)
 
 			expectError := boerrors.NewBuildOpError(boerrors.EInvalidDevfile, nil)
-			expectSimpleBuildStatus(resourceSimpleKey, expectError.GetErrorId(), expectError.ShortError(), true)
+			expectSimpleBuildStatus(resouceSimpleBuildKey, expectError.GetErrorId(), expectError.ShortError(), true)
 		})
 
 		It("should not submit initial simple build if git provider can't be detected)", func() {
-			deleteComponent(resourceSimpleKey)
+			deleteComponent(resouceSimpleBuildKey)
 
-			component := getSampleComponentData(resourceSimpleKey)
+			component := getSampleComponentData(resouceSimpleBuildKey)
 			component.Spec.Source.GitSource.URL = "wrong"
 			createComponentCustom(component)
-			setComponentDevfileModel(resourceSimpleKey)
-			waitDoneMessageOnComponent(resourceSimpleKey)
+			setComponentDevfileModel(resouceSimpleBuildKey)
+			waitDoneMessageOnComponent(resouceSimpleBuildKey)
 
 			expectError := boerrors.NewBuildOpError(boerrors.EUnknownGitProvider, nil)
-			expectSimpleBuildStatus(resourceSimpleKey, expectError.GetErrorId(), expectError.ShortError(), true)
+			expectSimpleBuildStatus(resouceSimpleBuildKey, expectError.GetErrorId(), expectError.ShortError(), true)
 		})
 
 		It("should not submit initial simple build if public repository check fails", func() {
@@ -1479,34 +1593,34 @@ var _ = Describe("Component initial build controller", func() {
 				return false, fmt.Errorf("failed to check repository")
 			}
 
-			setComponentDevfileModel(resourceSimpleKey)
+			setComponentDevfileModel(resouceSimpleBuildKey)
 			Eventually(func() bool { return isRepositoryPublicInvoked }, timeout, interval).Should(BeTrue())
 
-			ensureNoPipelineRunsCreated(resourceSimpleKey)
+			ensureNoPipelineRunsCreated(resouceSimpleBuildKey)
 		})
 
 		It("should not submit initial build if ContainerImage is not set)", func() {
-			deleteComponent(resourceSimpleKey)
+			deleteComponent(resouceSimpleBuildKey)
 
-			component := getSampleComponentData(resourceSimpleKey)
+			component := getSampleComponentData(resouceSimpleBuildKey)
 			component.Spec.ContainerImage = ""
 
 			createComponentCustom(component)
-			setComponentDevfileModel(resourceSimpleKey)
+			setComponentDevfileModel(resouceSimpleBuildKey)
 
-			ensureNoPipelineRunsCreated(resourceSimpleKey)
+			ensureNoPipelineRunsCreated(resouceSimpleBuildKey)
 		})
 
 		It("should not submit initial build when request is empty)", func() {
-			deleteComponent(resourceSimpleKey)
+			deleteComponent(resouceSimpleBuildKey)
 
-			component := getSampleComponentData(resourceSimpleKey)
+			component := getSampleComponentData(resouceSimpleBuildKey)
 			component.Annotations[BuildRequestAnnotationName] = ""
 
 			createComponentCustom(component)
-			setComponentDevfileModel(resourceSimpleKey)
+			setComponentDevfileModel(resouceSimpleBuildKey)
 
-			ensureNoPipelineRunsCreated(resourceSimpleKey)
+			ensureNoPipelineRunsCreated(resouceSimpleBuildKey)
 		})
 	})
 
@@ -1846,6 +1960,491 @@ var _ = Describe("Component initial build controller", func() {
 
 		It("PaC provision should fail when no BuildPipelineSelector CR is defined", func() {
 			assertBuildFail(false, "Build pipeline selector is not defined")
+		})
+	})
+
+	Context("Test Pipelines as Code trigger build", func() {
+		var resourcePacTriggerKey = types.NamespacedName{Name: HASCompName + "-pactrigger", Namespace: HASAppNamespace}
+
+		_ = BeforeEach(func() {
+			createNamespace(pipelinesAsCodeNamespace)
+			createRoute(pacRouteKey, "pac-host")
+			createNamespace(buildServiceNamespaceName)
+			pacSecretData := map[string]string{
+				"github-application-id": "12345",
+				"github-private-key":    githubAppPrivateKey,
+			}
+			createSecret(pacSecretKey, pacSecretData)
+
+			ResetTestGitProviderClient()
+		})
+
+		_ = AfterEach(func() {
+			deleteComponent(resourcePacTriggerKey)
+			deletePaCRepository(resourcePacTriggerKey)
+
+			deleteSecret(webhookSecretKey)
+			deleteSecret(namespacePaCSecretKey)
+
+			deleteSecret(pacSecretKey)
+			deleteRoute(pacRouteKey)
+		})
+
+		It("should successfully trigger PaC build", func() {
+			mergeUrl := "merge-url"
+
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				return mergeUrl, nil
+			}
+
+			createComponentAndProcessBuildRequest(resourcePacTriggerKey, BuildRequestConfigurePaCAnnotationValue)
+			waitPaCFinalizerOnComponent(resourcePacTriggerKey)
+			waitComponentAnnotationGone(resourcePacTriggerKey, BuildRequestAnnotationName)
+			expectPacBuildStatus(resourcePacTriggerKey, "enabled", 0, "", mergeUrl)
+
+			repository := waitPaCRepositoryCreated(resourcePacTriggerKey)
+			component := getComponent(resourcePacTriggerKey)
+
+			pacWebhookRoute := &routev1.Route{}
+			Expect(k8sClient.Get(ctx, pacRouteKey, pacWebhookRoute)).To(Succeed())
+			webhookTargetUrl := "https://" + pacWebhookRoute.Spec.Host
+			pipelineRunName := component.Name + pipelineRunOnPushSuffix
+
+			client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+			gock.InterceptClient(client)
+
+			getHttpClientMocked := func() *http.Client {
+				return client
+			}
+			GetHttpClientFunction = getHttpClientMocked
+
+			defer gock.Off()
+
+			setComponentBuildRequest(resourcePacTriggerKey, BuildRequestTriggerPaCBuildAnnotationValue)
+
+			incomingSecretName := fmt.Sprintf("%s%s", repository.Name, pacIncomingSecretNameSuffix)
+			incomingSecretResourceKey := types.NamespacedName{Namespace: component.Namespace, Name: incomingSecretName}
+			waitSecretCreated(incomingSecretResourceKey)
+			defer deleteSecret(incomingSecretResourceKey)
+
+			incomingSecret := corev1.Secret{}
+			Expect(k8sClient.Get(ctx, incomingSecretResourceKey, &incomingSecret)).To(Succeed())
+			secretValue := string(incomingSecret.Data[pacIncomingSecretKey][:])
+
+			req := gock.New(webhookTargetUrl).
+				BodyString("").
+				Post("/incoming").
+				MatchParam("secret", secretValue).
+				MatchParam("repository", component.Name).
+				MatchParam("branch", "main").
+				MatchParam("pipelinerun", pipelineRunName)
+			req.Reply(202).JSON(map[string]string{})
+
+			waitComponentAnnotationGone(resourcePacTriggerKey, BuildRequestAnnotationName)
+
+			repository = waitPaCRepositoryCreated(resourcePacTriggerKey)
+
+			Expect(repository.Spec.Incomings).ToNot(BeNil())
+			Expect(len(*repository.Spec.Incomings)).To(Equal(1))
+			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
+			Expect((*repository.Spec.Incomings)[0].Secret.Key).To(Equal(pacIncomingSecretKey))
+			Expect((*repository.Spec.Incomings)[0].Targets).To(Equal([]string{"main"}))
+		})
+
+		It("should successfully trigger builds for 2 components with different branches in the same repo", func() {
+			mergeUrl := "merge-url"
+
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				return mergeUrl, nil
+			}
+
+			// provision 1st component
+			createComponentAndProcessBuildRequest(resourcePacTriggerKey, BuildRequestConfigurePaCAnnotationValue)
+			waitPaCFinalizerOnComponent(resourcePacTriggerKey)
+			waitComponentAnnotationGone(resourcePacTriggerKey, BuildRequestAnnotationName)
+			expectPacBuildStatus(resourcePacTriggerKey, "enabled", 0, "", mergeUrl)
+			repository := waitPaCRepositoryCreated(resourcePacTriggerKey)
+
+			// provision 2nd component
+			component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
+			createComponentWithBuildRequestAndGit(component2Key, BuildRequestConfigurePaCAnnotationValue, SampleRepoLink+"-"+resourcePacTriggerKey.Name, "another")
+			waitPaCFinalizerOnComponent(component2Key)
+			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
+			expectPacBuildStatus(component2Key, "enabled", 0, "", mergeUrl)
+			defer deleteComponent(component2Key)
+
+			pacWebhookRoute := &routev1.Route{}
+			Expect(k8sClient.Get(ctx, pacRouteKey, pacWebhookRoute)).To(Succeed())
+			webhookTargetUrl := "https://" + pacWebhookRoute.Spec.Host
+			incomingSecretName := fmt.Sprintf("%s%s", repository.Name, pacIncomingSecretNameSuffix)
+
+			component1 := getComponent(resourcePacTriggerKey)
+			pipelineRunName1 := component1.Name + pipelineRunOnPushSuffix
+
+			client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+			gock.InterceptClient(client)
+
+			getHttpClientMocked := func() *http.Client {
+				return client
+			}
+			GetHttpClientFunction = getHttpClientMocked
+
+			defer gock.Off()
+
+			req := gock.New(webhookTargetUrl).
+				BodyString("").
+				Post("/incoming").
+				MatchParam("repository", component1.Name).
+				MatchParam("branch", "main").
+				MatchParam("pipelinerun", pipelineRunName1)
+			req.Reply(202).JSON(map[string]string{})
+
+			// trigger push pipeline for 1st component
+			setComponentBuildRequest(resourcePacTriggerKey, BuildRequestTriggerPaCBuildAnnotationValue)
+
+			incomingSecretResourceKey := types.NamespacedName{Namespace: component1.Namespace, Name: incomingSecretName}
+			waitSecretCreated(incomingSecretResourceKey)
+			defer deleteSecret(incomingSecretResourceKey)
+			waitComponentAnnotationGone(resourcePacTriggerKey, BuildRequestAnnotationName)
+
+			repository = waitPaCRepositoryCreated(resourcePacTriggerKey)
+			Expect(repository.Spec.Incomings).ToNot(BeNil())
+			Expect(len(*repository.Spec.Incomings)).To(Equal(1))
+			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
+			Expect((*repository.Spec.Incomings)[0].Secret.Key).To(Equal(pacIncomingSecretKey))
+			Expect((*repository.Spec.Incomings)[0].Targets).To(Equal([]string{"main"}))
+
+			component2 := getComponent(component2Key)
+			pipelineRunName2 := component2.Name + pipelineRunOnPushSuffix
+
+			req = gock.New(webhookTargetUrl).
+				BodyString("").
+				Post("/incoming").
+				MatchParam("repository", component1.Name).
+				MatchParam("branch", "another").
+				MatchParam("pipelinerun", pipelineRunName2)
+			req.Reply(202).JSON(map[string]string{})
+
+			// trigger push pipeline for 2nd component
+			setComponentBuildRequest(component2Key, BuildRequestTriggerPaCBuildAnnotationValue)
+			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
+
+			repository = waitPaCRepositoryCreated(resourcePacTriggerKey)
+			Expect(repository.Spec.Incomings).ToNot(BeNil())
+			Expect(len(*repository.Spec.Incomings)).To(Equal(1))
+			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
+			Expect((*repository.Spec.Incomings)[0].Secret.Key).To(Equal(pacIncomingSecretKey))
+			Expect((*repository.Spec.Incomings)[0].Targets).To(Equal([]string{"main", "another"}))
+		})
+
+		It("should successfully trigger builds for 2 components with the same branches in the same repo", func() {
+			mergeUrl := "merge-url"
+
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				return mergeUrl, nil
+			}
+
+			// provision 1st component
+			createComponentAndProcessBuildRequest(resourcePacTriggerKey, BuildRequestConfigurePaCAnnotationValue)
+			waitPaCFinalizerOnComponent(resourcePacTriggerKey)
+			waitComponentAnnotationGone(resourcePacTriggerKey, BuildRequestAnnotationName)
+			expectPacBuildStatus(resourcePacTriggerKey, "enabled", 0, "", mergeUrl)
+			repository := waitPaCRepositoryCreated(resourcePacTriggerKey)
+
+			// provision 2nd component
+			component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
+			createComponentWithBuildRequestAndGit(component2Key, BuildRequestConfigurePaCAnnotationValue, SampleRepoLink+"-"+resourcePacTriggerKey.Name, "main")
+			waitPaCFinalizerOnComponent(component2Key)
+			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
+			expectPacBuildStatus(component2Key, "enabled", 0, "", mergeUrl)
+			defer deleteComponent(component2Key)
+
+			pacWebhookRoute := &routev1.Route{}
+			Expect(k8sClient.Get(ctx, pacRouteKey, pacWebhookRoute)).To(Succeed())
+			webhookTargetUrl := "https://" + pacWebhookRoute.Spec.Host
+			incomingSecretName := fmt.Sprintf("%s%s", repository.Name, pacIncomingSecretNameSuffix)
+
+			component1 := getComponent(resourcePacTriggerKey)
+			pipelineRunName1 := component1.Name + pipelineRunOnPushSuffix
+
+			client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+			gock.InterceptClient(client)
+
+			getHttpClientMocked := func() *http.Client {
+				return client
+			}
+			GetHttpClientFunction = getHttpClientMocked
+
+			defer gock.Off()
+
+			req := gock.New(webhookTargetUrl).
+				BodyString("").
+				Post("/incoming").
+				MatchParam("repository", component1.Name).
+				MatchParam("branch", "main").
+				MatchParam("pipelinerun", pipelineRunName1)
+			req.Reply(202).JSON(map[string]string{})
+
+			// trigger push pipeline for 1st component
+			setComponentBuildRequest(resourcePacTriggerKey, BuildRequestTriggerPaCBuildAnnotationValue)
+
+			incomingSecretResourceKey := types.NamespacedName{Namespace: component1.Namespace, Name: incomingSecretName}
+			waitSecretCreated(incomingSecretResourceKey)
+			defer deleteSecret(incomingSecretResourceKey)
+			waitComponentAnnotationGone(resourcePacTriggerKey, BuildRequestAnnotationName)
+
+			repository = waitPaCRepositoryCreated(resourcePacTriggerKey)
+			Expect(repository.Spec.Incomings).ToNot(BeNil())
+			Expect(len(*repository.Spec.Incomings)).To(Equal(1))
+			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
+			Expect((*repository.Spec.Incomings)[0].Secret.Key).To(Equal(pacIncomingSecretKey))
+			Expect((*repository.Spec.Incomings)[0].Targets).To(Equal([]string{"main"}))
+
+			component2 := getComponent(component2Key)
+			pipelineRunName2 := component2.Name + pipelineRunOnPushSuffix
+
+			req = gock.New(webhookTargetUrl).
+				BodyString("").
+				Post("/incoming").
+				MatchParam("repository", component1.Name).
+				MatchParam("branch", "main").
+				MatchParam("pipelinerun", pipelineRunName2)
+			req.Reply(202).JSON(map[string]string{})
+
+			// trigger push pipeline for 2nd component
+			setComponentBuildRequest(component2Key, BuildRequestTriggerPaCBuildAnnotationValue)
+			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
+
+			repository = waitPaCRepositoryCreated(resourcePacTriggerKey)
+			Expect(repository.Spec.Incomings).ToNot(BeNil())
+			Expect(len(*repository.Spec.Incomings)).To(Equal(1))
+			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
+			Expect((*repository.Spec.Incomings)[0].Secret.Key).To(Equal(pacIncomingSecretKey))
+			Expect((*repository.Spec.Incomings)[0].Targets).To(Equal([]string{"main"}))
+
+		})
+
+		It("should successfully trigger PaC build, multiple incomings exist, even with wrong secret", func() {
+			mergeUrl := "merge-url"
+
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				return mergeUrl, nil
+			}
+
+			// provision 1st component
+			createComponentAndProcessBuildRequest(resourcePacTriggerKey, BuildRequestConfigurePaCAnnotationValue)
+			waitPaCFinalizerOnComponent(resourcePacTriggerKey)
+			waitComponentAnnotationGone(resourcePacTriggerKey, BuildRequestAnnotationName)
+			expectPacBuildStatus(resourcePacTriggerKey, "enabled", 0, "", mergeUrl)
+
+			repository := waitPaCRepositoryCreated(resourcePacTriggerKey)
+			incomingSecretName := fmt.Sprintf("%s%s", repository.Name, pacIncomingSecretNameSuffix)
+
+			// update repository with multiple incomings, even with wrong secret
+			incoming := []pacv1alpha1.Incoming{
+				// correct secret name for main branch
+				{Type: "webhook-url", Secret: pacv1alpha1.Secret{Name: incomingSecretName, Key: pacIncomingSecretKey}, Targets: []string{"main"}},
+				// missing secret for first branch
+				{Type: "webhook-url", Secret: pacv1alpha1.Secret{}, Targets: []string{"first"}},
+				// wrong secret for second branch
+				{Type: "webhook-url", Secret: pacv1alpha1.Secret{Name: "wrong_name", Key: pacIncomingSecretKey}, Targets: []string{"second"}}}
+			repository.Spec.Incomings = &incoming
+			Expect(k8sClient.Update(ctx, repository)).Should(Succeed())
+
+			// provision 2nd component
+			component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
+			createComponentWithBuildRequestAndGit(component2Key, BuildRequestConfigurePaCAnnotationValue, SampleRepoLink+"-"+resourcePacTriggerKey.Name, "another")
+			waitPaCFinalizerOnComponent(component2Key)
+			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
+			expectPacBuildStatus(component2Key, "enabled", 0, "", mergeUrl)
+			defer deleteComponent(component2Key)
+
+			client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+			gock.InterceptClient(client)
+
+			getHttpClientMocked := func() *http.Client {
+				return client
+			}
+			GetHttpClientFunction = getHttpClientMocked
+
+			defer gock.Off()
+
+			pacWebhookRoute := &routev1.Route{}
+			Expect(k8sClient.Get(ctx, pacRouteKey, pacWebhookRoute)).To(Succeed())
+			webhookTargetUrl := "https://" + pacWebhookRoute.Spec.Host
+
+			component2 := getComponent(component2Key)
+			pipelineRunName2 := component2.Name + pipelineRunOnPushSuffix
+
+			req := gock.New(webhookTargetUrl).
+				BodyString("").
+				Post("/incoming").
+				MatchParam("repository", repository.Name).
+				MatchParam("branch", "another").
+				MatchParam("pipelinerun", pipelineRunName2)
+			req.Reply(202).JSON(map[string]string{})
+
+			// trigger push pipeline for 2nd component
+			setComponentBuildRequest(component2Key, BuildRequestTriggerPaCBuildAnnotationValue)
+			incomingSecretResourceKey := types.NamespacedName{Namespace: component2.Namespace, Name: incomingSecretName}
+			waitSecretCreated(incomingSecretResourceKey)
+			defer deleteSecret(incomingSecretResourceKey)
+			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
+
+			repository = waitPaCRepositoryCreated(resourcePacTriggerKey)
+			Expect(repository.Spec.Incomings).ToNot(BeNil())
+			Expect(len(*repository.Spec.Incomings)).To(Equal(1))
+			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
+			Expect((*repository.Spec.Incomings)[0].Secret.Key).To(Equal(pacIncomingSecretKey))
+			Expect((*repository.Spec.Incomings)[0].Targets).To(Equal([]string{"main", "first", "second", "another"}))
+		})
+
+		It("should successfully trigger PaC build, multiple incomings exist, even with wrong secret, branch found but without secret", func() {
+			mergeUrl := "merge-url"
+
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				return mergeUrl, nil
+			}
+
+			// provision 1st component
+			createComponentAndProcessBuildRequest(resourcePacTriggerKey, BuildRequestConfigurePaCAnnotationValue)
+			waitPaCFinalizerOnComponent(resourcePacTriggerKey)
+			waitComponentAnnotationGone(resourcePacTriggerKey, BuildRequestAnnotationName)
+			expectPacBuildStatus(resourcePacTriggerKey, "enabled", 0, "", mergeUrl)
+
+			repository := waitPaCRepositoryCreated(resourcePacTriggerKey)
+			incomingSecretName := fmt.Sprintf("%s%s", repository.Name, pacIncomingSecretNameSuffix)
+
+			// update repository with multiple incomings, even with wrong secret
+			incoming := []pacv1alpha1.Incoming{
+				// missing secret for main branch
+				{Type: "webhook-url", Secret: pacv1alpha1.Secret{}, Targets: []string{"main"}},
+				// missing secret for another branch (used for 2nd component)
+				{Type: "webhook-url", Secret: pacv1alpha1.Secret{}, Targets: []string{"another"}},
+				// missing secret for first branch
+				{Type: "webhook-url", Secret: pacv1alpha1.Secret{}, Targets: []string{"first"}},
+				// wrong secret for second branch
+				{Type: "webhook-url", Secret: pacv1alpha1.Secret{Name: "wrong_name", Key: pacIncomingSecretKey}, Targets: []string{"second"}}}
+			repository.Spec.Incomings = &incoming
+			Expect(k8sClient.Update(ctx, repository)).Should(Succeed())
+
+			// provision 2nd component
+			component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
+			createComponentWithBuildRequestAndGit(component2Key, BuildRequestConfigurePaCAnnotationValue, SampleRepoLink+"-"+resourcePacTriggerKey.Name, "another")
+			waitPaCFinalizerOnComponent(component2Key)
+			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
+			expectPacBuildStatus(component2Key, "enabled", 0, "", mergeUrl)
+			defer deleteComponent(component2Key)
+
+			client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+			gock.InterceptClient(client)
+
+			getHttpClientMocked := func() *http.Client {
+				return client
+			}
+			GetHttpClientFunction = getHttpClientMocked
+
+			defer gock.Off()
+
+			pacWebhookRoute := &routev1.Route{}
+			Expect(k8sClient.Get(ctx, pacRouteKey, pacWebhookRoute)).To(Succeed())
+			webhookTargetUrl := "https://" + pacWebhookRoute.Spec.Host
+
+			component2 := getComponent(component2Key)
+			pipelineRunName2 := component2.Name + pipelineRunOnPushSuffix
+
+			req := gock.New(webhookTargetUrl).
+				BodyString("").
+				Post("/incoming").
+				MatchParam("repository", repository.Name).
+				MatchParam("branch", "another").
+				MatchParam("pipelinerun", pipelineRunName2)
+			req.Reply(202).JSON(map[string]string{})
+
+			// trigger push pipeline for 2nd component
+			setComponentBuildRequest(component2Key, BuildRequestTriggerPaCBuildAnnotationValue)
+			incomingSecretResourceKey := types.NamespacedName{Namespace: component2.Namespace, Name: incomingSecretName}
+			waitSecretCreated(incomingSecretResourceKey)
+			defer deleteSecret(incomingSecretResourceKey)
+			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
+
+			repository = waitPaCRepositoryCreated(resourcePacTriggerKey)
+			Expect(repository.Spec.Incomings).ToNot(BeNil())
+			Expect(len(*repository.Spec.Incomings)).To(Equal(1))
+			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
+			Expect((*repository.Spec.Incomings)[0].Secret.Key).To(Equal(pacIncomingSecretKey))
+			Expect((*repository.Spec.Incomings)[0].Targets).To(Equal([]string{"main", "another", "first", "second"}))
+		})
+
+		It("should successfully trigger PaC build, one incomings exist, but without secret", func() {
+			mergeUrl := "merge-url"
+
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				return mergeUrl, nil
+			}
+
+			// provision 1st component
+			createComponentAndProcessBuildRequest(resourcePacTriggerKey, BuildRequestConfigurePaCAnnotationValue)
+			waitPaCFinalizerOnComponent(resourcePacTriggerKey)
+			waitComponentAnnotationGone(resourcePacTriggerKey, BuildRequestAnnotationName)
+			expectPacBuildStatus(resourcePacTriggerKey, "enabled", 0, "", mergeUrl)
+
+			repository := waitPaCRepositoryCreated(resourcePacTriggerKey)
+			incomingSecretName := fmt.Sprintf("%s%s", repository.Name, pacIncomingSecretNameSuffix)
+
+			// update repository with multiple incomings, even with wrong secret
+			incoming := []pacv1alpha1.Incoming{
+				// missing secret for main branch
+				{Type: "webhook-url", Secret: pacv1alpha1.Secret{}, Targets: []string{"main"}}}
+			repository.Spec.Incomings = &incoming
+			Expect(k8sClient.Update(ctx, repository)).Should(Succeed())
+
+			// provision 2nd component
+			component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
+			createComponentWithBuildRequestAndGit(component2Key, BuildRequestConfigurePaCAnnotationValue, SampleRepoLink+"-"+resourcePacTriggerKey.Name, "another")
+			waitPaCFinalizerOnComponent(component2Key)
+			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
+			expectPacBuildStatus(component2Key, "enabled", 0, "", mergeUrl)
+			defer deleteComponent(component2Key)
+
+			client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+			gock.InterceptClient(client)
+
+			getHttpClientMocked := func() *http.Client {
+				return client
+			}
+			GetHttpClientFunction = getHttpClientMocked
+
+			defer gock.Off()
+
+			pacWebhookRoute := &routev1.Route{}
+			Expect(k8sClient.Get(ctx, pacRouteKey, pacWebhookRoute)).To(Succeed())
+			webhookTargetUrl := "https://" + pacWebhookRoute.Spec.Host
+
+			component2 := getComponent(component2Key)
+			pipelineRunName2 := component2.Name + pipelineRunOnPushSuffix
+
+			req := gock.New(webhookTargetUrl).
+				BodyString("").
+				Post("/incoming").
+				MatchParam("repository", repository.Name).
+				MatchParam("branch", "another").
+				MatchParam("pipelinerun", pipelineRunName2)
+			req.Reply(202).JSON(map[string]string{})
+
+			// trigger push pipeline for 2nd component
+			setComponentBuildRequest(component2Key, BuildRequestTriggerPaCBuildAnnotationValue)
+			incomingSecretResourceKey := types.NamespacedName{Namespace: component2.Namespace, Name: incomingSecretName}
+			waitSecretCreated(incomingSecretResourceKey)
+			defer deleteSecret(incomingSecretResourceKey)
+			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
+
+			repository = waitPaCRepositoryCreated(resourcePacTriggerKey)
+			Expect(repository.Spec.Incomings).ToNot(BeNil())
+			Expect(len(*repository.Spec.Incomings)).To(Equal(1))
+			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
+			Expect((*repository.Spec.Incomings)[0].Secret.Key).To(Equal(pacIncomingSecretKey))
+			Expect((*repository.Spec.Incomings)[0].Targets).To(Equal([]string{"main", "another"}))
 		})
 	})
 })

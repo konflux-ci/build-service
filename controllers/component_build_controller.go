@@ -45,6 +45,7 @@ import (
 const (
 	BuildRequestAnnotationName                    = "build.appstudio.openshift.io/request"
 	BuildRequestTriggerSimpleBuildAnnotationValue = "trigger-simple-build"
+	BuildRequestTriggerPaCBuildAnnotationValue    = "trigger-pac-build"
 	BuildRequestConfigurePaCAnnotationValue       = "configure-pac"
 	BuildRequestUnconfigurePaCAnnotationValue     = "unconfigure-pac"
 
@@ -182,7 +183,7 @@ func (r *ComponentBuildReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns,verbs=create
 //+kubebuilder:rbac:groups=pipelinesascode.tekton.dev,resources=repositories,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch
-//+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;patch;update
+//+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;patch;update;delete
 //+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch
@@ -351,6 +352,33 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		buildStatus.Simple = simpleBuildStatus
 		buildStatus.Message = "done"
 		writeBuildStatus(&component, buildStatus)
+
+	case BuildRequestTriggerPaCBuildAnnotationValue:
+		buildStatus := readBuildStatus(&component)
+		if !(buildStatus.PaC != nil && buildStatus.PaC.State == "enabled") {
+			log.Info("Can't rerun push pipeline because Pipelines as Code isn't provisioned for the Component")
+			return ctrl.Result{}, nil
+		}
+
+		reconcileRequired, err := r.TriggerPaCBuild(ctx, &component)
+
+		if err != nil {
+			if boErr, ok := err.(*boerrors.BuildOpError); ok && boErr.IsPersistent() {
+				log.Error(err, "Failed to rerun push pipeline for the Component")
+				buildStatus := readBuildStatus((&component))
+				buildStatus.PaC.ErrId = boErr.GetErrorId()
+				buildStatus.PaC.ErrMessage = boErr.ShortError()
+				writeBuildStatus(&component, buildStatus)
+			} else {
+				// transient error, retry
+				log.Error(err, "Failed to rerun push pipeline for the Component with transient error")
+				return ctrl.Result{}, err
+			}
+		} else {
+			if reconcileRequired {
+				return ctrl.Result{Requeue: true}, nil
+			}
+		}
 
 	case BuildRequestConfigurePaCAnnotationValue:
 		pacBuildStatus := &PaCBuildStatus{}
