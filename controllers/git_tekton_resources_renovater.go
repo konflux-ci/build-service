@@ -144,12 +144,15 @@ func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Re
 	}
 	componentUrlToBranchesMap := make(map[string][]string)
 	for _, component := range componentList.Items {
-		url := strings.TrimSuffix(strings.TrimSuffix(component.Spec.Source.GitSource.URL, ".git"), "/")
-		branch := component.Spec.Source.GitSource.Revision
-		if branch == "" {
-			branch = InternalDefaultBranch
+		gitSource := component.Spec.Source.GitSource
+		if gitSource != nil {
+			url := strings.TrimSuffix(strings.TrimSuffix(gitSource.URL, ".git"), "/")
+			branch := gitSource.Revision
+			if branch == "" {
+				branch = InternalDefaultBranch
+			}
+			componentUrlToBranchesMap[url] = append(componentUrlToBranchesMap[url], branch)
 		}
-		componentUrlToBranchesMap[url] = append(componentUrlToBranchesMap[url], branch)
 	}
 
 	// Match installed repositories with Components and get custom branch if defined
