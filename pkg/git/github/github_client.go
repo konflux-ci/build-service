@@ -19,6 +19,7 @@ package github
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/google/go-github/v45/github"
@@ -324,6 +325,27 @@ func (g *GithubClient) GetBranchSha(repoUrl, branchName string) (string, error) 
 	}
 	sha := ref.GetObject().GetSHA()
 	return sha, nil
+}
+
+// IsFileExist check whether given file exists in the given branch of the reposiotry.
+// If branch is empty string, default branch is used.
+func (g *GithubClient) IsFileExist(repoUrl, branchName, filePath string) (bool, error) {
+	owner, repository := getOwnerAndRepoFromUrl(repoUrl)
+
+	if branchName == "" {
+		var err error
+		branchName, err = g.getDefaultBranch(owner, repository)
+		if err != nil {
+			return false, err
+		}
+	}
+
+	directory := filepath.Dir(filePath)
+	files, err := g.filesExistInDirectory(owner, repository, branchName, directory, []gp.RepositoryFile{{FullPath: filePath}})
+	if err != nil {
+		return false, err
+	}
+	return len(files) > 0, nil
 }
 
 // IsRepositoryPublic returns true if the repository could be accessed without authentication

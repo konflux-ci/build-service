@@ -48,6 +48,9 @@ type GitProviderClient interface {
 	// GetBranchSha returns SHA of top commit in the given branch
 	GetBranchSha(repoUrl, branchName string) (string, error)
 
+	// IsFileExist check whether given file exists in the given branch of the reposiotry
+	IsFileExist(repoUrl, branchName, filePath string) (bool, error)
+
 	// IsRepositoryPublic returns true if the repository could be accessed without authentication
 	IsRepositoryPublic(repoUrl string) (bool, error)
 

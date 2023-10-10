@@ -567,14 +567,15 @@ var _ = Describe("Component initial build controller", func() {
 
 			isCreatePaCPullRequestInvoked := false
 			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				defer GinkgoRecover()
 				Expect(d.BaseBranchName).To(Equal(repoDefaultBranch))
 				for _, file := range d.Files {
 					var prYaml tektonapi.PipelineRun
 					if err := yaml.Unmarshal(file.Content, &prYaml); err != nil {
 						return "", err
 					}
-					targetBranches := prYaml.Annotations["pipelinesascode.tekton.dev/on-target-branch"]
-					Expect(targetBranches).To(Equal(fmt.Sprintf("[%s]", repoDefaultBranch)))
+					targetBranch := prYaml.Annotations[pacCelExpressionAnnotationName]
+					Expect(targetBranch).To(ContainSubstring(fmt.Sprintf(`target_branch == "%s"`, repoDefaultBranch)))
 				}
 				isCreatePaCPullRequestInvoked = true
 				return "url", nil

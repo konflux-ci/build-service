@@ -32,6 +32,7 @@ import (
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	"github.com/redhat-appstudio/application-service/gitops"
 	gitopsprepare "github.com/redhat-appstudio/application-service/gitops/prepare"
+	"github.com/redhat-appstudio/application-service/pkg/devfile"
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 	gp "github.com/redhat-appstudio/build-service/pkg/git/gitprovider"
 	"github.com/redhat-appstudio/build-service/pkg/git/gitproviderfactory"
@@ -60,6 +61,8 @@ const (
 	pipelinesAsCodeNamespaceFallback = "pipelines-as-code"
 	pipelinesAsCodeRouteName         = "pipelines-as-code-controller"
 	pipelinesAsCodeRouteEnvVar       = "PAC_WEBHOOK_URL"
+
+	pacCelExpressionAnnotationName = "pipelinesascode.tekton.dev/on-cel-expression"
 
 	pacMergeRequestSourceBranchPrefix = "appstudio-"
 
@@ -715,15 +718,18 @@ func generatePaCPipelineRunForComponent(
 	if pacTargetBranch == "" {
 		return nil, fmt.Errorf("target branch can't be empty for generating PaC PipelineRun for: %v", component)
 	}
-
+	pipelineCelExpression, err := generateCelExpressionForPipeline(component, gitClient, pacTargetBranch, onPull)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate cel expression for pipeline: %w", err)
+	}
 	repoUrl := component.Spec.Source.GitSource.URL
 
 	annotations := map[string]string{
-		"pipelinesascode.tekton.dev/on-target-branch": "[" + pacTargetBranch + "]",
-		"pipelinesascode.tekton.dev/max-keep-runs":    "3",
-		"build.appstudio.redhat.com/target_branch":    "{{target_branch}}",
-		gitCommitShaAnnotationName:                    "{{revision}}",
-		gitRepoAtShaAnnotationName:                    gitClient.GetBrowseRepositoryAtShaLink(repoUrl, "{{revision}}"),
+		"pipelinesascode.tekton.dev/max-keep-runs": "3",
+		"build.appstudio.redhat.com/target_branch": "{{target_branch}}",
+		pacCelExpressionAnnotationName:             pipelineCelExpression,
+		gitCommitShaAnnotationName:                 "{{revision}}",
+		gitRepoAtShaAnnotationName:                 gitClient.GetBrowseRepositoryAtShaLink(repoUrl, "{{revision}}"),
 	}
 	labels := map[string]string{
 		ApplicationNameLabelName:                component.Spec.Application,
@@ -736,12 +742,10 @@ func generatePaCPipelineRunForComponent(
 	var pipelineName string
 	var proposedImage string
 	if onPull {
-		annotations["pipelinesascode.tekton.dev/on-event"] = "[pull_request]"
 		annotations["build.appstudio.redhat.com/pull_request_number"] = "{{pull_request_number}}"
 		pipelineName = component.Name + pipelineRunOnPRSuffix
 		proposedImage = imageRepo + ":on-pr-{{revision}}"
 	} else {
-		annotations["pipelinesascode.tekton.dev/on-event"] = "[push]"
 		pipelineName = component.Name + pipelineRunOnPushSuffix
 		proposedImage = imageRepo + ":{{revision}}"
 	}
@@ -796,6 +800,62 @@ func generatePaCPipelineRunForComponent(
 	}
 
 	return pipelineRun, nil
+}
+
+// generateCelExpressionForPipeline generates value for pipelinesascode.tekton.dev/on-cel-expression annotation
+// in order to have better flexibility with git events filtering.
+// Examples of returned values:
+// event == "push" && target_branch == "main"
+// event == "pull_request" && target_branch == "my-branch" && ( "component-src-dir/***".pathChanged() || "dockerfiles/my-component/Dockerfile".pathChanged() )
+func generateCelExpressionForPipeline(component *appstudiov1alpha1.Component, gitClient gp.GitProviderClient, targetBranch string, onPull bool) (string, error) {
+	eventType := "push"
+	if onPull {
+		eventType = "pull_request"
+	}
+	eventCondition := fmt.Sprintf(`event == "%s"`, eventType)
+
+	targetBranchCondition := fmt.Sprintf(`target_branch == "%s"`, targetBranch)
+
+	// Set path changed event filtering only for Components that are stored within a directory of the git repository.
+	// Also, we have to rebuild everything on push events, so applying the filter only to pull request pipeline.
+	pathChangedSuffix := ""
+	if onPull && component.Spec.Source.GitSource.Context != "" {
+		contextDir := component.Spec.Source.GitSource.Context
+		if !strings.HasSuffix(contextDir, "/") {
+			contextDir += "/"
+		}
+
+		// If a Dockerfile is defined for the Component,
+		// we should rebuild the Component if the Dockerfile has been changed.
+		dockerfilePathChangedSuffix := ""
+		dockerfile, err := devfile.SearchForDockerfile([]byte(component.Status.Devfile))
+		if err == nil && dockerfile != nil && dockerfile.Uri != "" {
+			// Ignore dockerfile that is not stored in the same git repository but downloaded by an URL.
+			if !strings.Contains(dockerfile.Uri, "://") {
+				// dockerfile.Uri could be relative to the context directory or repository root.
+				// To avoid unessesary builds, it's required to pass absolute path to the Dockerfile.
+				repoUrl := component.Spec.Source.GitSource.URL
+				branch := component.Spec.Source.GitSource.Revision
+				dockerfilePath := contextDir + dockerfile.Uri
+				isDockerfileInContextDir, err := gitClient.IsFileExist(repoUrl, branch, dockerfilePath)
+				if err != nil {
+					return "", err
+				}
+				// If the Dockerfile is inside context directory, no changes to event filter needed.
+				if !isDockerfileInContextDir {
+					dockerfileAbsolutePath := dockerfile.Uri
+					if !strings.HasPrefix(dockerfileAbsolutePath, "/") {
+						dockerfileAbsolutePath = "/" + dockerfileAbsolutePath
+					}
+					dockerfilePathChangedSuffix = fmt.Sprintf(`|| "%s".pathChanged() `, dockerfileAbsolutePath)
+				}
+			}
+		}
+
+		pathChangedSuffix = fmt.Sprintf(` && ( "%s***".pathChanged() %s)`, contextDir, dockerfilePathChangedSuffix)
+	}
+
+	return fmt.Sprintf("%s && %s%s", eventCondition, targetBranchCondition, pathChangedSuffix), nil
 }
 
 func createWorkspaceBinding(pipelineWorkspaces []tektonapi.PipelineWorkspaceDeclaration) []tektonapi.WorkspaceBinding {
