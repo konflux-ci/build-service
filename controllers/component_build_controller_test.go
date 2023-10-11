@@ -451,21 +451,20 @@ var _ = Describe("Component initial build controller", func() {
 			component1Key := resourcePacPrepKey
 			component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
 
+			deleteAllPaCRepositories(component1Key.Namespace)
+
 			createComponentWithBuildRequest(component1Key, BuildRequestConfigurePaCAnnotationValue)
-			createCustomComponentWithBuildRequest(componentConfig{
-				componentKey:   component2Key,
-				containerImage: "registry.io/username/image2:tag2",
-			}, BuildRequestConfigurePaCAnnotationValue)
+			createComponentWithBuildRequest(component2Key, BuildRequestConfigurePaCAnnotationValue)
 			defer deleteComponent(component2Key)
-
-			waitSecretCreated(namespacePaCSecretKey)
-			waitSecretCreated(webhookSecretKey)
-
-			waitPaCRepositoryCreated(component1Key)
-			waitPaCRepositoryCreated(component2Key)
 
 			waitComponentAnnotationGone(component1Key, BuildRequestAnnotationName)
 			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
+
+			pacRepository := waitPaCRepositoryCreated(component1Key)
+			Expect(pacRepository.OwnerReferences).To(HaveLen(2))
+
+			waitSecretCreated(namespacePaCSecretKey)
+			waitSecretCreated(webhookSecretKey)
 
 			Expect(len(webhookSecretStrings)).To(BeNumerically(">", 0))
 			for _, webhookSecret := range webhookSecretStrings {
@@ -1050,10 +1049,10 @@ var _ = Describe("Component initial build controller", func() {
 		const (
 			multiComponentGitRepositoryUrl = "https://github.com/samples/multi-component-repository"
 		)
-		var resourceMultiCompKey = types.NamespacedName{Name: HASCompName + "-multicomp", Namespace: HASAppNamespace}
+		var anotherComponentKey = types.NamespacedName{Name: HASCompName + "-multicomp", Namespace: HASAppNamespace}
 
 		_ = BeforeEach(func() {
-			deleteAllPaCRepositories(resourceMultiCompKey.Namespace)
+			deleteAllPaCRepositories(anotherComponentKey.Namespace)
 
 			createNamespace(buildServiceNamespaceName)
 			ResetTestGitProviderClient()
@@ -1064,17 +1063,17 @@ var _ = Describe("Component initial build controller", func() {
 			}
 			createSecret(pacSecretKey, pacSecretData)
 
-			createComponentWithBuildRequest(resourceMultiCompKey, BuildRequestConfigurePaCAnnotationValue)
-			waitComponentAnnotationGone(resourceMultiCompKey, BuildRequestAnnotationName)
-			waitPaCRepositoryCreated(resourceMultiCompKey)
+			createComponentWithBuildRequest(anotherComponentKey, BuildRequestConfigurePaCAnnotationValue)
+			waitComponentAnnotationGone(anotherComponentKey, BuildRequestAnnotationName)
+			waitPaCRepositoryCreated(anotherComponentKey)
 		})
 
 		_ = AfterEach(func() {
 			ResetTestGitProviderClient()
-			deleteComponentPipelineRuns(resourceMultiCompKey)
-			deleteComponent(resourceMultiCompKey)
+			deleteComponentPipelineRuns(anotherComponentKey)
+			deleteComponent(anotherComponentKey)
 			deleteSecret(pacSecretKey)
-			deletePaCRepository(resourceMultiCompKey)
+			deletePaCRepository(anotherComponentKey)
 		})
 
 		It("should reuse existing PaC repository for multi component git repository", func() {
@@ -1105,9 +1104,8 @@ var _ = Describe("Component initial build controller", func() {
 			}
 
 			createCustomComponentWithBuildRequest(componentConfig{
-				componentKey:     component1Key,
-				gitURL:           multiComponentGitRepositoryUrl,
-				gitSourceContext: "component1/path",
+				componentKey: component1Key,
+				gitURL:       multiComponentGitRepositoryUrl,
 			}, BuildRequestConfigurePaCAnnotationValue)
 			defer deleteComponent(component1Key)
 			waitComponentAnnotationGone(component1Key, BuildRequestAnnotationName)
@@ -1121,12 +1119,11 @@ var _ = Describe("Component initial build controller", func() {
 			err = k8sClient.Get(ctx, component2Key, pacRepository)
 			Expect(k8sErrors.IsNotFound(err)).To(BeTrue())
 			Expect(k8sClient.List(ctx, pacRepositoriesList, &client.ListOptions{Namespace: component1Key.Namespace})).To(Succeed())
-			Expect(pacRepositoriesList.Items).To(HaveLen(2)) // 2-nd repository for the resourceMultiCompKey component
+			Expect(pacRepositoriesList.Items).To(HaveLen(2)) // 2-nd repository for the anotherComponentKey component
 
 			createCustomComponentWithBuildRequest(componentConfig{
-				componentKey:     component2Key,
-				gitURL:           multiComponentGitRepositoryUrl,
-				gitSourceContext: "component2/path",
+				componentKey: component2Key,
+				gitURL:       multiComponentGitRepositoryUrl,
 			}, BuildRequestConfigurePaCAnnotationValue)
 			defer deleteComponent(component2Key)
 			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
@@ -1140,7 +1137,7 @@ var _ = Describe("Component initial build controller", func() {
 			err = k8sClient.Get(ctx, component2Key, pacRepository)
 			Expect(k8sErrors.IsNotFound(err)).To(BeTrue())
 			Expect(k8sClient.List(ctx, pacRepositoriesList, &client.ListOptions{Namespace: component1Key.Namespace})).To(Succeed())
-			Expect(pacRepositoriesList.Items).To(HaveLen(2)) // 2-nd repository for the resourceMultiCompKey component
+			Expect(pacRepositoriesList.Items).To(HaveLen(2)) // 2-nd repository for the anotherComponentKey component
 		})
 	})
 

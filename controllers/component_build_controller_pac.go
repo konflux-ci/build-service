@@ -407,30 +407,36 @@ func checkMandatoryFieldsNotEmpty(config map[string][]byte, mandatoryFields []st
 func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, component *appstudiov1alpha1.Component, config map[string][]byte) error {
 	log := ctrllog.FromContext(ctx)
 
-	// Check multi-component git repository scenario
-	if component.Spec.Source.GitSource.Context != "" {
-		repository, err := r.findPaCRepositoryForComponent(ctx, component)
-		if err != nil {
+	// Check multi component git repository scenario.
+	// It's not possible to determine multi component git repository scenario by context directory field,
+	// therefore it's required to do the check for all components.
+	// For example, there are several dockerfiles in the same git repository
+	// and each of them builds separate component from the common codebase.
+	// Another scenario is component per branch.
+	repository, err := r.findPaCRepositoryForComponent(ctx, component)
+	if err != nil {
+		return err
+	}
+	if repository != nil {
+		pacRepositoryOwnersNumber := len(repository.OwnerReferences)
+		if err := controllerutil.SetOwnerReference(component, repository, r.Scheme); err != nil {
+			log.Error(err, "failed to add owner reference to existing PaC repository", "PaCRepositoryName", repository.Name)
 			return err
 		}
-		if repository != nil {
-			pacRepositoryOwnersNumber := len(repository.OwnerReferences)
-			if err := controllerutil.SetOwnerReference(component, repository, r.Scheme); err != nil {
-				log.Error(err, "failed to add owner reference to existing PaC repository", "PaCRepositoryName", repository.Name)
+		if len(repository.OwnerReferences) > pacRepositoryOwnersNumber {
+			if err := r.Client.Update(ctx, repository); err != nil {
+				log.Error(err, "failed to update existing PaC repository with component owner reference", "PaCRepositoryName", repository.Name)
 				return err
 			}
-			if len(repository.OwnerReferences) > pacRepositoryOwnersNumber {
-				if err := r.Client.Update(ctx, repository); err != nil {
-					log.Error(err, "failed to update existing PaC repository with component owner reference", "PaCRepositoryName", repository.Name)
-					return err
-				}
-				log.Info("Added current component to owners of the PaC repository", "PaCRepositoryName", repository.Name, l.Action, l.ActionUpdate)
-			}
-			return nil
+			log.Info("Added current component to owners of the PaC repository", "PaCRepositoryName", repository.Name, l.Action, l.ActionUpdate)
+		} else {
+			log.Info("Using existing PaC Repository object for the component", "PaCRepositoryName", repository.Name)
 		}
+		return nil
 	}
 
-	repository, err := gitops.GeneratePACRepository(*component, config)
+	// This is the first Component that does PaC provision for the git repository
+	repository, err = gitops.GeneratePACRepository(*component, config)
 	if err != nil {
 		return err
 	}
@@ -450,6 +456,8 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 				}
 				log.Error(err, "failed to create Component PaC repository object", l.Action, l.ActionAdd)
 				return err
+			} else {
+				log.Info("Created PaC Repository object for the component")
 			}
 		} else {
 			log.Error(err, "failed to get Component PaC repository object", l.Action, l.ActionView)
