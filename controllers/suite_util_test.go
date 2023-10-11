@@ -522,12 +522,13 @@ func deleteNamespace(name string) {
 	}
 }
 
-func waitPaCRepositoryCreated(resourceKey types.NamespacedName) {
+func waitPaCRepositoryCreated(resourceKey types.NamespacedName) *pacv1alpha1.Repository {
 	pacRepository := &pacv1alpha1.Repository{}
 	Eventually(func() bool {
 		err := k8sClient.Get(ctx, resourceKey, pacRepository)
 		return err == nil && pacRepository.ResourceVersion != ""
 	}, timeout, interval).Should(BeTrue())
+	return pacRepository
 }
 
 func deletePaCRepository(resourceKey types.NamespacedName) {
