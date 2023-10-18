@@ -18,6 +18,7 @@ package gitlab
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/xanzy/go-gitlab"
@@ -245,6 +246,27 @@ func (g *GitlabClient) GetBranchSha(repoUrl, branchName string) (string, error) 
 	}
 	sha := branch.Commit.ID
 	return sha, nil
+}
+
+// IsFileExist check whether given file exists in the given branch of the reposiotry.
+// If branch is empty string, default branch is used.
+func (g *GitlabClient) IsFileExist(repoUrl, branchName, filePath string) (bool, error) {
+	projectPath := getProjectPathFromRepoUrl(repoUrl)
+
+	if branchName == "" {
+		var err error
+		branchName, err = g.getDefaultBranch(projectPath)
+		if err != nil {
+			return false, err
+		}
+	}
+
+	directory := filepath.Dir(filePath)
+	files, err := g.filesExistInDirectory(projectPath, branchName, directory, []gp.RepositoryFile{{FullPath: filePath}})
+	if err != nil {
+		return false, err
+	}
+	return len(files) > 0, nil
 }
 
 // IsRepositoryPublic returns true if the repository could be accessed without authentication

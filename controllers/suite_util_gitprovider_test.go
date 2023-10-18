@@ -35,6 +35,7 @@ var (
 	DeleteBranchFunc                 func(repoUrl string, branchName string) (bool, error)
 	GetBranchShaFunc                 func(repoUrl string, branchName string) (string, error)
 	GetBrowseRepositoryAtShaLinkFunc func(repoUrl string, sha string) string
+	IsFileExistFunc                  func(repoUrl, branchName, filePath string) (bool, error)
 	IsRepositoryPublicFunc           func(repoUrl string) (bool, error)
 	GetConfiguredGitAppNameFunc      func() (string, string, error)
 )
@@ -70,6 +71,9 @@ func ResetTestGitProviderClient() {
 	}
 	GetBrowseRepositoryAtShaLinkFunc = func(repoUrl string, sha string) string {
 		return DefaultBrowseRepository + sha
+	}
+	IsFileExistFunc = func(repoUrl, branchName, filePath string) (bool, error) {
+		return true, nil
 	}
 	IsRepositoryPublicFunc = func(repoUrl string) (bool, error) {
 		return true, nil
@@ -109,6 +113,9 @@ func (*TestGitProviderClient) GetBranchSha(repoUrl string, branchName string) (s
 }
 func (*TestGitProviderClient) GetBrowseRepositoryAtShaLink(repoUrl string, sha string) string {
 	return GetBrowseRepositoryAtShaLinkFunc(repoUrl, sha)
+}
+func (*TestGitProviderClient) IsFileExist(repoUrl, branchName, filePath string) (bool, error) {
+	return IsFileExistFunc(repoUrl, branchName, filePath)
 }
 func (*TestGitProviderClient) IsRepositoryPublic(repoUrl string) (bool, error) {
 	return IsRepositoryPublicFunc(repoUrl)

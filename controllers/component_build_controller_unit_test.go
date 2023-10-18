@@ -31,6 +31,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
@@ -510,8 +511,8 @@ func TestGeneratePaCPipelineRunForComponent(t *testing.T) {
 		t.Error("generatePaCPipelineRunForComponent(): wrong pipelines.appstudio.openshift.io/type label value")
 	}
 
-	if pipelineRun.Annotations["pipelinesascode.tekton.dev/on-target-branch"] != "["+branchName+"]" {
-		t.Error("generatePaCPipelineRunForComponent(): wrong pipelinesascode.tekton.dev/on-target-branch annotation value")
+	if pipelineRun.Annotations["pipelinesascode.tekton.dev/on-cel-expression"] != `event == "pull_request" && target_branch == "custom-branch"` {
+		t.Errorf("generatePaCPipelineRunForComponent(): wrong pipelinesascode.tekton.dev/on-cel-expression annotation value")
 	}
 	if pipelineRun.Annotations["pipelinesascode.tekton.dev/max-keep-runs"] != "3" {
 		t.Error("generatePaCPipelineRunForComponent(): wrong pipelinesascode.tekton.dev/max-keep-runs annotation value")
@@ -524,9 +525,6 @@ func TestGeneratePaCPipelineRunForComponent(t *testing.T) {
 	}
 	if pipelineRun.Annotations[gitRepoAtShaAnnotationName] != "https://githost.com/user/repo?rev={{revision}}" {
 		t.Errorf("generatePaCPipelineRunForComponent(): wrong %s annotation value", gitRepoAtShaAnnotationName)
-	}
-	if pipelineRun.Annotations["pipelinesascode.tekton.dev/on-event"] != "[pull_request]" {
-		t.Errorf("generatePaCPipelineRunForComponent(): wrong pipelinesascode.tekton.dev/on-event annotation value")
 	}
 	if pipelineRun.Annotations["build.appstudio.redhat.com/pull_request_number"] != "{{pull_request_number}}" {
 		t.Errorf("generatePaCPipelineRunForComponent(): wrong build.appstudio.redhat.com/pull_request_number annotation value")
@@ -628,6 +626,170 @@ func TestGeneratePaCPipelineRunForComponent_ShouldStopIfTargetBranchIsNotSet(t *
 	if err == nil {
 		t.Errorf("generatePaCPipelineRunForComponent(): expected error")
 	}
+}
+
+func TestGenerateCelExpressionForPipeline(t *testing.T) {
+	componentKey := types.NamespacedName{Namespace: "test-ns", Name: "component-name"}
+	ResetTestGitProviderClient()
+
+	tests := []struct {
+		name              string
+		component         *appstudiov1alpha1.Component
+		targetBranch      string
+		isDockerfileExist func(repoUrl, branch, dockerfilePath string) (bool, error)
+		wantOnPullError   bool
+		wantOnPull        string
+		wantOnPush        string
+	}{
+		{
+			name: "should generate cel expression for component that occupies whole git repository",
+			component: func() *appstudiov1alpha1.Component {
+				component := getSampleComponentData(componentKey)
+				component.Status.Devfile = getMinimalDevfile()
+				return component
+			}(),
+			targetBranch: "my-branch",
+			wantOnPull:   `event == "pull_request" && target_branch == "my-branch"`,
+			wantOnPush:   `event == "push" && target_branch == "my-branch"`,
+		},
+		{
+			name: "should generate cel expression for component with context directory, without dokerfile",
+			component: func() *appstudiov1alpha1.Component {
+				component := getComponentData(componentConfig{componentKey: componentKey, gitSourceContext: "component-dir"})
+				component.Status.Devfile = getMinimalDevfile()
+				return component
+			}(),
+			targetBranch: "my-branch",
+			wantOnPull:   `event == "pull_request" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/component-name-pull-request.yaml".pathChanged() )`,
+			wantOnPush:   `event == "push" && target_branch == "my-branch"`,
+		},
+		{
+			name: "should generate cel expression for component with context directory and its dockerfile in context directory",
+			component: func() *appstudiov1alpha1.Component {
+				component := getComponentData(componentConfig{componentKey: componentKey, gitSourceContext: "component-dir"})
+				component.Status.Devfile = `
+                    schemaVersion: 2.2.0
+                    metadata:
+                        name: devfile-no-dockerfile
+                    components:
+                      - name: outerloop-build
+                        image:
+                            imageName: image:latest
+                            dockerfile:
+                                uri: docker/Dockerfile
+                `
+				return component
+			}(),
+			targetBranch: "my-branch",
+			isDockerfileExist: func(repoUrl, branch, dockerfilePath string) (bool, error) {
+				return true, nil
+			},
+			wantOnPull: `event == "pull_request" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/component-name-pull-request.yaml".pathChanged() )`,
+			wantOnPush: `event == "push" && target_branch == "my-branch"`,
+		},
+		{
+			name: "should generate cel expression for component with context directory and its dockerfile outside context directory",
+			component: func() *appstudiov1alpha1.Component {
+				component := getComponentData(componentConfig{componentKey: componentKey, gitSourceContext: "component-dir"})
+				component.Status.Devfile = `
+                    schemaVersion: 2.2.0
+                    metadata:
+                        name: devfile-no-dockerfile
+                    components:
+                      - name: outerloop-build
+                        image:
+                            imageName: image:latest
+                            dockerfile:
+                                uri: docker-root-dir/Dockerfile
+                `
+				return component
+			}(),
+			targetBranch: "my-branch",
+			isDockerfileExist: func(repoUrl, branch, dockerfilePath string) (bool, error) {
+				return false, nil
+			},
+			wantOnPull: `event == "pull_request" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/component-name-pull-request.yaml".pathChanged() || "docker-root-dir/Dockerfile".pathChanged() )`,
+			wantOnPush: `event == "push" && target_branch == "my-branch"`,
+		},
+		{
+			name: "should generate cel expression for component with context directory and its dockerfile outside git repository",
+			component: func() *appstudiov1alpha1.Component {
+				component := getComponentData(componentConfig{componentKey: componentKey, gitSourceContext: "component-dir"})
+				component.Status.Devfile = `
+                    schemaVersion: 2.2.0
+                    metadata:
+                        name: devfile-no-dockerfile
+                    components:
+                      - name: outerloop-build
+                        image:
+                            imageName: image:latest
+                            dockerfile:
+                                uri: https://host.com:1234/files/Dockerfile
+                `
+				return component
+			}(),
+			targetBranch: "my-branch",
+			wantOnPull:   `event == "pull_request" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/component-name-pull-request.yaml".pathChanged() )`,
+			wantOnPush:   `event == "push" && target_branch == "my-branch"`,
+		},
+		{
+			name: "should fail to generate cel expression for component if isFileExist fails",
+			component: func() *appstudiov1alpha1.Component {
+				component := getComponentData(componentConfig{componentKey: componentKey, gitSourceContext: "component-dir"})
+				component.Status.Devfile = `
+                    schemaVersion: 2.2.0
+                    metadata:
+                        name: devfile-no-dockerfile
+                    components:
+                      - name: outerloop-build
+                        image:
+                            imageName: image:latest
+                            dockerfile:
+                                uri: docker-root-dir/Dockerfile
+                `
+				return component
+			}(),
+			targetBranch: "my-branch",
+			isDockerfileExist: func(repoUrl, branch, dockerfilePath string) (bool, error) {
+				return false, fmt.Errorf("Failed to check file existance")
+			},
+			wantOnPullError: true,
+			wantOnPush:      `event == "push" && target_branch == "my-branch"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.isDockerfileExist != nil {
+				IsFileExistFunc = tt.isDockerfileExist
+			} else {
+				IsFileExistFunc = func(repoUrl, branchName, filePath string) (bool, error) {
+					t.Errorf("IsFileExist should not be invoked")
+					return false, nil
+				}
+			}
+
+			got, err := generateCelExpressionForPipeline(tt.component, testGitProviderClient, tt.targetBranch, true)
+			if err != nil {
+				if !tt.wantOnPullError {
+					t.Errorf("generateCelExpressionForPipeline(on pull): got err: %v", err)
+				}
+			} else {
+				if got != tt.wantOnPull {
+					t.Errorf("generateCelExpressionForPipeline(on pull): got '%s', want '%s'", got, tt.wantOnPull)
+				}
+			}
+
+			got, err = generateCelExpressionForPipeline(tt.component, testGitProviderClient, tt.targetBranch, false)
+			if err != nil {
+				t.Errorf("generateCelExpressionForPipeline(on push): got err: %v", err)
+			}
+			if got != tt.wantOnPush {
+				t.Errorf("generateCelExpressionForPipeline(on push): got '%s', want '%s'", got, tt.wantOnPush)
+			}
+		})
+	}
+	ResetTestGitProviderClient()
 }
 
 func TestGetContainerImageRepository(t *testing.T) {
