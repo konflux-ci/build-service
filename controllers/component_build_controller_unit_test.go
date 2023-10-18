@@ -660,7 +660,7 @@ func TestGenerateCelExpressionForPipeline(t *testing.T) {
 				return component
 			}(),
 			targetBranch: "my-branch",
-			wantOnPull:   `event == "pull_request" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() )`,
+			wantOnPull:   `event == "pull_request" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/component-name-pull-request.yaml".pathChanged() )`,
 			wantOnPush:   `event == "push" && target_branch == "my-branch"`,
 		},
 		{
@@ -684,7 +684,7 @@ func TestGenerateCelExpressionForPipeline(t *testing.T) {
 			isDockerfileExist: func(repoUrl, branch, dockerfilePath string) (bool, error) {
 				return true, nil
 			},
-			wantOnPull: `event == "pull_request" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() )`,
+			wantOnPull: `event == "pull_request" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/component-name-pull-request.yaml".pathChanged() )`,
 			wantOnPush: `event == "push" && target_branch == "my-branch"`,
 		},
 		{
@@ -708,7 +708,7 @@ func TestGenerateCelExpressionForPipeline(t *testing.T) {
 			isDockerfileExist: func(repoUrl, branch, dockerfilePath string) (bool, error) {
 				return false, nil
 			},
-			wantOnPull: `event == "pull_request" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || "/docker-root-dir/Dockerfile".pathChanged() )`,
+			wantOnPull: `event == "pull_request" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/component-name-pull-request.yaml".pathChanged() || "docker-root-dir/Dockerfile".pathChanged() )`,
 			wantOnPush: `event == "push" && target_branch == "my-branch"`,
 		},
 		{
@@ -729,7 +729,7 @@ func TestGenerateCelExpressionForPipeline(t *testing.T) {
 				return component
 			}(),
 			targetBranch: "my-branch",
-			wantOnPull:   `event == "pull_request" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() )`,
+			wantOnPull:   `event == "pull_request" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/component-name-pull-request.yaml".pathChanged() )`,
 			wantOnPush:   `event == "push" && target_branch == "my-branch"`,
 		},
 		{

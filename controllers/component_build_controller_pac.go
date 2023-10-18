@@ -819,7 +819,7 @@ func generateCelExpressionForPipeline(component *appstudiov1alpha1.Component, gi
 	// Set path changed event filtering only for Components that are stored within a directory of the git repository.
 	// Also, we have to rebuild everything on push events, so applying the filter only to pull request pipeline.
 	pathChangedSuffix := ""
-	if onPull && component.Spec.Source.GitSource.Context != "" {
+	if onPull && component.Spec.Source.GitSource.Context != "" && component.Spec.Source.GitSource.Context != "/" {
 		contextDir := component.Spec.Source.GitSource.Context
 		if !strings.HasSuffix(contextDir, "/") {
 			contextDir += "/"
@@ -843,16 +843,15 @@ func generateCelExpressionForPipeline(component *appstudiov1alpha1.Component, gi
 				}
 				// If the Dockerfile is inside context directory, no changes to event filter needed.
 				if !isDockerfileInContextDir {
-					dockerfileAbsolutePath := dockerfile.Uri
-					if !strings.HasPrefix(dockerfileAbsolutePath, "/") {
-						dockerfileAbsolutePath = "/" + dockerfileAbsolutePath
-					}
+					// Pipelines as Code doesn't match path if it starts from /
+					dockerfileAbsolutePath := strings.TrimPrefix(dockerfile.Uri, "/")
 					dockerfilePathChangedSuffix = fmt.Sprintf(`|| "%s".pathChanged() `, dockerfileAbsolutePath)
 				}
 			}
 		}
 
-		pathChangedSuffix = fmt.Sprintf(` && ( "%s***".pathChanged() %s)`, contextDir, dockerfilePathChangedSuffix)
+		pullPipelineFileName := component.Name + "-" + pipelineRunOnPRFilename
+		pathChangedSuffix = fmt.Sprintf(` && ( "%s***".pathChanged() || ".tekton/%s".pathChanged() %s)`, contextDir, pullPipelineFileName, dockerfilePathChangedSuffix)
 	}
 
 	return fmt.Sprintf("%s && %s%s", eventCondition, targetBranchCondition, pathChangedSuffix), nil
