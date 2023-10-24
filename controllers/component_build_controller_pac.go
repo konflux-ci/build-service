@@ -500,12 +500,16 @@ func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigs(ctx context.Con
 	if err != nil {
 		return nil, nil, err
 	}
+	pipelineName, pipelineBundle, err := getPipelineNameAndBundle(pipelineRef)
+	if err != nil {
+		return nil, nil, err
+	}
 	log.Info(fmt.Sprintf("Selected %s pipeline from %s bundle for %s component",
-		pipelineRef.Name, pipelineRef.Bundle, component.Name),
+		pipelineName, pipelineBundle, component.Name),
 		l.Audit, "true")
 
 	// Get pipeline from the bundle to be expanded to the PipelineRun
-	pipelineSpec, err := retrievePipelineSpec(pipelineRef.Bundle, pipelineRef.Name)
+	pipelineSpec, err := retrievePipelineSpec(pipelineBundle, pipelineName)
 	if err != nil {
 		r.EventRecorder.Event(component, "Warning", "ErrorGettingPipelineFromBundle", err.Error())
 		return nil, nil, err

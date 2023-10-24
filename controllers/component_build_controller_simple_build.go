@@ -52,6 +52,10 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 	if err != nil {
 		return err
 	}
+	pipelineName, pipelineBundle, err := getPipelineNameAndBundle(pipelineRef)
+	if err != nil {
+		return err
+	}
 
 	pacSecret := corev1.Secret{}
 	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: buildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}, &pacSecret); err != nil {
@@ -83,7 +87,7 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 	simpleBuildPipelineCreationTimeMetric.Observe(time.Since(component.CreationTimestamp.Time).Seconds())
 
 	log.Info(fmt.Sprintf("Build pipeline %s created for component %s in %s namespace using %s pipeline from %s bundle",
-		buildPipelineRun.Name, component.Name, component.Namespace, pipelineRef.Name, pipelineRef.Bundle),
+		buildPipelineRun.Name, component.Name, component.Namespace, pipelineName, pipelineBundle),
 		l.Action, l.ActionAdd, l.Audit, "true")
 
 	return nil
@@ -208,9 +212,13 @@ func generatePipelineRunForComponent(component *appstudiov1alpha1.Component, pip
 		revision = component.Spec.Source.GitSource.Revision
 	}
 
+	pipelineName, pipelineBundle, err := getPipelineNameAndBundle(pipelineRef)
+	if err != nil {
+		return nil, err
+	}
 	annotations := map[string]string{
-		"build.appstudio.redhat.com/pipeline_name": pipelineRef.Name,
-		"build.appstudio.redhat.com/bundle":        pipelineRef.Bundle,
+		"build.appstudio.redhat.com/pipeline_name": pipelineName,
+		"build.appstudio.redhat.com/bundle":        pipelineBundle,
 	}
 	if revision != "" {
 		annotations[gitTargetBranchAnnotationName] = revision

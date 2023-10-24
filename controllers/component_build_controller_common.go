@@ -305,3 +305,35 @@ func getPathContext(gitContext, dockerfileContext string) string {
 	path = strings.TrimPrefix(path, separator)
 	return path
 }
+
+func getPipelineNameAndBundle(pipelineRef *tektonapi.PipelineRef) (string, string, error) {
+	if pipelineRef.Resolver != "" && pipelineRef.Resolver != "bundles" {
+		return "", "", boerrors.NewBuildOpError(
+			boerrors.EUnsupportedPipelineRef,
+			fmt.Errorf("unsupported Tekton resolver %q", pipelineRef.Resolver),
+		)
+	}
+
+	// Support the deprecated v1beta1 name+bundle style
+	name := pipelineRef.Name
+	bundle := pipelineRef.Bundle
+
+	// Prefer the resolver+params style
+	for _, param := range pipelineRef.Params {
+		switch param.Name {
+		case "name":
+			name = param.Value.StringVal
+		case "bundle":
+			bundle = param.Value.StringVal
+		}
+	}
+
+	if name == "" || bundle == "" {
+		return "", "", boerrors.NewBuildOpError(
+			boerrors.EMissingParamsForBundleResolver,
+			fmt.Errorf("missing name or bundle in pipelineRef: name=%s bundle=%s", name, bundle),
+		)
+	}
+
+	return name, bundle, nil
+}
