@@ -44,7 +44,7 @@ import (
 	gp "github.com/redhat-appstudio/build-service/pkg/git/gitprovider"
 	gpf "github.com/redhat-appstudio/build-service/pkg/git/gitproviderfactory"
 	appstudiospiapiv1beta1 "github.com/redhat-appstudio/service-provider-integration-operator/api/v1beta1"
-	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -1318,8 +1318,8 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(pipelineRun.Spec.PipelineSpec).To(BeNil())
 
 			Expect(pipelineRun.Spec.PipelineRef).ToNot(BeNil())
-			Expect(pipelineRun.Spec.PipelineRef.Name).To(Equal(defaultPipelineName))
-			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(defaultPipelineBundle))
+			Expect(getPipelineName(pipelineRun.Spec.PipelineRef)).To(Equal(defaultPipelineName))
+			Expect(getPipelineBundle(pipelineRun.Spec.PipelineRef)).To(Equal(defaultPipelineBundle))
 
 			Expect(pipelineRun.Spec.Params).ToNot(BeEmpty())
 			for _, p := range pipelineRun.Spec.Params {
@@ -1542,9 +1542,9 @@ var _ = Describe("Component initial build controller", func() {
 					Selectors: []buildappstudiov1alpha1.PipelineSelector{
 						{
 							Name: "nodejs",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "nodejs-builder",
-								Bundle: defaultPipelineBundle,
+							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+								PipelineRef: tektonapi.PipelineRef{Name: "nodejs-builder"},
+								Bundle:      defaultPipelineBundle,
 							},
 							PipelineParams: []buildappstudiov1alpha1.PipelineParam{
 								{
@@ -1558,9 +1558,9 @@ var _ = Describe("Component initial build controller", func() {
 						},
 						{
 							Name: "Fallback",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "noop",
-								Bundle: defaultPipelineBundle,
+							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+								PipelineRef: tektonapi.PipelineRef{Name: "noop"},
+								Bundle:      defaultPipelineBundle,
 							},
 						},
 					},
@@ -1589,8 +1589,8 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(pipelineRun.Spec.PipelineSpec).To(BeNil())
 
 			Expect(pipelineRun.Spec.PipelineRef).ToNot(BeNil())
-			Expect(pipelineRun.Spec.PipelineRef.Name).To(Equal("nodejs-builder"))
-			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(defaultPipelineBundle))
+			Expect(getPipelineName(pipelineRun.Spec.PipelineRef)).To(Equal("nodejs-builder"))
+			Expect(getPipelineBundle(pipelineRun.Spec.PipelineRef)).To(Equal(defaultPipelineBundle))
 
 			Expect(pipelineRun.Spec.Params).ToNot(BeNil())
 			additionalPipelineParameterFound := false
@@ -1616,9 +1616,9 @@ var _ = Describe("Component initial build controller", func() {
 					Selectors: []buildappstudiov1alpha1.PipelineSelector{
 						{
 							Name: "nodejs",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "nodejs-builder",
-								Bundle: defaultPipelineBundle,
+							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+								PipelineRef: tektonapi.PipelineRef{Name: "nodejs-builder"},
+								Bundle:      defaultPipelineBundle,
 							},
 							PipelineParams: []buildappstudiov1alpha1.PipelineParam{
 								{
@@ -1632,9 +1632,9 @@ var _ = Describe("Component initial build controller", func() {
 						},
 						{
 							Name: "Fallback",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "noop",
-								Bundle: defaultPipelineBundle,
+							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+								PipelineRef: tektonapi.PipelineRef{Name: "noop"},
+								Bundle:      defaultPipelineBundle,
 							},
 						},
 					},
@@ -1662,8 +1662,8 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(pipelineRun.Spec.PipelineSpec).To(BeNil())
 
 			Expect(pipelineRun.Spec.PipelineRef).ToNot(BeNil())
-			Expect(pipelineRun.Spec.PipelineRef.Name).To(Equal("nodejs-builder"))
-			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(defaultPipelineBundle))
+			Expect(getPipelineName(pipelineRun.Spec.PipelineRef)).To(Equal("nodejs-builder"))
+			Expect(getPipelineBundle(pipelineRun.Spec.PipelineRef)).To(Equal(defaultPipelineBundle))
 
 			Expect(pipelineRun.Spec.Params).ToNot(BeNil())
 			additionalPipelineParameterFound := false
@@ -1690,9 +1690,9 @@ var _ = Describe("Component initial build controller", func() {
 					Selectors: []buildappstudiov1alpha1.PipelineSelector{
 						{
 							Name: "java",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "java-builder",
-								Bundle: defaultPipelineBundle,
+							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+								PipelineRef: tektonapi.PipelineRef{Name: "java-builder"},
+								Bundle:      defaultPipelineBundle,
 							},
 							PipelineParams: []buildappstudiov1alpha1.PipelineParam{
 								{
@@ -1706,9 +1706,9 @@ var _ = Describe("Component initial build controller", func() {
 						},
 						{
 							Name: "Fallback",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "noop",
-								Bundle: defaultPipelineBundle,
+							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+								PipelineRef: tektonapi.PipelineRef{Name: "noop"},
+								Bundle:      defaultPipelineBundle,
 							},
 						},
 					},
@@ -1737,8 +1737,8 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(pipelineRun.Spec.PipelineSpec).To(BeNil())
 
 			Expect(pipelineRun.Spec.PipelineRef).ToNot(BeNil())
-			Expect(pipelineRun.Spec.PipelineRef.Name).To(Equal("java-builder"))
-			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(defaultPipelineBundle))
+			Expect(getPipelineName(pipelineRun.Spec.PipelineRef)).To(Equal("java-builder"))
+			Expect(getPipelineBundle(pipelineRun.Spec.PipelineRef)).To(Equal(defaultPipelineBundle))
 
 			Expect(pipelineRun.Spec.Params).ToNot(BeNil())
 			additionalPipelineParameterFound := false
@@ -1784,9 +1784,9 @@ var _ = Describe("Component initial build controller", func() {
 					Selectors: []buildappstudiov1alpha1.PipelineSelector{
 						{
 							Name: "java",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "java-builder",
-								Bundle: defaultPipelineBundle,
+							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+								PipelineRef: tektonapi.PipelineRef{Name: "java-builder"},
+								Bundle:      defaultPipelineBundle,
 							},
 							PipelineParams: []buildappstudiov1alpha1.PipelineParam{
 								{

@@ -30,7 +30,7 @@ import (
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 	l "github.com/redhat-appstudio/build-service/pkg/logs"
 	pipelineselector "github.com/redhat-appstudio/build-service/pkg/pipeline-selector"
-	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -314,11 +314,9 @@ func getPipelineNameAndBundle(pipelineRef *tektonapi.PipelineRef) (string, strin
 		)
 	}
 
-	// Support the deprecated v1beta1 name+bundle style
 	name := pipelineRef.Name
-	bundle := pipelineRef.Bundle
+	var bundle string
 
-	// Prefer the resolver+params style
 	for _, param := range pipelineRef.Params {
 		switch param.Name {
 		case "name":

@@ -19,7 +19,7 @@ package v1alpha1
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 )
 
 // WhenConditions defines requirements when specified build pipeline must be used.
@@ -73,6 +73,32 @@ type PipelineParam struct {
 	Value string `json:"value"`
 }
 
+// BackwardsCompatiblePipelineRef is a temporary bridge between the deprecated PipelineRef.Bundle
+// mechanism and the PipelineRef.ResolverRef mechanism. Use AsPipelineRef to convert
+// a BackwardsCompatiblePipelineRef to the Tekton API v1 PipelineRef.
+type BackwardsCompatiblePipelineRef struct {
+	tektonapi.PipelineRef `json:",inline"`
+	// Bundle url reference to a Tekton Bundle.
+	// Deprecated: Please use ResolverRef with the bundles resolver instead.
+	// +optional
+	Bundle string `json:"bundle,omitempty"`
+}
+
+func (r *BackwardsCompatiblePipelineRef) AsPipelineRef() *tektonapi.PipelineRef {
+	if r.Resolver != "" {
+		return &r.PipelineRef
+	}
+	resolverRef := tektonapi.ResolverRef{
+		Resolver: "bundles",
+		Params: []tektonapi.Param{
+			{Name: "kind", Value: tektonapi.ParamValue{StringVal: "pipeline", Type: tektonapi.ParamTypeString}},
+			{Name: "bundle", Value: tektonapi.ParamValue{StringVal: r.Bundle, Type: tektonapi.ParamTypeString}},
+			{Name: "name", Value: tektonapi.ParamValue{StringVal: r.Name, Type: tektonapi.ParamTypeString}},
+		},
+	}
+	return &tektonapi.PipelineRef{APIVersion: r.APIVersion, ResolverRef: resolverRef}
+}
+
 // PipelineSelector defines allowed build pipeline and conditions when it should be used.
 type PipelineSelector struct {
 	// Name of the selector item. Optional.
@@ -81,7 +107,7 @@ type PipelineSelector struct {
 
 	// Build Pipeline to use if the selector conditions are met.
 	// +kubebuilder:validation:Required
-	PipelineRef tektonapi.PipelineRef `json:"pipelineRef"`
+	PipelineRef BackwardsCompatiblePipelineRef `json:"pipelineRef"`
 
 	// Extra arguments to add to the specified pipeline run.
 	// +kubebuilder:validation:Optional

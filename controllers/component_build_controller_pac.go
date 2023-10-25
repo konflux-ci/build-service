@@ -37,7 +37,8 @@ import (
 	gp "github.com/redhat-appstudio/build-service/pkg/git/gitprovider"
 	"github.com/redhat-appstudio/build-service/pkg/git/gitproviderfactory"
 	l "github.com/redhat-appstudio/build-service/pkg/logs"
-	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
+	tektonapi_v1beta1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	oci "github.com/tektoncd/pipeline/pkg/remote/oci"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -796,7 +797,7 @@ func generatePaCPipelineRunForComponent(
 	pipelineRun := &tektonapi.PipelineRun{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "PipelineRun",
-			APIVersion: "tekton.dev/v1beta1",
+			APIVersion: "tekton.dev/v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        pipelineName,
@@ -896,13 +897,25 @@ func retrievePipelineSpec(bundleUri, pipelineName string) (*tektonapi.PipelineSp
 	var err error
 	resolver := oci.NewResolver(bundleUri, authn.DefaultKeychain)
 
-	if obj, _, err = resolver.Get(context.TODO(), "pipeline", pipelineName); err != nil {
+	ctx := context.TODO()
+
+	if obj, _, err = resolver.Get(ctx, "pipeline", pipelineName); err != nil {
 		return nil, err
 	}
-	pipelineSpecObj, ok := obj.(tektonapi.PipelineObject)
-	if !ok {
+
+	var pipelineSpec tektonapi.PipelineSpec
+
+	if v1beta1Pipeline, ok := obj.(tektonapi_v1beta1.PipelineObject); ok {
+		v1beta1PipelineSpec := v1beta1Pipeline.PipelineSpec()
+		err := v1beta1PipelineSpec.ConvertTo(ctx, &pipelineSpec)
+		if err != nil {
+			return nil, fmt.Errorf("pipeline %s from bundle %s: failed to convert from v1beta1 to v1: %w", bundleUri, pipelineName, err)
+		}
+	} else if v1Pipeline, ok := obj.(*tektonapi.Pipeline); ok {
+		pipelineSpec = v1Pipeline.PipelineSpec()
+	} else {
 		return nil, fmt.Errorf("failed to extract pipeline %s from bundle %s", bundleUri, pipelineName)
 	}
-	pipelineSpec := pipelineSpecObj.PipelineSpec()
+
 	return &pipelineSpec, nil
 }

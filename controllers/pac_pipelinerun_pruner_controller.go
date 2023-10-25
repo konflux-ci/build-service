@@ -34,7 +34,7 @@ import (
 
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	l "github.com/redhat-appstudio/build-service/pkg/logs"
-	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 )
 
 // PaCPipelineRunPrunerReconciler watches AppStudio Component object in order to clean up

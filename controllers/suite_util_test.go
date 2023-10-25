@@ -34,7 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 
 	gh "github.com/google/go-github/v45/github"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
@@ -615,9 +615,9 @@ func createBuildPipelineRunSelector(selectorKey types.NamespacedName) {
 			Selectors: []buildappstudiov1alpha1.PipelineSelector{
 				{
 					Name: SelectorDefaultName,
-					PipelineRef: tektonapi.PipelineRef{
-						Name:   defaultPipelineName,
-						Bundle: defaultPipelineBundle,
+					PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+						PipelineRef: tektonapi.PipelineRef{Name: defaultPipelineName},
+						Bundle:      defaultPipelineBundle,
 					},
 					PipelineParams: []buildappstudiov1alpha1.PipelineParam{},
 					WhenConditions: buildappstudiov1alpha1.WhenCondition{},
@@ -688,4 +688,14 @@ func generateRepositories(repoURL []string) []*gh.Repository {
 		repositories = append(repositories, generateRepository(repo))
 	}
 	return repositories
+}
+
+func getPipelineName(pipelineRef *tektonapi.PipelineRef) string {
+	name, _, _ := getPipelineNameAndBundle(pipelineRef)
+	return name
+}
+
+func getPipelineBundle(pipelineRef *tektonapi.PipelineRef) string {
+	_, bundle, _ := getPipelineNameAndBundle(pipelineRef)
+	return bundle
 }

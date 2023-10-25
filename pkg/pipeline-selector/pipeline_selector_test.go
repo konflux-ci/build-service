@@ -22,7 +22,7 @@ import (
 
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	buildappstudiov1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
-	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -112,9 +112,9 @@ func TestSelectPipelineForComponent(t *testing.T) {
 						Selectors: []buildappstudiov1alpha1.PipelineSelector{
 							{
 								Name: "Java spring",
-								PipelineRef: tektonapi.PipelineRef{
-									Name:   "java-spring-build-pipeline",
-									Bundle: "java-spring-bundle",
+								PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+									PipelineRef: tektonapi.PipelineRef{Name: "java-spring-build-pipeline"},
+									Bundle:      "java-spring-bundle",
 								},
 								WhenConditions: buildappstudiov1alpha1.WhenCondition{
 									Language:    "java",
@@ -123,9 +123,9 @@ func TestSelectPipelineForComponent(t *testing.T) {
 							},
 							{
 								Name: "Java quarkus for specific components",
-								PipelineRef: tektonapi.PipelineRef{
-									Name:   "quarkus-for-specific-components-build-pipeline",
-									Bundle: "quarkus-for-specific-components-bundle",
+								PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+									PipelineRef: tektonapi.PipelineRef{Name: "quarkus-for-specific-components-build-pipeline"},
+									Bundle:      "quarkus-for-specific-components-bundle",
 								},
 								WhenConditions: buildappstudiov1alpha1.WhenCondition{
 									Language:      "java",
@@ -141,9 +141,9 @@ func TestSelectPipelineForComponent(t *testing.T) {
 						Selectors: []buildappstudiov1alpha1.PipelineSelector{
 							{
 								Name: "Java quarkus no dockerfile",
-								PipelineRef: tektonapi.PipelineRef{
-									Name:   "quarkus-no-dockerfile-build-pipeline",
-									Bundle: "quarkus-no-dockerfile-bundle",
+								PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+									PipelineRef: tektonapi.PipelineRef{Name: "quarkus-no-dockerfile-build-pipeline"},
+									Bundle:      "quarkus-no-dockerfile-bundle",
 								},
 								WhenConditions: buildappstudiov1alpha1.WhenCondition{
 									Language:           "java",
@@ -153,9 +153,9 @@ func TestSelectPipelineForComponent(t *testing.T) {
 							},
 							{
 								Name: "Java quarkus label restricted",
-								PipelineRef: tektonapi.PipelineRef{
-									Name:   "quarkus-label-restricted-build-pipeline",
-									Bundle: "quarkus-label-restricted-bundle",
+								PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+									PipelineRef: tektonapi.PipelineRef{Name: "quarkus-label-restricted-build-pipeline"},
+									Bundle:      "quarkus-label-restricted-bundle",
 								},
 								WhenConditions: buildappstudiov1alpha1.WhenCondition{
 									Language:    "java",
@@ -173,9 +173,9 @@ func TestSelectPipelineForComponent(t *testing.T) {
 						Selectors: []buildappstudiov1alpha1.PipelineSelector{
 							{
 								Name: "Java gradle",
-								PipelineRef: tektonapi.PipelineRef{
-									Name:   "quarkus-gradle-build-pipeline",
-									Bundle: "quarkus-gradle-bundle",
+								PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+									PipelineRef: tektonapi.PipelineRef{Name: "quarkus-gradle-build-pipeline"},
+									Bundle:      "quarkus-gradle-bundle",
 								},
 								WhenConditions: buildappstudiov1alpha1.WhenCondition{
 									Language:    "java",
@@ -187,9 +187,9 @@ func TestSelectPipelineForComponent(t *testing.T) {
 							},
 							{
 								Name: "Java quarkus for the component in this test",
-								PipelineRef: tektonapi.PipelineRef{
-									Name:   "quarkus-build-pipeline",
-									Bundle: "quarkus-bundle",
+								PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+									PipelineRef: tektonapi.PipelineRef{Name: "quarkus-build-pipeline"},
+									Bundle:      "quarkus-bundle",
 								},
 								PipelineParams: []buildappstudiov1alpha1.PipelineParam{
 									{
@@ -204,9 +204,9 @@ func TestSelectPipelineForComponent(t *testing.T) {
 							},
 							{
 								Name: "All other java",
-								PipelineRef: tektonapi.PipelineRef{
-									Name:   "java-build-pipeline",
-									Bundle: "java-bundle",
+								PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+									PipelineRef: tektonapi.PipelineRef{Name: "java-build-pipeline"},
+									Bundle:      "java-bundle",
 								},
 								WhenConditions: buildappstudiov1alpha1.WhenCondition{
 									Language: "java",
@@ -220,19 +220,23 @@ func TestSelectPipelineForComponent(t *testing.T) {
 						Selectors: []buildappstudiov1alpha1.PipelineSelector{
 							{
 								Name: "Fallbackg",
-								PipelineRef: tektonapi.PipelineRef{
-									Name:   "default-build-pipeline",
-									Bundle: "my-bundle",
+								PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+									PipelineRef: tektonapi.PipelineRef{Name: "default-build-pipeline"},
+									Bundle:      "my-bundle",
 								},
 							},
 						},
 					},
 				},
 			},
-			wantPipelineRef: &tektonapi.PipelineRef{
-				Name:   "quarkus-build-pipeline",
-				Bundle: "quarkus-bundle",
-			},
+			wantPipelineRef: &tektonapi.PipelineRef{ResolverRef: tektonapi.ResolverRef{
+				Resolver: "bundles",
+				Params: []tektonapi.Param{
+					{Name: "kind", Value: *tektonapi.NewStructuredValues("pipeline")},
+					{Name: "bundle", Value: *tektonapi.NewStructuredValues("quarkus-bundle")},
+					{Name: "name", Value: *tektonapi.NewStructuredValues("quarkus-build-pipeline")},
+				},
+			}},
 			wantPipelineParams: []tektonapi.Param{
 				{
 					Name:  "pipeline-param",
@@ -263,9 +267,9 @@ func TestSelectPipelineForComponent(t *testing.T) {
 						Selectors: []buildappstudiov1alpha1.PipelineSelector{
 							{
 								Name: "Python",
-								PipelineRef: tektonapi.PipelineRef{
-									Name:   "python-build-pipeline",
-									Bundle: "my-bundle",
+								PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+									PipelineRef: tektonapi.PipelineRef{Name: "python-build-pipeline"},
+									Bundle:      "my-bundle",
 								},
 								PipelineParams: []buildappstudiov1alpha1.PipelineParam{
 									{
@@ -279,9 +283,9 @@ func TestSelectPipelineForComponent(t *testing.T) {
 							},
 							{
 								Name: "NodeJS",
-								PipelineRef: tektonapi.PipelineRef{
-									Name:   "nodejs-build-pipeline",
-									Bundle: "my-bundle",
+								PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+									PipelineRef: tektonapi.PipelineRef{Name: "nodejs-build-pipeline"},
+									Bundle:      "my-bundle",
 								},
 								PipelineParams: []buildappstudiov1alpha1.PipelineParam{
 									{
@@ -338,9 +342,9 @@ func TestSelectPipelineForComponent(t *testing.T) {
 						Selectors: []buildappstudiov1alpha1.PipelineSelector{
 							{
 								Name: "Fallback",
-								PipelineRef: tektonapi.PipelineRef{
-									Name:   "default-build-pipeline",
-									Bundle: "my-bundle",
+								PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+									PipelineRef: tektonapi.PipelineRef{Name: "default-build-pipeline"},
+									Bundle:      "my-bundle",
 								},
 							},
 						},
@@ -617,9 +621,9 @@ func TestFindMatchingPipeline(t *testing.T) {
 				Spec: buildappstudiov1alpha1.BuildPipelineSelectorSpec{
 					Selectors: []buildappstudiov1alpha1.PipelineSelector{
 						{
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "java-build-pipeline",
-								Bundle: "my-bundle",
+							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+								PipelineRef: tektonapi.PipelineRef{Name: "java-build-pipeline"},
+								Bundle:      "my-bundle",
 							},
 							WhenConditions: buildappstudiov1alpha1.WhenCondition{
 								Language:    "java",
@@ -629,10 +633,14 @@ func TestFindMatchingPipeline(t *testing.T) {
 					},
 				},
 			},
-			wantPipelineRef: &tektonapi.PipelineRef{
-				Name:   "java-build-pipeline",
-				Bundle: "my-bundle",
-			},
+			wantPipelineRef: &tektonapi.PipelineRef{ResolverRef: tektonapi.ResolverRef{
+				Resolver: "bundles",
+				Params: []tektonapi.Param{
+					{Name: "kind", Value: *tektonapi.NewStructuredValues("pipeline")},
+					{Name: "bundle", Value: *tektonapi.NewStructuredValues("my-bundle")},
+					{Name: "name", Value: *tektonapi.NewStructuredValues("java-build-pipeline")},
+				},
+			}},
 			wantPipelineParams: nil,
 		},
 		{
@@ -646,9 +654,9 @@ func TestFindMatchingPipeline(t *testing.T) {
 					Selectors: []buildappstudiov1alpha1.PipelineSelector{
 						{
 							Name: "Python",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "python-build-pipeline",
-								Bundle: "my-bundle",
+							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+								PipelineRef: tektonapi.PipelineRef{Name: "python-build-pipeline"},
+								Bundle:      "my-bundle",
 							},
 							WhenConditions: buildappstudiov1alpha1.WhenCondition{
 								Language: "python",
@@ -656,9 +664,9 @@ func TestFindMatchingPipeline(t *testing.T) {
 						},
 						{
 							Name: "Java",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "java-build-pipeline",
-								Bundle: "my-bundle",
+							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+								PipelineRef: tektonapi.PipelineRef{Name: "java-build-pipeline"},
+								Bundle:      "my-bundle",
 							},
 							WhenConditions: buildappstudiov1alpha1.WhenCondition{
 								Language:    "java",
@@ -667,18 +675,22 @@ func TestFindMatchingPipeline(t *testing.T) {
 						},
 						{
 							Name: "Fallback",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "default-build-pipeline",
-								Bundle: "my-bundle",
+							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+								PipelineRef: tektonapi.PipelineRef{Name: "default-build-pipeline"},
+								Bundle:      "my-bundle",
 							},
 						},
 					},
 				},
 			},
-			wantPipelineRef: &tektonapi.PipelineRef{
-				Name:   "java-build-pipeline",
-				Bundle: "my-bundle",
-			},
+			wantPipelineRef: &tektonapi.PipelineRef{ResolverRef: tektonapi.ResolverRef{
+				Resolver: "bundles",
+				Params: []tektonapi.Param{
+					{Name: "kind", Value: *tektonapi.NewStructuredValues("pipeline")},
+					{Name: "bundle", Value: *tektonapi.NewStructuredValues("my-bundle")},
+					{Name: "name", Value: *tektonapi.NewStructuredValues("java-build-pipeline")},
+				},
+			}},
 			wantPipelineParams: nil,
 		},
 		{
@@ -703,9 +715,9 @@ func TestFindMatchingPipeline(t *testing.T) {
 					Selectors: []buildappstudiov1alpha1.PipelineSelector{
 						{
 							Name: "Should not match another language",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "python-build-pipeline",
-								Bundle: "my-bundle",
+							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+								PipelineRef: tektonapi.PipelineRef{Name: "python-build-pipeline"},
+								Bundle:      "my-bundle",
 							},
 							WhenConditions: buildappstudiov1alpha1.WhenCondition{
 								Language:           "python",
@@ -723,9 +735,9 @@ func TestFindMatchingPipeline(t *testing.T) {
 						},
 						{
 							Name: "Should not match builder label",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "builder-label-java-build-pipeline",
-								Bundle: "my-bundle",
+							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+								PipelineRef: tektonapi.PipelineRef{Name: "builder-label-java-build-pipeline"},
+								Bundle:      "my-bundle",
 							},
 							WhenConditions: buildappstudiov1alpha1.WhenCondition{
 								Language:           "java",
@@ -743,9 +755,9 @@ func TestFindMatchingPipeline(t *testing.T) {
 						},
 						{
 							Name: "Should not match extra label",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "extra-label-java-build-pipeline",
-								Bundle: "my-bundle",
+							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+								PipelineRef: tektonapi.PipelineRef{Name: "extra-label-java-build-pipeline"},
+								Bundle:      "my-bundle",
 							},
 							WhenConditions: buildappstudiov1alpha1.WhenCondition{
 								Language:           "java",
@@ -764,9 +776,9 @@ func TestFindMatchingPipeline(t *testing.T) {
 						},
 						{
 							Name: "Should not match annotation",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "annotation-java-build-pipeline",
-								Bundle: "my-bundle",
+							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+								PipelineRef: tektonapi.PipelineRef{Name: "annotation-java-build-pipeline"},
+								Bundle:      "my-bundle",
 							},
 							WhenConditions: buildappstudiov1alpha1.WhenCondition{
 								Language:           "java",
@@ -784,9 +796,9 @@ func TestFindMatchingPipeline(t *testing.T) {
 						},
 						{
 							Name: "Should not match component name",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "component-name-java-build-pipeline",
-								Bundle: "my-bundle",
+							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+								PipelineRef: tektonapi.PipelineRef{Name: "component-name-java-build-pipeline"},
+								Bundle:      "my-bundle",
 							},
 							WhenConditions: buildappstudiov1alpha1.WhenCondition{
 								Language:           "java",
@@ -804,9 +816,9 @@ func TestFindMatchingPipeline(t *testing.T) {
 						},
 						{
 							Name: "Should not match dockerfile presence",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "dockerfile-java-build-pipeline",
-								Bundle: "my-bundle",
+							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+								PipelineRef: tektonapi.PipelineRef{Name: "dockerfile-java-build-pipeline"},
+								Bundle:      "my-bundle",
 							},
 							WhenConditions: buildappstudiov1alpha1.WhenCondition{
 								Language:           "java",
@@ -824,9 +836,9 @@ func TestFindMatchingPipeline(t *testing.T) {
 						},
 						{
 							Name: "Should match the pipeline",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "right-java-build-pipeline",
-								Bundle: "my-bundle",
+							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+								PipelineRef: tektonapi.PipelineRef{Name: "right-java-build-pipeline"},
+								Bundle:      "my-bundle",
 							},
 							WhenConditions: buildappstudiov1alpha1.WhenCondition{
 								Language:           "java",
@@ -844,18 +856,22 @@ func TestFindMatchingPipeline(t *testing.T) {
 						},
 						{
 							Name: "Fallback",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "default-build-pipeline",
-								Bundle: "my-bundle",
+							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+								PipelineRef: tektonapi.PipelineRef{Name: "default-build-pipeline"},
+								Bundle:      "my-bundle",
 							},
 						},
 					},
 				},
 			},
-			wantPipelineRef: &tektonapi.PipelineRef{
-				Name:   "right-java-build-pipeline",
-				Bundle: "my-bundle",
-			},
+			wantPipelineRef: &tektonapi.PipelineRef{ResolverRef: tektonapi.ResolverRef{
+				Resolver: "bundles",
+				Params: []tektonapi.Param{
+					{Name: "kind", Value: *tektonapi.NewStructuredValues("pipeline")},
+					{Name: "bundle", Value: *tektonapi.NewStructuredValues("my-bundle")},
+					{Name: "name", Value: *tektonapi.NewStructuredValues("right-java-build-pipeline")},
+				},
+			}},
 			wantPipelineParams: nil,
 		},
 		{
@@ -867,9 +883,9 @@ func TestFindMatchingPipeline(t *testing.T) {
 				Spec: buildappstudiov1alpha1.BuildPipelineSelectorSpec{
 					Selectors: []buildappstudiov1alpha1.PipelineSelector{
 						{
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "java-build-pipeline",
-								Bundle: "my-bundle",
+							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+								PipelineRef: tektonapi.PipelineRef{Name: "java-build-pipeline"},
+								Bundle:      "my-bundle",
 							},
 							WhenConditions: buildappstudiov1alpha1.WhenCondition{
 								Language:    "java",
@@ -877,9 +893,9 @@ func TestFindMatchingPipeline(t *testing.T) {
 							},
 						},
 						{
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "python-build-pipeline",
-								Bundle: "my-bundle",
+							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+								PipelineRef: tektonapi.PipelineRef{Name: "python-build-pipeline"},
+								Bundle:      "my-bundle",
 							},
 							WhenConditions: buildappstudiov1alpha1.WhenCondition{
 								Language: "python",
@@ -901,9 +917,9 @@ func TestFindMatchingPipeline(t *testing.T) {
 				Spec: buildappstudiov1alpha1.BuildPipelineSelectorSpec{
 					Selectors: []buildappstudiov1alpha1.PipelineSelector{
 						{
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "java-build-pipeline",
-								Bundle: "my-bundle",
+							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+								PipelineRef: tektonapi.PipelineRef{Name: "java-build-pipeline"},
+								Bundle:      "my-bundle",
 							},
 							PipelineParams: []buildappstudiov1alpha1.PipelineParam{
 								{
@@ -923,10 +939,14 @@ func TestFindMatchingPipeline(t *testing.T) {
 					},
 				},
 			},
-			wantPipelineRef: &tektonapi.PipelineRef{
-				Name:   "java-build-pipeline",
-				Bundle: "my-bundle",
-			},
+			wantPipelineRef: &tektonapi.PipelineRef{ResolverRef: tektonapi.ResolverRef{
+				Resolver: "bundles",
+				Params: []tektonapi.Param{
+					{Name: "kind", Value: *tektonapi.NewStructuredValues("pipeline")},
+					{Name: "bundle", Value: *tektonapi.NewStructuredValues("my-bundle")},
+					{Name: "name", Value: *tektonapi.NewStructuredValues("java-build-pipeline")},
+				},
+			}},
 			wantPipelineParams: []tektonapi.Param{
 				{
 					Name:  "additional-checks",

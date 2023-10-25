@@ -28,7 +28,9 @@ import (
 	. "github.com/onsi/gomega"
 	routev1 "github.com/openshift/api/route/v1"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -37,7 +39,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
-	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	appstudiospiapiv1beta1 "github.com/redhat-appstudio/service-provider-integration-operator/api/v1beta1"
@@ -123,6 +125,8 @@ var _ = BeforeSuite(func() {
 
 	Expect(k8sClient.Create(context.Background(), &svcAccount)).Should(Succeed())
 
+	Expect(patchPipelineRunCRD()).Should(Succeed())
+
 	k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme: scheme.Scheme,
 	})
@@ -155,6 +159,39 @@ var _ = BeforeSuite(func() {
 		Expect(err).ToNot(HaveOccurred(), "failed to run manager")
 	}()
 })
+
+// The Tekton PipelineRun CRD defines v1beta1 as the storage version. When build-service creates
+// a v1 PipelineRun, it needs to be converted to v1beta1 before it gets stored in etcd. Normally,
+// this would be done by a conversion webhook, but the webhook doesn't seem to work in the envtest
+// environment.
+//
+// Adding the webhook path to envtest.Environment.WebhookInstallOptions does not help.
+//
+// Instead, patch the PipelineRun CRD. Set v1 as the storage version so that the conversion webhook
+// is not needed.
+//
+// TODO: in github.com/tektoncd/pipelines@v0.49.0, the storage version changed to v1. After we
+// update the dependency, we can drop this workaround.
+// https://github.com/tektoncd/pipeline/commit/7384a67b77c07444f0e1d5748e771c1477e0db23
+func patchPipelineRunCRD() error {
+	var pipelineRunCRD apiextensionsv1.CustomResourceDefinition
+	err := k8sClient.Get(ctx, types.NamespacedName{Namespace: "", Name: "pipelineruns.tekton.dev"}, &pipelineRunCRD)
+	if err != nil {
+		return err
+	}
+
+	v1beta1 := &pipelineRunCRD.Spec.Versions[0]
+	v1 := &pipelineRunCRD.Spec.Versions[1]
+
+	Expect(v1beta1.Name).To(Equal("v1beta1"))
+	Expect(v1.Name).To(Equal("v1"))
+
+	v1beta1.Storage = false
+	v1.Storage = true
+
+	err = k8sClient.Update(ctx, &pipelineRunCRD)
+	return err
+}
 
 var _ = AfterSuite(func() {
 	cancel()

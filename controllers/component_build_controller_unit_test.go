@@ -34,7 +34,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
-	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 )
 
 func TestGetProvisionTimeMetricsBuckets(t *testing.T) {
@@ -219,8 +219,13 @@ func TestGenerateInitialPipelineRunForComponentDevfileError(t *testing.T) {
 		},
 	}
 	pipelineRef := &tektonapi.PipelineRef{
-		Name:   "pipeline-name",
-		Bundle: "pipeline-bundle",
+		ResolverRef: tektonapi.ResolverRef{
+			Resolver: "bundles",
+			Params: []tektonapi.Param{
+				{Name: "name", Value: *tektonapi.NewStructuredValues("pipeline-name")},
+				{Name: "bundle", Value: *tektonapi.NewStructuredValues("pipeline-bundle")},
+			},
+		},
 	}
 	additionalParams := []tektonapi.Param{
 		{Name: "revision", Value: tektonapi.ParamValue{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
@@ -266,8 +271,13 @@ func TestGenerateInitialPipelineRunForComponentDockerfileContext(t *testing.T) {
 		Status: appstudiov1alpha1.ComponentStatus{},
 	}
 	pipelineRef := &tektonapi.PipelineRef{
-		Name:   "pipeline-name",
-		Bundle: "pipeline-bundle",
+		ResolverRef: tektonapi.ResolverRef{
+			Resolver: "bundles",
+			Params: []tektonapi.Param{
+				{Name: "name", Value: *tektonapi.NewStructuredValues("pipeline-name")},
+				{Name: "bundle", Value: *tektonapi.NewStructuredValues("pipeline-bundle")},
+			},
+		},
 	}
 	additionalParams := []tektonapi.Param{
 		{Name: "revision", Value: tektonapi.ParamValue{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
@@ -338,8 +348,13 @@ func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 		},
 	}
 	pipelineRef := &tektonapi.PipelineRef{
-		Name:   "pipeline-name",
-		Bundle: "pipeline-bundle",
+		ResolverRef: tektonapi.ResolverRef{
+			Resolver: "bundles",
+			Params: []tektonapi.Param{
+				{Name: "name", Value: *tektonapi.NewStructuredValues("pipeline-name")},
+				{Name: "bundle", Value: *tektonapi.NewStructuredValues("pipeline-bundle")},
+			},
+		},
 	}
 	additionalParams := []tektonapi.Param{
 		{Name: "revision", Value: tektonapi.ParamValue{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
@@ -390,10 +405,10 @@ func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 		t.Errorf("generateInitialPipelineRunForComponent(): wrong %s annotation value", gitRepoAtShaAnnotationName)
 	}
 
-	if pipelineRun.Spec.PipelineRef.Name != "pipeline-name" {
+	if getPipelineName(pipelineRun.Spec.PipelineRef) != "pipeline-name" {
 		t.Error("generateInitialPipelineRunForComponent(): wrong pipeline name in pipeline reference")
 	}
-	if pipelineRun.Spec.PipelineRef.Bundle != "pipeline-bundle" {
+	if getPipelineBundle(pipelineRun.Spec.PipelineRef) != "pipeline-bundle" {
 		t.Error("generateInitialPipelineRunForComponent(): wrong pipeline bundle in pipeline reference")
 	}
 
