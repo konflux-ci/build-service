@@ -236,7 +236,7 @@ func TestSelectPipelineForComponent(t *testing.T) {
 			wantPipelineParams: []tektonapi.Param{
 				{
 					Name:  "pipeline-param",
-					Value: *tektonapi.NewArrayOrString("quarkus-test-param"),
+					Value: *tektonapi.NewStructuredValues("quarkus-test-param"),
 				},
 			},
 			wantErr: false,
@@ -930,11 +930,11 @@ func TestFindMatchingPipeline(t *testing.T) {
 			wantPipelineParams: []tektonapi.Param{
 				{
 					Name:  "additional-checks",
-					Value: *tektonapi.NewArrayOrString("true"),
+					Value: *tektonapi.NewStructuredValues("true"),
 				},
 				{
 					Name:  "param2",
-					Value: *tektonapi.NewArrayOrString("value2"),
+					Value: *tektonapi.NewStructuredValues("value2"),
 				},
 			},
 		},

@@ -228,14 +228,14 @@ func generatePipelineRunForComponent(component *appstudiov1alpha1.Component, pip
 	image := fmt.Sprintf("%s:build-%s-%d", imageRepo, getRandomString(5), timestamp)
 
 	params := []tektonapi.Param{
-		{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: component.Spec.Source.GitSource.URL}},
-		{Name: "output-image", Value: tektonapi.ArrayOrString{Type: "string", StringVal: image}},
+		{Name: "git-url", Value: tektonapi.ParamValue{Type: "string", StringVal: component.Spec.Source.GitSource.URL}},
+		{Name: "output-image", Value: tektonapi.ParamValue{Type: "string", StringVal: image}},
 	}
 	if revision != "" {
-		params = append(params, tektonapi.Param{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: revision}})
+		params = append(params, tektonapi.Param{Name: "revision", Value: tektonapi.ParamValue{Type: "string", StringVal: revision}})
 	}
 	if value, exists := component.Annotations["skip-initial-checks"]; exists && (value == "1" || strings.ToLower(value) == "true") {
-		params = append(params, tektonapi.Param{Name: "skip-checks", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}})
+		params = append(params, tektonapi.Param{Name: "skip-checks", Value: tektonapi.ParamValue{Type: "string", StringVal: "true"}})
 	}
 
 	dockerFile, err := DevfileSearchForDockerfile([]byte(component.Status.Devfile))
@@ -244,11 +244,11 @@ func generatePipelineRunForComponent(component *appstudiov1alpha1.Component, pip
 	}
 	if dockerFile != nil {
 		if dockerFile.Uri != "" {
-			params = append(params, tektonapi.Param{Name: "dockerfile", Value: tektonapi.ArrayOrString{Type: "string", StringVal: dockerFile.Uri}})
+			params = append(params, tektonapi.Param{Name: "dockerfile", Value: tektonapi.ParamValue{Type: "string", StringVal: dockerFile.Uri}})
 		}
 		pathContext := getPathContext(component.Spec.Source.GitSource.Context, dockerFile.BuildContext)
 		if pathContext != "" {
-			params = append(params, tektonapi.Param{Name: "path-context", Value: tektonapi.ArrayOrString{Type: "string", StringVal: pathContext}})
+			params = append(params, tektonapi.Param{Name: "path-context", Value: tektonapi.ParamValue{Type: "string", StringVal: pathContext}})
 		}
 	}
 

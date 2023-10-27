@@ -763,16 +763,16 @@ func generatePaCPipelineRunForComponent(
 	}
 
 	params := []tektonapi.Param{
-		{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "{{repo_url}}"}},
-		{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "{{revision}}"}},
-		{Name: "output-image", Value: tektonapi.ArrayOrString{Type: "string", StringVal: proposedImage}},
+		{Name: "git-url", Value: tektonapi.ParamValue{Type: "string", StringVal: "{{repo_url}}"}},
+		{Name: "revision", Value: tektonapi.ParamValue{Type: "string", StringVal: "{{revision}}"}},
+		{Name: "output-image", Value: tektonapi.ParamValue{Type: "string", StringVal: proposedImage}},
 	}
 	if onPull {
 		prImageExpiration := os.Getenv(PipelineRunOnPRExpirationEnvVar)
 		if prImageExpiration == "" {
 			prImageExpiration = PipelineRunOnPRExpirationDefault
 		}
-		params = append(params, tektonapi.Param{Name: "image-expires-after", Value: tektonapi.ArrayOrString{Type: "string", StringVal: prImageExpiration}})
+		params = append(params, tektonapi.Param{Name: "image-expires-after", Value: tektonapi.ParamValue{Type: "string", StringVal: prImageExpiration}})
 	}
 
 	dockerFile, err := DevfileSearchForDockerfile([]byte(component.Status.Devfile))
@@ -781,11 +781,11 @@ func generatePaCPipelineRunForComponent(
 	}
 	if dockerFile != nil {
 		if dockerFile.Uri != "" {
-			params = append(params, tektonapi.Param{Name: "dockerfile", Value: tektonapi.ArrayOrString{Type: "string", StringVal: dockerFile.Uri}})
+			params = append(params, tektonapi.Param{Name: "dockerfile", Value: tektonapi.ParamValue{Type: "string", StringVal: dockerFile.Uri}})
 		}
 		pathContext := getPathContext(component.Spec.Source.GitSource.Context, dockerFile.BuildContext)
 		if pathContext != "" {
-			params = append(params, tektonapi.Param{Name: "path-context", Value: tektonapi.ArrayOrString{Type: "string", StringVal: pathContext}})
+			params = append(params, tektonapi.Param{Name: "path-context", Value: tektonapi.ParamValue{Type: "string", StringVal: pathContext}})
 		}
 	}
 

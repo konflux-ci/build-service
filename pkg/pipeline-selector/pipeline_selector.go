@@ -91,7 +91,7 @@ func findMatchingPipeline(selectionParameters *buildappstudiov1alpha1.WhenCondit
 			for _, param := range pipelineSelector.PipelineParams {
 				pipelineParams = append(pipelineParams, tektonapi.Param{
 					Name:  param.Name,
-					Value: *tektonapi.NewArrayOrString(param.Value),
+					Value: *tektonapi.NewStructuredValues(param.Value),
 				})
 			}
 			return &pipelineSelector.PipelineRef, pipelineParams
