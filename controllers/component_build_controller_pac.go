@@ -510,7 +510,7 @@ func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigs(ctx context.Con
 		l.Audit, "true")
 
 	// Get pipeline from the bundle to be expanded to the PipelineRun
-	pipelineSpec, err := retrievePipelineSpec(pipelineBundle, pipelineName)
+	pipelineSpec, err := retrievePipelineSpec(ctx, pipelineBundle, pipelineName)
 	if err != nil {
 		r.EventRecorder.Event(component, "Warning", "ErrorGettingPipelineFromBundle", err.Error())
 		return nil, nil, err
@@ -892,12 +892,12 @@ func createWorkspaceBinding(pipelineWorkspaces []tektonapi.PipelineWorkspaceDecl
 }
 
 // retrievePipelineSpec retrieves pipeline definition with given name from the given bundle.
-func retrievePipelineSpec(bundleUri, pipelineName string) (*tektonapi.PipelineSpec, error) {
+func retrievePipelineSpec(ctx context.Context, bundleUri, pipelineName string) (*tektonapi.PipelineSpec, error) {
+	log := ctrllog.FromContext(ctx)
+
 	var obj runtime.Object
 	var err error
 	resolver := oci.NewResolver(bundleUri, authn.DefaultKeychain)
-
-	ctx := context.TODO()
 
 	if obj, _, err = resolver.Get(ctx, "pipeline", pipelineName); err != nil {
 		return nil, err
@@ -907,6 +907,7 @@ func retrievePipelineSpec(bundleUri, pipelineName string) (*tektonapi.PipelineSp
 
 	if v1beta1Pipeline, ok := obj.(tektonapi_v1beta1.PipelineObject); ok {
 		v1beta1PipelineSpec := v1beta1Pipeline.PipelineSpec()
+		log.Info("Converting from v1beta1 to v1", "PipelineName", pipelineName, "Bundle", bundleUri)
 		err := v1beta1PipelineSpec.ConvertTo(ctx, &pipelineSpec)
 		if err != nil {
 			return nil, fmt.Errorf("pipeline %s from bundle %s: failed to convert from v1beta1 to v1: %w", bundleUri, pipelineName, err)
