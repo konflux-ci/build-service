@@ -614,11 +614,8 @@ func createBuildPipelineRunSelector(selectorKey types.NamespacedName) {
 		Spec: buildappstudiov1alpha1.BuildPipelineSelectorSpec{
 			Selectors: []buildappstudiov1alpha1.PipelineSelector{
 				{
-					Name: SelectorDefaultName,
-					PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
-						PipelineRef: tektonapi.PipelineRef{Name: defaultPipelineName},
-						Bundle:      defaultPipelineBundle,
-					},
+					Name:           SelectorDefaultName,
+					PipelineRef:    newBundleResolverPipelineRef(defaultPipelineBundle, defaultPipelineName),
 					PipelineParams: []buildappstudiov1alpha1.PipelineParam{},
 					WhenConditions: buildappstudiov1alpha1.WhenCondition{},
 				}}},
@@ -698,4 +695,20 @@ func getPipelineName(pipelineRef *tektonapi.PipelineRef) string {
 func getPipelineBundle(pipelineRef *tektonapi.PipelineRef) string {
 	_, bundle, _ := getPipelineNameAndBundle(pipelineRef)
 	return bundle
+}
+
+// Return a pipelineRef that refers to a pipeline with the specified name in the specified bundle
+func newBundleResolverPipelineRef(bundle, name string) buildappstudiov1alpha1.BackwardsCompatiblePipelineRef {
+	return buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+		PipelineRef: tektonapi.PipelineRef{
+			ResolverRef: tektonapi.ResolverRef{
+				Resolver: "bundles",
+				Params: []tektonapi.Param{
+					{Name: "kind", Value: *tektonapi.NewStructuredValues("pipeline")},
+					{Name: "bundle", Value: *tektonapi.NewStructuredValues(bundle)},
+					{Name: "name", Value: *tektonapi.NewStructuredValues(name)},
+				},
+			},
+		},
+	}
 }

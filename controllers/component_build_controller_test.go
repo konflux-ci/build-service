@@ -1542,10 +1542,10 @@ var _ = Describe("Component initial build controller", func() {
 					Selectors: []buildappstudiov1alpha1.PipelineSelector{
 						{
 							Name: "nodejs",
-							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
-								PipelineRef: tektonapi.PipelineRef{Name: "nodejs-builder"},
-								Bundle:      defaultPipelineBundle,
-							},
+							PipelineRef: newBundleResolverPipelineRef(
+								defaultPipelineBundle,
+								"nodejs-builder",
+							),
 							PipelineParams: []buildappstudiov1alpha1.PipelineParam{
 								{
 									Name:  "additional-param",
@@ -1558,10 +1558,10 @@ var _ = Describe("Component initial build controller", func() {
 						},
 						{
 							Name: "Fallback",
-							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
-								PipelineRef: tektonapi.PipelineRef{Name: "noop"},
-								Bundle:      defaultPipelineBundle,
-							},
+							PipelineRef: newBundleResolverPipelineRef(
+								defaultPipelineBundle,
+								"noop",
+							),
 						},
 					},
 				},
@@ -1616,10 +1616,10 @@ var _ = Describe("Component initial build controller", func() {
 					Selectors: []buildappstudiov1alpha1.PipelineSelector{
 						{
 							Name: "nodejs",
-							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
-								PipelineRef: tektonapi.PipelineRef{Name: "nodejs-builder"},
-								Bundle:      defaultPipelineBundle,
-							},
+							PipelineRef: newBundleResolverPipelineRef(
+								defaultPipelineBundle,
+								"nodejs-builder",
+							),
 							PipelineParams: []buildappstudiov1alpha1.PipelineParam{
 								{
 									Name:  "additional-param",
@@ -1632,10 +1632,10 @@ var _ = Describe("Component initial build controller", func() {
 						},
 						{
 							Name: "Fallback",
-							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
-								PipelineRef: tektonapi.PipelineRef{Name: "noop"},
-								Bundle:      defaultPipelineBundle,
-							},
+							PipelineRef: newBundleResolverPipelineRef(
+								defaultPipelineBundle,
+								"noop",
+							),
 						},
 					},
 				},
@@ -1690,10 +1690,10 @@ var _ = Describe("Component initial build controller", func() {
 					Selectors: []buildappstudiov1alpha1.PipelineSelector{
 						{
 							Name: "java",
-							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
-								PipelineRef: tektonapi.PipelineRef{Name: "java-builder"},
-								Bundle:      defaultPipelineBundle,
-							},
+							PipelineRef: newBundleResolverPipelineRef(
+								defaultPipelineBundle,
+								"java-builder",
+							),
 							PipelineParams: []buildappstudiov1alpha1.PipelineParam{
 								{
 									Name:  "additional-param",
@@ -1706,10 +1706,10 @@ var _ = Describe("Component initial build controller", func() {
 						},
 						{
 							Name: "Fallback",
-							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
-								PipelineRef: tektonapi.PipelineRef{Name: "noop"},
-								Bundle:      defaultPipelineBundle,
-							},
+							PipelineRef: newBundleResolverPipelineRef(
+								defaultPipelineBundle,
+								"noop",
+							),
 						},
 					},
 				},
@@ -1785,8 +1785,16 @@ var _ = Describe("Component initial build controller", func() {
 						{
 							Name: "java",
 							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
-								PipelineRef: tektonapi.PipelineRef{Name: "java-builder"},
-								Bundle:      defaultPipelineBundle,
+								PipelineRef: tektonapi.PipelineRef{
+									ResolverRef: tektonapi.ResolverRef{
+										Resolver: "bundles",
+										Params: []tektonapi.Param{
+											{Name: "kind", Value: *tektonapi.NewStructuredValues("pipeline")},
+											{Name: "bundle", Value: *tektonapi.NewStructuredValues(defaultPipelineBundle)},
+											{Name: "name", Value: *tektonapi.NewStructuredValues("java-builder")},
+										},
+									},
+								},
 							},
 							PipelineParams: []buildappstudiov1alpha1.PipelineParam{
 								{

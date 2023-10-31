@@ -19,6 +19,9 @@ package controllers
 import (
 	"context"
 	"go/build"
+	"io"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -72,12 +75,20 @@ var _ = BeforeSuite(func() {
 	log = ctrl.Log.WithName("testdebug")
 
 	By("bootstrapping test environment")
+
+	// Envtest doesn't respect kustomization.yaml for CRDs, apply it ourselves
+	crdsTempfile, err := os.CreateTemp("", "crds*.yaml")
+	Expect(err).NotTo(HaveOccurred())
+	defer os.Remove(crdsTempfile.Name())
+	Expect(runKustomize(filepath.Join("..", "config", "crd"), crdsTempfile)).To(Succeed())
+	crdsTempfile.Close()
+
 	applicationServiceDepVersion := "v0.0.0-20230717184417-67d31a01a776"
 	applicationApiDepVersion := "v0.0.0-20230704143842-035c661f115f"
 	spiApiDepVersion := "v0.2023.22-0.20230731122342-dfc17adc9829"
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
-			filepath.Join("..", "config", "crd", "bases"),
+			crdsTempfile.Name(),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "redhat-appstudio", "application-api@"+applicationApiDepVersion, "config", "crd", "bases"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "redhat-appstudio", "application-service@"+applicationServiceDepVersion, "hack", "routecrd", "route.yaml"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "redhat-appstudio", "service-provider-integration-operator@"+spiApiDepVersion, "config", "crd", "bases"),
@@ -159,6 +170,13 @@ var _ = BeforeSuite(func() {
 		Expect(err).ToNot(HaveOccurred(), "failed to run manager")
 	}()
 })
+
+func runKustomize(dir string, out io.Writer) error {
+	kubectl := filepath.Join(os.Getenv("KUBEBUILDER_ASSETS"), "kubectl")
+	cmd := exec.Command(kubectl, "kustomize", dir)
+	cmd.Stdout = out
+	return cmd.Run()
+}
 
 // The Tekton PipelineRun CRD defines v1beta1 as the storage version. When build-service creates
 // a v1 PipelineRun, it needs to be converted to v1beta1 before it gets stored in etcd. Normally,
