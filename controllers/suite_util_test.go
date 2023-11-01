@@ -113,7 +113,7 @@ func getComponentData(config componentConfig) *appstudiov1alpha1.Component {
 	}
 	gitUrl := config.gitURL
 	if gitUrl == "" {
-		gitUrl = SampleRepoLink
+		gitUrl = SampleRepoLink + "-" + name
 	}
 	gitRevision := config.gitRevision
 	if gitRevision == "" {
@@ -170,6 +170,12 @@ func createComponentAndProcessBuildRequest(componentKey types.NamespacedName, bu
 // This method also sets devfile model, so the component is ready to be processed.
 func createComponentWithBuildRequest(componentKey types.NamespacedName, buildRequest string) {
 	createCustomComponentWithBuildRequest(componentConfig{componentKey: componentKey}, buildRequest)
+}
+
+// createComponentWithBuildRequestAndGitcreate a component with specified build request, and provided gitURL and revision.
+// This method also sets devfile model, so the component is ready to be processed.
+func createComponentWithBuildRequestAndGit(componentKey types.NamespacedName, buildRequest string, gitURL string, gitRevision string) {
+	createCustomComponentWithBuildRequest(componentConfig{componentKey: componentKey, gitURL: gitURL, gitRevision: gitRevision}, buildRequest)
 }
 
 func createCustomComponentWithBuildRequest(config componentConfig, buildRequest string) {
@@ -488,6 +494,14 @@ func ensureSecretNotCreated(resourceKey types.NamespacedName) {
 		err := k8sClient.Get(ctx, resourceKey, secret)
 		return k8sErrors.IsNotFound(err)
 	}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
+}
+
+func waitSecretGone(resourceKey types.NamespacedName) {
+	secret := &corev1.Secret{}
+	Eventually(func() bool {
+		err := k8sClient.Get(ctx, resourceKey, secret)
+		return k8sErrors.IsNotFound(err)
+	}, timeout, interval).Should(BeTrue())
 }
 
 func createNamespace(name string) {
