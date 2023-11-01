@@ -910,12 +910,18 @@ func retrievePipelineSpec(ctx context.Context, bundleUri, pipelineName string) (
 		log.Info("Converting from v1beta1 to v1", "PipelineName", pipelineName, "Bundle", bundleUri)
 		err := v1beta1PipelineSpec.ConvertTo(ctx, &pipelineSpec)
 		if err != nil {
-			return nil, fmt.Errorf("pipeline %s from bundle %s: failed to convert from v1beta1 to v1: %w", bundleUri, pipelineName, err)
+			return nil, boerrors.NewBuildOpError(
+				boerrors.EPipelineConversionFailed,
+				fmt.Errorf("pipeline %s from bundle %s: failed to convert from v1beta1 to v1: %w", pipelineName, bundleUri, err),
+			)
 		}
 	} else if v1Pipeline, ok := obj.(*tektonapi.Pipeline); ok {
 		pipelineSpec = v1Pipeline.PipelineSpec()
 	} else {
-		return nil, fmt.Errorf("failed to extract pipeline %s from bundle %s", bundleUri, pipelineName)
+		return nil, boerrors.NewBuildOpError(
+			boerrors.EPipelineRetrievalFailed,
+			fmt.Errorf("failed to extract pipeline %s from bundle %s", pipelineName, bundleUri),
+		)
 	}
 
 	return &pipelineSpec, nil

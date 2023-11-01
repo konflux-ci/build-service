@@ -145,6 +145,12 @@ const (
 	EUnsupportedPipelineRef BOErrorId = 302
 	// EMissingParamsForBundleResolver The pipelineRef selected for a component is missing parameters required for the bundle resolver.
 	EMissingParamsForBundleResolver BOErrorId = 303
+
+	// EPipelineRetrievalFailed Failed to retrieve a Tekton Pipeline.
+	EPipelineRetrievalFailed BOErrorId = 400
+	// EPipelineConversionFailed Failed to convert a Tekton Pipeline to the version
+	// that build-service supports (e.g. tekton.dev/v1beta1 -> tekton.dev/v1).
+	EPipelineConversionFailed BOErrorId = 401
 )
 
 var boErrorMessages = map[BOErrorId]string{
@@ -181,4 +187,7 @@ var boErrorMessages = map[BOErrorId]string{
 	EBuildPipelineSelectorNotDefined: "Build pipeline selector is not defined yet.",
 	EUnsupportedPipelineRef:          "The pipelineRef for this component (based on pipeline selectors) is not supported.",
 	EMissingParamsForBundleResolver:  "The pipelineRef for this component is missing required parameters ('name' and/or 'bundle').",
+
+	EPipelineRetrievalFailed:  "Failed to retrieve the pipeline selected for this component.",
+	EPipelineConversionFailed: "Failed to convert the selected pipeline to the supported Tekton API version.",
 }
