@@ -60,8 +60,10 @@ const (
 	ComponentContainerImage = "registry.io/username/image:tag"
 	SelectorDefaultName     = "default"
 
-	defaultPipelineName   = "docker-build"
-	defaultPipelineBundle = "quay.io/redhat-appstudio-tekton-catalog/pipeline-docker-build:8cf8982d58a841922b687b7166f0cfdc1cc3fc72"
+	defaultPipelineName = "docker-build"
+	// TODO: replace with quay.io/redhat-appstudio-tekton-catalog/pipeline-docker-build once it's updated to v1
+	defaultPipelineBundle = "quay.io/acmiel-test/pipeline-docker-build:test-v1-pipeline"
+	v1beta1PipelineBundle = "quay.io/redhat-appstudio-tekton-catalog/pipeline-docker-build:8cf8982d58a841922b687b7166f0cfdc1cc3fc72"
 )
 
 var (
@@ -608,14 +610,18 @@ func deleteRoute(routeKey types.NamespacedName) {
 	}
 }
 
-func createBuildPipelineRunSelector(selectorKey types.NamespacedName) {
+func createDefaultBuildPipelineRunSelector(selectorKey types.NamespacedName) {
+	createBuildPipelineRunSelector(selectorKey, defaultPipelineBundle, defaultPipelineName)
+}
+
+func createBuildPipelineRunSelector(selectorKey types.NamespacedName, pipelineBundle, pipelineName string) {
 	buildPipelineSelector := buildappstudiov1alpha1.BuildPipelineSelector{
 		ObjectMeta: metav1.ObjectMeta{Name: selectorKey.Name, Namespace: selectorKey.Namespace},
 		Spec: buildappstudiov1alpha1.BuildPipelineSelectorSpec{
 			Selectors: []buildappstudiov1alpha1.PipelineSelector{
 				{
 					Name:           SelectorDefaultName,
-					PipelineRef:    newBundleResolverPipelineRef(defaultPipelineBundle, defaultPipelineName),
+					PipelineRef:    newBundleResolverPipelineRef(pipelineBundle, pipelineName),
 					PipelineParams: []buildappstudiov1alpha1.PipelineParam{},
 					WhenConditions: buildappstudiov1alpha1.WhenCondition{},
 				}}},
