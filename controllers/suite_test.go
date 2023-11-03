@@ -164,6 +164,14 @@ var _ = BeforeSuite(func() {
 		EventRecorder: k8sManager.GetEventRecorderFor("GitTektonResourcesRenovater"),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
+	err = (&ComponentDependencyUpdateReconciler{
+		Client:         k8sManager.GetClient(),
+		ApiReader:      k8sManager.GetAPIReader(),
+		Scheme:         k8sManager.GetScheme(),
+		EventRecorder:  k8sManager.GetEventRecorderFor("ComponentDependencyUpdateReconciler"),
+		UpdateFunction: failingDependencyUpdate,
+	}).SetupWithManager(k8sManager)
+	Expect(err).ToNot(HaveOccurred())
 
 	go func() {
 		defer GinkgoRecover()

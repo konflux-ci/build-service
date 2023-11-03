@@ -58,7 +58,7 @@ var _ = Describe("Git tekton resources renovater", func() {
 				"https://github/test/repo1",
 				"https://github/test/repo2",
 			}
-			github.GetAppInstallations = func(appIdStr string, privateKeyPem []byte) ([]github.ApplicationInstallation, string, error) {
+			github.GetAllAppInstallations = func(appIdStr string, privateKeyPem []byte) ([]github.ApplicationInstallation, string, error) {
 				repositories := generateRepositories(installedRepositoryUrls)
 				return []github.ApplicationInstallation{generateInstallation(repositories)}, "slug", nil
 			}
@@ -73,7 +73,7 @@ var _ = Describe("Git tekton resources renovater", func() {
 				"https://github/test/repo1",
 				"https://github/test/repo2",
 			}
-			github.GetAppInstallations = func(appIdStr string, privateKeyPem []byte) ([]github.ApplicationInstallation, string, error) {
+			github.GetAllAppInstallations = func(appIdStr string, privateKeyPem []byte) ([]github.ApplicationInstallation, string, error) {
 				repositories := generateRepositories(installedRepositoryUrls)
 				return []github.ApplicationInstallation{generateInstallation(repositories)}, "slug", nil
 			}
@@ -107,7 +107,7 @@ var _ = Describe("Git tekton resources renovater", func() {
 				"https://github/test5/repo1",
 				"https://github/test5/repo2",
 			}
-			github.GetAppInstallations = func(appIdStr string, privateKeyPem []byte) ([]github.ApplicationInstallation, string, error) {
+			github.GetAllAppInstallations = func(appIdStr string, privateKeyPem []byte) ([]github.ApplicationInstallation, string, error) {
 				return []github.ApplicationInstallation{
 					generateInstallation(generateRepositories(installedRepositoryUrls1)),
 					generateInstallation(generateRepositories(installedRepositoryUrls2)),
@@ -139,7 +139,7 @@ var _ = Describe("Git tekton resources renovater", func() {
 				"https://github/test/repo1",
 				"https://github/test/repo2",
 			}
-			github.GetAppInstallations = func(appIdStr string, privateKeyPem []byte) ([]github.ApplicationInstallation, string, error) {
+			github.GetAllAppInstallations = func(appIdStr string, privateKeyPem []byte) ([]github.ApplicationInstallation, string, error) {
 				repositories := generateRepositories(installedRepositoryUrls)
 				return []github.ApplicationInstallation{generateInstallation(repositories)}, "slug", nil
 			}
@@ -158,7 +158,7 @@ var _ = Describe("Git tekton resources renovater", func() {
 				"https://github/test/repo1",
 				"https://github/test/repo2",
 			}
-			github.GetAppInstallations = func(appIdStr string, privateKeyPem []byte) ([]github.ApplicationInstallation, string, error) {
+			github.GetAllAppInstallations = func(appIdStr string, privateKeyPem []byte) ([]github.ApplicationInstallation, string, error) {
 				repositories := generateRepositories(installedRepositoryUrls)
 				return []github.ApplicationInstallation{generateInstallation(repositories)}, "slug", nil
 			}

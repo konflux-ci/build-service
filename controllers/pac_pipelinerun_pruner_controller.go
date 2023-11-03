@@ -65,7 +65,7 @@ func (r *PaCPipelineRunPrunerReconciler) SetupWithManager(mgr ctrl.Manager) erro
 		Complete(r)
 }
 
-//+kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns,verbs=get;list;watch;delete;deletecollection
+//+kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns,verbs=get;list;watch;delete;deletecollection;update;patch
 
 func (r *PaCPipelineRunPrunerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := ctrllog.FromContext(ctx).WithName("PaCPipelineRunPruner")
