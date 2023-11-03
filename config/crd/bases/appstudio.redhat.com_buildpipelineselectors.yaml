@@ -91,9 +91,10 @@ spec:
                                 type: string
                               value:
                                 description: ParamValue is a type that can hold a
-                                  single string or string array. Used in JSON unmarshalling
-                                  so that a single JSON field can accept either an
-                                  individual string or an array of strings.
+                                  single string, string array, or string map. Used
+                                  in JSON unmarshalling so that a single JSON field
+                                  can accept either an individual string or an array
+                                  of strings.
                                 properties:
                                   arrayVal:
                                     items:

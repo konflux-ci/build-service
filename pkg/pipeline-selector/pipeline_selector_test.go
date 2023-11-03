@@ -22,12 +22,28 @@ import (
 
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	buildappstudiov1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
-	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func getBoolPtr(arg bool) *bool {
 	return &arg
+}
+
+// Return a pipelineRef that refers to a pipeline with the specified name in the specified bundle
+func newBundleResolverPipelineRef(bundle, name string) buildappstudiov1alpha1.BackwardsCompatiblePipelineRef {
+	return buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+		PipelineRef: tektonapi.PipelineRef{
+			ResolverRef: tektonapi.ResolverRef{
+				Resolver: "bundles",
+				Params: []tektonapi.Param{
+					{Name: "kind", Value: *tektonapi.NewStructuredValues("pipeline")},
+					{Name: "bundle", Value: *tektonapi.NewStructuredValues(bundle)},
+					{Name: "name", Value: *tektonapi.NewStructuredValues(name)},
+				},
+			},
+		},
+	}
 }
 
 func TestSelectPipelineForComponent(t *testing.T) {
@@ -112,10 +128,10 @@ func TestSelectPipelineForComponent(t *testing.T) {
 						Selectors: []buildappstudiov1alpha1.PipelineSelector{
 							{
 								Name: "Java spring",
-								PipelineRef: tektonapi.PipelineRef{
-									Name:   "java-spring-build-pipeline",
-									Bundle: "java-spring-bundle",
-								},
+								PipelineRef: newBundleResolverPipelineRef(
+									"java-spring-bundle",
+									"java-spring-build-pipeline",
+								),
 								WhenConditions: buildappstudiov1alpha1.WhenCondition{
 									Language:    "java",
 									ProjectType: "spring,springboot",
@@ -123,10 +139,10 @@ func TestSelectPipelineForComponent(t *testing.T) {
 							},
 							{
 								Name: "Java quarkus for specific components",
-								PipelineRef: tektonapi.PipelineRef{
-									Name:   "quarkus-for-specific-components-build-pipeline",
-									Bundle: "quarkus-for-specific-components-bundle",
-								},
+								PipelineRef: newBundleResolverPipelineRef(
+									"quarkus-for-specific-components-bundle",
+									"quarkus-for-specific-components-build-pipeline",
+								),
 								WhenConditions: buildappstudiov1alpha1.WhenCondition{
 									Language:      "java",
 									ProjectType:   "quarkus",
@@ -141,10 +157,10 @@ func TestSelectPipelineForComponent(t *testing.T) {
 						Selectors: []buildappstudiov1alpha1.PipelineSelector{
 							{
 								Name: "Java quarkus no dockerfile",
-								PipelineRef: tektonapi.PipelineRef{
-									Name:   "quarkus-no-dockerfile-build-pipeline",
-									Bundle: "quarkus-no-dockerfile-bundle",
-								},
+								PipelineRef: newBundleResolverPipelineRef(
+									"quarkus-no-dockerfile-bundle",
+									"quarkus-no-dockerfile-build-pipeline",
+								),
 								WhenConditions: buildappstudiov1alpha1.WhenCondition{
 									Language:           "java",
 									ProjectType:        "quarkus",
@@ -153,10 +169,10 @@ func TestSelectPipelineForComponent(t *testing.T) {
 							},
 							{
 								Name: "Java quarkus label restricted",
-								PipelineRef: tektonapi.PipelineRef{
-									Name:   "quarkus-label-restricted-build-pipeline",
-									Bundle: "quarkus-label-restricted-bundle",
-								},
+								PipelineRef: newBundleResolverPipelineRef(
+									"quarkus-label-restricted-bundle",
+									"quarkus-label-restricted-build-pipeline",
+								),
 								WhenConditions: buildappstudiov1alpha1.WhenCondition{
 									Language:    "java",
 									ProjectType: "quarkus",
@@ -173,10 +189,10 @@ func TestSelectPipelineForComponent(t *testing.T) {
 						Selectors: []buildappstudiov1alpha1.PipelineSelector{
 							{
 								Name: "Java gradle",
-								PipelineRef: tektonapi.PipelineRef{
-									Name:   "quarkus-gradle-build-pipeline",
-									Bundle: "quarkus-gradle-bundle",
-								},
+								PipelineRef: newBundleResolverPipelineRef(
+									"quarkus-gradle-bundle",
+									"quarkus-gradle-build-pipeline",
+								),
 								WhenConditions: buildappstudiov1alpha1.WhenCondition{
 									Language:    "java",
 									ProjectType: "quarkus",
@@ -187,10 +203,10 @@ func TestSelectPipelineForComponent(t *testing.T) {
 							},
 							{
 								Name: "Java quarkus for the component in this test",
-								PipelineRef: tektonapi.PipelineRef{
-									Name:   "quarkus-build-pipeline",
-									Bundle: "quarkus-bundle",
-								},
+								PipelineRef: newBundleResolverPipelineRef(
+									"quarkus-bundle",
+									"quarkus-build-pipeline",
+								),
 								PipelineParams: []buildappstudiov1alpha1.PipelineParam{
 									{
 										Name:  "pipeline-param",
@@ -204,10 +220,10 @@ func TestSelectPipelineForComponent(t *testing.T) {
 							},
 							{
 								Name: "All other java",
-								PipelineRef: tektonapi.PipelineRef{
-									Name:   "java-build-pipeline",
-									Bundle: "java-bundle",
-								},
+								PipelineRef: newBundleResolverPipelineRef(
+									"java-bundle",
+									"java-build-pipeline",
+								),
 								WhenConditions: buildappstudiov1alpha1.WhenCondition{
 									Language: "java",
 								},
@@ -220,23 +236,27 @@ func TestSelectPipelineForComponent(t *testing.T) {
 						Selectors: []buildappstudiov1alpha1.PipelineSelector{
 							{
 								Name: "Fallbackg",
-								PipelineRef: tektonapi.PipelineRef{
-									Name:   "default-build-pipeline",
-									Bundle: "my-bundle",
-								},
+								PipelineRef: newBundleResolverPipelineRef(
+									"my-bundle",
+									"default-build-pipeline",
+								),
 							},
 						},
 					},
 				},
 			},
-			wantPipelineRef: &tektonapi.PipelineRef{
-				Name:   "quarkus-build-pipeline",
-				Bundle: "quarkus-bundle",
-			},
+			wantPipelineRef: &tektonapi.PipelineRef{ResolverRef: tektonapi.ResolverRef{
+				Resolver: "bundles",
+				Params: []tektonapi.Param{
+					{Name: "kind", Value: *tektonapi.NewStructuredValues("pipeline")},
+					{Name: "bundle", Value: *tektonapi.NewStructuredValues("quarkus-bundle")},
+					{Name: "name", Value: *tektonapi.NewStructuredValues("quarkus-build-pipeline")},
+				},
+			}},
 			wantPipelineParams: []tektonapi.Param{
 				{
 					Name:  "pipeline-param",
-					Value: *tektonapi.NewArrayOrString("quarkus-test-param"),
+					Value: *tektonapi.NewStructuredValues("quarkus-test-param"),
 				},
 			},
 			wantErr: false,
@@ -263,10 +283,10 @@ func TestSelectPipelineForComponent(t *testing.T) {
 						Selectors: []buildappstudiov1alpha1.PipelineSelector{
 							{
 								Name: "Python",
-								PipelineRef: tektonapi.PipelineRef{
-									Name:   "python-build-pipeline",
-									Bundle: "my-bundle",
-								},
+								PipelineRef: newBundleResolverPipelineRef(
+									"my-bundle",
+									"python-build-pipeline",
+								),
 								PipelineParams: []buildappstudiov1alpha1.PipelineParam{
 									{
 										Name:  "arg1",
@@ -279,10 +299,10 @@ func TestSelectPipelineForComponent(t *testing.T) {
 							},
 							{
 								Name: "NodeJS",
-								PipelineRef: tektonapi.PipelineRef{
-									Name:   "nodejs-build-pipeline",
-									Bundle: "my-bundle",
-								},
+								PipelineRef: newBundleResolverPipelineRef(
+									"my-bundle",
+									"nodejs-build-pipeline",
+								),
 								PipelineParams: []buildappstudiov1alpha1.PipelineParam{
 									{
 										Name:  "arg2",
@@ -338,10 +358,10 @@ func TestSelectPipelineForComponent(t *testing.T) {
 						Selectors: []buildappstudiov1alpha1.PipelineSelector{
 							{
 								Name: "Fallback",
-								PipelineRef: tektonapi.PipelineRef{
-									Name:   "default-build-pipeline",
-									Bundle: "my-bundle",
-								},
+								PipelineRef: newBundleResolverPipelineRef(
+									"my-bundle",
+									"default-build-pipeline",
+								),
 							},
 						},
 					},
@@ -617,10 +637,10 @@ func TestFindMatchingPipeline(t *testing.T) {
 				Spec: buildappstudiov1alpha1.BuildPipelineSelectorSpec{
 					Selectors: []buildappstudiov1alpha1.PipelineSelector{
 						{
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "java-build-pipeline",
-								Bundle: "my-bundle",
-							},
+							PipelineRef: newBundleResolverPipelineRef(
+								"my-bundle",
+								"java-build-pipeline",
+							),
 							WhenConditions: buildappstudiov1alpha1.WhenCondition{
 								Language:    "java",
 								ProjectType: "spring,springboot,quarkus",
@@ -629,10 +649,14 @@ func TestFindMatchingPipeline(t *testing.T) {
 					},
 				},
 			},
-			wantPipelineRef: &tektonapi.PipelineRef{
-				Name:   "java-build-pipeline",
-				Bundle: "my-bundle",
-			},
+			wantPipelineRef: &tektonapi.PipelineRef{ResolverRef: tektonapi.ResolverRef{
+				Resolver: "bundles",
+				Params: []tektonapi.Param{
+					{Name: "kind", Value: *tektonapi.NewStructuredValues("pipeline")},
+					{Name: "bundle", Value: *tektonapi.NewStructuredValues("my-bundle")},
+					{Name: "name", Value: *tektonapi.NewStructuredValues("java-build-pipeline")},
+				},
+			}},
 			wantPipelineParams: nil,
 		},
 		{
@@ -646,20 +670,20 @@ func TestFindMatchingPipeline(t *testing.T) {
 					Selectors: []buildappstudiov1alpha1.PipelineSelector{
 						{
 							Name: "Python",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "python-build-pipeline",
-								Bundle: "my-bundle",
-							},
+							PipelineRef: newBundleResolverPipelineRef(
+								"my-bundle",
+								"python-build-pipeline",
+							),
 							WhenConditions: buildappstudiov1alpha1.WhenCondition{
 								Language: "python",
 							},
 						},
 						{
 							Name: "Java",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "java-build-pipeline",
-								Bundle: "my-bundle",
-							},
+							PipelineRef: newBundleResolverPipelineRef(
+								"my-bundle",
+								"java-build-pipeline",
+							),
 							WhenConditions: buildappstudiov1alpha1.WhenCondition{
 								Language:    "java",
 								ProjectType: "spring,springboot,quarkus",
@@ -667,18 +691,22 @@ func TestFindMatchingPipeline(t *testing.T) {
 						},
 						{
 							Name: "Fallback",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "default-build-pipeline",
-								Bundle: "my-bundle",
-							},
+							PipelineRef: newBundleResolverPipelineRef(
+								"my-bundle",
+								"default-build-pipeline",
+							),
 						},
 					},
 				},
 			},
-			wantPipelineRef: &tektonapi.PipelineRef{
-				Name:   "java-build-pipeline",
-				Bundle: "my-bundle",
-			},
+			wantPipelineRef: &tektonapi.PipelineRef{ResolverRef: tektonapi.ResolverRef{
+				Resolver: "bundles",
+				Params: []tektonapi.Param{
+					{Name: "kind", Value: *tektonapi.NewStructuredValues("pipeline")},
+					{Name: "bundle", Value: *tektonapi.NewStructuredValues("my-bundle")},
+					{Name: "name", Value: *tektonapi.NewStructuredValues("java-build-pipeline")},
+				},
+			}},
 			wantPipelineParams: nil,
 		},
 		{
@@ -703,10 +731,10 @@ func TestFindMatchingPipeline(t *testing.T) {
 					Selectors: []buildappstudiov1alpha1.PipelineSelector{
 						{
 							Name: "Should not match another language",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "python-build-pipeline",
-								Bundle: "my-bundle",
-							},
+							PipelineRef: newBundleResolverPipelineRef(
+								"my-bundle",
+								"python-build-pipeline",
+							),
 							WhenConditions: buildappstudiov1alpha1.WhenCondition{
 								Language:           "python",
 								ProjectType:        "springboot",
@@ -723,10 +751,10 @@ func TestFindMatchingPipeline(t *testing.T) {
 						},
 						{
 							Name: "Should not match builder label",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "builder-label-java-build-pipeline",
-								Bundle: "my-bundle",
-							},
+							PipelineRef: newBundleResolverPipelineRef(
+								"my-bundle",
+								"builder-label-java-build-pipeline",
+							),
 							WhenConditions: buildappstudiov1alpha1.WhenCondition{
 								Language:           "java",
 								ProjectType:        "spring,springboot,quarkus",
@@ -743,10 +771,10 @@ func TestFindMatchingPipeline(t *testing.T) {
 						},
 						{
 							Name: "Should not match extra label",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "extra-label-java-build-pipeline",
-								Bundle: "my-bundle",
-							},
+							PipelineRef: newBundleResolverPipelineRef(
+								"my-bundle",
+								"extra-label-java-build-pipeline",
+							),
 							WhenConditions: buildappstudiov1alpha1.WhenCondition{
 								Language:           "java",
 								ProjectType:        "spring,springboot,quarkus",
@@ -764,10 +792,10 @@ func TestFindMatchingPipeline(t *testing.T) {
 						},
 						{
 							Name: "Should not match annotation",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "annotation-java-build-pipeline",
-								Bundle: "my-bundle",
-							},
+							PipelineRef: newBundleResolverPipelineRef(
+								"my-bundle",
+								"annotation-java-build-pipeline",
+							),
 							WhenConditions: buildappstudiov1alpha1.WhenCondition{
 								Language:           "java",
 								ProjectType:        "spring,springboot,quarkus",
@@ -784,10 +812,10 @@ func TestFindMatchingPipeline(t *testing.T) {
 						},
 						{
 							Name: "Should not match component name",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "component-name-java-build-pipeline",
-								Bundle: "my-bundle",
-							},
+							PipelineRef: newBundleResolverPipelineRef(
+								"my-bundle",
+								"component-name-java-build-pipeline",
+							),
 							WhenConditions: buildappstudiov1alpha1.WhenCondition{
 								Language:           "java",
 								ProjectType:        "spring,springboot,quarkus",
@@ -804,10 +832,10 @@ func TestFindMatchingPipeline(t *testing.T) {
 						},
 						{
 							Name: "Should not match dockerfile presence",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "dockerfile-java-build-pipeline",
-								Bundle: "my-bundle",
-							},
+							PipelineRef: newBundleResolverPipelineRef(
+								"my-bundle",
+								"dockerfile-java-build-pipeline",
+							),
 							WhenConditions: buildappstudiov1alpha1.WhenCondition{
 								Language:           "java",
 								ProjectType:        "spring,springboot,quarkus",
@@ -824,10 +852,10 @@ func TestFindMatchingPipeline(t *testing.T) {
 						},
 						{
 							Name: "Should match the pipeline",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "right-java-build-pipeline",
-								Bundle: "my-bundle",
-							},
+							PipelineRef: newBundleResolverPipelineRef(
+								"my-bundle",
+								"right-java-build-pipeline",
+							),
 							WhenConditions: buildappstudiov1alpha1.WhenCondition{
 								Language:           "java",
 								ProjectType:        "spring,springboot,quarkus",
@@ -844,18 +872,22 @@ func TestFindMatchingPipeline(t *testing.T) {
 						},
 						{
 							Name: "Fallback",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "default-build-pipeline",
-								Bundle: "my-bundle",
-							},
+							PipelineRef: newBundleResolverPipelineRef(
+								"my-bundle",
+								"default-build-pipeline",
+							),
 						},
 					},
 				},
 			},
-			wantPipelineRef: &tektonapi.PipelineRef{
-				Name:   "right-java-build-pipeline",
-				Bundle: "my-bundle",
-			},
+			wantPipelineRef: &tektonapi.PipelineRef{ResolverRef: tektonapi.ResolverRef{
+				Resolver: "bundles",
+				Params: []tektonapi.Param{
+					{Name: "kind", Value: *tektonapi.NewStructuredValues("pipeline")},
+					{Name: "bundle", Value: *tektonapi.NewStructuredValues("my-bundle")},
+					{Name: "name", Value: *tektonapi.NewStructuredValues("right-java-build-pipeline")},
+				},
+			}},
 			wantPipelineParams: nil,
 		},
 		{
@@ -867,20 +899,20 @@ func TestFindMatchingPipeline(t *testing.T) {
 				Spec: buildappstudiov1alpha1.BuildPipelineSelectorSpec{
 					Selectors: []buildappstudiov1alpha1.PipelineSelector{
 						{
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "java-build-pipeline",
-								Bundle: "my-bundle",
-							},
+							PipelineRef: newBundleResolverPipelineRef(
+								"my-bundle",
+								"java-build-pipeline",
+							),
 							WhenConditions: buildappstudiov1alpha1.WhenCondition{
 								Language:    "java",
 								ProjectType: "spring,springboot,quarkus",
 							},
 						},
 						{
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "python-build-pipeline",
-								Bundle: "my-bundle",
-							},
+							PipelineRef: newBundleResolverPipelineRef(
+								"my-bundle",
+								"python-build-pipeline",
+							),
 							WhenConditions: buildappstudiov1alpha1.WhenCondition{
 								Language: "python",
 							},
@@ -901,10 +933,10 @@ func TestFindMatchingPipeline(t *testing.T) {
 				Spec: buildappstudiov1alpha1.BuildPipelineSelectorSpec{
 					Selectors: []buildappstudiov1alpha1.PipelineSelector{
 						{
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "java-build-pipeline",
-								Bundle: "my-bundle",
-							},
+							PipelineRef: newBundleResolverPipelineRef(
+								"my-bundle",
+								"java-build-pipeline",
+							),
 							PipelineParams: []buildappstudiov1alpha1.PipelineParam{
 								{
 									Name:  "additional-checks",
@@ -923,18 +955,22 @@ func TestFindMatchingPipeline(t *testing.T) {
 					},
 				},
 			},
-			wantPipelineRef: &tektonapi.PipelineRef{
-				Name:   "java-build-pipeline",
-				Bundle: "my-bundle",
-			},
+			wantPipelineRef: &tektonapi.PipelineRef{ResolverRef: tektonapi.ResolverRef{
+				Resolver: "bundles",
+				Params: []tektonapi.Param{
+					{Name: "kind", Value: *tektonapi.NewStructuredValues("pipeline")},
+					{Name: "bundle", Value: *tektonapi.NewStructuredValues("my-bundle")},
+					{Name: "name", Value: *tektonapi.NewStructuredValues("java-build-pipeline")},
+				},
+			}},
 			wantPipelineParams: []tektonapi.Param{
 				{
 					Name:  "additional-checks",
-					Value: *tektonapi.NewArrayOrString("true"),
+					Value: *tektonapi.NewStructuredValues("true"),
 				},
 				{
 					Name:  "param2",
-					Value: *tektonapi.NewArrayOrString("value2"),
+					Value: *tektonapi.NewStructuredValues("value2"),
 				},
 			},
 		},

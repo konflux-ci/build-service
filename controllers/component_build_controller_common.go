@@ -30,7 +30,7 @@ import (
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 	l "github.com/redhat-appstudio/build-service/pkg/logs"
 	pipelineselector "github.com/redhat-appstudio/build-service/pkg/pipeline-selector"
-	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -304,4 +304,34 @@ func getPathContext(gitContext, dockerfileContext string) string {
 	path = filepath.Clean(path)
 	path = strings.TrimPrefix(path, separator)
 	return path
+}
+
+func getPipelineNameAndBundle(pipelineRef *tektonapi.PipelineRef) (string, string, error) {
+	if pipelineRef.Resolver != "" && pipelineRef.Resolver != "bundles" {
+		return "", "", boerrors.NewBuildOpError(
+			boerrors.EUnsupportedPipelineRef,
+			fmt.Errorf("unsupported Tekton resolver %q", pipelineRef.Resolver),
+		)
+	}
+
+	name := pipelineRef.Name
+	var bundle string
+
+	for _, param := range pipelineRef.Params {
+		switch param.Name {
+		case "name":
+			name = param.Value.StringVal
+		case "bundle":
+			bundle = param.Value.StringVal
+		}
+	}
+
+	if name == "" || bundle == "" {
+		return "", "", boerrors.NewBuildOpError(
+			boerrors.EMissingParamsForBundleResolver,
+			fmt.Errorf("missing name or bundle in pipelineRef: name=%s bundle=%s", name, bundle),
+		)
+	}
+
+	return name, bundle, nil
 }

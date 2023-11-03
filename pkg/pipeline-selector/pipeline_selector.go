@@ -19,7 +19,7 @@ package pipelineselector
 import (
 	"strings"
 
-	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	devfile "github.com/redhat-appstudio/application-service/pkg/devfile"
@@ -91,10 +91,10 @@ func findMatchingPipeline(selectionParameters *buildappstudiov1alpha1.WhenCondit
 			for _, param := range pipelineSelector.PipelineParams {
 				pipelineParams = append(pipelineParams, tektonapi.Param{
 					Name:  param.Name,
-					Value: *tektonapi.NewArrayOrString(param.Value),
+					Value: *tektonapi.NewStructuredValues(param.Value),
 				})
 			}
-			return &pipelineSelector.PipelineRef, pipelineParams
+			return pipelineSelector.PipelineRef.AsPipelineRef(), pipelineParams
 		}
 	}
 	return nil, nil

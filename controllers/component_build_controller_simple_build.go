@@ -33,7 +33,7 @@ import (
 	"github.com/redhat-appstudio/build-service/pkg/git/gitproviderfactory"
 	l "github.com/redhat-appstudio/build-service/pkg/logs"
 	appstudiospiapiv1beta1 "github.com/redhat-appstudio/service-provider-integration-operator/api/v1beta1"
-	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -49,6 +49,10 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 	ctx = ctrllog.IntoContext(ctx, log)
 
 	pipelineRef, additionalPipelineParams, err := r.GetPipelineForComponent(ctx, component)
+	if err != nil {
+		return err
+	}
+	pipelineName, pipelineBundle, err := getPipelineNameAndBundle(pipelineRef)
 	if err != nil {
 		return err
 	}
@@ -83,7 +87,7 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 	simpleBuildPipelineCreationTimeMetric.Observe(time.Since(component.CreationTimestamp.Time).Seconds())
 
 	log.Info(fmt.Sprintf("Build pipeline %s created for component %s in %s namespace using %s pipeline from %s bundle",
-		buildPipelineRun.Name, component.Name, component.Namespace, pipelineRef.Name, pipelineRef.Bundle),
+		buildPipelineRun.Name, component.Name, component.Namespace, pipelineName, pipelineBundle),
 		l.Action, l.ActionAdd, l.Audit, "true")
 
 	return nil
@@ -208,9 +212,13 @@ func generatePipelineRunForComponent(component *appstudiov1alpha1.Component, pip
 		revision = component.Spec.Source.GitSource.Revision
 	}
 
+	pipelineName, pipelineBundle, err := getPipelineNameAndBundle(pipelineRef)
+	if err != nil {
+		return nil, err
+	}
 	annotations := map[string]string{
-		"build.appstudio.redhat.com/pipeline_name": pipelineRef.Name,
-		"build.appstudio.redhat.com/bundle":        pipelineRef.Bundle,
+		"build.appstudio.redhat.com/pipeline_name": pipelineName,
+		"build.appstudio.redhat.com/bundle":        pipelineBundle,
 	}
 	if revision != "" {
 		annotations[gitTargetBranchAnnotationName] = revision
@@ -220,14 +228,14 @@ func generatePipelineRunForComponent(component *appstudiov1alpha1.Component, pip
 	image := fmt.Sprintf("%s:build-%s-%d", imageRepo, getRandomString(5), timestamp)
 
 	params := []tektonapi.Param{
-		{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: component.Spec.Source.GitSource.URL}},
-		{Name: "output-image", Value: tektonapi.ArrayOrString{Type: "string", StringVal: image}},
+		{Name: "git-url", Value: tektonapi.ParamValue{Type: "string", StringVal: component.Spec.Source.GitSource.URL}},
+		{Name: "output-image", Value: tektonapi.ParamValue{Type: "string", StringVal: image}},
 	}
 	if revision != "" {
-		params = append(params, tektonapi.Param{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: revision}})
+		params = append(params, tektonapi.Param{Name: "revision", Value: tektonapi.ParamValue{Type: "string", StringVal: revision}})
 	}
 	if value, exists := component.Annotations["skip-initial-checks"]; exists && (value == "1" || strings.ToLower(value) == "true") {
-		params = append(params, tektonapi.Param{Name: "skip-checks", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}})
+		params = append(params, tektonapi.Param{Name: "skip-checks", Value: tektonapi.ParamValue{Type: "string", StringVal: "true"}})
 	}
 
 	dockerFile, err := DevfileSearchForDockerfile([]byte(component.Status.Devfile))
@@ -236,11 +244,11 @@ func generatePipelineRunForComponent(component *appstudiov1alpha1.Component, pip
 	}
 	if dockerFile != nil {
 		if dockerFile.Uri != "" {
-			params = append(params, tektonapi.Param{Name: "dockerfile", Value: tektonapi.ArrayOrString{Type: "string", StringVal: dockerFile.Uri}})
+			params = append(params, tektonapi.Param{Name: "dockerfile", Value: tektonapi.ParamValue{Type: "string", StringVal: dockerFile.Uri}})
 		}
 		pathContext := getPathContext(component.Spec.Source.GitSource.Context, dockerFile.BuildContext)
 		if pathContext != "" {
-			params = append(params, tektonapi.Param{Name: "path-context", Value: tektonapi.ArrayOrString{Type: "string", StringVal: pathContext}})
+			params = append(params, tektonapi.Param{Name: "path-context", Value: tektonapi.ParamValue{Type: "string", StringVal: pathContext}})
 		}
 	}
 
@@ -249,7 +257,7 @@ func generatePipelineRunForComponent(component *appstudiov1alpha1.Component, pip
 	pipelineRun := &tektonapi.PipelineRun{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "PipelineRun",
-			APIVersion: "tekton.dev/v1beta1",
+			APIVersion: "tekton.dev/v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: pipelineGenerateName,

@@ -48,7 +48,7 @@ import (
 	gp "github.com/redhat-appstudio/build-service/pkg/git/gitprovider"
 	gpf "github.com/redhat-appstudio/build-service/pkg/git/gitproviderfactory"
 	appstudiospiapiv1beta1 "github.com/redhat-appstudio/service-provider-integration-operator/api/v1beta1"
-	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -99,7 +99,7 @@ var _ = Describe("Component initial build controller", func() {
 
 	BeforeEach(func() {
 		createNamespace(buildServiceNamespaceName)
-		createBuildPipelineRunSelector(defaultSelectorKey)
+		createDefaultBuildPipelineRunSelector(defaultSelectorKey)
 		github.GetAppInstallations = func(githubAppIdStr string, appPrivateKeyPem []byte) ([]github.ApplicationInstallation, string, error) {
 			return nil, "slug", nil
 		}
@@ -160,6 +160,35 @@ var _ = Describe("Component initial build controller", func() {
 				defer GinkgoRecover()
 				Fail("Should not create webhook if GitHub application is used")
 				return nil
+			}
+
+			createComponentAndProcessBuildRequest(resourcePacPrepKey, BuildRequestConfigurePaCAnnotationValue)
+
+			waitPaCRepositoryCreated(resourcePacPrepKey)
+			waitPaCFinalizerOnComponent(resourcePacPrepKey)
+			Eventually(func() bool {
+				return isCreatePaCPullRequestInvoked
+			}, timeout, interval).Should(BeTrue())
+
+			expectPacBuildStatus(resourcePacPrepKey, "enabled", 0, "", mergeUrl)
+		})
+
+		It("should submit PR with PaC definitions converted to Tekton v1 from a v1beta1 Pipeline", func() {
+			deleteBuildPipelineRunSelector(defaultSelectorKey)
+			createBuildPipelineRunSelector(defaultSelectorKey, v1beta1PipelineBundle, defaultPipelineName)
+
+			mergeUrl := "merge-url"
+
+			isCreatePaCPullRequestInvoked := false
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				isCreatePaCPullRequestInvoked = true
+				defer GinkgoRecover()
+				Expect(len(d.Files)).To(Equal(2))
+				for _, file := range d.Files {
+					firstLine, _, _ := strings.Cut(string(file.Content), "\n")
+					Expect(firstLine).Should(MatchRegexp("^apiVersion: tekton.dev/v1$"))
+				}
+				return mergeUrl, nil
 			}
 
 			createComponentAndProcessBuildRequest(resourcePacPrepKey, BuildRequestConfigurePaCAnnotationValue)
@@ -1432,8 +1461,8 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(pipelineRun.Spec.PipelineSpec).To(BeNil())
 
 			Expect(pipelineRun.Spec.PipelineRef).ToNot(BeNil())
-			Expect(pipelineRun.Spec.PipelineRef.Name).To(Equal(defaultPipelineName))
-			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(defaultPipelineBundle))
+			Expect(getPipelineName(pipelineRun.Spec.PipelineRef)).To(Equal(defaultPipelineName))
+			Expect(getPipelineBundle(pipelineRun.Spec.PipelineRef)).To(Equal(defaultPipelineBundle))
 
 			Expect(pipelineRun.Spec.Params).ToNot(BeEmpty())
 			for _, p := range pipelineRun.Spec.Params {
@@ -1656,10 +1685,10 @@ var _ = Describe("Component initial build controller", func() {
 					Selectors: []buildappstudiov1alpha1.PipelineSelector{
 						{
 							Name: "nodejs",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "nodejs-builder",
-								Bundle: defaultPipelineBundle,
-							},
+							PipelineRef: newBundleResolverPipelineRef(
+								defaultPipelineBundle,
+								"nodejs-builder",
+							),
 							PipelineParams: []buildappstudiov1alpha1.PipelineParam{
 								{
 									Name:  "additional-param",
@@ -1672,10 +1701,10 @@ var _ = Describe("Component initial build controller", func() {
 						},
 						{
 							Name: "Fallback",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "noop",
-								Bundle: defaultPipelineBundle,
-							},
+							PipelineRef: newBundleResolverPipelineRef(
+								defaultPipelineBundle,
+								"noop",
+							),
 						},
 					},
 				},
@@ -1703,8 +1732,8 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(pipelineRun.Spec.PipelineSpec).To(BeNil())
 
 			Expect(pipelineRun.Spec.PipelineRef).ToNot(BeNil())
-			Expect(pipelineRun.Spec.PipelineRef.Name).To(Equal("nodejs-builder"))
-			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(defaultPipelineBundle))
+			Expect(getPipelineName(pipelineRun.Spec.PipelineRef)).To(Equal("nodejs-builder"))
+			Expect(getPipelineBundle(pipelineRun.Spec.PipelineRef)).To(Equal(defaultPipelineBundle))
 
 			Expect(pipelineRun.Spec.Params).ToNot(BeNil())
 			additionalPipelineParameterFound := false
@@ -1730,10 +1759,10 @@ var _ = Describe("Component initial build controller", func() {
 					Selectors: []buildappstudiov1alpha1.PipelineSelector{
 						{
 							Name: "nodejs",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "nodejs-builder",
-								Bundle: defaultPipelineBundle,
-							},
+							PipelineRef: newBundleResolverPipelineRef(
+								defaultPipelineBundle,
+								"nodejs-builder",
+							),
 							PipelineParams: []buildappstudiov1alpha1.PipelineParam{
 								{
 									Name:  "additional-param",
@@ -1746,10 +1775,10 @@ var _ = Describe("Component initial build controller", func() {
 						},
 						{
 							Name: "Fallback",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "noop",
-								Bundle: defaultPipelineBundle,
-							},
+							PipelineRef: newBundleResolverPipelineRef(
+								defaultPipelineBundle,
+								"noop",
+							),
 						},
 					},
 				},
@@ -1776,8 +1805,8 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(pipelineRun.Spec.PipelineSpec).To(BeNil())
 
 			Expect(pipelineRun.Spec.PipelineRef).ToNot(BeNil())
-			Expect(pipelineRun.Spec.PipelineRef.Name).To(Equal("nodejs-builder"))
-			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(defaultPipelineBundle))
+			Expect(getPipelineName(pipelineRun.Spec.PipelineRef)).To(Equal("nodejs-builder"))
+			Expect(getPipelineBundle(pipelineRun.Spec.PipelineRef)).To(Equal(defaultPipelineBundle))
 
 			Expect(pipelineRun.Spec.Params).ToNot(BeNil())
 			additionalPipelineParameterFound := false
@@ -1804,10 +1833,10 @@ var _ = Describe("Component initial build controller", func() {
 					Selectors: []buildappstudiov1alpha1.PipelineSelector{
 						{
 							Name: "java",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "java-builder",
-								Bundle: defaultPipelineBundle,
-							},
+							PipelineRef: newBundleResolverPipelineRef(
+								defaultPipelineBundle,
+								"java-builder",
+							),
 							PipelineParams: []buildappstudiov1alpha1.PipelineParam{
 								{
 									Name:  "additional-param",
@@ -1820,10 +1849,10 @@ var _ = Describe("Component initial build controller", func() {
 						},
 						{
 							Name: "Fallback",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "noop",
-								Bundle: defaultPipelineBundle,
-							},
+							PipelineRef: newBundleResolverPipelineRef(
+								defaultPipelineBundle,
+								"noop",
+							),
 						},
 					},
 				},
@@ -1851,8 +1880,8 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(pipelineRun.Spec.PipelineSpec).To(BeNil())
 
 			Expect(pipelineRun.Spec.PipelineRef).ToNot(BeNil())
-			Expect(pipelineRun.Spec.PipelineRef.Name).To(Equal("java-builder"))
-			Expect(pipelineRun.Spec.PipelineRef.Bundle).To(Equal(defaultPipelineBundle))
+			Expect(getPipelineName(pipelineRun.Spec.PipelineRef)).To(Equal("java-builder"))
+			Expect(getPipelineBundle(pipelineRun.Spec.PipelineRef)).To(Equal(defaultPipelineBundle))
 
 			Expect(pipelineRun.Spec.Params).ToNot(BeNil())
 			additionalPipelineParameterFound := false
@@ -1867,9 +1896,49 @@ var _ = Describe("Component initial build controller", func() {
 
 			Expect(k8sClient.Delete(ctx, selectors)).Should(Succeed())
 		})
+
+		It("should support the Tekton v1beta1 style pipelineRefs", func() {
+			deleteBuildPipelineRunSelector(defaultSelectorKey)
+			selectors := &buildappstudiov1alpha1.BuildPipelineSelector{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      buildPipelineSelectorResourceName,
+					Namespace: buildServiceNamespaceName,
+				},
+				Spec: buildappstudiov1alpha1.BuildPipelineSelectorSpec{
+					Selectors: []buildappstudiov1alpha1.PipelineSelector{
+						{
+							Name: SelectorDefaultName,
+							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+								PipelineRef: tektonapi.PipelineRef{Name: defaultPipelineName},
+								Bundle:      defaultPipelineBundle,
+							},
+							PipelineParams: []buildappstudiov1alpha1.PipelineParam{},
+							WhenConditions: buildappstudiov1alpha1.WhenCondition{},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, selectors)).To(Succeed())
+
+			setComponentDevfileModel(resourceResBundleKey)
+
+			waitOneInitialPipelineRunCreated(resourceResBundleKey)
+			pipelineRun := listComponentPipelineRuns(resourceResBundleKey)[0]
+
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/pipeline_name"]).To(Equal(defaultPipelineName))
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(defaultPipelineBundle))
+
+			Expect(pipelineRun.Spec.PipelineSpec).To(BeNil())
+
+			Expect(pipelineRun.Spec.PipelineRef).ToNot(BeNil())
+			Expect(getPipelineName(pipelineRun.Spec.PipelineRef)).To(Equal(defaultPipelineName))
+			Expect(getPipelineBundle(pipelineRun.Spec.PipelineRef)).To(Equal(defaultPipelineBundle))
+
+			Expect(k8sClient.Delete(ctx, selectors)).Should(Succeed())
+		})
 	})
 
-	Context("Test build pipeline failure if no matched pipeline is selected", func() {
+	Context("Test build pipeline failures related to BuildPipelineSelector", func() {
 		var resourceNoMatchPKey = types.NamespacedName{Name: HASCompName + "-nomatchpipeline", Namespace: HASAppNamespace}
 
 		BeforeEach(func() {
@@ -1888,7 +1957,7 @@ var _ = Describe("Component initial build controller", func() {
 			deleteSecret(pacSecretKey)
 		})
 
-		createBuildPipelineSelector := func() {
+		createBuildPipelineSelector := func(resolverRef tektonapi.ResolverRef, whenCondition buildappstudiov1alpha1.WhenCondition) {
 			selector := &buildappstudiov1alpha1.BuildPipelineSelector{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      defaultSelectorKey.Name,
@@ -1898,9 +1967,10 @@ var _ = Describe("Component initial build controller", func() {
 					Selectors: []buildappstudiov1alpha1.PipelineSelector{
 						{
 							Name: "java",
-							PipelineRef: tektonapi.PipelineRef{
-								Name:   "java-builder",
-								Bundle: defaultPipelineBundle,
+							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+								PipelineRef: tektonapi.PipelineRef{
+									ResolverRef: resolverRef,
+								},
 							},
 							PipelineParams: []buildappstudiov1alpha1.PipelineParam{
 								{
@@ -1908,15 +1978,23 @@ var _ = Describe("Component initial build controller", func() {
 									Value: "additional-param-value-global",
 								},
 							},
-							WhenConditions: buildappstudiov1alpha1.WhenCondition{
-								Language: "java",
-							},
+							WhenConditions: whenCondition,
 						},
 					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, selector)).To(Succeed())
 		}
+
+		defaultResolverRef := tektonapi.ResolverRef{
+			Resolver: "bundles",
+			Params: []tektonapi.Param{
+				{Name: "kind", Value: *tektonapi.NewStructuredValues("pipeline")},
+				{Name: "bundle", Value: *tektonapi.NewStructuredValues(defaultPipelineBundle)},
+				{Name: "name", Value: *tektonapi.NewStructuredValues("java-builder")},
+			},
+		}
+		nonMatchingConditions := buildappstudiov1alpha1.WhenCondition{Language: "java"}
 
 		assertBuildFail := func(doInitialBuild bool, expectedErrMsg string) {
 			component := getSampleComponentData(resourceNoMatchPKey)
@@ -1945,12 +2023,12 @@ var _ = Describe("Component initial build controller", func() {
 		}
 
 		It("initial build should fail when Component CR does not match any predefined pipeline", func() {
-			createBuildPipelineSelector()
+			createBuildPipelineSelector(defaultResolverRef, nonMatchingConditions)
 			assertBuildFail(true, "No pipeline is selected")
 		})
 
 		It("PaC provision should fail when Component CR does not match any predefined pipeline", func() {
-			createBuildPipelineSelector()
+			createBuildPipelineSelector(defaultResolverRef, nonMatchingConditions)
 			assertBuildFail(false, "No pipeline is selected")
 		})
 
@@ -1961,6 +2039,38 @@ var _ = Describe("Component initial build controller", func() {
 		It("PaC provision should fail when no BuildPipelineSelector CR is defined", func() {
 			assertBuildFail(false, "Build pipeline selector is not defined")
 		})
+
+		unsupportedResolverRef := tektonapi.ResolverRef{Resolver: "git"}
+		noConditions := buildappstudiov1alpha1.WhenCondition{}
+
+		It("Initial build should fail when the matched pipelineRef uses an unsupported resolver", func() {
+			createBuildPipelineSelector(unsupportedResolverRef, noConditions)
+			assertBuildFail(true, "The pipelineRef for this component (based on pipeline selectors) is not supported.")
+		})
+
+		It("PaC provision should fail when the matched pipelineRef uses an unsupported resolver", func() {
+			createBuildPipelineSelector(unsupportedResolverRef, noConditions)
+			assertBuildFail(false, "The pipelineRef for this component (based on pipeline selectors) is not supported.")
+		})
+
+		incompleteResolverRef := tektonapi.ResolverRef{
+			Resolver: "bundles",
+			Params: []tektonapi.Param{
+				{Name: "kind", Value: *tektonapi.NewStructuredValues("pipeline")},
+				{Name: "name", Value: *tektonapi.NewStructuredValues("java-builder")},
+			},
+		}
+
+		It("Initial build should fail when the matched pipelineRef is incomplete", func() {
+			createBuildPipelineSelector(incompleteResolverRef, noConditions)
+			assertBuildFail(true, `The pipelineRef for this component is missing required parameters ('name' and/or 'bundle').`)
+		})
+
+		It("PaC provision should fail when the matched pipelineRef is incomplete", func() {
+			createBuildPipelineSelector(incompleteResolverRef, noConditions)
+			assertBuildFail(false, `The pipelineRef for this component is missing required parameters ('name' and/or 'bundle').`)
+		})
+
 	})
 
 	Context("Test Pipelines as Code trigger build", func() {

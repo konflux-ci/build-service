@@ -34,7 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 
 	gh "github.com/google/go-github/v45/github"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
@@ -60,8 +60,10 @@ const (
 	ComponentContainerImage = "registry.io/username/image:tag"
 	SelectorDefaultName     = "default"
 
-	defaultPipelineName   = "docker-build"
-	defaultPipelineBundle = "quay.io/redhat-appstudio-tekton-catalog/pipeline-docker-build:8cf8982d58a841922b687b7166f0cfdc1cc3fc72"
+	defaultPipelineName = "docker-build"
+	// TODO: replace with quay.io/redhat-appstudio-tekton-catalog/pipeline-docker-build once it's updated to v1
+	defaultPipelineBundle = "quay.io/acmiel-test/pipeline-docker-build:test-v1-pipeline"
+	v1beta1PipelineBundle = "quay.io/redhat-appstudio-tekton-catalog/pipeline-docker-build:8cf8982d58a841922b687b7166f0cfdc1cc3fc72"
 )
 
 var (
@@ -622,17 +624,18 @@ func deleteRoute(routeKey types.NamespacedName) {
 	}
 }
 
-func createBuildPipelineRunSelector(selectorKey types.NamespacedName) {
+func createDefaultBuildPipelineRunSelector(selectorKey types.NamespacedName) {
+	createBuildPipelineRunSelector(selectorKey, defaultPipelineBundle, defaultPipelineName)
+}
+
+func createBuildPipelineRunSelector(selectorKey types.NamespacedName, pipelineBundle, pipelineName string) {
 	buildPipelineSelector := buildappstudiov1alpha1.BuildPipelineSelector{
 		ObjectMeta: metav1.ObjectMeta{Name: selectorKey.Name, Namespace: selectorKey.Namespace},
 		Spec: buildappstudiov1alpha1.BuildPipelineSelectorSpec{
 			Selectors: []buildappstudiov1alpha1.PipelineSelector{
 				{
-					Name: SelectorDefaultName,
-					PipelineRef: tektonapi.PipelineRef{
-						Name:   defaultPipelineName,
-						Bundle: defaultPipelineBundle,
-					},
+					Name:           SelectorDefaultName,
+					PipelineRef:    newBundleResolverPipelineRef(pipelineBundle, pipelineName),
 					PipelineParams: []buildappstudiov1alpha1.PipelineParam{},
 					WhenConditions: buildappstudiov1alpha1.WhenCondition{},
 				}}},
@@ -702,4 +705,30 @@ func generateRepositories(repoURL []string) []*gh.Repository {
 		repositories = append(repositories, generateRepository(repo))
 	}
 	return repositories
+}
+
+func getPipelineName(pipelineRef *tektonapi.PipelineRef) string {
+	name, _, _ := getPipelineNameAndBundle(pipelineRef)
+	return name
+}
+
+func getPipelineBundle(pipelineRef *tektonapi.PipelineRef) string {
+	_, bundle, _ := getPipelineNameAndBundle(pipelineRef)
+	return bundle
+}
+
+// Return a pipelineRef that refers to a pipeline with the specified name in the specified bundle
+func newBundleResolverPipelineRef(bundle, name string) buildappstudiov1alpha1.BackwardsCompatiblePipelineRef {
+	return buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
+		PipelineRef: tektonapi.PipelineRef{
+			ResolverRef: tektonapi.ResolverRef{
+				Resolver: "bundles",
+				Params: []tektonapi.Param{
+					{Name: "kind", Value: *tektonapi.NewStructuredValues("pipeline")},
+					{Name: "bundle", Value: *tektonapi.NewStructuredValues(bundle)},
+					{Name: "name", Value: *tektonapi.NewStructuredValues(name)},
+				},
+			},
+		},
+	}
 }

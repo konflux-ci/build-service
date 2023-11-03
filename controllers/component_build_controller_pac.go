@@ -39,7 +39,8 @@ import (
 	gp "github.com/redhat-appstudio/build-service/pkg/git/gitprovider"
 	"github.com/redhat-appstudio/build-service/pkg/git/gitproviderfactory"
 	l "github.com/redhat-appstudio/build-service/pkg/logs"
-	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
+	tektonapi_v1beta1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	oci "github.com/tektoncd/pipeline/pkg/remote/oci"
 	"golang.org/x/exp/slices"
 	corev1 "k8s.io/api/core/v1"
@@ -762,12 +763,16 @@ func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigs(ctx context.Con
 	if err != nil {
 		return nil, nil, err
 	}
+	pipelineName, pipelineBundle, err := getPipelineNameAndBundle(pipelineRef)
+	if err != nil {
+		return nil, nil, err
+	}
 	log.Info(fmt.Sprintf("Selected %s pipeline from %s bundle for %s component",
-		pipelineRef.Name, pipelineRef.Bundle, component.Name),
+		pipelineName, pipelineBundle, component.Name),
 		l.Audit, "true")
 
 	// Get pipeline from the bundle to be expanded to the PipelineRun
-	pipelineSpec, err := retrievePipelineSpec(pipelineRef.Bundle, pipelineRef.Name)
+	pipelineSpec, err := retrievePipelineSpec(ctx, pipelineBundle, pipelineName)
 	if err != nil {
 		r.EventRecorder.Event(component, "Warning", "ErrorGettingPipelineFromBundle", err.Error())
 		return nil, nil, err
@@ -1021,16 +1026,16 @@ func generatePaCPipelineRunForComponent(
 	}
 
 	params := []tektonapi.Param{
-		{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "{{repo_url}}"}},
-		{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "{{revision}}"}},
-		{Name: "output-image", Value: tektonapi.ArrayOrString{Type: "string", StringVal: proposedImage}},
+		{Name: "git-url", Value: tektonapi.ParamValue{Type: "string", StringVal: "{{repo_url}}"}},
+		{Name: "revision", Value: tektonapi.ParamValue{Type: "string", StringVal: "{{revision}}"}},
+		{Name: "output-image", Value: tektonapi.ParamValue{Type: "string", StringVal: proposedImage}},
 	}
 	if onPull {
 		prImageExpiration := os.Getenv(PipelineRunOnPRExpirationEnvVar)
 		if prImageExpiration == "" {
 			prImageExpiration = PipelineRunOnPRExpirationDefault
 		}
-		params = append(params, tektonapi.Param{Name: "image-expires-after", Value: tektonapi.ArrayOrString{Type: "string", StringVal: prImageExpiration}})
+		params = append(params, tektonapi.Param{Name: "image-expires-after", Value: tektonapi.ParamValue{Type: "string", StringVal: prImageExpiration}})
 	}
 
 	dockerFile, err := DevfileSearchForDockerfile([]byte(component.Status.Devfile))
@@ -1039,11 +1044,11 @@ func generatePaCPipelineRunForComponent(
 	}
 	if dockerFile != nil {
 		if dockerFile.Uri != "" {
-			params = append(params, tektonapi.Param{Name: "dockerfile", Value: tektonapi.ArrayOrString{Type: "string", StringVal: dockerFile.Uri}})
+			params = append(params, tektonapi.Param{Name: "dockerfile", Value: tektonapi.ParamValue{Type: "string", StringVal: dockerFile.Uri}})
 		}
 		pathContext := getPathContext(component.Spec.Source.GitSource.Context, dockerFile.BuildContext)
 		if pathContext != "" {
-			params = append(params, tektonapi.Param{Name: "path-context", Value: tektonapi.ArrayOrString{Type: "string", StringVal: pathContext}})
+			params = append(params, tektonapi.Param{Name: "path-context", Value: tektonapi.ParamValue{Type: "string", StringVal: pathContext}})
 		}
 	}
 
@@ -1054,7 +1059,7 @@ func generatePaCPipelineRunForComponent(
 	pipelineRun := &tektonapi.PipelineRun{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "PipelineRun",
-			APIVersion: "tekton.dev/v1beta1",
+			APIVersion: "tekton.dev/v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        pipelineName,
@@ -1149,19 +1154,38 @@ func createWorkspaceBinding(pipelineWorkspaces []tektonapi.PipelineWorkspaceDecl
 }
 
 // retrievePipelineSpec retrieves pipeline definition with given name from the given bundle.
-func retrievePipelineSpec(bundleUri, pipelineName string) (*tektonapi.PipelineSpec, error) {
+func retrievePipelineSpec(ctx context.Context, bundleUri, pipelineName string) (*tektonapi.PipelineSpec, error) {
+	log := ctrllog.FromContext(ctx)
+
 	var obj runtime.Object
 	var err error
 	resolver := oci.NewResolver(bundleUri, authn.DefaultKeychain)
 
-	if obj, _, err = resolver.Get(context.TODO(), "pipeline", pipelineName); err != nil {
+	if obj, _, err = resolver.Get(ctx, "pipeline", pipelineName); err != nil {
 		return nil, err
 	}
-	pipelineSpecObj, ok := obj.(tektonapi.PipelineObject)
-	if !ok {
-		return nil, fmt.Errorf("failed to extract pipeline %s from bundle %s", bundleUri, pipelineName)
+
+	var pipelineSpec tektonapi.PipelineSpec
+
+	if v1beta1Pipeline, ok := obj.(tektonapi_v1beta1.PipelineObject); ok {
+		v1beta1PipelineSpec := v1beta1Pipeline.PipelineSpec()
+		log.Info("Converting from v1beta1 to v1", "PipelineName", pipelineName, "Bundle", bundleUri)
+		err := v1beta1PipelineSpec.ConvertTo(ctx, &pipelineSpec)
+		if err != nil {
+			return nil, boerrors.NewBuildOpError(
+				boerrors.EPipelineConversionFailed,
+				fmt.Errorf("pipeline %s from bundle %s: failed to convert from v1beta1 to v1: %w", pipelineName, bundleUri, err),
+			)
+		}
+	} else if v1Pipeline, ok := obj.(*tektonapi.Pipeline); ok {
+		pipelineSpec = v1Pipeline.PipelineSpec()
+	} else {
+		return nil, boerrors.NewBuildOpError(
+			boerrors.EPipelineRetrievalFailed,
+			fmt.Errorf("failed to extract pipeline %s from bundle %s", pipelineName, bundleUri),
+		)
 	}
-	pipelineSpec := pipelineSpecObj.PipelineSpec()
+
 	return &pipelineSpec, nil
 }
 

@@ -34,7 +34,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
-	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 )
 
 func TestGetProvisionTimeMetricsBuckets(t *testing.T) {
@@ -219,12 +219,17 @@ func TestGenerateInitialPipelineRunForComponentDevfileError(t *testing.T) {
 		},
 	}
 	pipelineRef := &tektonapi.PipelineRef{
-		Name:   "pipeline-name",
-		Bundle: "pipeline-bundle",
+		ResolverRef: tektonapi.ResolverRef{
+			Resolver: "bundles",
+			Params: []tektonapi.Param{
+				{Name: "name", Value: *tektonapi.NewStructuredValues("pipeline-name")},
+				{Name: "bundle", Value: *tektonapi.NewStructuredValues("pipeline-bundle")},
+			},
+		},
 	}
 	additionalParams := []tektonapi.Param{
-		{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
-		{Name: "rebuild", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}},
+		{Name: "revision", Value: tektonapi.ParamValue{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
+		{Name: "rebuild", Value: tektonapi.ParamValue{Type: "string", StringVal: "true"}},
 	}
 	commitSha := "26239c94569cea79b32bce32f12c8abd8bbd0fd7"
 
@@ -266,12 +271,17 @@ func TestGenerateInitialPipelineRunForComponentDockerfileContext(t *testing.T) {
 		Status: appstudiov1alpha1.ComponentStatus{},
 	}
 	pipelineRef := &tektonapi.PipelineRef{
-		Name:   "pipeline-name",
-		Bundle: "pipeline-bundle",
+		ResolverRef: tektonapi.ResolverRef{
+			Resolver: "bundles",
+			Params: []tektonapi.Param{
+				{Name: "name", Value: *tektonapi.NewStructuredValues("pipeline-name")},
+				{Name: "bundle", Value: *tektonapi.NewStructuredValues("pipeline-bundle")},
+			},
+		},
 	}
 	additionalParams := []tektonapi.Param{
-		{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
-		{Name: "rebuild", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}},
+		{Name: "revision", Value: tektonapi.ParamValue{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
+		{Name: "rebuild", Value: tektonapi.ParamValue{Type: "string", StringVal: "true"}},
 	}
 	commitSha := "26239c94569cea79b32bce32f12c8abd8bbd0fd7"
 
@@ -338,12 +348,17 @@ func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 		},
 	}
 	pipelineRef := &tektonapi.PipelineRef{
-		Name:   "pipeline-name",
-		Bundle: "pipeline-bundle",
+		ResolverRef: tektonapi.ResolverRef{
+			Resolver: "bundles",
+			Params: []tektonapi.Param{
+				{Name: "name", Value: *tektonapi.NewStructuredValues("pipeline-name")},
+				{Name: "bundle", Value: *tektonapi.NewStructuredValues("pipeline-bundle")},
+			},
+		},
 	}
 	additionalParams := []tektonapi.Param{
-		{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
-		{Name: "rebuild", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}},
+		{Name: "revision", Value: tektonapi.ParamValue{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
+		{Name: "rebuild", Value: tektonapi.ParamValue{Type: "string", StringVal: "true"}},
 	}
 	commitSha := "26239c94569cea79b32bce32f12c8abd8bbd0fd7"
 
@@ -390,10 +405,10 @@ func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 		t.Errorf("generateInitialPipelineRunForComponent(): wrong %s annotation value", gitRepoAtShaAnnotationName)
 	}
 
-	if pipelineRun.Spec.PipelineRef.Name != "pipeline-name" {
+	if getPipelineName(pipelineRun.Spec.PipelineRef) != "pipeline-name" {
 		t.Error("generateInitialPipelineRunForComponent(): wrong pipeline name in pipeline reference")
 	}
-	if pipelineRun.Spec.PipelineRef.Bundle != "pipeline-bundle" {
+	if getPipelineBundle(pipelineRun.Spec.PipelineRef) != "pipeline-bundle" {
 		t.Error("generateInitialPipelineRunForComponent(): wrong pipeline bundle in pipeline reference")
 	}
 
@@ -474,8 +489,8 @@ func TestGeneratePaCPipelineRunForComponent(t *testing.T) {
 		},
 	}
 	additionalParams := []tektonapi.Param{
-		{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
-		{Name: "rebuild", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}},
+		{Name: "revision", Value: tektonapi.ParamValue{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
+		{Name: "rebuild", Value: tektonapi.ParamValue{Type: "string", StringVal: "true"}},
 	}
 	dockerfileURI := "dockerfile"
 	dockerfileContext := "docker"
@@ -844,79 +859,79 @@ func TestMergeAndSortTektonParams(t *testing.T) {
 		{
 			name: "should merge two different parameters lists",
 			existing: []tektonapi.Param{
-				{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
-				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "main"}},
+				{Name: "git-url", Value: tektonapi.ParamValue{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
+				{Name: "revision", Value: tektonapi.ParamValue{Type: "string", StringVal: "main"}},
 			},
 			additional: []tektonapi.Param{
-				{Name: "dockerfile", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "docker/Dockerfile"}},
-				{Name: "rebuild", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}},
+				{Name: "dockerfile", Value: tektonapi.ParamValue{Type: "string", StringVal: "docker/Dockerfile"}},
+				{Name: "rebuild", Value: tektonapi.ParamValue{Type: "string", StringVal: "true"}},
 			},
 			want: []tektonapi.Param{
-				{Name: "dockerfile", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "docker/Dockerfile"}},
-				{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
-				{Name: "rebuild", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}},
-				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "main"}},
+				{Name: "dockerfile", Value: tektonapi.ParamValue{Type: "string", StringVal: "docker/Dockerfile"}},
+				{Name: "git-url", Value: tektonapi.ParamValue{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
+				{Name: "rebuild", Value: tektonapi.ParamValue{Type: "string", StringVal: "true"}},
+				{Name: "revision", Value: tektonapi.ParamValue{Type: "string", StringVal: "main"}},
 			},
 		},
 		{
 			name: "should append empty parameters list",
 			existing: []tektonapi.Param{
-				{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
-				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "main"}},
+				{Name: "git-url", Value: tektonapi.ParamValue{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
+				{Name: "revision", Value: tektonapi.ParamValue{Type: "string", StringVal: "main"}},
 			},
 			additional: []tektonapi.Param{},
 			want: []tektonapi.Param{
-				{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
-				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "main"}},
+				{Name: "git-url", Value: tektonapi.ParamValue{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
+				{Name: "revision", Value: tektonapi.ParamValue{Type: "string", StringVal: "main"}},
 			},
 		},
 		{
 			name: "should sort parameters list",
 			existing: []tektonapi.Param{
-				{Name: "rebuild", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}},
-				{Name: "dockerfile", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "docker/Dockerfile"}},
-				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "main"}},
-				{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
+				{Name: "rebuild", Value: tektonapi.ParamValue{Type: "string", StringVal: "true"}},
+				{Name: "dockerfile", Value: tektonapi.ParamValue{Type: "string", StringVal: "docker/Dockerfile"}},
+				{Name: "revision", Value: tektonapi.ParamValue{Type: "string", StringVal: "main"}},
+				{Name: "git-url", Value: tektonapi.ParamValue{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
 			},
 			additional: []tektonapi.Param{},
 			want: []tektonapi.Param{
-				{Name: "dockerfile", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "docker/Dockerfile"}},
-				{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
-				{Name: "rebuild", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}},
-				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "main"}},
+				{Name: "dockerfile", Value: tektonapi.ParamValue{Type: "string", StringVal: "docker/Dockerfile"}},
+				{Name: "git-url", Value: tektonapi.ParamValue{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
+				{Name: "rebuild", Value: tektonapi.ParamValue{Type: "string", StringVal: "true"}},
+				{Name: "revision", Value: tektonapi.ParamValue{Type: "string", StringVal: "main"}},
 			},
 		},
 		{
 			name: "should override existing parameters",
 			existing: []tektonapi.Param{
-				{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
-				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "main"}},
-				{Name: "rebuild", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "false"}},
+				{Name: "git-url", Value: tektonapi.ParamValue{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
+				{Name: "revision", Value: tektonapi.ParamValue{Type: "string", StringVal: "main"}},
+				{Name: "rebuild", Value: tektonapi.ParamValue{Type: "string", StringVal: "false"}},
 			},
 			additional: []tektonapi.Param{
-				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
-				{Name: "rebuild", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}},
+				{Name: "revision", Value: tektonapi.ParamValue{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
+				{Name: "rebuild", Value: tektonapi.ParamValue{Type: "string", StringVal: "true"}},
 			},
 			want: []tektonapi.Param{
-				{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
-				{Name: "rebuild", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}},
-				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
+				{Name: "git-url", Value: tektonapi.ParamValue{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
+				{Name: "rebuild", Value: tektonapi.ParamValue{Type: "string", StringVal: "true"}},
+				{Name: "revision", Value: tektonapi.ParamValue{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
 			},
 		},
 		{
 			name: "should append and override parameters",
 			existing: []tektonapi.Param{
-				{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
-				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "main"}},
+				{Name: "git-url", Value: tektonapi.ParamValue{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
+				{Name: "revision", Value: tektonapi.ParamValue{Type: "string", StringVal: "main"}},
 			},
 			additional: []tektonapi.Param{
-				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
-				{Name: "rebuild", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}},
+				{Name: "revision", Value: tektonapi.ParamValue{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
+				{Name: "rebuild", Value: tektonapi.ParamValue{Type: "string", StringVal: "true"}},
 			},
 			want: []tektonapi.Param{
-				{Name: "git-url", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
-				{Name: "rebuild", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "true"}},
-				{Name: "revision", Value: tektonapi.ArrayOrString{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
+				{Name: "git-url", Value: tektonapi.ParamValue{Type: "string", StringVal: "https://githost.com/user/repo.git"}},
+				{Name: "rebuild", Value: tektonapi.ParamValue{Type: "string", StringVal: "true"}},
+				{Name: "revision", Value: tektonapi.ParamValue{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
 			},
 		},
 	}
