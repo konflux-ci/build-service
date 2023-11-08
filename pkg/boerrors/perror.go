@@ -132,6 +132,8 @@ const (
 	EComponentGitSecretMissing BOErrorId = 201
 	// The secret with image registry credentials specified in 'image.redhat.com/image' annotation does not exist in the user's namespace.
 	EComponentImageRegistrySecretMissing BOErrorId = 202
+	// The secret with git credentials not given for component with private git repository.
+	EComponentGitSecretNotSpecified BOErrorId = 203
 
 	// EInvalidDevfile devfile of the component is not valid.
 	EInvalidDevfile BOErrorId = 220
@@ -180,6 +182,7 @@ var boErrorMessages = map[BOErrorId]string{
 	EFailedToParseImageAnnotation:        "Failed to parse image.redhat.com/image annotation value",
 	EComponentGitSecretMissing:           "Secret with git credential not found",
 	EComponentImageRegistrySecretMissing: "Component image repository secret not found",
+	EComponentGitSecretNotSpecified:      "Git credentials for private Component git repository not given",
 
 	EInvalidDevfile: "Component Devfile is invalid",
 

@@ -47,7 +47,6 @@ import (
 	"github.com/redhat-appstudio/build-service/pkg/git/github"
 	gp "github.com/redhat-appstudio/build-service/pkg/git/gitprovider"
 	gpf "github.com/redhat-appstudio/build-service/pkg/git/gitproviderfactory"
-	appstudiospiapiv1beta1 "github.com/redhat-appstudio/service-provider-integration-operator/api/v1beta1"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	//+kubebuilder:scaffold:imports
 )
@@ -1425,18 +1424,13 @@ var _ = Describe("Component initial build controller", func() {
 				return "", fmt.Errorf("failed to get git commit SHA")
 			}
 
-			spiAccessTokenBinding := &appstudiospiapiv1beta1.SPIAccessTokenBinding{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "spi-access-token-binding",
-					Namespace: resouceSimpleBuildKey.Namespace,
-				},
-				Spec: appstudiospiapiv1beta1.SPIAccessTokenBindingSpec{
-					RepoUrl: SampleRepoLink + "-" + resouceSimpleBuildKey.Name,
-				},
-			}
-			Expect(k8sClient.Create(ctx, spiAccessTokenBinding)).To(Succeed())
-			spiAccessTokenBinding.Status.SyncedObjectRef.Name = gitSecretName
-			Expect(k8sClient.Status().Update(ctx, spiAccessTokenBinding)).To(Succeed())
+			gitSecretKey := types.NamespacedName{Name: gitSecretName, Namespace: resouceSimpleBuildKey.Namespace}
+			createSecret(gitSecretKey, map[string]string{})
+			defer deleteSecret(gitSecretKey)
+
+			component := getComponent(resouceSimpleBuildKey)
+			component.Spec.Secret = gitSecretName
+			Expect(k8sClient.Update(ctx, component)).To(Succeed())
 
 			setComponentDevfileModel(resouceSimpleBuildKey)
 
@@ -1494,7 +1488,6 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(isWorkspaceWorkspaceExist).To(BeTrue())
 			Expect(isWorkspaceGitAuthExist).To(BeTrue())
 
-			Expect(k8sClient.Delete(ctx, spiAccessTokenBinding)).To(Succeed())
 			expectSimpleBuildStatus(resouceSimpleBuildKey, 0, "", false)
 		})
 
@@ -1520,12 +1513,33 @@ var _ = Describe("Component initial build controller", func() {
 			expectSimpleBuildStatus(resouceSimpleBuildKey, 0, "", false)
 		})
 
-		It("should fail to submit initial build for private git repository if SPIAccessTokenBinding is missing", func() {
+		It("should fail to submit initial build for private git repository if git secret is not given", func() {
 			isRepositoryPublicInvoked := false
 			IsRepositoryPublicFunc = func(repoUrl string) (bool, error) {
 				isRepositoryPublicInvoked = true
 				return false, nil
 			}
+
+			setComponentDevfileModel(resouceSimpleBuildKey)
+
+			Eventually(func() bool { return isRepositoryPublicInvoked }, timeout, interval).Should(BeTrue())
+
+			waitDoneMessageOnComponent(resouceSimpleBuildKey)
+
+			expectError := boerrors.NewBuildOpError(boerrors.EComponentGitSecretNotSpecified, nil)
+			expectSimpleBuildStatus(resouceSimpleBuildKey, expectError.GetErrorId(), expectError.ShortError(), true)
+		})
+
+		It("should fail to submit initial build for private git repository if git secret is missing", func() {
+			isRepositoryPublicInvoked := false
+			IsRepositoryPublicFunc = func(repoUrl string) (bool, error) {
+				isRepositoryPublicInvoked = true
+				return false, nil
+			}
+
+			component := getComponent(resouceSimpleBuildKey)
+			component.Spec.Secret = "git-secret"
+			Expect(k8sClient.Update(ctx, component)).To(Succeed())
 
 			setComponentDevfileModel(resouceSimpleBuildKey)
 
