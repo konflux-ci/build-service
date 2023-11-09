@@ -10,6 +10,9 @@ require (
 	github.com/openshift/api v0.0.0-20221013123534-96eec44e1979
 	github.com/prometheus/client_golang v1.16.0
 	github.com/xanzy/go-gitlab v0.88.0
+	go.uber.org/zap v1.24.0
+	golang.org/x/exp v0.0.0-20230206171751-46f607a40771
+	golang.org/x/oauth2 v0.10.0
 	gotest.tools/v3 v3.4.0
 	k8s.io/api v0.26.1
 	k8s.io/apimachinery v0.27.3
@@ -24,7 +27,6 @@ require (
 	github.com/openshift-pipelines/pipelines-as-code v0.17.3
 	github.com/redhat-appstudio/application-api v0.0.0-20230704143842-035c661f115f
 	github.com/redhat-appstudio/application-service v0.0.0-20230717184417-67d31a01a776
-	github.com/redhat-appstudio/service-provider-integration-operator v0.2023.22-0.20230731122342-dfc17adc9829
 	github.com/tektoncd/pipeline v0.44.0
 	k8s.io/apiextensions-apiserver v0.26.1
 )
@@ -95,6 +97,7 @@ require (
 	github.com/h2non/parth v0.0.0-20190131123155-b4df798d6542 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
+	github.com/hashicorp/go-hclog v1.5.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.4 // indirect
 	github.com/hashicorp/go-version v1.6.0 // indirect
@@ -129,7 +132,6 @@ require (
 	github.com/prometheus/common v0.42.0 // indirect
 	github.com/prometheus/procfs v0.10.1 // indirect
 	github.com/prometheus/statsd_exporter v0.23.0 // indirect
-	github.com/redhat-appstudio/remote-secret v0.0.0-20230730075044-5bb0218b8f8f // indirect
 	github.com/redhat-developer/alizer/go v0.0.0-20230516215932-135a2bb3fb90 // indirect
 	github.com/redhat-developer/gitops-generator v0.0.0-20230614175323-aff86c6bc55e // indirect
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06 // indirect
@@ -148,12 +150,9 @@ require (
 	go.opencensus.io v0.24.0 // indirect
 	go.uber.org/atomic v1.10.0 // indirect
 	go.uber.org/multierr v1.9.0 // indirect
-	go.uber.org/zap v1.24.0
 	golang.org/x/crypto v0.11.0 // indirect
-	golang.org/x/exp v0.0.0-20230206171751-46f607a40771 // indirect
 	golang.org/x/mod v0.10.0 // indirect
 	golang.org/x/net v0.12.0 // indirect
-	golang.org/x/oauth2 v0.10.0
 	golang.org/x/sync v0.2.0 // indirect
 	golang.org/x/sys v0.10.0 // indirect
 	golang.org/x/term v0.10.0 // indirect

@@ -32,12 +32,11 @@ import (
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 	"github.com/redhat-appstudio/build-service/pkg/git/gitproviderfactory"
 	l "github.com/redhat-appstudio/build-service/pkg/logs"
-	appstudiospiapiv1beta1 "github.com/redhat-appstudio/service-provider-integration-operator/api/v1beta1"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -136,14 +135,18 @@ func (r *ComponentBuildReconciler) getBuildGitInfo(ctx context.Context, componen
 	}
 	if !isPublic {
 		// Try to find git secret in case private git repository is used
-		gitSecretName, err = r.findGitSecretName(ctx, component)
-		if err != nil {
-			log.Error(err, "failed to find git secret name")
-			return nil, err
-		}
+		gitSecretName = component.Spec.Secret
 		if gitSecretName == "" {
-			// The repository is private and no git secret provided
-			return nil, boerrors.NewBuildOpError(boerrors.EComponentGitSecretMissing, nil)
+			// The repository is private and no git secret specified
+			return nil, boerrors.NewBuildOpError(boerrors.EComponentGitSecretNotSpecified, nil)
+		}
+		gitSecretKey := types.NamespacedName{Namespace: component.Namespace, Name: gitSecretName}
+		if err := r.Client.Get(ctx, gitSecretKey, &corev1.Secret{}); err != nil {
+			if errors.IsNotFound(err) {
+				// The repository is private and git secret does not exist
+				return nil, boerrors.NewBuildOpError(boerrors.EComponentGitSecretMissing, nil)
+			}
+			return nil, err
 		}
 		log.Info("Git secret found", "GitSecretName", gitSecretName)
 	}
@@ -182,26 +185,6 @@ func (r *ComponentBuildReconciler) getBuildGitInfo(ctx context.Context, componen
 		gitSourceSha:              gitSourceSha,
 		browseRepositoryAtShaLink: browseRepositoryAtShaLink,
 	}, nil
-}
-
-func (r *ComponentBuildReconciler) findGitSecretName(ctx context.Context, component *appstudiov1alpha1.Component) (string, error) {
-	log := ctrllog.FromContext(ctx).WithName("getGitSecretName")
-
-	spiAccessTokensList := &appstudiospiapiv1beta1.SPIAccessTokenBindingList{}
-	if err := r.Client.List(ctx, spiAccessTokensList, &client.ListOptions{Namespace: component.Namespace}); err != nil {
-		log.Error(err, "failed to list SPIAccessTokenBindings")
-		return "", err
-	}
-
-	componentGitUrl := strings.TrimSuffix(strings.TrimSuffix(component.Spec.Source.GitSource.URL, ".git"), "/")
-	for _, atb := range spiAccessTokensList.Items {
-		tokenGitUrl := strings.TrimSuffix(strings.TrimSuffix(atb.Spec.RepoUrl, ".git"), "/")
-		if tokenGitUrl == componentGitUrl {
-			return atb.Status.SyncedObjectRef.Name, nil
-		}
-	}
-	// Needed binding not found
-	return "", nil
 }
 
 func generatePipelineRunForComponent(component *appstudiov1alpha1.Component, pipelineRef *tektonapi.PipelineRef, additionalPipelineParams []tektonapi.Param, pRunGitInfo *buildGitInfo) (*tektonapi.PipelineRun, error) {

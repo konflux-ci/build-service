@@ -54,7 +54,6 @@ import (
 	appstudioredhatcomv1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
 	"github.com/redhat-appstudio/build-service/controllers"
 	l "github.com/redhat-appstudio/build-service/pkg/logs"
-	appstudiospiapiv1beta1 "github.com/redhat-appstudio/service-provider-integration-operator/api/v1beta1"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -68,7 +67,6 @@ func init() {
 
 	utilruntime.Must(appstudiov1alpha1.AddToScheme(scheme))
 	utilruntime.Must(appstudioredhatcomv1alpha1.AddToScheme(scheme))
-	utilruntime.Must(appstudiospiapiv1beta1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
