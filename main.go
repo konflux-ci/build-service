@@ -46,6 +46,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
@@ -109,21 +110,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	cacheOptions, err := getCacheFuncOptions()
-	if err != nil {
-		setupLog.Error(err, "unable to create cache options")
-		os.Exit(1)
+	clientOpts := client.Options{
+		Cache: &client.CacheOptions{
+			DisableFor: getCacheExcludedObjectsTypes(),
+		},
+	}
+	metricsOpts := server.Options{
+		BindAddress: metricsAddr,
 	}
 
 	options := ctrl.Options{
+		Client:                 clientOpts,
 		Scheme:                 scheme,
-		MetricsBindAddress:     metricsAddr,
-		Port:                   9443,
+		Cache:                  getCacheOptions(),
+		Metrics:                metricsOpts,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "5483be8f.redhat.com",
-		ClientDisableCacheFor:  getCacheExcludedObjectsTypes(),
-		NewCache:               cache.BuilderWithOptions(*cacheOptions),
 	}
 	restConfig := ctrl.GetConfigOrDie()
 
@@ -199,22 +202,21 @@ func getCacheExcludedObjectsTypes() []client.Object {
 	}
 }
 
-func getCacheFuncOptions() (*cache.Options, error) {
+func getCacheOptions() cache.Options {
 	componentPipelineRunRequirement, err := labels.NewRequirement(controllers.ComponentNameLabelName, selection.Exists, []string{})
 	if err != nil {
-		return nil, err
+		// With valid arguments for the requirement above, the error is always nil.
+		panic(err)
 	}
 	appStudioComponentPipelineRunSelector := labels.NewSelector().Add(*componentPipelineRunRequirement)
 
-	selectors := cache.SelectorsByObject{
-		&tektonapi.PipelineRun{}: cache.ObjectSelector{
-			Label: appStudioComponentPipelineRunSelector,
+	return cache.Options{
+		ByObject: map[client.Object]cache.ByObject{
+			&tektonapi.PipelineRun{}: {
+				Label: appStudioComponentPipelineRunSelector,
+			},
 		},
 	}
-
-	return &cache.Options{
-		SelectorsByObject: selectors,
-	}, nil
 }
 
 func ensureRequiredAPIGroupsAndResourcesExist(restConfig *rest.Config) {

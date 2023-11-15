@@ -83,7 +83,7 @@ var _ = BeforeSuite(func() {
 	crdsTempfile.Close()
 
 	applicationServiceDepVersion := "v0.0.0-20230717184417-67d31a01a776"
-	applicationApiDepVersion := "v0.0.0-20230704143842-035c661f115f"
+	applicationApiDepVersion := "v0.0.0-20231026192857-89515ad2504f"
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
 			crdsTempfile.Name(),
