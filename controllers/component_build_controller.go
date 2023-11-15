@@ -217,6 +217,9 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
+	log = log.WithValues("ComponentGitSource", component.Spec.Source.GitSource)
+	ctx = ctrllog.IntoContext(ctx, log)
+
 	if !component.ObjectMeta.DeletionTimestamp.IsZero() {
 		// Deletion of the component is requested
 
