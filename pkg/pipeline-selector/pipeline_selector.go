@@ -94,7 +94,7 @@ func findMatchingPipeline(selectionParameters *buildappstudiov1alpha1.WhenCondit
 					Value: *tektonapi.NewStructuredValues(param.Value),
 				})
 			}
-			return pipelineSelector.PipelineRef.AsPipelineRef(), pipelineParams
+			return &pipelineSelector.PipelineRef, pipelineParams
 		}
 	}
 	return nil, nil

@@ -71,10 +71,6 @@ spec:
                         apiVersion:
                           description: API version of the referent
                           type: string
-                        bundle:
-                          description: 'Bundle url reference to a Tekton Bundle. Deprecated:
-                            Please use ResolverRef with the bundles resolver instead.'
-                          type: string
                         name:
                           description: 'Name of the referent; More info: http://kubernetes.io/docs/user-guide/identifiers#names'
                           type: string
