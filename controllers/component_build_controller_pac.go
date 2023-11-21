@@ -340,46 +340,49 @@ func (r *ComponentBuildReconciler) cleanupPaCRepositoryIncomingsAndSecret(ctx co
 	if err != nil {
 		return err
 	}
-	incomingSecretName := ""
-	if repository != nil {
-		incomingSecretName = fmt.Sprintf("%s%s", repository.Name, pacIncomingSecretNameSuffix)
-		incomingUpdated := false
-		// update first in case there is multiple incoming entries, and it will be converted to incomings with just 1 entry
-		_ = updateIncoming(repository, incomingSecretName, pacIncomingSecretKey, baseBranch)
 
-		if len((*repository.Spec.Incomings)[0].Targets) > 1 {
-			// incoming contains target from the current component only
-			if slices.Contains((*repository.Spec.Incomings)[0].Targets, baseBranch) && incomingsRepoTargetBranchCount <= 1 {
-				newTargets := []string{}
-				for _, target := range (*repository.Spec.Incomings)[0].Targets {
-					if target != baseBranch {
-						newTargets = append(newTargets, target)
-					}
+	// repository is used to construct incoming secret name
+	if repository == nil {
+		return nil
+	}
+
+	incomingSecretName := fmt.Sprintf("%s%s", repository.Name, pacIncomingSecretNameSuffix)
+	incomingUpdated := false
+	// update first in case there is multiple incoming entries, and it will be converted to incomings with just 1 entry
+	_ = updateIncoming(repository, incomingSecretName, pacIncomingSecretKey, baseBranch)
+
+	if len((*repository.Spec.Incomings)[0].Targets) > 1 {
+		// incoming contains target from the current component only
+		if slices.Contains((*repository.Spec.Incomings)[0].Targets, baseBranch) && incomingsRepoTargetBranchCount <= 1 {
+			newTargets := []string{}
+			for _, target := range (*repository.Spec.Incomings)[0].Targets {
+				if target != baseBranch {
+					newTargets = append(newTargets, target)
 				}
-				(*repository.Spec.Incomings)[0].Targets = newTargets
-				incomingUpdated = true
 			}
-			// remove secret from incomings if just current component is using incomings in repository
-			if incomingsRepoAllBranchesCount <= 1 && incomingsRepoTargetBranchCount <= 1 {
-				(*repository.Spec.Incomings)[0].Secret = pacv1alpha1.Secret{}
-				incomingUpdated = true
-			}
-
-		} else {
-			// incomings has just 1 target and that target is from the current component only
-			if (*repository.Spec.Incomings)[0].Targets[0] == baseBranch && incomingsRepoTargetBranchCount <= 1 {
-				repository.Spec.Incomings = nil
-				incomingUpdated = true
-			}
+			(*repository.Spec.Incomings)[0].Targets = newTargets
+			incomingUpdated = true
+		}
+		// remove secret from incomings if just current component is using incomings in repository
+		if incomingsRepoAllBranchesCount <= 1 && incomingsRepoTargetBranchCount <= 1 {
+			(*repository.Spec.Incomings)[0].Secret = pacv1alpha1.Secret{}
+			incomingUpdated = true
 		}
 
-		if incomingUpdated {
-			if err := r.Client.Update(ctx, repository); err != nil {
-				log.Error(err, "failed to update existing PaC repository with incomings", "PaCRepositoryName", repository.Name)
-				return err
-			}
-			log.Info("Removed incomings from the PaC repository", "PaCRepositoryName", repository.Name, l.Action, l.ActionUpdate)
+	} else {
+		// incomings has just 1 target and that target is from the current component only
+		if (*repository.Spec.Incomings)[0].Targets[0] == baseBranch && incomingsRepoTargetBranchCount <= 1 {
+			repository.Spec.Incomings = nil
+			incomingUpdated = true
 		}
+	}
+
+	if incomingUpdated {
+		if err := r.Client.Update(ctx, repository); err != nil {
+			log.Error(err, "failed to update existing PaC repository with incomings", "PaCRepositoryName", repository.Name)
+			return err
+		}
+		log.Info("Removed incomings from the PaC repository", "PaCRepositoryName", repository.Name, l.Action, l.ActionUpdate)
 	}
 
 	// remove incoming secret if just current component is using incomings in repository
