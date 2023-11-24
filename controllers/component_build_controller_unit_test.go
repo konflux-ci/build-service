@@ -33,9 +33,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
+	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 )
+
+const ghAppPrivateKeyStub = "-----BEGIN RSA PRIVATE KEY-----_key-content_-----END RSA PRIVATE KEY-----"
 
 func TestGetProvisionTimeMetricsBuckets(t *testing.T) {
 	buckets := getProvisionTimeMetricsBuckets()
@@ -1037,8 +1040,6 @@ func TestGetGitProvider(t *testing.T) {
 }
 
 func TestValidatePaCConfiguration(t *testing.T) {
-	const ghAppPrivateKeyStub = "-----BEGIN RSA PRIVATE KEY-----_key-content_-----END RSA PRIVATE KEY-----"
-
 	tests := []struct {
 		name        string
 		gitProvider string
@@ -1453,4 +1454,62 @@ func TestGetRandomString(t *testing.T) {
 			}
 		})
 	}
+}
+
+/*
+add new
+override existing one
+override existing one and unset
+*/
+
+func TestPaCRepoAddParamWorkspace(t *testing.T) {
+	const workspaceName = "someone-tenant"
+
+	pacConfig := map[string][]byte{
+		gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
+		gitops.PipelinesAsCode_githubPrivateKey: []byte(ghAppPrivateKeyStub),
+	}
+
+	component := getComponentData(componentConfig{})
+
+	convertCustomParamsToMap := func(repository *pacv1alpha1.Repository) map[string]pacv1alpha1.Params {
+		result := map[string]pacv1alpha1.Params{}
+		for _, param := range *repository.Spec.Params {
+			result[param.Name] = param
+		}
+		return result
+	}
+
+	t.Run("add to Spec.Params", func(t *testing.T) {
+		repository, _ := gitops.GeneratePACRepository(*component, pacConfig)
+		pacRepoAddParamWorkspaceName(log, repository, workspaceName)
+
+		params := convertCustomParamsToMap(repository)
+		param, ok := params[pacCustomParamAppstudioWorkspace]
+		assert.Assert(t, ok)
+		assert.Equal(t, workspaceName, param.Value)
+	})
+
+	t.Run("override existing workspace parameter, unset other fields btw", func(t *testing.T) {
+		repository, _ := gitops.GeneratePACRepository(*component, pacConfig)
+		params := []pacv1alpha1.Params{
+			{
+				Name:      pacCustomParamAppstudioWorkspace,
+				Value:     "another_workspace",
+				Filter:    "pac.event_type == \"pull_request\"",
+				SecretRef: &pacv1alpha1.Secret{},
+			},
+		}
+		repository.Spec.Params = &params
+
+		pacRepoAddParamWorkspaceName(log, repository, workspaceName)
+
+		existingParams := convertCustomParamsToMap(repository)
+		param, ok := existingParams[pacCustomParamAppstudioWorkspace]
+		assert.Assert(t, ok)
+		assert.Equal(t, workspaceName, param.Value)
+
+		assert.Equal(t, "", param.Filter)
+		assert.Assert(t, param.SecretRef == nil)
+	})
 }

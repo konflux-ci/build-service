@@ -163,7 +163,16 @@ var _ = Describe("Component initial build controller", func() {
 
 			createComponentAndProcessBuildRequest(resourcePacPrepKey, BuildRequestConfigurePaCAnnotationValue)
 
-			waitPaCRepositoryCreated(resourcePacPrepKey)
+			pacRepo := waitPaCRepositoryCreated(resourcePacPrepKey)
+			Expect(pacRepo.Spec.Params).ShouldNot(BeNil())
+			existingParams := map[string]string{}
+			for _, param := range *pacRepo.Spec.Params {
+				existingParams[param.Name] = param.Value
+			}
+			val, ok := existingParams[pacCustomParamAppstudioWorkspace]
+			Expect(ok).Should(BeTrue())
+			Expect(val).Should(Equal("build"))
+
 			waitPaCFinalizerOnComponent(resourcePacPrepKey)
 			Eventually(func() bool {
 				return isCreatePaCPullRequestInvoked

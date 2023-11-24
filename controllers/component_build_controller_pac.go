@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/google/go-containerregistry/pkg/authn"
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	routev1 "github.com/openshift/api/route/v1"
@@ -71,6 +72,9 @@ const (
 	pacIncomingSecretKey           = "incoming-secret"
 
 	pacMergeRequestSourceBranchPrefix = "appstudio-"
+
+	appstudioWorkspaceNameLabel      = "appstudio.redhat.com/workspace_name"
+	pacCustomParamAppstudioWorkspace = "appstudio_workspace"
 
 	mergeRequestDescription = `
 # Pipelines as Code configuration proposal
@@ -670,6 +674,46 @@ func checkMandatoryFieldsNotEmpty(config map[string][]byte, mandatoryFields []st
 	return nil
 }
 
+// pacRepoAddParamWorkspaceName adds custom parameter workspace name to a PaC repository.
+// Existing parameter will be overridden.
+func pacRepoAddParamWorkspaceName(log logr.Logger, repository *pacv1alpha1.Repository, workspaceName string) {
+	var params []pacv1alpha1.Params
+	// Before pipelines-as-code gets upgraded for application-service to the
+	// version supporting custom parameters, this check must be taken.
+	if repository.Spec.Params == nil {
+		params = make([]pacv1alpha1.Params, 0)
+	} else {
+		params = *repository.Spec.Params
+	}
+	found := -1
+	for i, param := range params {
+		if param.Name == pacCustomParamAppstudioWorkspace {
+			found = i
+			break
+		}
+	}
+	workspaceParam := pacv1alpha1.Params{
+		Name:  pacCustomParamAppstudioWorkspace,
+		Value: workspaceName,
+	}
+	if found >= 0 {
+		params[found] = workspaceParam
+	} else {
+		params = append(params, workspaceParam)
+	}
+	repository.Spec.Params = &params
+}
+
+func (r *ComponentBuildReconciler) getNamespace(ctx context.Context, name string) (*corev1.Namespace, error) {
+	ns := &corev1.Namespace{}
+	err := r.Client.Get(ctx, types.NamespacedName{Name: name}, ns)
+	if err == nil {
+		return ns, nil
+	} else {
+		return nil, err
+	}
+}
+
 func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, component *appstudiov1alpha1.Component, pacConfig map[string][]byte) error {
 	log := ctrllog.FromContext(ctx)
 
@@ -705,6 +749,15 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 	repository, err = gitops.GeneratePACRepository(*component, pacConfig)
 	if err != nil {
 		return err
+	}
+
+	ns, err := r.getNamespace(ctx, component.GetNamespace())
+	if err != nil {
+		log.Error(err, "failed to get the component namespace for setting custom parameter.")
+		return err
+	}
+	if val, ok := ns.Labels[appstudioWorkspaceNameLabel]; ok {
+		pacRepoAddParamWorkspaceName(log, repository, val)
 	}
 
 	existingRepository := &pacv1alpha1.Repository{}
