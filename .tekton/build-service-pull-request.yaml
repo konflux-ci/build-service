@@ -7,30 +7,20 @@ metadata:
     pipelinesascode.tekton.dev/on-target-branch: "[main]"
     pipelinesascode.tekton.dev/max-keep-runs: "5"
 spec:
-  params:
-    - name: git-url
-      value: "{{repo_url}}"
-    - name: revision
-      value: "{{revision}}"
-    - name: output-image
-      value: 'quay.io/redhat-appstudio/pull-request-builds:buildserv-{{revision}}'
-  pipelineRef:
-    params:
-      - name: bundle
-        value: >-
-          quay.io/redhat-appstudio-tekton-catalog/pipeline-core-services-docker-build:latest
-      - name: name
-        value: docker-build
-      - name: kind
-        value: Pipeline
-    resolver: bundles
+  pipelineSpec:
+    tasks:
+      - name: foo
+        taskSpec:
+          results:
+            - name: big
+          steps:
+            - name: step-0
+              image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+              script: |
+                # 4000 * 'x'
+                printf 'x%.0s' {1..4000} >$(results.big.path)
 
-  workspaces:
-    - name: workspace
-      volumeClaimTemplate:
-        spec:
-          accessModes:
-            - ReadWriteOnce
-          resources:
-            requests:
-              storage: 1Gi
+            - name: step-1
+              image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+              script: |
+                rm $(results.big.path)
