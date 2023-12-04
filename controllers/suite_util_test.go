@@ -60,9 +60,8 @@ const (
 	ComponentContainerImage = "registry.io/username/image:tag"
 	SelectorDefaultName     = "default"
 
-	defaultPipelineName = "docker-build"
-	// TODO: replace with quay.io/redhat-appstudio-tekton-catalog/pipeline-docker-build once it's updated to v1
-	defaultPipelineBundle = "quay.io/acmiel-test/pipeline-docker-build:test-v1-pipeline"
+	defaultPipelineName   = "docker-build"
+	defaultPipelineBundle = "quay.io/redhat-appstudio-tekton-catalog/pipeline-docker-build:07ec767c565b36296b4e185b01f05536848d9c12"
 	v1beta1PipelineBundle = "quay.io/redhat-appstudio-tekton-catalog/pipeline-docker-build:8cf8982d58a841922b687b7166f0cfdc1cc3fc72"
 )
 
@@ -718,16 +717,14 @@ func getPipelineBundle(pipelineRef *tektonapi.PipelineRef) string {
 }
 
 // Return a pipelineRef that refers to a pipeline with the specified name in the specified bundle
-func newBundleResolverPipelineRef(bundle, name string) buildappstudiov1alpha1.BackwardsCompatiblePipelineRef {
-	return buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
-		PipelineRef: tektonapi.PipelineRef{
-			ResolverRef: tektonapi.ResolverRef{
-				Resolver: "bundles",
-				Params: []tektonapi.Param{
-					{Name: "kind", Value: *tektonapi.NewStructuredValues("pipeline")},
-					{Name: "bundle", Value: *tektonapi.NewStructuredValues(bundle)},
-					{Name: "name", Value: *tektonapi.NewStructuredValues(name)},
-				},
+func newBundleResolverPipelineRef(bundle, name string) tektonapi.PipelineRef {
+	return tektonapi.PipelineRef{
+		ResolverRef: tektonapi.ResolverRef{
+			Resolver: "bundles",
+			Params: []tektonapi.Param{
+				{Name: "kind", Value: *tektonapi.NewStructuredValues("pipeline")},
+				{Name: "bundle", Value: *tektonapi.NewStructuredValues(bundle)},
+				{Name: "name", Value: *tektonapi.NewStructuredValues(name)},
 			},
 		},
 	}

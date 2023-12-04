@@ -1910,46 +1910,6 @@ var _ = Describe("Component initial build controller", func() {
 
 			Expect(k8sClient.Delete(ctx, selectors)).Should(Succeed())
 		})
-
-		It("should support the Tekton v1beta1 style pipelineRefs", func() {
-			deleteBuildPipelineRunSelector(defaultSelectorKey)
-			selectors := &buildappstudiov1alpha1.BuildPipelineSelector{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      buildPipelineSelectorResourceName,
-					Namespace: buildServiceNamespaceName,
-				},
-				Spec: buildappstudiov1alpha1.BuildPipelineSelectorSpec{
-					Selectors: []buildappstudiov1alpha1.PipelineSelector{
-						{
-							Name: SelectorDefaultName,
-							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
-								PipelineRef: tektonapi.PipelineRef{Name: defaultPipelineName},
-								Bundle:      defaultPipelineBundle,
-							},
-							PipelineParams: []buildappstudiov1alpha1.PipelineParam{},
-							WhenConditions: buildappstudiov1alpha1.WhenCondition{},
-						},
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, selectors)).To(Succeed())
-
-			setComponentDevfileModel(resourceResBundleKey)
-
-			waitOneInitialPipelineRunCreated(resourceResBundleKey)
-			pipelineRun := listComponentPipelineRuns(resourceResBundleKey)[0]
-
-			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/pipeline_name"]).To(Equal(defaultPipelineName))
-			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(defaultPipelineBundle))
-
-			Expect(pipelineRun.Spec.PipelineSpec).To(BeNil())
-
-			Expect(pipelineRun.Spec.PipelineRef).ToNot(BeNil())
-			Expect(getPipelineName(pipelineRun.Spec.PipelineRef)).To(Equal(defaultPipelineName))
-			Expect(getPipelineBundle(pipelineRun.Spec.PipelineRef)).To(Equal(defaultPipelineBundle))
-
-			Expect(k8sClient.Delete(ctx, selectors)).Should(Succeed())
-		})
 	})
 
 	Context("Test build pipeline failures related to BuildPipelineSelector", func() {
@@ -1980,12 +1940,8 @@ var _ = Describe("Component initial build controller", func() {
 				Spec: buildappstudiov1alpha1.BuildPipelineSelectorSpec{
 					Selectors: []buildappstudiov1alpha1.PipelineSelector{
 						{
-							Name: "java",
-							PipelineRef: buildappstudiov1alpha1.BackwardsCompatiblePipelineRef{
-								PipelineRef: tektonapi.PipelineRef{
-									ResolverRef: resolverRef,
-								},
-							},
+							Name:        "java",
+							PipelineRef: tektonapi.PipelineRef{ResolverRef: resolverRef},
 							PipelineParams: []buildappstudiov1alpha1.PipelineParam{
 								{
 									Name:  "additional-param",
