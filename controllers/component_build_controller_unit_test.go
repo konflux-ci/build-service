@@ -197,10 +197,6 @@ func TestGenerateInitialPipelineRunForComponentDevfileError(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "my-component",
 			Namespace: "my-namespace",
-			Annotations: map[string]string{
-				"skip-initial-checks":            "true",
-				gitops.GitProviderAnnotationName: "github",
-			},
 		},
 		Spec: appstudiov1alpha1.ComponentSpec{
 			Application:    "my-application",
@@ -280,14 +276,7 @@ func TestGenerateInitialPipelineRunForComponentDockerfileContext(t *testing.T) {
 		},
 	}
 	additionalParams := []tektonapi.Param{
-		{Name: "revision", Value: tektonapi.ParamValue{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
 		{Name: "rebuild", Value: tektonapi.ParamValue{Type: "string", StringVal: "true"}},
-	}
-	commitSha := "26239c94569cea79b32bce32f12c8abd8bbd0fd7"
-
-	pRunGitInfo := &buildGitInfo{
-		gitSourceSha:              commitSha,
-		browseRepositoryAtShaLink: "https://githost.com/user/repo?rev=" + commitSha,
 	}
 
 	dockerfileContext := "some_context"
@@ -301,7 +290,7 @@ func TestGenerateInitialPipelineRunForComponentDockerfileContext(t *testing.T) {
 		return &dockerfileImage, nil
 	}
 
-	pipelineRun, err := generatePipelineRunForComponent(component, pipelineRef, additionalParams, pRunGitInfo)
+	pipelineRun, err := generatePipelineRunForComponent(component, pipelineRef, additionalParams, &buildGitInfo{})
 
 	if err != nil {
 		t.Error("generateInitialPipelineRunForComponentDockerfileContext(): Failed to generate pipeline run")
@@ -315,6 +304,10 @@ func TestGenerateInitialPipelineRunForComponentDockerfileContext(t *testing.T) {
 			}
 		case "dockerfile":
 			if param.Value.StringVal != dockerfileURI {
+				t.Errorf("generateInitialPipelineRunForComponentDockerfileContext(): wrong pipeline parameter %s", param.Name)
+			}
+		case "revision":
+			if param.Value.StringVal != "custom-branch" {
 				t.Errorf("generateInitialPipelineRunForComponentDockerfileContext(): wrong pipeline parameter %s", param.Name)
 			}
 		}
@@ -357,7 +350,6 @@ func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 		},
 	}
 	additionalParams := []tektonapi.Param{
-		{Name: "revision", Value: tektonapi.ParamValue{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
 		{Name: "rebuild", Value: tektonapi.ParamValue{Type: "string", StringVal: "true"}},
 	}
 	commitSha := "26239c94569cea79b32bce32f12c8abd8bbd0fd7"
@@ -422,7 +414,7 @@ func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 				t.Errorf("generateInitialPipelineRunForComponent(): wrong pipeline parameter %s", param.Name)
 			}
 		case "revision":
-			if param.Value.StringVal != "2378a064bf6b66a8ffc650ad88d404cca24ade29" {
+			if param.Value.StringVal != commitSha {
 				t.Errorf("generateInitialPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
 			}
 		case "output-image":

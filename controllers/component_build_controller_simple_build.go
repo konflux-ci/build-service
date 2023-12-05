@@ -190,9 +190,9 @@ func (r *ComponentBuildReconciler) getBuildGitInfo(ctx context.Context, componen
 func generatePipelineRunForComponent(component *appstudiov1alpha1.Component, pipelineRef *tektonapi.PipelineRef, additionalPipelineParams []tektonapi.Param, pRunGitInfo *buildGitInfo) (*tektonapi.PipelineRun, error) {
 	timestamp := time.Now().Unix()
 	pipelineGenerateName := fmt.Sprintf("%s-", component.Name)
-	revision := ""
+	gitBranch := ""
 	if component.Spec.Source.GitSource != nil && component.Spec.Source.GitSource.Revision != "" {
-		revision = component.Spec.Source.GitSource.Revision
+		gitBranch = component.Spec.Source.GitSource.Revision
 	}
 
 	pipelineName, pipelineBundle, err := getPipelineNameAndBundle(pipelineRef)
@@ -203,8 +203,8 @@ func generatePipelineRunForComponent(component *appstudiov1alpha1.Component, pip
 		"build.appstudio.redhat.com/pipeline_name": pipelineName,
 		"build.appstudio.redhat.com/bundle":        pipelineBundle,
 	}
-	if revision != "" {
-		annotations[gitTargetBranchAnnotationName] = revision
+	if gitBranch != "" {
+		annotations[gitTargetBranchAnnotationName] = gitBranch
 	}
 
 	imageRepo := getContainerImageRepositoryForComponent(component)
@@ -214,9 +214,16 @@ func generatePipelineRunForComponent(component *appstudiov1alpha1.Component, pip
 		{Name: "git-url", Value: tektonapi.ParamValue{Type: "string", StringVal: component.Spec.Source.GitSource.URL}},
 		{Name: "output-image", Value: tektonapi.ParamValue{Type: "string", StringVal: image}},
 	}
-	if revision != "" {
-		params = append(params, tektonapi.Param{Name: "revision", Value: tektonapi.ParamValue{Type: "string", StringVal: revision}})
+	pipelineParamRevision := ""
+	if pRunGitInfo.gitSourceSha != "" {
+		pipelineParamRevision = pRunGitInfo.gitSourceSha
+	} else if gitBranch != "" {
+		pipelineParamRevision = gitBranch
 	}
+	if pipelineParamRevision != "" {
+		params = append(params, tektonapi.Param{Name: "revision", Value: tektonapi.ParamValue{Type: "string", StringVal: pipelineParamRevision}})
+	}
+
 	if value, exists := component.Annotations["skip-initial-checks"]; exists && (value == "1" || strings.ToLower(value) == "true") {
 		params = append(params, tektonapi.Param{Name: "skip-checks", Value: tektonapi.ParamValue{Type: "string", StringVal: "true"}})
 	}
