@@ -83,8 +83,6 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 		return err
 	}
 
-	simpleBuildPipelineCreationTimeMetric.Observe(time.Since(component.CreationTimestamp.Time).Seconds())
-
 	log.Info(fmt.Sprintf("Build pipeline %s created for component %s in %s namespace using %s pipeline from %s bundle",
 		buildPipelineRun.Name, component.Name, component.Namespace, pipelineName, pipelineBundle),
 		l.Action, l.ActionAdd, l.Audit, "true")

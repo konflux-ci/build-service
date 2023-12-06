@@ -26,7 +26,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
@@ -148,11 +147,6 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context,
 	}
 	log.Info(mrMessage)
 	r.EventRecorder.Event(component, "Normal", "PipelinesAsCodeConfiguration", mrMessage)
-
-	if mrUrl != "" {
-		// PaC PR has been just created
-		pipelinesAsCodeComponentProvisionTimeMetric.Observe(time.Since(component.CreationTimestamp.Time).Seconds())
-	}
 
 	return mrUrl, nil
 }
