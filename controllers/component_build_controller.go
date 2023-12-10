@@ -147,9 +147,10 @@ type PaCBuildStatus struct {
 // provision Pipelines as Code configuration for the Component or
 // submit initial builds and dependent resources if PaC is not configured.
 type ComponentBuildReconciler struct {
-	Client        client.Client
-	Scheme        *runtime.Scheme
-	EventRecorder record.EventRecorder
+	Client                         client.Client
+	Scheme                         *runtime.Scheme
+	EventRecorder                  record.EventRecorder
+	HandleCacheUpdateRaceCondition bool
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -488,6 +489,14 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 	log.Info(fmt.Sprintf("updated component after build request: %s", requestedAction), l.Action, l.ActionUpdate)
 
+	if r.HandleCacheUpdateRaceCondition {
+		r.waitForCacheUpdateDone(ctx, req)
+	}
+
+	return ctrl.Result{}, nil
+}
+
+func (r *ComponentBuildReconciler) waitForCacheUpdateDone(ctx context.Context, req ctrl.Request) {
 	// Here we do some trick.
 	// The problem is that the component update triggers both: a new reconcile and operator cache update.
 	// In other words we are getting race condition. If a new reconcile is triggered before cache update,
@@ -495,7 +504,9 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// For example, instead of one initial pipeline run we could get two.
 	// To resolve the problem above, instead of just ending the reconcile loop here,
 	// we are waiting for the cache update. This approach prevents next reconciles with outdated cache.
+	log := ctrllog.FromContext(ctx).WithName("CacheUpdate")
 	isComponentInCacheUpToDate := false
+	component := appstudiov1alpha1.Component{}
 	for i := 0; i < 20; i++ {
 		if err := r.Client.Get(ctx, req.NamespacedName, &component); err == nil {
 			_, buildRequestAnnotationExists := component.Annotations[BuildRequestAnnotationName]
@@ -519,8 +530,6 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if !isComponentInCacheUpToDate {
 		log.Info("failed to wait for updated cache. Requested action could be repeated.", l.Audit, "true")
 	}
-
-	return ctrl.Result{}, nil
 }
 
 func readBuildStatus(component *appstudiov1alpha1.Component) *BuildStatus {

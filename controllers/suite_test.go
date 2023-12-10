@@ -138,9 +138,10 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	err = (&ComponentBuildReconciler{
-		Client:        k8sManager.GetClient(),
-		Scheme:        k8sManager.GetScheme(),
-		EventRecorder: k8sManager.GetEventRecorderFor("ComponentOnboarding"),
+		Client:                         k8sManager.GetClient(),
+		Scheme:                         k8sManager.GetScheme(),
+		EventRecorder:                  k8sManager.GetEventRecorderFor("ComponentOnboarding"),
+		HandleCacheUpdateRaceCondition: false,
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
