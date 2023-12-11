@@ -89,8 +89,8 @@ var _ = BeforeSuite(func() {
 			crdsTempfile.Name(),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "redhat-appstudio", "application-api@"+applicationApiDepVersion, "config", "crd", "bases"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "redhat-appstudio", "application-service@"+applicationServiceDepVersion, "hack", "routecrd", "route.yaml"),
-			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "tektoncd", "pipeline@v0.44.0", "config"),
-			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "openshift-pipelines", "pipelines-as-code@v0.17.3", "config"),
+			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "tektoncd", "pipeline@v0.46.0", "config"),
+			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "openshift-pipelines", "pipelines-as-code@v0.18.0", "config"),
 		},
 		ErrorIfCRDPathMissing: true,
 	}
@@ -120,6 +120,13 @@ var _ = BeforeSuite(func() {
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
+
+	defaultNS := &corev1.Namespace{}
+	Expect(k8sClient.Get(ctx, types.NamespacedName{Name: HASAppNamespace}, defaultNS)).Should(Succeed())
+	defaultNS.SetLabels(map[string]string{
+		appstudioWorkspaceNameLabel: "build",
+	})
+	Expect(k8sClient.Update(ctx, defaultNS)).Should(Succeed())
 
 	svcAccount := corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
