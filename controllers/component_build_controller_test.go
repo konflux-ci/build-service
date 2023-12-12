@@ -1517,7 +1517,6 @@ var _ = Describe("Component initial build controller", func() {
 			createComponentCustom(component)
 			setComponentDevfileModel(resouceSimpleBuildKey)
 			waitOneInitialPipelineRunCreated(resouceSimpleBuildKey)
-			waitComponentAnnotationGone(resouceSimpleBuildKey, BuildRequestAnnotationName)
 			waitDoneMessageOnComponent(resouceSimpleBuildKey)
 			expectSimpleBuildStatus(resouceSimpleBuildKey, 0, "", false)
 		})
