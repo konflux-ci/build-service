@@ -75,33 +75,76 @@ const (
 )
 
 var (
-	simpleBuildPipelineCreationTimeMetric       prometheus.Histogram
-	pipelinesAsCodeComponentProvisionTimeMetric prometheus.Histogram
+	componentOnboardingTimeMetric                 prometheus.Histogram
+	simpleBuildPipelineCreationTimeMetric         prometheus.Histogram
+	pipelinesAsCodeComponentProvisionTimeMetric   prometheus.Histogram
+	pipelinesAsCodeComponentUnconfigureTimeMetric prometheus.Histogram
+	pushPipelineRebuildTriggerTimeMetric          prometheus.Histogram
+	componentTimesForMetrics                      = map[string]componentMetricsInfo{}
 )
+
+type componentMetricsInfo struct {
+	startTimestamp  time.Time
+	requestedAction string
+}
 
 func initMetrics() error {
 	buckets := getProvisionTimeMetricsBuckets()
 
+	componentOnboardingTimeMetric = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Namespace: metricsNamespace,
+		Subsystem: metricsSubsystem,
+		Buckets:   buckets,
+		Name:      "component_onboarding_time",
+		Help:      "The time in seconds spent from the moment of Component creation till simple build pipeline submission, or PaC provision.",
+	})
 	simpleBuildPipelineCreationTimeMetric = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Namespace: metricsNamespace,
 		Subsystem: metricsSubsystem,
 		Buckets:   buckets,
-		Name:      "initial_build_pipeline_creation_time",
-		Help:      "The time in seconds spent from the moment of Component creation till the initial build pipeline submission.",
+		Name:      "simple_build_pipeline_creation_time",
+		Help:      "The time in seconds spent from the moment of requesting simple build for Component till build pipeline submission.",
 	})
 	pipelinesAsCodeComponentProvisionTimeMetric = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Namespace: metricsNamespace,
 		Subsystem: metricsSubsystem,
 		Buckets:   buckets,
 		Name:      "PaC_configuration_time",
-		Help:      "The time in seconds spent from the moment of Component creation till Pipelines-as-Code configuration done in the Component source repository.",
+		Help:      "The time in seconds spent from the moment of requesting PaC provision till Pipelines-as-Code configuration done in the Component source repository.",
+	})
+	pipelinesAsCodeComponentUnconfigureTimeMetric = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Namespace: metricsNamespace,
+		Subsystem: metricsSubsystem,
+		Buckets:   buckets,
+		Name:      "PaC_unconfiguration_time",
+		Help:      "The time in seconds spent from the moment of requesting PaC unprovision till Pipelines-as-Code configuration is removed in the Component source repository.",
+	})
+	pushPipelineRebuildTriggerTimeMetric = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Namespace: metricsNamespace,
+		Subsystem: metricsSubsystem,
+		Buckets:   buckets,
+		Name:      "Push_pipeline_rebuild_trigger_time",
+		Help:      "The time in seconds spent from the moment of requesting push pipeline rebuild till Pipelines-as-Code API trigger.",
 	})
 
-	if err := metrics.Registry.Register(simpleBuildPipelineCreationTimeMetric); err != nil {
-		return fmt.Errorf("failed to register the initial_build_pipeline_creation_time metric: %w", err)
+	if err := metrics.Registry.Register(componentOnboardingTimeMetric); err != nil {
+		return fmt.Errorf("failed to register the initial_build_or_pac_provision_creation_time metric: %w", err)
 	}
+
+	if err := metrics.Registry.Register(simpleBuildPipelineCreationTimeMetric); err != nil {
+		return fmt.Errorf("failed to register the simple_build_pipeline_creation_time metric: %w", err)
+	}
+
 	if err := metrics.Registry.Register(pipelinesAsCodeComponentProvisionTimeMetric); err != nil {
 		return fmt.Errorf("failed to register the PaC_configuration_time metric: %w", err)
+	}
+
+	if err := metrics.Registry.Register(pipelinesAsCodeComponentUnconfigureTimeMetric); err != nil {
+		return fmt.Errorf("failed to register the PaC_unconfiguration_time metric: %w", err)
+	}
+
+	if err := metrics.Registry.Register(pushPipelineRebuildTriggerTimeMetric); err != nil {
+		return fmt.Errorf("failed to register the Push_pipeline_rebuild_trigger_time metric: %w", err)
 	}
 
 	return nil
@@ -176,6 +219,20 @@ func (r *ComponentBuildReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
+func updateMetricsTimes(componentIdForMetrics string, requestedAction string, reconcileStartTime time.Time) {
+	componentInfo, timeRecorded := componentTimesForMetrics[componentIdForMetrics]
+
+	// first reconcile
+	if !timeRecorded {
+		componentTimesForMetrics[componentIdForMetrics] = componentMetricsInfo{startTimestamp: reconcileStartTime, requestedAction: requestedAction}
+	} else {
+		// new different request
+		if componentInfo.requestedAction != requestedAction {
+			componentTimesForMetrics[componentIdForMetrics] = componentMetricsInfo{startTimestamp: reconcileStartTime, requestedAction: requestedAction}
+		}
+	}
+}
+
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=components,verbs=get;list;watch;update;patch
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=components/status,verbs=get;list;watch
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=buildpipelineselectors,verbs=get;list;watch;create;update;patch
@@ -191,6 +248,7 @@ func (r *ComponentBuildReconciler) SetupWithManager(mgr ctrl.Manager) error {
 func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := ctrllog.FromContext(ctx).WithName("ComponentOnboarding")
 	ctx = ctrllog.IntoContext(ctx, log)
+	reconcileStartTime := time.Now()
 
 	// Fetch the Component instance
 	var component appstudiov1alpha1.Component
@@ -221,8 +279,12 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	log = log.WithValues("ComponentGitSource", component.Spec.Source.GitSource)
 	ctx = ctrllog.IntoContext(ctx, log)
 
+	componentIdForMetrics := fmt.Sprintf("%s=%s", component.Name, component.Namespace)
+
 	if !component.ObjectMeta.DeletionTimestamp.IsZero() {
 		// Deletion of the component is requested
+		// remove component from metrics map
+		delete(componentTimesForMetrics, componentIdForMetrics)
 
 		if controllerutil.ContainsFinalizer(&component, ImageRegistrySecretLinkFinalizer) {
 			pipelineSA := &corev1.ServiceAccount{}
@@ -330,6 +392,13 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	switch requestedAction {
 	case BuildRequestTriggerSimpleBuildAnnotationValue:
+		updateMetricsTimes(componentIdForMetrics, requestedAction, reconcileStartTime)
+		// initial build upon component creation (doesn't have either build status)
+		initialBuild := func() bool {
+			initialBuildStatus := readBuildStatus(&component)
+			return initialBuildStatus.PaC == nil && initialBuildStatus.Simple == nil
+		}()
+
 		simpleBuildStatus := &SimpleBuildStatus{}
 		if err := r.SubmitNewBuild(ctx, &component); err != nil {
 			if boErr, ok := err.(*boerrors.BuildOpError); ok && boErr.IsPersistent() {
@@ -343,6 +412,11 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			}
 		} else {
 			simpleBuildStatus.BuildStartTime = time.Now().Format(time.RFC1123)
+			if initialBuild {
+				componentOnboardingTimeMetric.Observe(time.Since(componentTimesForMetrics[componentIdForMetrics].startTimestamp).Seconds())
+			} else {
+				simpleBuildPipelineCreationTimeMetric.Observe(time.Since(componentTimesForMetrics[componentIdForMetrics].startTimestamp).Seconds())
+			}
 		}
 
 		if err := r.Client.Get(ctx, req.NamespacedName, &component); err != nil {
@@ -351,12 +425,14 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 
 		// Update build status annotation
-		buildStatus := readBuildStatus((&component))
+		buildStatus := readBuildStatus(&component)
 		buildStatus.Simple = simpleBuildStatus
 		buildStatus.Message = "done"
 		writeBuildStatus(&component, buildStatus)
 
 	case BuildRequestTriggerPaCBuildAnnotationValue:
+		updateMetricsTimes(componentIdForMetrics, requestedAction, reconcileStartTime)
+
 		buildStatus := readBuildStatus(&component)
 		if !(buildStatus.PaC != nil && buildStatus.PaC.State == "enabled") {
 			log.Info("Can't rerun push pipeline because Pipelines as Code isn't provisioned for the Component")
@@ -368,7 +444,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if err != nil {
 			if boErr, ok := err.(*boerrors.BuildOpError); ok && boErr.IsPersistent() {
 				log.Error(err, "Failed to rerun push pipeline for the Component")
-				buildStatus := readBuildStatus((&component))
+				buildStatus := readBuildStatus(&component)
 				buildStatus.PaC.ErrId = boErr.GetErrorId()
 				buildStatus.PaC.ErrMessage = boErr.ShortError()
 				writeBuildStatus(&component, buildStatus)
@@ -381,9 +457,17 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if reconcileRequired {
 				return ctrl.Result{Requeue: true}, nil
 			}
+			pushPipelineRebuildTriggerTimeMetric.Observe(time.Since(componentTimesForMetrics[componentIdForMetrics].startTimestamp).Seconds())
 		}
 
 	case BuildRequestConfigurePaCAnnotationValue:
+		updateMetricsTimes(componentIdForMetrics, requestedAction, reconcileStartTime)
+		// initial build upon component creation (doesn't have either build status)
+		initialBuild := func() bool {
+			initialBuildStatus := readBuildStatus(&component)
+			return initialBuildStatus.PaC == nil && initialBuildStatus.Simple == nil
+		}()
+
 		pacBuildStatus := &PaCBuildStatus{}
 		if mergeUrl, err := r.ProvisionPaCForComponent(ctx, &component); err != nil {
 			if boErr, ok := err.(*boerrors.BuildOpError); ok && boErr.IsPersistent() {
@@ -401,6 +485,16 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			pacBuildStatus.MergeUrl = mergeUrl
 			pacBuildStatus.ConfigurationTime = time.Now().Format(time.RFC1123)
 			log.Info("Pipelines as Code provision for the Component finished successfully")
+
+			// initial PaC provision upon component creation
+			if initialBuild {
+				componentOnboardingTimeMetric.Observe(time.Since(componentTimesForMetrics[componentIdForMetrics].startTimestamp).Seconds())
+			} else {
+				// if PaC is up to date, don't count request
+				if mergeUrl != "" {
+					pipelinesAsCodeComponentProvisionTimeMetric.Observe(time.Since(componentTimesForMetrics[componentIdForMetrics].startTimestamp).Seconds())
+				}
+			}
 		}
 
 		// Update component to reflect Pipeline as Code provision status
@@ -418,7 +512,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 
 		// Update build status annotation
-		buildStatus := readBuildStatus((&component))
+		buildStatus := readBuildStatus(&component)
 		buildStatus.PaC = pacBuildStatus
 		buildStatus.Message = "done"
 		writeBuildStatus(&component, buildStatus)
@@ -429,6 +523,8 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 
 	case BuildRequestUnconfigurePaCAnnotationValue:
+		updateMetricsTimes(componentIdForMetrics, requestedAction, reconcileStartTime)
+
 		// Remove Pipelines as Code configuration finalizer
 		if controllerutil.ContainsFinalizer(&component, PaCProvisionFinalizer) {
 			controllerutil.RemoveFinalizer(&component, PaCProvisionFinalizer)
@@ -456,6 +552,11 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			pacBuildStatus.State = "disabled"
 			pacBuildStatus.MergeUrl = mergeUrl
 			log.Info("Pipelines as Code unprovision for the Component finished successfully")
+
+			// if PaC doesn't require unprovision, don't count request
+			if mergeUrl != "" {
+				pipelinesAsCodeComponentUnconfigureTimeMetric.Observe(time.Since(componentTimesForMetrics[componentIdForMetrics].startTimestamp).Seconds())
+			}
 		}
 
 		// Update component to show Pipeline as Code provision is undone
@@ -465,7 +566,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 
 		// Update build status annotation
-		buildStatus := readBuildStatus((&component))
+		buildStatus := readBuildStatus(&component)
 		buildStatus.PaC = pacBuildStatus
 		buildStatus.Message = "done"
 		writeBuildStatus(&component, buildStatus)
@@ -476,7 +577,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return ctrl.Result{}, nil
 		}
 
-		buildStatus := readBuildStatus((&component))
+		buildStatus := readBuildStatus(&component)
 		buildStatus.Message = fmt.Sprintf("unexpected build request: %s", requestedAction)
 		writeBuildStatus(&component, buildStatus)
 	}
@@ -488,6 +589,8 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 	log.Info(fmt.Sprintf("updated component after build request: %s", requestedAction), l.Action, l.ActionUpdate)
+	// remove component from metrics map
+	delete(componentTimesForMetrics, componentIdForMetrics)
 
 	// Here we do some trick.
 	// The problem is that the component update triggers both: a new reconcile and operator cache update.

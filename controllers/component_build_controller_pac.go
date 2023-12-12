@@ -26,7 +26,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -152,11 +151,6 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context,
 	}
 	log.Info(mrMessage)
 	r.EventRecorder.Event(component, "Normal", "PipelinesAsCodeConfiguration", mrMessage)
-
-	if mrUrl != "" {
-		// PaC PR has been just created
-		pipelinesAsCodeComponentProvisionTimeMetric.Observe(time.Since(component.CreationTimestamp.Time).Seconds())
-	}
 
 	return mrUrl, nil
 }
