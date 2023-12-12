@@ -685,6 +685,11 @@ var _ = Describe("Component initial build controller", func() {
 			component.Spec.ContainerImage = generatedImageRepo
 			Expect(k8sClient.Update(ctx, component)).To(Succeed())
 
+			// wait also for image finalizer on component
+			// image-registry-secret-sa-link.component.appstudio.openshift.io/finalizer
+			// otherwise when finalizer isn't there secret won't be unlinked from SA (when component is removed)
+			waitImageRegistrySecretLinkFinalizerOnComponent(resourcePacPrepKey)
+
 			Eventually(func() bool {
 				component = getComponent(resourcePacPrepKey)
 				return component.Spec.ContainerImage == generatedImageRepo

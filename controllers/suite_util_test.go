@@ -306,6 +306,10 @@ func waitPaCFinalizerOnComponent(componentKey types.NamespacedName) {
 	waitFinalizerOnComponent(componentKey, PaCProvisionFinalizer, true)
 }
 
+func waitImageRegistrySecretLinkFinalizerOnComponent(componentKey types.NamespacedName) {
+	waitFinalizerOnComponent(componentKey, ImageRegistrySecretLinkFinalizer, true)
+}
+
 func waitPaCFinalizerOnComponentGone(componentKey types.NamespacedName) {
 	waitFinalizerOnComponent(componentKey, PaCProvisionFinalizer, false)
 }
