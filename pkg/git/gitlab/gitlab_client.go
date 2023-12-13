@@ -39,7 +39,10 @@ type GitlabClient struct {
 // Returns the merge request web URL.
 // If there is no error and web URL is empty, it means that the merge request is not needed (main branch is up to date).
 func (g *GitlabClient) EnsurePaCMergeRequest(repoUrl string, d *gp.MergeRequestData) (webUrl string, err error) {
-	projectPath := getProjectPathFromRepoUrl(repoUrl)
+	projectPath, err := getProjectPathFromRepoUrl(repoUrl)
+	if err != nil {
+		return "", err
+	}
 
 	// Fallback to the default branch if base branch is not set
 	if d.BaseBranchName == "" {
@@ -120,7 +123,10 @@ func (g *GitlabClient) EnsurePaCMergeRequest(repoUrl string, d *gp.MergeRequestD
 // Returns the merge request web URL.
 // If there is no error and web URL is empty, it means that the merge request is not needed (the configuraton has already been deleted).
 func (g *GitlabClient) UndoPaCMergeRequest(repoUrl string, d *gp.MergeRequestData) (webUrl string, err error) {
-	projectPath := getProjectPathFromRepoUrl(repoUrl)
+	projectPath, err := getProjectPathFromRepoUrl(repoUrl)
+	if err != nil {
+		return "", err
+	}
 
 	// Fallback to the default branch if base branch is not set
 	if d.BaseBranchName == "" {
@@ -162,7 +168,10 @@ func (g *GitlabClient) UndoPaCMergeRequest(repoUrl string, d *gp.MergeRequestDat
 
 // FindUnmergedPaCMergeRequest searches for existing Pipelines as Code configuration proposal merge request
 func (g *GitlabClient) FindUnmergedPaCMergeRequest(repoUrl string, d *gp.MergeRequestData) (*gp.MergeRequest, error) {
-	projectPath := getProjectPathFromRepoUrl(repoUrl)
+	projectPath, err := getProjectPathFromRepoUrl(repoUrl)
+	if err != nil {
+		return nil, err
+	}
 
 	opts := &gitlab.ListProjectMergeRequestsOptions{
 		State:          gitlab.String("opened"),
@@ -188,7 +197,10 @@ func (g *GitlabClient) FindUnmergedPaCMergeRequest(repoUrl string, d *gp.MergeRe
 
 // SetupPaCWebhook creates Pipelines as Code webhook in the given repository
 func (g *GitlabClient) SetupPaCWebhook(repoUrl, webhookUrl, webhookSecret string) error {
-	projectPath := getProjectPathFromRepoUrl(repoUrl)
+	projectPath, err := getProjectPathFromRepoUrl(repoUrl)
+	if err != nil {
+		return err
+	}
 
 	existingWebhook, err := g.getWebhookByTargetUrl(projectPath, webhookUrl)
 	if err != nil {
@@ -206,7 +218,10 @@ func (g *GitlabClient) SetupPaCWebhook(repoUrl, webhookUrl, webhookSecret string
 
 // DeletePaCWebhook deletes Pipelines as Code webhook in the given repository
 func (g *GitlabClient) DeletePaCWebhook(repoUrl, webhookUrl string) error {
-	projectPath := getProjectPathFromRepoUrl(repoUrl)
+	projectPath, err := getProjectPathFromRepoUrl(repoUrl)
+	if err != nil {
+		return err
+	}
 
 	existingWebhook, err := g.getWebhookByTargetUrl(projectPath, webhookUrl)
 	if err != nil {
@@ -223,19 +238,29 @@ func (g *GitlabClient) DeletePaCWebhook(repoUrl, webhookUrl string) error {
 
 // GetDefaultBranch returns name of default branch in the given repository
 func (g *GitlabClient) GetDefaultBranch(repoUrl string) (string, error) {
-	projectPath := getProjectPathFromRepoUrl(repoUrl)
+	projectPath, err := getProjectPathFromRepoUrl(repoUrl)
+	if err != nil {
+		return "", err
+	}
+
 	return g.getDefaultBranch(projectPath)
 }
 
 // DeleteBranch deletes given branch from repository
 func (g *GitlabClient) DeleteBranch(repoUrl, branchName string) (bool, error) {
-	projectPath := getProjectPathFromRepoUrl(repoUrl)
+	projectPath, err := getProjectPathFromRepoUrl(repoUrl)
+	if err != nil {
+		return false, err
+	}
 	return g.deleteBranch(projectPath, branchName)
 }
 
 // GetBranchSha returns SHA of top commit in the given branch
 func (g *GitlabClient) GetBranchSha(repoUrl, branchName string) (string, error) {
-	projectPath := getProjectPathFromRepoUrl(repoUrl)
+	projectPath, err := getProjectPathFromRepoUrl(repoUrl)
+	if err != nil {
+		return "", err
+	}
 
 	branch, err := g.getBranch(projectPath, branchName)
 	if err != nil {
@@ -251,7 +276,10 @@ func (g *GitlabClient) GetBranchSha(repoUrl, branchName string) (string, error) 
 // IsFileExist check whether given file exists in the given branch of the reposiotry.
 // If branch is empty string, default branch is used.
 func (g *GitlabClient) IsFileExist(repoUrl, branchName, filePath string) (bool, error) {
-	projectPath := getProjectPathFromRepoUrl(repoUrl)
+	projectPath, err := getProjectPathFromRepoUrl(repoUrl)
+	if err != nil {
+		return false, err
+	}
 
 	if branchName == "" {
 		var err error
@@ -271,7 +299,10 @@ func (g *GitlabClient) IsFileExist(repoUrl, branchName, filePath string) (bool, 
 
 // IsRepositoryPublic returns true if the repository could be accessed without authentication
 func (g *GitlabClient) IsRepositoryPublic(repoUrl string) (bool, error) {
-	projectPath := getProjectPathFromRepoUrl(repoUrl)
+	projectPath, err := getProjectPathFromRepoUrl(repoUrl)
+	if err != nil {
+		return false, err
+	}
 
 	projectInfo, err := g.getProjectInfo(projectPath)
 	if err != nil {

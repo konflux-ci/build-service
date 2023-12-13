@@ -26,15 +26,20 @@ import (
 
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 	gp "github.com/redhat-appstudio/build-service/pkg/git/gitprovider"
+
+	"net/url"
 )
 
-func getProjectPathFromRepoUrl(repoUrl string) string {
-	// https://gitlab.com/namespace/projectname
-	gitSourceUrlParts := strings.Split(strings.TrimSuffix(repoUrl, ".git"), "/")
-	gitlabNamespace := gitSourceUrlParts[3]
-	gitlabProjectName := gitSourceUrlParts[4]
-	projectPath := gitlabNamespace + "/" + gitlabProjectName
-	return projectPath
+func getProjectPathFromRepoUrl(repoUrl string) (string, error) {
+	url, err := url.Parse(repoUrl)
+	if err != nil {
+		return "", err
+	}
+
+	return strings.TrimPrefix(
+		strings.TrimSuffix(url.Path, ".git"),
+		"/",
+	), nil
 }
 
 // refineGitHostingServiceError generates expected permanent error from GitHub response.
