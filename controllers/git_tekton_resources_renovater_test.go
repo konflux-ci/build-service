@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"os"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -50,21 +51,6 @@ var _ = Describe("Git tekton resources renovater", func() {
 			deleteJobs(buildServiceNamespaceName)
 			os.Unsetenv(InstallationsPerJobEnvName)
 			deleteSecret(pacSecretKey)
-		})
-
-		It("It should not trigger job", func() {
-			installedRepositoryUrls := []string{
-				"https://github/test/repo1",
-				"https://github/test/repo2",
-			}
-			github.GetAppInstallations = func(appIdStr string, privateKeyPem []byte) ([]github.ApplicationInstallation, string, error) {
-				repositories := generateRepositories(installedRepositoryUrls)
-				return []github.ApplicationInstallation{generateInstallation(repositories)}, "slug", nil
-			}
-			componentNamespacedName := createComponentForPaCBuild(getComponentData(componentConfig{componentKey: types.NamespacedName{Name: "testnottrigger"}, gitURL: "https://github/test/repo3"}))
-			createDefaultBuildPipelineRunSelector(defaultSelectorKey)
-			Eventually(listJobs).WithArguments(buildServiceNamespaceName).WithTimeout(timeout).Should(BeEmpty())
-			deleteComponent(componentNamespacedName)
 		})
 
 		It("It should trigger job", func() {
@@ -164,6 +150,22 @@ var _ = Describe("Git tekton resources renovater", func() {
 			Eventually(listEvents).WithArguments("default").WithTimeout(timeout).ShouldNot(HaveLen(0))
 			allEvents := listEvents("default")
 			Expect(allEvents[0].Reason).To(Equal("ErrorReadingPaCSecret"))
+			deleteComponent(componentNamespacedName)
+		})
+
+		It("It should not trigger job", func() {
+			installedRepositoryUrls := []string{
+				"https://github/test/repo1",
+				"https://github/test/repo2",
+			}
+			github.GetAppInstallations = func(appIdStr string, privateKeyPem []byte) ([]github.ApplicationInstallation, string, error) {
+				repositories := generateRepositories(installedRepositoryUrls)
+				return []github.ApplicationInstallation{generateInstallation(repositories)}, "slug", nil
+			}
+			componentNamespacedName := createComponentForPaCBuild(getComponentData(componentConfig{componentKey: types.NamespacedName{Name: "testnottrigger"}, gitURL: "https://github/test/repo3"}))
+			createDefaultBuildPipelineRunSelector(defaultSelectorKey)
+			Consistently(listJobs).WithArguments(buildServiceNamespaceName).WithTimeout(time.Second * 5).Should(BeEmpty())
+
 			deleteComponent(componentNamespacedName)
 		})
 	})
