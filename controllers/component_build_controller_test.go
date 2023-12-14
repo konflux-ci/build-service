@@ -99,7 +99,7 @@ var _ = Describe("Component initial build controller", func() {
 	BeforeEach(func() {
 		createNamespace(buildServiceNamespaceName)
 		createDefaultBuildPipelineRunSelector(defaultSelectorKey)
-		github.GetAppInstallations = func(githubAppIdStr string, appPrivateKeyPem []byte) ([]github.ApplicationInstallation, string, error) {
+		github.GetAllAppInstallations = func(githubAppIdStr string, appPrivateKeyPem []byte) ([]github.ApplicationInstallation, string, error) {
 			return nil, "slug", nil
 		}
 	})

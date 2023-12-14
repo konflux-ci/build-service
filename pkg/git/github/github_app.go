@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -34,7 +35,8 @@ var NewGithubClientByApp func(appId int64, privateKeyPem []byte, repoUrl string)
 var NewGithubClientForSimpleBuildByApp func(appId int64, privateKeyPem []byte) (*GithubClient, error) = newGithubClientForSimpleBuildByApp
 
 var IsAppInstalledIntoRepository func(ghclient *GithubClient, repoUrl string) (bool, error) = isAppInstalledIntoRepository
-var GetAppInstallations func(githubAppIdStr string, appPrivateKeyPem []byte) ([]ApplicationInstallation, string, error) = getAppInstallations
+var GetAllAppInstallations func(githubAppIdStr string, appPrivateKeyPem []byte) ([]ApplicationInstallation, string, error) = getAppInstallations
+var GetAppInstallationsForRepository func(githubAppIdStr string, appPrivateKeyPem []byte, repoUrl string) (*ApplicationInstallation, string, error) = getAppInstallationsForRepository
 
 func newGithubClientByApp(appId int64, privateKeyPem []byte, repoUrl string) (*GithubClient, error) {
 	owner, _ := getOwnerAndRepoFromUrl(repoUrl)
@@ -268,6 +270,68 @@ func getAppInstallations(githubAppIdStr string, appPrivateKeyPem []byte) ([]Appl
 	}
 
 	return appInstallations, slug, nil
+}
+
+func getAppInstallationsForRepository(githubAppIdStr string, appPrivateKeyPem []byte, repoUrl string) (*ApplicationInstallation, string, error) {
+	githubAppId, err := strconv.ParseInt(githubAppIdStr, 10, 64)
+	if err != nil {
+		return nil, "", boerrors.NewBuildOpError(boerrors.EGitHubAppMalformedId,
+			fmt.Errorf("failed to convert %s to int: %w", githubAppIdStr, err))
+	}
+
+	ghUrlRegex, err := regexp.Compile(`github.com/([^/]+)/([^/]+)(\.git)?$`)
+	if err != nil {
+		return nil, "", err
+	}
+
+	match := ghUrlRegex.FindStringSubmatch(repoUrl)
+	if match == nil {
+		return nil, "", fmt.Errorf("unable to parse URL %s as it is not a github repo", repoUrl)
+	}
+	owner := match[1]
+	repo := match[2]
+	itr, err := ghinstallation.NewAppsTransport(http.DefaultTransport, githubAppId, appPrivateKeyPem)
+	if err != nil {
+		// Inability to create transport based on a private key indicates that the key is bad formatted
+		return nil, "", boerrors.NewBuildOpError(boerrors.EGitHubAppMalformedPrivateKey, err)
+	}
+	client := github.NewClient(&http.Client{Transport: itr})
+	githubApp, _, err := client.Apps.Get(context.Background(), "")
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to load GitHub app metadata, %w", err)
+	}
+	slug := githubApp.GetSlug()
+	val, resp, err := client.Apps.FindRepositoryInstallation(context.Background(), owner, repo)
+	if err != nil {
+		if resp != nil && resp.Response != nil && resp.Response.StatusCode != 0 {
+			switch resp.StatusCode {
+			case 401:
+				return nil, "", boerrors.NewBuildOpError(boerrors.EGitHubAppPrivateKeyNotMatched, err)
+			case 404:
+				return nil, "", boerrors.NewBuildOpError(boerrors.EGitHubAppDoesNotExist, err)
+			}
+		}
+		return nil, "", boerrors.NewBuildOpError(boerrors.ETransientError, err)
+	}
+	token, _, err := client.Apps.CreateInstallationToken(
+		context.Background(),
+		*val.ID,
+		&github.InstallationTokenOptions{})
+	if err != nil {
+		return nil, "", err
+	}
+	installationClient := NewGithubClient(token.GetToken())
+
+	repoStruct, _, err := installationClient.client.Repositories.Get(context.TODO(), owner, repo)
+	if err != nil {
+		return nil, "", err
+	}
+	return &ApplicationInstallation{
+		Token:        token.GetToken(),
+		ID:           *val.ID,
+		Repositories: []*github.Repository{repoStruct},
+	}, slug, nil
+
 }
 
 func getRepositoriesFromClient(ghClient *GithubClient) ([]*github.Repository, error) {
