@@ -72,6 +72,7 @@ func DefaultTestDependenciesUpdate(ctx context.Context, client client.Client, sc
 
 var _ = Describe("Component nudge controller", func() {
 
+	delayTime = 0
 	BeforeEach(func() {
 		createNamespace(UserNamespace)
 		baseComponentName := types.NamespacedName{Namespace: UserNamespace, Name: BaseComponent}

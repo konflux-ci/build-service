@@ -326,6 +326,15 @@ func getAppInstallationsForRepository(githubAppIdStr string, appPrivateKeyPem []
 	if err != nil {
 		return nil, "", err
 	}
+	// Create a new token, that is only valid for this repo
+	token, _, err = client.Apps.CreateInstallationToken(
+		context.Background(),
+		*val.ID,
+		&github.InstallationTokenOptions{RepositoryIDs: []int64{*repoStruct.ID}})
+
+	if err != nil {
+		return nil, "", err
+	}
 	return &ApplicationInstallation{
 		Token:        token.GetToken(),
 		ID:           *val.ID,
