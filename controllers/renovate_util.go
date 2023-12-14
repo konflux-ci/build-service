@@ -8,6 +8,7 @@ import (
 	"github.com/redhat-appstudio/application-service/gitops/prepare"
 	"github.com/redhat-appstudio/build-service/pkg/git/github"
 	"github.com/redhat-appstudio/build-service/pkg/logs"
+	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	v13 "k8s.io/api/batch/v1"
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -295,6 +296,141 @@ func CreateRenovaterJob(ctx context.Context, client client.Client, scheme *runti
 		return err
 	}
 	log.Info(fmt.Sprintf("Job %s triggered", job.Name), logs.Action, logs.ActionAdd)
+	if err := controllerutil.SetOwnerReference(job, secret, scheme); err != nil {
+		return err
+	}
+	if err := client.Update(ctx, secret); err != nil {
+		return err
+	}
+
+	if err := controllerutil.SetOwnerReference(job, configMap, scheme); err != nil {
+		return err
+	}
+	if err := client.Update(ctx, configMap); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func CreateRenovaterPipeline(ctx context.Context, client client.Client, scheme *runtime.Scheme, namespace string, installations []installationStruct, slug string, debug bool, js func(slug string, repositories []renovateRepository, info interface{}) (string, error), info interface{}) error {
+	log := logger.FromContext(ctx)
+	log.Info(fmt.Sprintf("Creating renovate pipeline for %d installations", len(installations)))
+
+	if len(installations) == 0 {
+		return nil
+	}
+	timestamp := time.Now().Unix()
+	name := fmt.Sprintf("renovate-pipeline-%d-%s", timestamp, getRandomString(5))
+	secretTokens := map[string]string{}
+	configmaps := map[string]string{}
+	renovateCmds := []string{}
+	for _, installation := range installations {
+		secretTokens[fmt.Sprint(installation.id)] = installation.token
+		config, err := js(slug, installation.repositories, info)
+		if err != nil {
+			return err
+		}
+		configmaps[fmt.Sprintf("%d.js", installation.id)] = config
+
+		log.Info(fmt.Sprintf("Creating renovate config map entry for %d installation with length %d and value %s", installation.id, len(config), config))
+		renovateCmds = append(renovateCmds,
+			fmt.Sprintf("RENOVATE_TOKEN=$TOKEN_%d RENOVATE_CONFIG_FILE=/configs/%d.js renovate", installation.id, installation.id),
+		)
+	}
+	if len(renovateCmds) == 0 {
+		return nil
+	}
+	secret := &v1.Secret{
+		ObjectMeta: v12.ObjectMeta{
+			Name:      name,
+			Namespace: buildServiceNamespaceName,
+		},
+		StringData: secretTokens,
+	}
+	configMap := &v1.ConfigMap{
+		ObjectMeta: v12.ObjectMeta{
+			Name:      name,
+			Namespace: buildServiceNamespaceName,
+		},
+		Data: configmaps,
+	}
+	trueBool := true
+	falseBool := false
+	renovateImageUrl := os.Getenv(RenovateImageEnvName)
+	if renovateImageUrl == "" {
+		renovateImageUrl = DefaultRenovateImageUrl
+	}
+	job := &tektonapi.PipelineRun{
+		ObjectMeta: v12.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: tektonapi.PipelineRunSpec{
+			PipelineSpec: &tektonapi.PipelineSpec{
+				Tasks: []tektonapi.PipelineTask{{
+					Name: "renovate",
+					TaskSpec: &tektonapi.EmbeddedTask{
+						TaskSpec: tektonapi.TaskSpec{
+							Steps: []tektonapi.Step{{
+								Name:  "renovate",
+								Image: renovateImageUrl,
+								EnvFrom: []v1.EnvFromSource{
+									{
+										Prefix: "TOKEN_",
+										SecretRef: &v1.SecretEnvSource{
+											LocalObjectReference: v1.LocalObjectReference{
+												Name: name,
+											},
+										},
+									},
+								},
+								Command: []string{"bash", "-c", strings.Join(renovateCmds, "; ")},
+								VolumeMounts: []v1.VolumeMount{
+									{
+										Name:      name,
+										MountPath: "/configs",
+									},
+								},
+								SecurityContext: &v1.SecurityContext{
+									Capabilities:             &v1.Capabilities{Drop: []v1.Capability{"ALL"}},
+									RunAsNonRoot:             &trueBool,
+									AllowPrivilegeEscalation: &falseBool,
+									SeccompProfile: &v1.SeccompProfile{
+										Type: v1.SeccompProfileTypeRuntimeDefault,
+									},
+								},
+							}},
+							Volumes: []v1.Volume{
+								{
+									Name: name,
+									VolumeSource: v1.VolumeSource{
+										ConfigMap: &v1.ConfigMapVolumeSource{
+											LocalObjectReference: v1.LocalObjectReference{Name: name},
+										},
+									},
+								},
+							},
+						},
+					},
+				}},
+			},
+		},
+	}
+	if debug {
+		job.Spec.PipelineSpec.Tasks[0].TaskSpec.Steps[0].Env = append(job.Spec.PipelineSpec.Tasks[0].TaskSpec.Steps[0].Env, v1.EnvVar{Name: "LOG_LEVEL", Value: "debug"})
+	}
+
+	if err := client.Create(ctx, secret); err != nil {
+		return err
+	}
+	if err := client.Create(ctx, configMap); err != nil {
+		return err
+	}
+	if err := client.Create(ctx, job); err != nil {
+		return err
+	}
+	log.Info(fmt.Sprintf("Pipeline %s triggered", job.Name), logs.Action, logs.ActionAdd)
 	if err := controllerutil.SetOwnerReference(job, secret, scheme); err != nil {
 		return err
 	}

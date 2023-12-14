@@ -1236,7 +1236,7 @@ func TestPipelineMatchesComponentCondition(t *testing.T) {
 			name:               "should match if component condition is included into pipeline conditions ignoring whitespaces",
 			componentCondition: "plum",
 			pipelineConditions: " peach , plum 	, apricot ",
-			wantMatch:          true,
+			wantMatch: true,
 		},
 		{
 			name:               "should match if component condition is included into pipeline conditions despite empty items",

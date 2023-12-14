@@ -424,7 +424,7 @@ func DefaultDependenciesUpdate(ctx context.Context, client client.Client, scheme
 		return false, err
 	}
 	log.Info("creating renovate job")
-	err = CreateRenovaterJob(ctx, client, scheme, installationsToUpdate, slug, true, generateRenovateConfigForNudge, result)
+	err = CreateRenovaterPipeline(ctx, client, scheme, result.Component.Namespace, installationsToUpdate, slug, true, generateRenovateConfigForNudge, result)
 
 	return false, err
 }

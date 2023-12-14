@@ -302,6 +302,8 @@ func getAppInstallationsForRepository(githubAppIdStr string, appPrivateKeyPem []
 	}
 	slug := githubApp.GetSlug()
 	val, resp, err := client.Apps.FindRepositoryInstallation(context.Background(), owner, repo)
+
+	repoStruct, _, err := client.Repositories.Get(context.TODO(), owner, repo)
 	if err != nil {
 		if resp != nil && resp.Response != nil && resp.Response.StatusCode != 0 {
 			switch resp.StatusCode {
@@ -316,13 +318,10 @@ func getAppInstallationsForRepository(githubAppIdStr string, appPrivateKeyPem []
 	token, _, err := client.Apps.CreateInstallationToken(
 		context.Background(),
 		*val.ID,
-		&github.InstallationTokenOptions{})
+		&github.InstallationTokenOptions{RepositoryIDs: []int64{*repoStruct.ID}})
 	if err != nil {
 		return nil, "", err
 	}
-	installationClient := NewGithubClient(token.GetToken())
-
-	repoStruct, _, err := installationClient.client.Repositories.Get(context.TODO(), owner, repo)
 	if err != nil {
 		return nil, "", err
 	}
