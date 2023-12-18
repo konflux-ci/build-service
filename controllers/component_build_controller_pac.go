@@ -1076,7 +1076,7 @@ func generatePaCPipelineRunForComponent(
 	}
 
 	params := []tektonapi.Param{
-		{Name: "git-url", Value: tektonapi.ParamValue{Type: "string", StringVal: "{{repo_url}}"}},
+		{Name: "git-url", Value: tektonapi.ParamValue{Type: "string", StringVal: "{{source_url}}"}},
 		{Name: "revision", Value: tektonapi.ParamValue{Type: "string", StringVal: "{{revision}}"}},
 		{Name: "output-image", Value: tektonapi.ParamValue{Type: "string", StringVal: proposedImage}},
 	}
