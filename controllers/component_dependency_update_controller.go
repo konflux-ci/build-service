@@ -68,6 +68,10 @@ const (
 	FailureRetryTime = time.Minute * 5 // We retry after 5 minutes on failure
 )
 
+// The amount of time we wait before attempting to update the component, to try and avoid contention issues
+// This is not a constant so tests don't have to wait
+var delayTime = time.Second * 10
+
 // ComponentDependencyUpdateReconciler reconciles a PipelineRun object
 type ComponentDependencyUpdateReconciler struct {
 	client.Client
@@ -153,6 +157,10 @@ func (r *ComponentDependencyUpdateReconciler) Reconcile(ctx context.Context, req
 		log.Error(err, "Failed to get pipelineRun")
 		return ctrl.Result{}, err
 	}
+	if pipelineRun.CreationTimestamp.Add(delayTime).After(time.Now()) {
+		// These objects are super contested at creation, we just wait 10s before attempting anything
+		return ctrl.Result{RequeueAfter: delayTime}, nil
+	}
 
 	component, err := GetComponentFromPipelineRun(r.Client, ctx, pipelineRun)
 	if err != nil || component == nil {
@@ -167,31 +175,31 @@ func (r *ComponentDependencyUpdateReconciler) Reconcile(ctx context.Context, req
 	log.Info("reconciling PipelineRun")
 
 	if pipelineRun.IsDone() || pipelineRun.Status.CompletionTime != nil || pipelineRun.DeletionTimestamp != nil {
-		log.Info("PipelineRun complete")
-		// These objects are so heavily contented that we always grab the latest copy from the
-		// API server to reduce the chance of conflicts
-		err = r.ApiReader.Get(ctx, req.NamespacedName, pipelineRun)
+		result, err := r.verifyUpToDate(ctx, pipelineRun)
 		if err != nil {
-			return ctrl.Result{}, err
+			return reconcile.Result{}, err
+		} else if result != nil {
+			return *result, nil
 		}
+		log.Info("PipelineRun complete")
 		if controllerutil.ContainsFinalizer(pipelineRun, NudgeFinalizer) || pipelineRun.Annotations == nil || pipelineRun.Annotations[NudgeProcessedAnnotationName] == "" {
 			log.Info("running renovate job")
 			// Pipeline run is done and we have not cleared the finalizer yet
 			// We need to perform our nudge
-			return r.handleCompletedBuild(ctx, pipelineRun, component)
+			patch := client.MergeFrom(pipelineRun.DeepCopy())
+			return r.handleCompletedBuild(ctx, pipelineRun, component, patch)
 		}
 	} else if !controllerutil.ContainsFinalizer(pipelineRun, NudgeFinalizer) {
-		log.Info("adding finalizer for component nudge")
-		// These objects are so heavily contented that we always grab the latest copy from the
-		// API server to reduce the chance of conflicts
-		err := r.ApiReader.Get(ctx, req.NamespacedName, pipelineRun)
-		if err != nil {
-			return ctrl.Result{}, err
+		result, err := r.verifyUpToDate(ctx, pipelineRun)
+		if err != nil || result != nil {
+			return *result, err
 		}
+		log.Info("adding finalizer for component nudge")
 		// We add a finalizer to make sure we see the run before it is deleted
 		// As tekton results should aggressivly delete when pruning is enabled
+		patch := client.MergeFrom(pipelineRun.DeepCopy())
 		controllerutil.AddFinalizer(pipelineRun, NudgeFinalizer)
-		err = r.Client.Update(ctx, pipelineRun)
+		err = r.Client.Patch(ctx, pipelineRun, patch)
 		if err == nil {
 			return reconcile.Result{}, nil
 		} else if errors.IsConflict(err) {
@@ -205,14 +213,29 @@ func (r *ComponentDependencyUpdateReconciler) Reconcile(ctx context.Context, req
 	return ctrl.Result{}, nil
 }
 
+func (r *ComponentDependencyUpdateReconciler) verifyUpToDate(ctx context.Context, pipelineRun *tektonapi.PipelineRun) (*ctrl.Result, error) {
+	// These objects are so heavily contented that we always grab the latest copy from the
+	// API server and verify we are up-to-date
+	currentPipelineRun := &tektonapi.PipelineRun{}
+	err := r.ApiReader.Get(ctx, types.NamespacedName{Namespace: pipelineRun.Namespace, Name: pipelineRun.Name}, currentPipelineRun)
+	if err != nil {
+		return nil, err
+	}
+	if currentPipelineRun.ResourceVersion != pipelineRun.ResourceVersion {
+		ctrllog.FromContext(ctx).Info("returning early as resource is out of date")
+		return &ctrl.Result{RequeueAfter: time.Second}, nil
+	}
+	return nil, nil
+}
+
 // handleCompletedBuild will perform a 'nudge' updating dependent downstream components.
 // This will involve creating a PR updating their references to our images to the newly produced image
-func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.Context, pipelineRun *tektonapi.PipelineRun, updatedComponent *applicationapi.Component) (ctrl.Result, error) {
+func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.Context, pipelineRun *tektonapi.PipelineRun, updatedComponent *applicationapi.Component, patch client.Patch) (ctrl.Result, error) {
 	log := ctrllog.FromContext(ctx)
 	success := pipelineRun.Status.GetCondition(apis.ConditionSucceeded).IsTrue()
 	if !success {
 		log.Info("not performing nudge as pipeline failed")
-		return r.removePipelineFinalizer(ctx, pipelineRun)
+		return r.removePipelineFinalizer(ctx, pipelineRun, patch)
 	}
 	// find the image and digest we want to update to
 	image := ""
@@ -227,11 +250,11 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 	// Failure to find is a permanent error, so remove the finalizer
 	if image == "" {
 		log.Error(fmt.Errorf("unable to find %s param on PipelineRun, not performing nudge", ImageUrlParamName), "no image url result")
-		return r.removePipelineFinalizer(ctx, pipelineRun)
+		return r.removePipelineFinalizer(ctx, pipelineRun, patch)
 	}
 	if digest == "" {
 		log.Error(fmt.Errorf("unable to find %s param on PipelineRun, not performing nudge", ImageDigestParamName), "no image digest result")
-		return r.removePipelineFinalizer(ctx, pipelineRun)
+		return r.removePipelineFinalizer(ctx, pipelineRun, patch)
 	}
 	tag := ""
 	repo := image
@@ -268,13 +291,6 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 	immediateRetry, nudgeErr = r.UpdateFunction(ctx, r.Client, r.Scheme, r.EventRecorder, toUpdate, &BuildResult{BuiltImageRepository: repo, BuiltImageTag: tag, Digest: digest, Component: updatedComponent})
 
 	if nudgeErr != nil {
-
-		// These objects are so heavily contented that we always grab the latest copy from the
-		// API server to reduce the chance of conflicts
-		err = r.ApiReader.Get(ctx, types.NamespacedName{Namespace: pipelineRun.Namespace, Name: pipelineRun.Name}, pipelineRun)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
 		log.Error(nudgeErr, fmt.Sprintf("component update of components %s as a result of a build of %s failed", componentDesc, updatedComponent.Name), l.Audit, "true")
 
 		if pipelineRun.Annotations == nil {
@@ -287,7 +303,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 		failureCount, err := strconv.Atoi(existing)
 		if err != nil {
 			log.Error(err, "failed to parse retry count, not retrying")
-			return r.removePipelineFinalizer(ctx, pipelineRun)
+			return r.removePipelineFinalizer(ctx, pipelineRun, patch)
 		}
 		failureCount = failureCount + 1
 
@@ -298,10 +314,10 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 		if failureCount >= MaxAttempts {
 			// We are at the failure limit, nothing much we can do
 			log.Info("not retrying as max failure limit has been reached", l.Audit, "true")
-			return r.removePipelineFinalizer(ctx, pipelineRun)
+			return r.removePipelineFinalizer(ctx, pipelineRun, patch)
 		}
 		log.Info(fmt.Sprintf("failed to update component dependencies, retry %d/%d", failureCount, MaxAttempts))
-		err = r.Client.Update(ctx, pipelineRun)
+		err = r.Client.Patch(ctx, pipelineRun, patch)
 		if err != nil {
 			// If we fail to update just return and let requeue handle it
 			// We can't really do anything else
@@ -315,7 +331,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 		}
 	}
 
-	_, err = r.removePipelineFinalizer(ctx, pipelineRun)
+	_, err = r.removePipelineFinalizer(ctx, pipelineRun, patch)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -345,7 +361,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 			if possiblyStalePr.Annotations == nil {
 				possiblyStalePr.Annotations = map[string]string{}
 			}
-			_, err := r.removePipelineFinalizer(ctx, &possiblyStalePr)
+			_, err := r.removePipelineFinalizer(ctx, &possiblyStalePr, patch)
 			if err != nil {
 				finalizerError = err
 				log.Error(err, "failed to update stale pipeline run", l.Audit, "true")
@@ -359,14 +375,14 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 // removePipelineFinalizer will remove the finalizer, and add an annotation to indicate we are done with this pipeline run
 // We can't use just the presence or absence of the finalizer, as there is some situations where we might not have seen the
 // run until it is completed, e.g. if the controller was down.
-func (r *ComponentDependencyUpdateReconciler) removePipelineFinalizer(ctx context.Context, pipelineRun *tektonapi.PipelineRun) (ctrl.Result, error) {
+func (r *ComponentDependencyUpdateReconciler) removePipelineFinalizer(ctx context.Context, pipelineRun *tektonapi.PipelineRun, patch client.Patch) (ctrl.Result, error) {
 
 	if pipelineRun.Annotations == nil {
 		pipelineRun.Annotations = map[string]string{}
 	}
 	pipelineRun.Annotations[NudgeProcessedAnnotationName] = "true"
 	controllerutil.RemoveFinalizer(pipelineRun, NudgeFinalizer)
-	err := r.Client.Update(ctx, pipelineRun)
+	err := r.Client.Patch(ctx, pipelineRun, patch)
 	if err != nil {
 		if !errors.IsConflict(err) {
 			log := ctrllog.FromContext(ctx)
@@ -424,7 +440,7 @@ func DefaultDependenciesUpdate(ctx context.Context, client client.Client, scheme
 		return false, err
 	}
 	log.Info("creating renovate job")
-	err = CreateRenovaterJob(ctx, client, scheme, installationsToUpdate, slug, true, generateRenovateConfigForNudge, result)
+	err = CreateRenovaterPipeline(ctx, client, scheme, result.Component.Namespace, installationsToUpdate, slug, true, generateRenovateConfigForNudge, result)
 
 	return false, err
 }

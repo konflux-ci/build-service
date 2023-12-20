@@ -91,8 +91,8 @@ func (r *GitTektonResourcesRenovater) SetupWithManager(mgr ctrl.Manager) error {
 // Set Role for managing jobs/configmaps/secrets in the controller namespace
 
 // +kubebuilder:rbac:namespace=system,groups=batch,resources=jobs,verbs=create;get;list;watch;delete;deletecollection
-// +kubebuilder:rbac:namespace=system,groups=core,resources=secrets,verbs=get;list;watch;create;patch;update;delete;deletecollection
-// +kubebuilder:rbac:namespace=system,groups=core,resources=configmaps,verbs=get;list;watch;create;patch;update;delete;deletecollection
+// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;patch;update;delete;deletecollection
+// +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;patch;update;delete;deletecollection
 
 // +kubebuilder:rbac:groups=appstudio.redhat.com,resources=components,verbs=get;list
 
