@@ -73,7 +73,7 @@
         {
           "editorMode": "builder",
           "exemplar": false,
-          "expr": "redhat_appstudio_buildservice_initial_build_pipeline_creation_time_count",
+          "expr": "redhat_appstudio_buildservice_simple_build_pipeline_creation_time_count",
           "format": "table",
           "instant": true,
           "legendFormat": "__auto",
@@ -81,11 +81,11 @@
           "refId": "A"
         }
       ],
-      "title": "Initial builds total count",
+      "title": "Simple builds total count",
       "type": "stat"
     },
     {
-      "description": "Each bar shows how many pipeline runs were prepared in the time range. For example, \"15\" bar shows the number of initial build pipeline runs preparations that took from 10 to 15 seconds.",
+      "description": "Each bar shows how many simple build pipeline runs were prepared in the time range. For example, \"15\" bar shows the number of simple build pipeline runs preparations that took from 10 to 15 seconds.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -131,7 +131,7 @@
         {
           "editorMode": "builder",
           "exemplar": false,
-          "expr": "redhat_appstudio_buildservice_initial_build_pipeline_creation_time_bucket",
+          "expr": "redhat_appstudio_buildservice_simple_build_pipeline_creation_time_bucket",
           "format": "heatmap",
           "hide": false,
           "instant": true,
@@ -141,11 +141,11 @@
           "refId": "A"
         }
       ],
-      "title": "Initial build submission time distribution",
+      "title": "Simple build submission time distribution",
       "type": "bargauge"
     },
     {
-      "description": "Shows increase of initial build pipeline runs in each time category over time",
+      "description": "Shows increase of simple build pipeline runs in each time category over time",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -218,7 +218,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(increase(redhat_appstudio_buildservice_initial_build_pipeline_creation_time_bucket[$__interval])) by (le)",
+          "expr": "sum(increase(redhat_appstudio_buildservice_simple_build_pipeline_creation_time_bucket[$__interval])) by (le)",
           "format": "heatmap",
           "interval": "",
           "legendFormat": "{{le}}",
@@ -226,7 +226,7 @@
           "refId": "A"
         }
       ],
-      "title": "Increase of initial builds on timeline",
+      "title": "Increase of simple builds on timeline",
       "type": "heatmap"
     },
     {
@@ -303,7 +303,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "rate(redhat_appstudio_buildservice_initial_build_pipeline_creation_time_sum[$__rate_interval])/rate(redhat_appstudio_buildservice_initial_build_pipeline_creation_time_count[$__rate_interval])",
+          "expr": "rate(redhat_appstudio_buildservice_simple_build_pipeline_creation_time_sum[$__rate_interval])/rate(redhat_appstudio_buildservice_simple_build_pipeline_creation_time_count[$__rate_interval])",
           "format": "heatmap",
           "interval": "",
           "legendFormat": "{{le}}",
@@ -311,7 +311,7 @@
           "refId": "A"
         }
       ],
-      "title": "Initial build pipeline run submission average time on timeline",
+      "title": "Simple build pipeline run submission average time on timeline",
       "type": "heatmap"
     }
   ],
@@ -327,8 +327,6 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "Component Onboarding (initial build)",
-  "uid": "Y82Gzro4k",
-  "version": 13,
+  "title": "Component Building (simple build)",
   "weekStart": ""
 }
