@@ -546,7 +546,7 @@ func TestGeneratePaCPipelineRunForComponent(t *testing.T) {
 	for _, param := range pipelineRun.Spec.Params {
 		switch param.Name {
 		case "git-url":
-			if param.Value.StringVal != "{{repo_url}}" {
+			if param.Value.StringVal != "{{source_url}}" {
 				t.Errorf("generatePaCPipelineRunForComponent(): wrong pipeline parameter %s", param.Name)
 			}
 		case "revision":
