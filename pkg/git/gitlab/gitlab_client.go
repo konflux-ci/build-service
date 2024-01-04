@@ -27,7 +27,7 @@ import (
 )
 
 // Allow mocking for tests
-var NewGitlabClient func(accessToken string) (*GitlabClient, error) = newGitlabClient
+var NewGitlabClient func(accessToken, baseUrl string) (*GitlabClient, error) = newGitlabClient
 
 var _ gp.GitProviderClient = (*GitlabClient)(nil)
 
@@ -330,9 +330,9 @@ func (g *GitlabClient) GetConfiguredGitAppName() (string, string, error) {
 	return "", "", fmt.Errorf("GitLab does not support applications")
 }
 
-func newGitlabClient(accessToken string) (*GitlabClient, error) {
+func newGitlabClient(accessToken, baseUrl string) (*GitlabClient, error) {
 	glc := &GitlabClient{}
-	c, err := gitlab.NewClient(accessToken)
+	c, err := gitlab.NewClient(accessToken, gitlab.WithBaseURL(baseUrl))
 	if err != nil {
 		return nil, err
 	}

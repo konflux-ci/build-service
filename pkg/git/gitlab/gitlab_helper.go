@@ -30,6 +30,31 @@ import (
 	"net/url"
 )
 
+type FailedToParseUrlError struct {
+	url string
+	err string
+}
+
+func (e FailedToParseUrlError) Error() string {
+	return fmt.Sprintf("Failed to parse url: %s, error: %s", e.url, e.err)
+}
+
+type MissingSchemaError struct {
+	url string
+}
+
+func (e MissingSchemaError) Error() string {
+	return fmt.Sprintf("Failed to detect schema in url %s", e.url)
+}
+
+type MissingHostError struct {
+	url string
+}
+
+func (e MissingHostError) Error() string {
+	return fmt.Sprintf("Failed to detect host in url %s", e.url)
+}
+
 func getProjectPathFromRepoUrl(repoUrl string) (string, error) {
 	url, err := url.Parse(repoUrl)
 	if err != nil {
@@ -40,6 +65,24 @@ func getProjectPathFromRepoUrl(repoUrl string) (string, error) {
 		strings.TrimSuffix(url.Path, ".git"),
 		"/",
 	), nil
+}
+
+func GetBaseUrl(repoUrl string) (string, error) {
+	url, err := url.Parse(repoUrl)
+	if err != nil {
+		return "", FailedToParseUrlError{url: repoUrl, err: err.Error()}
+	}
+
+	if url.Scheme == "" {
+		return "", MissingSchemaError{repoUrl}
+	}
+
+	if url.Host == "" {
+		return "", MissingHostError{repoUrl}
+	}
+
+	// The gitlab client library expects the base url to have a tailing slash
+	return fmt.Sprintf("%s://%s/", url.Scheme, url.Host), nil
 }
 
 // refineGitHostingServiceError generates expected permanent error from GitHub response.
@@ -280,6 +323,9 @@ func (g *GitlabClient) getWebhookByTargetUrl(projectPath, webhookTargetUrl strin
 	opts := &gitlab.ListProjectHooksOptions{PerPage: 100}
 	webhooks, resp, err := g.client.Projects.ListProjectHooks(projectPath, opts)
 	if err != nil {
+		if resp == nil {
+			return nil, err
+		}
 		return nil, refineGitHostingServiceError(resp.Response, err)
 	}
 	for _, webhook := range webhooks {
