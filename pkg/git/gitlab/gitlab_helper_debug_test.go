@@ -38,7 +38,12 @@ func TestEnsurePaCMergeRequest(t *testing.T) {
 		return
 	}
 
-	glclient, err := NewGitlabClient(accessToken)
+	baseUrl, err := GetBaseUrl(repoUrl)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	glclient, err := NewGitlabClient(accessToken, baseUrl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +80,12 @@ func TestUndoPaCMergeRequest(t *testing.T) {
 		return
 	}
 
-	glclient, err := NewGitlabClient(accessToken)
+	baseUrl, err := GetBaseUrl(repoUrl)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	glclient, err := NewGitlabClient(accessToken, baseUrl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +122,12 @@ func TestSetupPaCWebhook(t *testing.T) {
 	targetWebhookUrl := "https://pac.route.my-cluster.net"
 	webhookSecretString := "d01b38971dad59514298d763f288392c08221043"
 
-	glclient, err := NewGitlabClient(accessToken)
+	baseUrl, err := GetBaseUrl(repoUrl)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	glclient, err := NewGitlabClient(accessToken, baseUrl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +145,12 @@ func TestDeletePaCWebhook(t *testing.T) {
 
 	targetWebhookUrl := "https://pac.route.my-cluster.net"
 
-	glclient, err := NewGitlabClient(accessToken)
+	baseUrl, err := GetBaseUrl(repoUrl)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	glclient, err := NewGitlabClient(accessToken, baseUrl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +166,12 @@ func TestIsRepositoryPublic(t *testing.T) {
 		return
 	}
 
-	glclient, err := NewGitlabClient(accessToken)
+	baseUrl, err := GetBaseUrl(repoUrl)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	glclient, err := NewGitlabClient(accessToken, baseUrl)
 	if err != nil {
 		t.Fatal(err)
 	}

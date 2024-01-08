@@ -105,7 +105,11 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 		if isAppUsed {
 			return nil, fmt.Errorf("GitLab does not have applications")
 		}
-		return gitlab.NewGitlabClient(accessToken)
+		baseUrl, err := gitlab.GetBaseUrl(gitClientConfig.RepoUrl)
+		if err != nil {
+			return nil, err
+		}
+		return gitlab.NewGitlabClient(accessToken, baseUrl)
 
 	case "bitbucket":
 		return nil, boerrors.NewBuildOpError(boerrors.EUnknownGitProvider, fmt.Errorf("git provider %s is not supported", gitProvider))

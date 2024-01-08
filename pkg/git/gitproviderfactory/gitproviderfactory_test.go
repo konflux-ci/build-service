@@ -40,7 +40,7 @@ func TestGetContainerImageRepository(t *testing.T) {
 			t.Errorf("should not be invoked")
 			return nil
 		}
-		gitlab.NewGitlabClient = func(accessToken string) (*gitlab.GitlabClient, error) {
+		gitlab.NewGitlabClient = func(accessToken, baseUrl string) (*gitlab.GitlabClient, error) {
 			t.Errorf("should not be invoked")
 			return nil, nil
 		}
@@ -213,15 +213,32 @@ func TestGetContainerImageRepository(t *testing.T) {
 					"gitlab_token": []byte("token"),
 				},
 				GitProvider:               "gitlab",
-				RepoUrl:                   repoUrl,
+				RepoUrl:                   "https://gitlab.com/my-org/my-repo",
 				IsAppInstallationExpected: true,
 			},
 			allowConstructors: func() {
-				gitlab.NewGitlabClient = func(accessToken string) (*gitlab.GitlabClient, error) {
+				gitlab.NewGitlabClient = func(accessToken, baseUrl string) (*gitlab.GitlabClient, error) {
+					expectedBaseUrl := "https://gitlab.com/"
+					if baseUrl != expectedBaseUrl {
+						return nil, fmt.Errorf("Expected to get baseUrl: %s, got %s", expectedBaseUrl, baseUrl)
+					}
 					return &gitlab.GitlabClient{}, nil
 				}
 			},
 			expectError: false,
+		},
+		{
+			name: "should fail to create Gitlab client since the base url can't be detected",
+			gitClientConfig: GitClientConfig{
+				PacSecretData: map[string][]byte{
+					"gitlab_token": []byte("token"),
+				},
+				GitProvider:               "gitlab",
+				RepoUrl:                   "https://",
+				IsAppInstallationExpected: false,
+			},
+			allowConstructors: func() {},
+			expectError:       true,
 		},
 		{
 			name: "should not create BitBucket client",
