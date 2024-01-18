@@ -279,7 +279,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 	componentDesc := ""
 	for i := range components.Items {
 		comp := components.Items[i]
-		if comp.Spec.Application == updatedComponent.Spec.Application && slices.Contains(updatedComponent.Spec.BuildNudgesRef, comp.Name) {
+		if slices.Contains(updatedComponent.Spec.BuildNudgesRef, comp.Name) {
 			toUpdate = append(toUpdate, comp)
 		}
 		if componentDesc != "" {
