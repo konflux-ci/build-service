@@ -172,6 +172,7 @@ func generateConfigJS(slug string, repositories []renovateRepository, _ interfac
 				recreateClosed: true,
 				recreateWhen: "always",
 				rebaseWhen: "behind-base-branch",
+				gitIgnoredAuthors: ["rhtap-staging"],
 				enabled: true
 			  }
 			]
