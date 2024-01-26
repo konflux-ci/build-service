@@ -161,7 +161,7 @@ func generateConfigJS(slug string, repositories []renovateRepository, _ interfac
 				matchPackagePatterns: ["%s"],
 				matchDepPatterns: ["%s"],
 				groupName: "RHTAP references",
-				branchName: "rhtap/references/{{baseBranch}}",
+				branchName: "konflux/references/{{baseBranch}}",
 				commitMessageExtra: "",
 				commitMessageTopic: "RHTAP references",
 				semanticCommits: "enabled",
@@ -172,7 +172,6 @@ func generateConfigJS(slug string, repositories []renovateRepository, _ interfac
 				recreateClosed: true,
 				recreateWhen: "always",
 				rebaseWhen: "behind-base-branch",
-				gitIgnoredAuthors: ["rhtap-staging"],
 				enabled: true
 			  }
 			]
