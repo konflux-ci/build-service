@@ -22,6 +22,7 @@ import (
 	"fmt"
 	applicationapi "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	l "github.com/redhat-appstudio/build-service/pkg/logs"
+	releaseapi "github.com/redhat-appstudio/release-service/api/v1alpha1"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	"golang.org/x/exp/slices"
 	corev1 "k8s.io/api/core/v1"
@@ -270,27 +271,65 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 		log.Error(err, "failed to list components in namespace")
 		return ctrl.Result{}, err
 	}
+	// Now look for distribution repositories
+	// We do this by looking through ReleasePlanAdmission objects
 
 	retryTime := FailureRetryTime
 	immediateRetry := false
 
 	toUpdate := []applicationapi.Component{}
 
-	componentDesc := ""
+	distibutionRepositories := []string{}
+	releasePlanAdmissions := releaseapi.ReleasePlanAdmissionList{}
+	err = r.Client.List(ctx, &releasePlanAdmissions)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	for _, admission := range releasePlanAdmissions.Items {
+		log.Info("found ReleaseAdmissionPlan", "plan", admission.Name, "origin", admission.Spec.Origin)
+		if admission.Spec.Origin == pipelineRun.Namespace && admission.Spec.Data != nil {
+			log.Info("considering ReleaseAdmissionPlan", "plan", admission.Name, "origin", admission.Spec.Origin)
+			data := struct {
+				Mapping struct {
+					Components []struct {
+						Name       string
+						Repository string
+					}
+				}
+			}{}
+			err := json.Unmarshal(admission.Spec.Data.Raw, &data)
+			if err != nil {
+				log.Error(err, fmt.Sprintf("unable to parse ReleasePlanAdmission %s/%s", admission.Namespace, admission.Name))
+			}
+			for _, compMapping := range data.Mapping.Components {
+				log.Info("considering Component", "plan", admission.Name, "origin", admission.Spec.Origin)
+				if compMapping.Name == updatedComponent.Name {
+					log.Info("added distribution repo", "repo", compMapping.Repository)
+					distibutionRepositories = append(distibutionRepositories, compMapping.Repository)
+				}
+			}
+		}
+	}
+
 	for i := range components.Items {
 		comp := components.Items[i]
 		if slices.Contains(updatedComponent.Spec.BuildNudgesRef, comp.Name) {
 			toUpdate = append(toUpdate, comp)
 		}
-		if componentDesc != "" {
-			componentDesc += ", "
-		}
-		componentDesc += comp.Namespace + "/" + comp.Name
 	}
 	var nudgeErr error
-	immediateRetry, nudgeErr = r.UpdateFunction(ctx, r.Client, r.Scheme, r.EventRecorder, toUpdate, &BuildResult{BuiltImageRepository: repo, BuiltImageTag: tag, Digest: digest, Component: updatedComponent})
+	immediateRetry, nudgeErr = r.UpdateFunction(ctx, r.Client, r.Scheme, r.EventRecorder, toUpdate, &BuildResult{BuiltImageRepository: repo, BuiltImageTag: tag, Digest: digest, Component: updatedComponent, DistributionRepositories: distibutionRepositories})
 
 	if nudgeErr != nil {
+
+		componentDesc := ""
+
+		for _, comp := range toUpdate {
+			if componentDesc != "" {
+				componentDesc += ", "
+			}
+			componentDesc += comp.Namespace + "/" + comp.Name
+		}
 		log.Error(nudgeErr, fmt.Sprintf("component update of components %s as a result of a build of %s failed", componentDesc, updatedComponent.Name), l.Audit, "true")
 
 		if pipelineRun.Annotations == nil {
@@ -472,6 +511,11 @@ func generateRenovateConfigForNudge(slug string, repositories []renovateReposito
 				"depNameTemplate": "{{.BuiltImageRepository}}",
 			}
 		],
+		registryAliases: {
+			{{range $repo := .DistributionRepositories}}
+				"{{$repo}}": "{{$.BuiltImageRepository}}"
+			{{end}}
+		},
 		packageRules: [
 		  {
 			matchPackagePatterns: ["*"],

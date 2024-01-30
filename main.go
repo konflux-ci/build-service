@@ -50,6 +50,7 @@ import (
 
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
+	releaseapi "github.com/redhat-appstudio/release-service/api/v1alpha1"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 
 	appstudioredhatcomv1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
@@ -106,6 +107,10 @@ func main() {
 	}
 
 	if err := pacv1alpha1.AddToScheme(scheme); err != nil {
+		setupLog.Error(err, "unable to add pipelinesascode api to the scheme")
+		os.Exit(1)
+	}
+	if err := releaseapi.AddToScheme(scheme); err != nil {
 		setupLog.Error(err, "unable to add pipelinesascode api to the scheme")
 		os.Exit(1)
 	}
@@ -226,6 +231,7 @@ func getCacheOptions() cache.Options {
 			&tektonapi.PipelineRun{}: {
 				Label: appStudioComponentPipelineRunSelector,
 			},
+			&releaseapi.ReleasePlanAdmission{}: {},
 		},
 	}
 }
