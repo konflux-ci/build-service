@@ -33,8 +33,8 @@ require (
 	github.com/openshift-pipelines/pipelines-as-code v0.18.0
 	github.com/redhat-appstudio/application-api v0.0.0-20231026192857-89515ad2504f
 	github.com/redhat-appstudio/application-service v0.0.0-20230717184417-67d31a01a776
-	github.com/tektoncd/pipeline v0.49.0
 	github.com/redhat-appstudio/release-service v0.0.0-20231213200646-9aea1dba75c0
+	github.com/tektoncd/pipeline v0.49.0
 )
 
 replace github.com/tektoncd/pipeline v0.49.0 => github.com/tektoncd/pipeline v0.46.0
@@ -62,7 +62,7 @@ require (
 	github.com/devfile/registry-support/registry-library v0.0.0-20230123181701-4de4dadb13e7 // indirect
 	github.com/docker/cli v24.0.0+incompatible // indirect
 	github.com/docker/distribution v2.8.2+incompatible // indirect
-	github.com/docker/docker v24.0.0+incompatible // indirect
+	github.com/docker/docker v24.0.7+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.7.0 // indirect
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/docker/go-metrics v0.0.1 // indirect
