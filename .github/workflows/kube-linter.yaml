@@ -9,6 +9,7 @@ on:
       - 'config/rbac/**.ya?ml'
       - 'config/manager/**.ya?ml'
       - 'config/monitoring/prometheus/**.ya?ml'
+      - '.github/workflows/kube-linter.yaml'
 
 jobs:
   kube-linter:
