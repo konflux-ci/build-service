@@ -984,6 +984,17 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 		return baseBranch, "", "", err
 	}
 
+	action_done := "close"
+	// Close merge request.
+	// To close a merge request it's enough to delete the branch.
+
+	// Non-existing source branch should not be an error, just ignore it,
+	// but other errors should be handled.
+	if _, err := gitClient.DeleteBranch(repoUrl, sourceBranch); err != nil {
+		return baseBranch, prUrl, action_done, err
+	}
+	log.Info(fmt.Sprintf("PaC configuration proposal branch %s is deleted", sourceBranch), l.Action, l.ActionDelete)
+
 	if mergeRequest == nil {
 		// Create new PaC configuration clean up merge request
 		mrData = &gp.MergeRequestData{
@@ -1014,20 +1025,11 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 			}
 		}
 
+		action_done = "delete"
 		prUrl, err = gitClient.UndoPaCMergeRequest(repoUrl, mrData)
-		return baseBranch, prUrl, "delete", err
-	} else {
-		// Close merge request.
-		// To close a merge request it's enough to delete the branch.
-
-		// Non-existing source branch should not be an error, just ignore it,
-		// but other errors should be handled.
-		if _, err := gitClient.DeleteBranch(repoUrl, sourceBranch); err != nil {
-			return baseBranch, "", "", err
-		}
-		log.Info(fmt.Sprintf("pull request source branch %s is deleted", sourceBranch), l.Action, l.ActionDelete)
-		return baseBranch, prUrl, "close", nil
 	}
+
+	return baseBranch, prUrl, action_done, err
 }
 
 // generatePaCPipelineRunForComponent returns pipeline run definition to build component source with.
