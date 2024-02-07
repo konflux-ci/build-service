@@ -4,3 +4,4 @@ build-service
 *.out
 *.test
 .vscode/launch.json
+.idea/
