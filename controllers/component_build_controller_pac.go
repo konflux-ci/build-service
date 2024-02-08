@@ -488,7 +488,7 @@ func (r *ComponentBuildReconciler) lookupPaCSecret(ctx context.Context, componen
 	}
 
 	if len(secretList.Items) == 0 {
-		return nil, fmt.Errorf("no SCM secrets with matching host found") //TODO: change to application token lookup
+		return nil, fmt.Errorf("no SCM secrets with matching host found")
 	}
 
 	// sort secrets into two slices by their type
@@ -511,7 +511,7 @@ func (r *ComponentBuildReconciler) lookupPaCSecret(ctx context.Context, componen
 	} else if basicSecret := bestMatchingSecret(ctx, cRepo, basicSecrets); basicSecret != nil {
 		return basicSecret, nil
 	} else {
-		return nil, fmt.Errorf("no matching SCM secrets found") //TODO: change to application token lookup
+		return nil, fmt.Errorf("no matching SCM secrets found")
 	}
 }
 
