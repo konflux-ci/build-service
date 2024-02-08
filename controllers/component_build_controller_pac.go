@@ -125,7 +125,7 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context,
 	if !gitops.IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
 		// Generate webhook secret for the component git repository if not yet generated
 		// and stores it in the corresponding k8s secret.
-		webhookSecretString, err = r.ensureWebhookSecret(ctx, component)
+		webhookSecretString, err = r.ensureWebhookSecret(ctx, component, pacSecret.Data)
 		if err != nil {
 			return "", err
 		}
@@ -630,7 +630,7 @@ func slicesIntersection(s1, s2 []string) int {
 
 // Returns webhook secret for given component.
 // Generates the webhook secret and saves it the k8s secret if doesn't exist.
-func (r *ComponentBuildReconciler) ensureWebhookSecret(ctx context.Context, component *appstudiov1alpha1.Component) (string, error) {
+func (r *ComponentBuildReconciler) ensureWebhookSecret(ctx context.Context, component *appstudiov1alpha1.Component, pacSecretData map[string][]byte) (string, error) {
 	log := ctrllog.FromContext(ctx)
 
 	webhookSecretsSecret := &corev1.Secret{}
@@ -644,12 +644,13 @@ func (r *ComponentBuildReconciler) ensureWebhookSecret(ctx context.Context, comp
 						PartOfLabelName: PartOfAppStudioLabelValue,
 					},
 				},
+				Data: pacSecretData,
 			}
 			if err := r.Client.Create(ctx, webhookSecretsSecret); err != nil {
 				log.Error(err, "failed to create webhooks secrets secret", l.Action, l.ActionAdd)
 				return "", err
 			}
-			return r.ensureWebhookSecret(ctx, component)
+			return r.ensureWebhookSecret(ctx, component, pacSecretData)
 		}
 
 		log.Error(err, "failed to get webhook secrets secret", l.Action, l.ActionView)
