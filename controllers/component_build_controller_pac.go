@@ -125,7 +125,7 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context,
 	if !gitops.IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
 		// Generate webhook secret for the component git repository if not yet generated
 		// and stores it in the corresponding k8s secret.
-		webhookSecretString, err = r.ensureWebhookSecret(ctx, component, pacSecret.Data)
+		webhookSecretString, err = r.ensureWebhookSecret(ctx, component)
 		if err != nil {
 			return "", err
 		}
@@ -475,7 +475,7 @@ func (r *ComponentBuildReconciler) lookupPaCSecret(ctx context.Context, componen
 	cHost, rest, _ := strings.Cut(schemaless, "/")
 	cRepo, _ := strings.CutSuffix(rest, ".git")
 
-	log.Info("Looking for SCM secret", "host", cHost, "repo", cRepo)
+	log.Info("Looking for Pipelines as Code SCM secret", "host", cHost, "repo", cRepo)
 
 	secretList := &corev1.SecretList{}
 	opts := client.ListOption(&client.MatchingLabels{
@@ -484,11 +484,17 @@ func (r *ComponentBuildReconciler) lookupPaCSecret(ctx context.Context, componen
 	})
 
 	if err := r.Client.List(ctx, secretList, client.InNamespace(component.Namespace), opts); err != nil {
-		return nil, err
+		r.EventRecorder.Event(&corev1.Secret{}, "Warning", "ErrorListingPaCSecrets", err.Error())
+		return nil, fmt.Errorf("failed to list Pipelines as Code secrets in %s namespace: %w", component.Namespace, err)
 	}
 
 	if len(secretList.Items) == 0 {
-		return nil, fmt.Errorf("no SCM secrets with matching host found")
+		if gitProvider == "github" {
+			// No SCM secrets found in the component namespace, fall back to the global configuration
+			return r.lookupGHAppCSecret(ctx)
+		} else {
+			return nil,  boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, fmt.Errorf("no Pipelines as Code secrets found in %s namespace", component.Namespace))
+		}
 	}
 
 	// sort secrets into two slices by their type
@@ -511,7 +517,12 @@ func (r *ComponentBuildReconciler) lookupPaCSecret(ctx context.Context, componen
 	} else if basicSecret := bestMatchingSecret(ctx, cRepo, basicSecrets); basicSecret != nil {
 		return basicSecret, nil
 	} else {
-		return nil, fmt.Errorf("no matching SCM secrets found")
+		if gitProvider == "github" {
+			// No SCM secrets found in the component namespace, fall back to the global configuration
+			return r.lookupGHAppCSecret(ctx)
+		} else {
+			return nil,  boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, fmt.Errorf("no matching Pipelines as Code secrets found in %s namespace", component.Namespace))
+		}
 	}
 }
 
@@ -578,59 +589,27 @@ func slicesIntersection(s1, s2 []string) int {
 	return count
 }
 
-//func (r *ComponentBuildReconciler) ensurePaCSecret(ctx context.Context, component *appstudiov1alpha1.Component, gitProvider string) (*corev1.Secret, error) {
-//	// Expected that the secret contains token for Pipelines as Code webhook configuration,
-//	// but under <git-provider>.token field. For example: github.token
-//	// Also it can contain github-private-key and github-application-id
-//	// in case GitHub Application is used instead of webhook.
-//	pacSecret := corev1.Secret{}
-//	pacSecretKey := types.NamespacedName{Namespace: component.Namespace, Name: gitopsprepare.PipelinesAsCodeSecretName}
-//	if err := r.Client.Get(ctx, pacSecretKey, &pacSecret); err != nil {
-//		if !errors.IsNotFound(err) {
-//			r.EventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
-//			return nil, fmt.Errorf("failed to get Pipelines as Code secret in %s namespace: %w", component.Namespace, err)
-//		}
-//
-//		// Fallback to the global configuration
-//		globalPaCSecretKey := types.NamespacedName{Namespace: buildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}
-//		if err := r.Client.Get(ctx, globalPaCSecretKey, &pacSecret); err != nil {
-//			if !errors.IsNotFound(err) {
-//				r.EventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
-//				return nil, fmt.Errorf("failed to get Pipelines as Code secret in %s namespace: %w", globalPaCSecretKey.Namespace, err)
-//			}
-//
-//			r.EventRecorder.Event(&pacSecret, "Warning", "PaCSecretNotFound", err.Error())
-//			// Do not trigger a new reconcile. The PaC secret must be created first.
-//			return nil, boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound,
-//				fmt.Errorf(" Pipelines as Code secret not found in %s namespace nor in %s", pacSecretKey.Namespace, globalPaCSecretKey.Namespace))
-//		}
-//
-//		if !gitops.IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
-//			// Webhook is used. We need to reference access token in the component namespace.
-//			// Copy global PaC configuration in component namespace
-//			localPaCSecret := &corev1.Secret{
-//				TypeMeta: pacSecret.TypeMeta,
-//				ObjectMeta: metav1.ObjectMeta{
-//					Name:      pacSecretKey.Name,
-//					Namespace: pacSecretKey.Namespace,
-//					Labels: map[string]string{
-//						PartOfLabelName: PartOfAppStudioLabelValue,
-//					},
-//				},
-//				Data: pacSecret.Data,
-//			}
-//			if err := r.Client.Create(ctx, localPaCSecret); err != nil {
-//				return nil, fmt.Errorf("failed to create local PaC configuration secret: %w", err)
-//			}
-//		}
-//	}
-//
-//	return &pacSecret, nil
-//}
+func (r *ComponentBuildReconciler) lookupGHAppCSecret(ctx context.Context) (*corev1.Secret, error) {
+	pacSecret := corev1.Secret{}
+	globalPaCSecretKey := types.NamespacedName{Namespace: buildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}
+	if err := r.Client.Get(ctx, globalPaCSecretKey, &pacSecret); err != nil {
+		if !errors.IsNotFound(err) {
+			r.EventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
+			return nil, fmt.Errorf("failed to get Pipelines as Code secret in %s namespace: %w", globalPaCSecretKey.Namespace, err)
+		}
+
+		r.EventRecorder.Event(&pacSecret, "Warning", "PaCSecretNotFound", err.Error())
+		// Do not trigger a new reconcile. The PaC secret must be created first.
+		return nil,v
+			fmt.Errorf(" Pipelines as Code secret not found in %s ", globalPaCSecretKey.Namespace))
+	}
+
+	return &pacSecret, nil
+}
 
 // Returns webhook secret for given component.
 // Generates the webhook secret and saves it the k8s secret if doesn't exist.
-func (r *ComponentBuildReconciler) ensureWebhookSecret(ctx context.Context, component *appstudiov1alpha1.Component, pacSecretData map[string][]byte) (string, error) {
+func (r *ComponentBuildReconciler) ensureWebhookSecret(ctx context.Context, component *appstudiov1alpha1.Component) (string, error) {
 	log := ctrllog.FromContext(ctx)
 
 	webhookSecretsSecret := &corev1.Secret{}
@@ -644,13 +623,12 @@ func (r *ComponentBuildReconciler) ensureWebhookSecret(ctx context.Context, comp
 						PartOfLabelName: PartOfAppStudioLabelValue,
 					},
 				},
-				Data: pacSecretData,
 			}
 			if err := r.Client.Create(ctx, webhookSecretsSecret); err != nil {
 				log.Error(err, "failed to create webhooks secrets secret", l.Action, l.ActionAdd)
 				return "", err
 			}
-			return r.ensureWebhookSecret(ctx, component, pacSecretData)
+			return r.ensureWebhookSecret(ctx, component)
 		}
 
 		log.Error(err, "failed to get webhook secrets secret", l.Action, l.ActionView)
