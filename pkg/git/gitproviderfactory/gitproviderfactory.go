@@ -18,21 +18,20 @@ package gitproviderfactory
 
 import (
 	"fmt"
-	"strconv"
-	"strings"
-
 	"github.com/redhat-appstudio/application-service/gitops"
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 	"github.com/redhat-appstudio/build-service/pkg/git/github"
 	"github.com/redhat-appstudio/build-service/pkg/git/gitlab"
 	"github.com/redhat-appstudio/build-service/pkg/git/gitprovider"
+	corev1 "k8s.io/api/core/v1"
+	"strconv"
 )
 
 var CreateGitClient func(gitClientConfig GitClientConfig) (gitprovider.GitProviderClient, error) = createGitClient
 
 type GitClientConfig struct {
-	// PacSecretData are the content of Pipelines as Code secret
-	PacSecretData map[string][]byte
+	// PacSecret Pipelines as Code secret
+	PacSecret corev1.Secret
 	// GitProvider is type of the git provider to construct client for.
 	// Cannot be obtained from repo repository URL in case of self-hosted solution.
 	GitProvider string
@@ -50,28 +49,38 @@ type GitClientConfig struct {
 // createGitClient creates new git provider client for the requested config
 func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderClient, error) {
 	gitProvider := gitClientConfig.GitProvider
-	config := gitClientConfig.PacSecretData
+	secretData := gitClientConfig.PacSecret.Data
 
-	isAppUsed := gitops.IsPaCApplicationConfigured(gitProvider, config)
-	var accessToken string
-	if !isAppUsed {
-		accessToken = strings.TrimSpace(string(config[gitops.GetProviderTokenKey(gitProvider)]))
-	}
+	isAppUsed := gitops.IsPaCApplicationConfigured(gitProvider, secretData)
 
 	switch gitProvider {
 	case "github":
 		if !isAppUsed {
-			return github.NewGithubClient(accessToken), nil
+			if gitClientConfig.PacSecret.Type == corev1.SecretTypeBasicAuth {
+				username, ok := secretData["username"]
+				password := secretData["password"]
+				if !ok {
+					// Access token is used instead of username/password
+					return github.NewGithubClient(string(username)), nil
+				} else {
+					return github.NewGithubClientWithBasicAuth(string(username), string(password)), nil
+				}
+			} else if gitClientConfig.PacSecret.Type == corev1.SecretTypeSSHAuth {
+				return github.NewGithubClientWithSSH(string(secretData["privateKey"])), nil
+			} else {
+				return nil, boerrors.NewBuildOpError(boerrors.EGitHabSecretTypeNotSupported,
+					fmt.Errorf("failed to create git client: GitHub application is not configured"))
+			}
 		}
 
-		githubAppIdStr := string(config[gitops.PipelinesAsCode_githubAppIdKey])
+		githubAppIdStr := string(secretData[gitops.PipelinesAsCode_githubAppIdKey])
 		githubAppId, err := strconv.ParseInt(githubAppIdStr, 10, 64)
 		if err != nil {
 			return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppMalformedId,
 				fmt.Errorf("failed to create git client: failed to convert %s to int: %w", githubAppIdStr, err))
 		}
 
-		privateKey := config[gitops.PipelinesAsCode_githubPrivateKey]
+		privateKey := secretData[gitops.PipelinesAsCode_githubPrivateKey]
 
 		if gitClientConfig.IsAppInstallationExpected {
 			// It's required that the configured Pipelines as Code application is installed into user's account
@@ -109,7 +118,23 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 		if err != nil {
 			return nil, err
 		}
-		return gitlab.NewGitlabClient(accessToken, baseUrl)
+
+		if gitClientConfig.PacSecret.Type == corev1.SecretTypeBasicAuth {
+			username, ok := secretData["username"]
+			password := secretData["password"]
+			if !ok {
+				// Access token is used instead of username/password
+				return gitlab.NewGitlabClient(string(username), baseUrl), nil
+			} else {
+				return gitlab.NewGitlabClientWithBasicAuth(string(username), string(password), baseUrl), nil
+			}
+		} else if gitClientConfig.PacSecret.Type == corev1.SecretTypeSSHAuth {
+			privateKey := secretData["privateKey"]
+			return gitlab.NewGitlabClientWithSSH(privateKey), nil
+		} else {
+			return nil, boerrors.NewBuildOpError(boerrors.EGitHabSecretTypeNotSupported,
+				fmt.Errorf("failed to create git client: GitHub application is not configured"))
+		}
 
 	case "bitbucket":
 		return nil, boerrors.NewBuildOpError(boerrors.EUnknownGitProvider, fmt.Errorf("git provider %s is not supported", gitProvider))
