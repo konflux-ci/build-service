@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"reflect"
 	"strings"
@@ -1061,21 +1062,46 @@ func TestValidatePaCConfiguration(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name:        "should accept GitHub webhook configuration",
+			name:        "should accept GitHub token configuration",
 			gitProvider: "github",
 			secret: corev1.Secret{
+				Type: corev1.SecretTypeBasicAuth,
 				Data: map[string][]byte{
-					"github.token": []byte("ghp_token"),
+					"password": []byte(base64.StdEncoding.EncodeToString([]byte("ghp_token"))),
 				},
 			},
 			expectError: false,
 		},
 		{
-			name:        "should reject empty GitHub webhook token",
+			name:        "should accept GitHub basic auth configuration",
 			gitProvider: "github",
 			secret: corev1.Secret{
+				Type: corev1.SecretTypeBasicAuth,
 				Data: map[string][]byte{
-					"github.token": []byte(""),
+					"username": []byte(base64.StdEncoding.EncodeToString([]byte("user"))),
+					"password": []byte(base64.StdEncoding.EncodeToString([]byte("password"))),
+				},
+			},
+			expectError: false,
+		},
+		{
+			name:        "should reject empty GitHub access token",
+			gitProvider: "github",
+			secret: corev1.Secret{
+				Type: corev1.SecretTypeBasicAuth,
+				Data: map[string][]byte{
+					"password": []byte(""),
+				},
+			},
+			expectError: true,
+		},
+		{
+			name:        "should reject empty GitHub password",
+			gitProvider: "github",
+			secret: corev1.Secret{
+				Type: corev1.SecretTypeBasicAuth,
+				Data: map[string][]byte{
+					"username": []byte(base64.StdEncoding.EncodeToString([]byte("user"))),
 				},
 			},
 			expectError: true,
@@ -1141,22 +1167,21 @@ func TestValidatePaCConfiguration(t *testing.T) {
 			name:        "should accept GitLab webhook configuration",
 			gitProvider: "gitlab",
 			secret: corev1.Secret{
+				Type: corev1.SecretTypeBasicAuth,
 				Data: map[string][]byte{
-					"gitlab.token": []byte("token"),
+					"password": []byte(base64.StdEncoding.EncodeToString([]byte("token"))),
 				},
 			},
 			expectError: false,
 		},
 		{
-			name:        "should accept GitLab webhook configuration even if other providers configured",
+			name:        "should accept GitLab basic auth configuration",
 			gitProvider: "gitlab",
 			secret: corev1.Secret{
+				Type: corev1.SecretTypeBasicAuth,
 				Data: map[string][]byte{
-					gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
-					gitops.PipelinesAsCode_githubPrivateKey: []byte(ghAppPrivateKeyStub),
-					"github.token":                          []byte("ghp_token"),
-					"gitlab.token":                          []byte("token"),
-					"bitbucket.token":                       []byte("token2"),
+					"username": []byte(base64.StdEncoding.EncodeToString([]byte("user"))),
+					"password": []byte(base64.StdEncoding.EncodeToString([]byte("password"))),
 				},
 			},
 			expectError: false,
@@ -1165,8 +1190,9 @@ func TestValidatePaCConfiguration(t *testing.T) {
 			name:        "should reject empty GitLab webhook token",
 			gitProvider: "gitlab",
 			secret: corev1.Secret{
+				Type: corev1.SecretTypeBasicAuth,
 				Data: map[string][]byte{
-					"gitlab.token": []byte(""),
+					"password": []byte(""),
 				},
 			},
 			expectError: true,
@@ -1237,7 +1263,6 @@ func TestValidatePaCConfiguration(t *testing.T) {
 			expectError: true,
 		},
 	}
-	// TODO: add cases for basic-auth and SSH type secrets
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

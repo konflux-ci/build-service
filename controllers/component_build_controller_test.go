@@ -370,8 +370,8 @@ var _ = Describe("Component initial build controller", func() {
 				return nil
 			}
 
-			pacSecretData := map[string]string{"github.token": "ghp_token"}
-			createSecret(pacSecretKey, pacSecretData)
+			pacSecretData := map[string]string{"password": "ghp_token"}
+			createSecret(pacSecretKey, pacSecretData, corev1.SecretTypeBasicAuth)
 
 			createComponentAndProcessBuildRequest(resourcePacPrepKey, BuildRequestConfigurePaCAnnotationValue)
 

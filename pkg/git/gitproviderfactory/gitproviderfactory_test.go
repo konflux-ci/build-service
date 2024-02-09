@@ -17,6 +17,7 @@ limitations under the License.
 package gitproviderfactory
 
 import (
+	"encoding/base64"
 	"fmt"
 	corev1 "k8s.io/api/core/v1"
 	"testing"
@@ -41,7 +42,15 @@ func TestGetContainerImageRepository(t *testing.T) {
 			t.Errorf("should not be invoked")
 			return nil
 		}
+		github.NewGithubClientWithBasicAuth = func(username, password string) *github.GithubClient {
+			t.Errorf("should not be invoked")
+			return nil
+		}
 		gitlab.NewGitlabClient = func(accessToken, baseUrl string) (*gitlab.GitlabClient, error) {
+			t.Errorf("should not be invoked")
+			return nil, nil
+		}
+		gitlab.NewGitlabClientWithBasicAuth = func(username, password, baseUrl string) (*gitlab.GitlabClient, error) {
 			t.Errorf("should not be invoked")
 			return nil, nil
 		}
@@ -208,8 +217,9 @@ func TestGetContainerImageRepository(t *testing.T) {
 			name: "should create GitHub client from token",
 			gitClientConfig: GitClientConfig{
 				PacSecret: corev1.Secret{
+					Type: corev1.SecretTypeBasicAuth,
 					Data: map[string][]byte{
-						"github_token": []byte("token"),
+						"password": []byte(base64.StdEncoding.EncodeToString([]byte("token"))),
 					},
 				},
 				GitProvider:               "github",
@@ -224,11 +234,33 @@ func TestGetContainerImageRepository(t *testing.T) {
 			expectError: false,
 		},
 		{
+			name: "should create GitHub client from username and password",
+			gitClientConfig: GitClientConfig{
+				PacSecret: corev1.Secret{
+					Type: corev1.SecretTypeBasicAuth,
+					Data: map[string][]byte{
+						"username": []byte(base64.StdEncoding.EncodeToString([]byte("user"))),
+						"password": []byte(base64.StdEncoding.EncodeToString([]byte("pass"))),
+					},
+				},
+				GitProvider:               "github",
+				RepoUrl:                   repoUrl,
+				IsAppInstallationExpected: false,
+			},
+			allowConstructors: func() {
+				github.NewGithubClientWithBasicAuth = func(username, password string) *github.GithubClient {
+					return &github.GithubClient{}
+				}
+			},
+			expectError: false,
+		},
+		{
 			name: "should create GitLab client from token",
 			gitClientConfig: GitClientConfig{
 				PacSecret: corev1.Secret{
+					Type: corev1.SecretTypeBasicAuth,
 					Data: map[string][]byte{
-						"gitlab_token": []byte("token"),
+						"password": []byte(base64.StdEncoding.EncodeToString([]byte("token"))),
 					},
 				},
 				GitProvider:               "gitlab",
@@ -237,6 +269,31 @@ func TestGetContainerImageRepository(t *testing.T) {
 			},
 			allowConstructors: func() {
 				gitlab.NewGitlabClient = func(accessToken, baseUrl string) (*gitlab.GitlabClient, error) {
+					expectedBaseUrl := "https://gitlab.com/"
+					if baseUrl != expectedBaseUrl {
+						return nil, fmt.Errorf("Expected to get baseUrl: %s, got %s", expectedBaseUrl, baseUrl)
+					}
+					return &gitlab.GitlabClient{}, nil
+				}
+			},
+			expectError: false,
+		},
+		{
+			name: "should create GitLab client from token",
+			gitClientConfig: GitClientConfig{
+				PacSecret: corev1.Secret{
+					Type: corev1.SecretTypeBasicAuth,
+					Data: map[string][]byte{
+						"username": []byte(base64.StdEncoding.EncodeToString([]byte("user"))),
+						"password": []byte(base64.StdEncoding.EncodeToString([]byte("pas"))),
+					},
+				},
+				GitProvider:               "gitlab",
+				RepoUrl:                   "https://gitlab.com/my-org/my-repo",
+				IsAppInstallationExpected: true,
+			},
+			allowConstructors: func() {
+				gitlab.NewGitlabClientWithBasicAuth = func(username, password, baseUrl string) (*gitlab.GitlabClient, error) {
 					expectedBaseUrl := "https://gitlab.com/"
 					if baseUrl != expectedBaseUrl {
 						return nil, fmt.Errorf("Expected to get baseUrl: %s, got %s", expectedBaseUrl, baseUrl)

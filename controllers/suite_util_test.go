@@ -439,7 +439,7 @@ func waitNoPipelineRunsForComponent(componentLookupKey types.NamespacedName) {
 	}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 }
 
-func createSecret(resourceKey types.NamespacedName, data map[string]string) {
+func createSecret(resourceKey types.NamespacedName, data map[string]string, secretType ...corev1.SecretType) {
 	secret := &corev1.Secret{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "v1",
@@ -450,6 +450,9 @@ func createSecret(resourceKey types.NamespacedName, data map[string]string) {
 			Namespace: resourceKey.Namespace,
 		},
 		StringData: data,
+	}
+	if len(secretType) > 0 {
+		secret.Type = secretType[0]
 	}
 	if err := k8sClient.Create(ctx, secret); err != nil {
 		if !k8sErrors.IsAlreadyExists(err) {

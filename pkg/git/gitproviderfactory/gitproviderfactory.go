@@ -62,15 +62,19 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 				password := secretData["password"]
 				if !ok {
 					// Access token is used instead of username/password
-					return github.NewGithubClient(string(username)), nil
+					decodedUsername, err := base64.StdEncoding.DecodeString(string(password))
+					if err != nil {
+						return nil, boerrors.NewBuildOpError(boerrors.EGitHubSecretInvalid,
+							fmt.Errorf("failed to create git client: failed to decode password: %w", err))
+					}
+					return github.NewGithubClient(string(decodedUsername)), nil
 				} else {
-					var decodedUsername, decodedPassword []byte
-					_, err := base64.StdEncoding.Decode(decodedUsername, username)
+					decodedUsername, err := base64.StdEncoding.DecodeString(string(username))
 					if err != nil {
 						return nil, boerrors.NewBuildOpError(boerrors.EGitHubSecretInvalid,
 							fmt.Errorf("failed to create git client: failed to decode username: %w", err))
 					}
-					_, err = base64.StdEncoding.Decode(decodedPassword, password)
+					decodedPassword, err := base64.StdEncoding.DecodeString(string(password))
 					if err != nil {
 						return nil, boerrors.NewBuildOpError(boerrors.EGitHubSecretInvalid,
 							fmt.Errorf("failed to create git client: failed to decode password: %w", err))
@@ -136,15 +140,19 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 			password := secretData["password"]
 			if !ok {
 				// Access token is used instead of username/password
-				return gitlab.NewGitlabClient(string(username), baseUrl)
+				decodedUsername, err := base64.StdEncoding.DecodeString(string(password))
+				if err != nil {
+					return nil, boerrors.NewBuildOpError(boerrors.EGitHubSecretInvalid,
+						fmt.Errorf("failed to create git client: failed to decode password: %w", err))
+				}
+				return github.NewGithubClient(string(decodedUsername)), nil
 			} else {
-				var decodedUsername, decodedPassword []byte
-				_, err := base64.StdEncoding.Decode(decodedUsername, username)
+				decodedUsername, err := base64.StdEncoding.DecodeString(string(username))
 				if err != nil {
 					return nil, boerrors.NewBuildOpError(boerrors.EGitLabSecretInvalid,
 						fmt.Errorf("failed to create git client: failed to decode username: %w", err))
 				}
-				_, err = base64.StdEncoding.Decode(decodedPassword, password)
+				decodedPassword, err := base64.StdEncoding.DecodeString(string(password))
 				if err != nil {
 					return nil, boerrors.NewBuildOpError(boerrors.EGitLabSecretInvalid,
 						fmt.Errorf("failed to create git client: failed to decode password: %w", err))
