@@ -114,7 +114,7 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context,
 		return "", err
 	}
 
-	if err := validatePaCConfiguration(gitProvider, pacSecret.Data); err != nil {
+	if err := validatePaCConfiguration(gitProvider, *pacSecret); err != nil {
 		r.EventRecorder.Event(pacSecret, "Warning", "ErrorValidatingPaCSecret", err.Error())
 		// Do not reconcile, because configuration must be fixed before it is possible to proceed.
 		return "", boerrors.NewBuildOpError(boerrors.EPaCSecretInvalid,
@@ -493,7 +493,7 @@ func (r *ComponentBuildReconciler) lookupPaCSecret(ctx context.Context, componen
 			// No SCM secrets found in the component namespace, fall back to the global configuration
 			return r.lookupGHAppCSecret(ctx)
 		} else {
-			return nil,  boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, fmt.Errorf("no Pipelines as Code secrets found in %s namespace", component.Namespace))
+			return nil, boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, fmt.Errorf("no Pipelines as Code secrets found in %s namespace", component.Namespace))
 		}
 	}
 
@@ -521,7 +521,7 @@ func (r *ComponentBuildReconciler) lookupPaCSecret(ctx context.Context, componen
 			// No SCM secrets found in the component namespace, fall back to the global configuration
 			return r.lookupGHAppCSecret(ctx)
 		} else {
-			return nil,  boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, fmt.Errorf("no matching Pipelines as Code secrets found in %s namespace", component.Namespace))
+			return nil, boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, fmt.Errorf("no matching Pipelines as Code secrets found in %s namespace", component.Namespace))
 		}
 	}
 }
@@ -600,8 +600,7 @@ func (r *ComponentBuildReconciler) lookupGHAppCSecret(ctx context.Context) (*cor
 
 		r.EventRecorder.Event(&pacSecret, "Warning", "PaCSecretNotFound", err.Error())
 		// Do not trigger a new reconcile. The PaC secret must be created first.
-		return nil,v
-			fmt.Errorf(" Pipelines as Code secret not found in %s ", globalPaCSecretKey.Namespace))
+		return nil, fmt.Errorf(" Pipelines as Code secret not found in %s ", globalPaCSecretKey.Namespace)
 	}
 
 	return &pacSecret, nil
@@ -704,10 +703,25 @@ func (r *ComponentBuildReconciler) getPaCRoutePublicUrl(ctx context.Context) (st
 }
 
 // validatePaCConfiguration detects checks that all required fields is set for whatever method is used.
-func validatePaCConfiguration(gitProvider string, config map[string][]byte) error {
-	isApp := gitops.IsPaCApplicationConfigured(gitProvider, config)
+func validatePaCConfiguration(gitProvider string, pacSecret corev1.Secret) error {
+	isApp := gitops.IsPaCApplicationConfigured(gitProvider, pacSecret.Data)
 
 	expectedPaCWebhookConfigFields := []string{gitops.GetProviderTokenKey(gitProvider)}
+	expectedPacSSHConfigFields := []string{"ssh-privatekey"}
+	expectedPacBasicConfigFields := []string{"username", "password"}
+
+	validateNonAppConfig := func(secret corev1.Secret) error {
+		switch secret.Type {
+		case corev1.SecretTypeOpaque:
+			return checkMandatoryFieldsNotEmpty(secret.Data, expectedPaCWebhookConfigFields)
+		case corev1.SecretTypeSSHAuth:
+			return checkMandatoryFieldsNotEmpty(secret.Data, expectedPacSSHConfigFields)
+		case corev1.SecretTypeBasicAuth:
+			return checkMandatoryFieldsNotEmpty(secret.Data, expectedPacBasicConfigFields)
+		default:
+			return fmt.Errorf(" Pipelines as Code secret: unsupported secret type: %s", pacSecret.Type)
+		}
+	}
 
 	var err error
 	switch gitProvider {
@@ -715,38 +729,37 @@ func validatePaCConfiguration(gitProvider string, config map[string][]byte) erro
 		if isApp {
 			// GitHub application
 
-			err = checkMandatoryFieldsNotEmpty(config, []string{gitops.PipelinesAsCode_githubAppIdKey, gitops.PipelinesAsCode_githubPrivateKey})
+			err = checkMandatoryFieldsNotEmpty(pacSecret.Data, []string{gitops.PipelinesAsCode_githubAppIdKey, gitops.PipelinesAsCode_githubPrivateKey})
 			if err != nil {
 				break
 			}
 
 			// validate content of the fields
-			if _, e := strconv.ParseInt(string(config[gitops.PipelinesAsCode_githubAppIdKey]), 10, 64); e != nil {
+			if _, e := strconv.ParseInt(string(pacSecret.Data[gitops.PipelinesAsCode_githubAppIdKey]), 10, 64); e != nil {
 				err = fmt.Errorf(" Pipelines as Code: failed to parse GitHub application ID. Cause: %w", e)
 				break
 			}
 
-			privateKey := strings.TrimSpace(string(config[gitops.PipelinesAsCode_githubPrivateKey]))
+			privateKey := strings.TrimSpace(string(pacSecret.Data[gitops.PipelinesAsCode_githubPrivateKey]))
 			if !strings.HasPrefix(privateKey, "-----BEGIN RSA PRIVATE KEY-----") ||
 				!strings.HasSuffix(privateKey, "-----END RSA PRIVATE KEY-----") {
 				err = fmt.Errorf(" Pipelines as Code secret: GitHub application private key is invalid")
 				break
 			}
 		} else {
-			// webhook
-			err = checkMandatoryFieldsNotEmpty(config, expectedPaCWebhookConfigFields)
+			err = validateNonAppConfig(pacSecret)
 		}
 
 	case "gitlab":
-		err = checkMandatoryFieldsNotEmpty(config, expectedPaCWebhookConfigFields)
+		err = validateNonAppConfig(pacSecret)
 
 	case "bitbucket":
-		err = checkMandatoryFieldsNotEmpty(config, []string{gitops.GetProviderTokenKey(gitProvider)})
+		err = checkMandatoryFieldsNotEmpty(pacSecret.Data, []string{gitops.GetProviderTokenKey(gitProvider)})
 		if err != nil {
 			break
 		}
 
-		if len(config["username"]) == 0 {
+		if len(pacSecret.Data["username"]) == 0 {
 			err = fmt.Errorf(" Pipelines as Code secret: name of the user field must be configured")
 		}
 
