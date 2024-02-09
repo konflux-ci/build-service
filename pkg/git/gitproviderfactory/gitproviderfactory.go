@@ -17,6 +17,7 @@ limitations under the License.
 package gitproviderfactory
 
 import (
+	"encoding/base64"
 	"fmt"
 	"github.com/redhat-appstudio/application-service/gitops"
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
@@ -63,12 +64,23 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 					// Access token is used instead of username/password
 					return github.NewGithubClient(string(username)), nil
 				} else {
-					return github.NewGithubClientWithBasicAuth(string(username), string(password)), nil
+					var decodedUsername, decodedPassword []byte
+					_, err := base64.StdEncoding.Decode(decodedUsername, username)
+					if err != nil {
+						return nil, boerrors.NewBuildOpError(boerrors.EGitHubSecretInvalid,
+							fmt.Errorf("failed to create git client: failed to decode username: %w", err))
+					}
+					_, err = base64.StdEncoding.Decode(decodedPassword, password)
+					if err != nil {
+						return nil, boerrors.NewBuildOpError(boerrors.EGitHubSecretInvalid,
+							fmt.Errorf("failed to create git client: failed to decode password: %w", err))
+					}
+					return github.NewGithubClientWithBasicAuth(string(decodedUsername), string(decodedPassword)), nil
 				}
 			} else if gitClientConfig.PacSecret.Type == corev1.SecretTypeSSHAuth {
-				return github.NewGithubClientWithSSH(string(secretData["privateKey"])), nil
+				return github.NewGithubClientWithBasicAuth("token", string(secretData["ssh-privatekey"])), nil
 			} else {
-				return nil, boerrors.NewBuildOpError(boerrors.EGitHabSecretTypeNotSupported,
+				return nil, boerrors.NewBuildOpError(boerrors.EGitHubSecretTypeNotSupported,
 					fmt.Errorf("failed to create git client: GitHub application is not configured"))
 			}
 		}
@@ -124,16 +136,26 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 			password := secretData["password"]
 			if !ok {
 				// Access token is used instead of username/password
-				return gitlab.NewGitlabClient(string(username), baseUrl), nil
+				return gitlab.NewGitlabClient(string(username), baseUrl)
 			} else {
-				return gitlab.NewGitlabClientWithBasicAuth(string(username), string(password), baseUrl), nil
+				var decodedUsername, decodedPassword []byte
+				_, err := base64.StdEncoding.Decode(decodedUsername, username)
+				if err != nil {
+					return nil, boerrors.NewBuildOpError(boerrors.EGitLabSecretInvalid,
+						fmt.Errorf("failed to create git client: failed to decode username: %w", err))
+				}
+				_, err = base64.StdEncoding.Decode(decodedPassword, password)
+				if err != nil {
+					return nil, boerrors.NewBuildOpError(boerrors.EGitLabSecretInvalid,
+						fmt.Errorf("failed to create git client: failed to decode password: %w", err))
+				}
+				return gitlab.NewGitlabClientWithBasicAuth(string(decodedUsername), string(decodedPassword), baseUrl)
 			}
 		} else if gitClientConfig.PacSecret.Type == corev1.SecretTypeSSHAuth {
-			privateKey := secretData["privateKey"]
-			return gitlab.NewGitlabClientWithSSH(privateKey), nil
+			return gitlab.NewGitlabClientWithBasicAuth("token", string(secretData["ssh-privatekey"]), baseUrl) //TODO: that will not work probably
 		} else {
-			return nil, boerrors.NewBuildOpError(boerrors.EGitHabSecretTypeNotSupported,
-				fmt.Errorf("failed to create git client: GitHub application is not configured"))
+			return nil, boerrors.NewBuildOpError(boerrors.EGitLabSecretTypeNotSupported,
+				fmt.Errorf("failed to create git client: GitLab application is not configured"))
 		}
 
 	case "bitbucket":
