@@ -600,7 +600,7 @@ func (r *ComponentBuildReconciler) lookupGHAppCSecret(ctx context.Context) (*cor
 
 		r.EventRecorder.Event(&pacSecret, "Warning", "PaCSecretNotFound", err.Error())
 		// Do not trigger a new reconcile. The PaC secret must be created first.
-		return nil, fmt.Errorf(" Pipelines as Code secret not found in %s ", globalPaCSecretKey.Namespace)
+		return nil, boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, fmt.Errorf(" Pipelines as Code secret not found in %s ", globalPaCSecretKey.Namespace))
 	}
 
 	return &pacSecret, nil

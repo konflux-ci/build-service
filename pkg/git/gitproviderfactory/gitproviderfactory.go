@@ -62,12 +62,12 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 				password := secretData["password"]
 				if !ok {
 					// Access token is used instead of username/password
-					decodedUsername, err := base64.StdEncoding.DecodeString(string(password))
+					decodedToken, err := base64.StdEncoding.DecodeString(string(password))
 					if err != nil {
 						return nil, boerrors.NewBuildOpError(boerrors.EGitHubSecretInvalid,
 							fmt.Errorf("failed to create git client: failed to decode password: %w", err))
 					}
-					return github.NewGithubClient(string(decodedUsername)), nil
+					return github.NewGithubClient(string(decodedToken)), nil
 				} else {
 					decodedUsername, err := base64.StdEncoding.DecodeString(string(username))
 					if err != nil {
@@ -140,12 +140,12 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 			password := secretData["password"]
 			if !ok {
 				// Access token is used instead of username/password
-				decodedUsername, err := base64.StdEncoding.DecodeString(string(password))
+				decodedToken, err := base64.StdEncoding.DecodeString(string(password))
 				if err != nil {
 					return nil, boerrors.NewBuildOpError(boerrors.EGitHubSecretInvalid,
 						fmt.Errorf("failed to create git client: failed to decode password: %w", err))
 				}
-				return github.NewGithubClient(string(decodedUsername)), nil
+				return gitlab.NewGitlabClient(string(decodedToken), baseUrl)
 			} else {
 				decodedUsername, err := base64.StdEncoding.DecodeString(string(username))
 				if err != nil {
