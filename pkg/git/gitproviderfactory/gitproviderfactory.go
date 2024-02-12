@@ -58,28 +58,15 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 	case "github":
 		if !isAppUsed {
 			if gitClientConfig.PacSecret.Type == corev1.SecretTypeBasicAuth {
-				username, ok := secretData["username"]
-				password := secretData["password"]
-				if !ok {
-					// Access token is used instead of username/password
-					decodedToken, err := base64.StdEncoding.DecodeString(string(password))
-					if err != nil {
-						return nil, boerrors.NewBuildOpError(boerrors.EGitHubSecretInvalid,
-							fmt.Errorf("failed to create git client: failed to decode password: %w", err))
-					}
-					return github.NewGithubClient(string(decodedToken)), nil
+				basicAuthData := getBasicAuthSecretData(gitClientConfig.PacSecret)
+				if basicAuthData.err != nil {
+					return nil, boerrors.NewBuildOpError(boerrors.EGitHubSecretInvalid,
+						fmt.Errorf("failed to create git client: %w", basicAuthData.err))
+				}
+				if basicAuthData.isAuthToken {
+					return github.NewGithubClient(basicAuthData.password), nil
 				} else {
-					decodedUsername, err := base64.StdEncoding.DecodeString(string(username))
-					if err != nil {
-						return nil, boerrors.NewBuildOpError(boerrors.EGitHubSecretInvalid,
-							fmt.Errorf("failed to create git client: failed to decode username: %w", err))
-					}
-					decodedPassword, err := base64.StdEncoding.DecodeString(string(password))
-					if err != nil {
-						return nil, boerrors.NewBuildOpError(boerrors.EGitHubSecretInvalid,
-							fmt.Errorf("failed to create git client: failed to decode password: %w", err))
-					}
-					return github.NewGithubClientWithBasicAuth(string(decodedUsername), string(decodedPassword)), nil
+					return github.NewGithubClientWithBasicAuth(basicAuthData.username, basicAuthData.password), nil
 				}
 			} else if gitClientConfig.PacSecret.Type == corev1.SecretTypeSSHAuth {
 				return github.NewGithubClientWithBasicAuth("token", string(secretData["ssh-privatekey"])), nil
@@ -136,28 +123,16 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 		}
 
 		if gitClientConfig.PacSecret.Type == corev1.SecretTypeBasicAuth {
-			username, ok := secretData["username"]
-			password := secretData["password"]
-			if !ok {
+			basicAuthData := getBasicAuthSecretData(gitClientConfig.PacSecret)
+			if basicAuthData.err != nil {
+				return nil, boerrors.NewBuildOpError(boerrors.EGitLabSecretInvalid,
+					fmt.Errorf("failed to create git client: %w", basicAuthData.err))
+			}
+			if basicAuthData.isAuthToken {
 				// Access token is used instead of username/password
-				decodedToken, err := base64.StdEncoding.DecodeString(string(password))
-				if err != nil {
-					return nil, boerrors.NewBuildOpError(boerrors.EGitHubSecretInvalid,
-						fmt.Errorf("failed to create git client: failed to decode password: %w", err))
-				}
-				return gitlab.NewGitlabClient(string(decodedToken), baseUrl)
+				return gitlab.NewGitlabClient(basicAuthData.password, baseUrl)
 			} else {
-				decodedUsername, err := base64.StdEncoding.DecodeString(string(username))
-				if err != nil {
-					return nil, boerrors.NewBuildOpError(boerrors.EGitLabSecretInvalid,
-						fmt.Errorf("failed to create git client: failed to decode username: %w", err))
-				}
-				decodedPassword, err := base64.StdEncoding.DecodeString(string(password))
-				if err != nil {
-					return nil, boerrors.NewBuildOpError(boerrors.EGitLabSecretInvalid,
-						fmt.Errorf("failed to create git client: failed to decode password: %w", err))
-				}
-				return gitlab.NewGitlabClientWithBasicAuth(string(decodedUsername), string(decodedPassword), baseUrl)
+				return gitlab.NewGitlabClientWithBasicAuth(basicAuthData.username, basicAuthData.password, baseUrl)
 			}
 		} else if gitClientConfig.PacSecret.Type == corev1.SecretTypeSSHAuth {
 			return gitlab.NewGitlabClientWithBasicAuth("token", string(secretData["ssh-privatekey"]), baseUrl) //TODO: that will not work probably
@@ -171,4 +146,34 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 	default:
 		return nil, boerrors.NewBuildOpError(boerrors.EUnknownGitProvider, fmt.Errorf("git provider %s is not supported", gitProvider))
 	}
+}
+
+type basicAuthData struct {
+	username    string
+	password    string
+	isAuthToken bool
+	err         error
+}
+
+func getBasicAuthSecretData(secret corev1.Secret) basicAuthData {
+	var authData = basicAuthData{}
+	username, ok := secret.Data["username"]
+	if !ok {
+		authData.isAuthToken = true
+	} else {
+		decoded, err := base64.StdEncoding.DecodeString(string(username))
+		if err != nil {
+			authData.err = fmt.Errorf("failed to decode username: %w", err)
+			return authData
+		}
+		authData.username = string(decoded)
+	}
+	password := secret.Data["password"]
+	decoded, err := base64.StdEncoding.DecodeString(string(password))
+	if err != nil {
+		authData.err = fmt.Errorf("failed to decode password: %w", err)
+		return authData
+	}
+	authData.password = string(decoded)
+	return authData
 }
