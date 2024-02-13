@@ -142,7 +142,7 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context,
 	}
 
 	// Manage merge request for Pipelines as Code configuration
-	mrUrl, err := r.ConfigureRepositoryForPaC(ctx, component, *pacSecret, webhookTargetUrl, webhookSecretString)
+	mrUrl, err := r.ConfigureRepositoryForPaC(ctx, component, pacSecret, webhookTargetUrl, webhookSecretString)
 	if err != nil {
 		r.EventRecorder.Event(component, "Warning", "ErrorConfiguringPaCForComponentRepository", err.Error())
 		return "", err
@@ -250,7 +250,7 @@ func (r *ComponentBuildReconciler) TriggerPaCBuild(ctx context.Context, componen
 	}
 
 	gitClient, err := gitproviderfactory.CreateGitClient(gitproviderfactory.GitClientConfig{
-		PacSecret:                 *pacSecret,
+		PacSecret:                 pacSecret,
 		GitProvider:               gitProvider,
 		RepoUrl:                   repoUrl,
 		IsAppInstallationExpected: true,
@@ -442,7 +442,7 @@ func (r *ComponentBuildReconciler) UndoPaCProvisionForComponent(ctx context.Cont
 	}
 
 	// Manage merge request for Pipelines as Code configuration removal
-	baseBranch, mrUrl, action, err := r.UnconfigureRepositoryForPaC(ctx, component, *pacSecret, webhookTargetUrl)
+	baseBranch, mrUrl, action, err := r.UnconfigureRepositoryForPaC(ctx, component, pacSecret, webhookTargetUrl)
 	if err != nil {
 		log.Error(err, "failed to create merge request to remove Pipelines as Code configuration from Component source repository", l.Audit, "true")
 		return "", err
@@ -965,7 +965,7 @@ func generateMergeRequestSourceBranch(component *appstudiov1alpha1.Component) st
 
 // ConfigureRepositoryForPaC creates a merge request with initial Pipelines as Code configuration
 // and configures a webhook to notify in-cluster PaC unless application (on the repository side) is used.
-func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context, component *appstudiov1alpha1.Component, pacSecret corev1.Secret, webhookTargetUrl, webhookSecret string) (prUrl string, err error) {
+func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context, component *appstudiov1alpha1.Component, pacSecret *corev1.Secret, webhookTargetUrl, webhookSecret string) (prUrl string, err error) {
 	log := ctrllog.FromContext(ctx).WithValues("repository", component.Spec.Source.GitSource.URL)
 	ctx = ctrllog.IntoContext(ctx, log)
 
@@ -1041,7 +1041,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 // Deletes PaC webhook if it's used.
 // Does not delete PaC GitHub application from the repository as its installation was done manually by the user.
 // Returns merge request web URL or empty string if it's not needed.
-func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Context, component *appstudiov1alpha1.Component, pacSecret corev1.Secret, webhookTargetUrl string) (baseBranch string, prUrl string, action string, err error) {
+func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Context, component *appstudiov1alpha1.Component, pacSecret *corev1.Secret, webhookTargetUrl string) (baseBranch string, prUrl string, action string, err error) {
 	log := ctrllog.FromContext(ctx)
 
 	gitProvider, _ := gitops.GetGitProvider(*component)

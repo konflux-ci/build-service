@@ -32,7 +32,7 @@ var CreateGitClient func(gitClientConfig GitClientConfig) (gitprovider.GitProvid
 
 type GitClientConfig struct {
 	// PacSecret Pipelines as Code secret
-	PacSecret corev1.Secret
+	PacSecret *corev1.Secret
 	// GitProvider is type of the git provider to construct client for.
 	// Cannot be obtained from repo repository URL in case of self-hosted solution.
 	GitProvider string
@@ -58,10 +58,10 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 	case "github":
 		if !isAppUsed {
 			if gitClientConfig.PacSecret.Type == corev1.SecretTypeBasicAuth {
-				basicAuthData := getBasicAuthSecretData(gitClientConfig.PacSecret)
-				if basicAuthData.err != nil {
+				basicAuthData, err := getBasicAuthSecretData(gitClientConfig.PacSecret)
+				if err != nil {
 					return nil, boerrors.NewBuildOpError(boerrors.EGitHubSecretInvalid,
-						fmt.Errorf("failed to create git client: %w", basicAuthData.err))
+						fmt.Errorf("failed to create git client: %w", err))
 				}
 				if basicAuthData.isAuthToken {
 					return github.NewGithubClient(basicAuthData.password), nil
@@ -123,10 +123,10 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 		}
 
 		if gitClientConfig.PacSecret.Type == corev1.SecretTypeBasicAuth {
-			basicAuthData := getBasicAuthSecretData(gitClientConfig.PacSecret)
-			if basicAuthData.err != nil {
+			basicAuthData, err := getBasicAuthSecretData(gitClientConfig.PacSecret)
+			if err != nil {
 				return nil, boerrors.NewBuildOpError(boerrors.EGitLabSecretInvalid,
-					fmt.Errorf("failed to create git client: %w", basicAuthData.err))
+					fmt.Errorf("failed to create git client: %w", err))
 			}
 			if basicAuthData.isAuthToken {
 				// Access token is used instead of username/password
@@ -152,28 +152,25 @@ type basicAuthData struct {
 	username    string
 	password    string
 	isAuthToken bool
-	err         error
 }
 
-func getBasicAuthSecretData(secret corev1.Secret) basicAuthData {
-	var authData = basicAuthData{}
+func getBasicAuthSecretData(secret *corev1.Secret) (*basicAuthData, error) {
+	var authData = &basicAuthData{}
 	username, ok := secret.Data["username"]
 	if !ok {
 		authData.isAuthToken = true
 	} else {
 		decoded, err := base64.StdEncoding.DecodeString(string(username))
 		if err != nil {
-			authData.err = fmt.Errorf("failed to decode username: %w", err)
-			return authData
+			return nil, fmt.Errorf("failed to decode username: %w", err)
 		}
 		authData.username = string(decoded)
 	}
 	password := secret.Data["password"]
 	decoded, err := base64.StdEncoding.DecodeString(string(password))
 	if err != nil {
-		authData.err = fmt.Errorf("failed to decode password: %w", err)
-		return authData
+		return nil, fmt.Errorf("failed to decode password: %w", err)
 	}
 	authData.password = string(decoded)
-	return authData
+	return authData, nil
 }

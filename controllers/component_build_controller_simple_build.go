@@ -61,7 +61,7 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 		log.Error(err, "failed to get git provider credentials secret", l.Action, l.ActionView)
 		return boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, err)
 	}
-	buildGitInfo, err := r.getBuildGitInfo(ctx, component, pacSecret)
+	buildGitInfo, err := r.getBuildGitInfo(ctx, component, &pacSecret)
 	if err != nil {
 		return err
 	}
@@ -102,7 +102,7 @@ type buildGitInfo struct {
 }
 
 // getBuildGitInfo find out git source information the build is done from.
-func (r *ComponentBuildReconciler) getBuildGitInfo(ctx context.Context, component *appstudiov1alpha1.Component, pacSecret corev1.Secret) (*buildGitInfo, error) {
+func (r *ComponentBuildReconciler) getBuildGitInfo(ctx context.Context, component *appstudiov1alpha1.Component, pacSecret *corev1.Secret) (*buildGitInfo, error) {
 	log := ctrllog.FromContext(ctx).WithName("getBuildGitInfo")
 
 	gitProvider, err := gitops.GetGitProvider(*component)
