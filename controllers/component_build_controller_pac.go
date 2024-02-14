@@ -590,20 +590,24 @@ func slicesIntersection(s1, s2 []string) int {
 }
 
 func (r *ComponentBuildReconciler) lookupGHAppCSecret(ctx context.Context) (*corev1.Secret, error) {
-	pacSecret := corev1.Secret{}
+	pacSecret := &corev1.Secret{}
 	globalPaCSecretKey := types.NamespacedName{Namespace: buildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}
-	if err := r.Client.Get(ctx, globalPaCSecretKey, &pacSecret); err != nil {
+	if err := r.Client.Get(ctx, globalPaCSecretKey, pacSecret); err != nil {
 		if !errors.IsNotFound(err) {
-			r.EventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
+			r.EventRecorder.Event(pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
 			return nil, fmt.Errorf("failed to get Pipelines as Code secret in %s namespace: %w", globalPaCSecretKey.Namespace, err)
 		}
 
-		r.EventRecorder.Event(&pacSecret, "Warning", "PaCSecretNotFound", err.Error())
+		r.EventRecorder.Event(pacSecret, "Warning", "PaCSecretNotFound", err.Error())
 		// Do not trigger a new reconcile. The PaC secret must be created first.
 		return nil, boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, fmt.Errorf(" Pipelines as Code secret not found in %s ", globalPaCSecretKey.Namespace))
 	}
-
-	return &pacSecret, nil
+	// There is some secret but doesn't look like a GH App secret
+	if !gitops.IsPaCApplicationConfigured("github", pacSecret.Data) {
+		r.EventRecorder.Event(pacSecret, "Warning", "PaCSecretNotFound", "PaC secret is not configured for GitHub App")
+		return nil, boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, fmt.Errorf(" Pipelines as Code secret not found in %s ", globalPaCSecretKey.Namespace))
+	}
+	return pacSecret, nil
 }
 
 // Returns webhook secret for given component.

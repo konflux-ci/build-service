@@ -72,7 +72,7 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 				return github.NewGithubClientWithBasicAuth("token", string(secretData["ssh-privatekey"])), nil
 			} else {
 				return nil, boerrors.NewBuildOpError(boerrors.EGitHubSecretTypeNotSupported,
-					fmt.Errorf("failed to create git client: GitHub application is not configured"))
+					fmt.Errorf("failed to create git client: unsupported secret type: %s, name: %s", gitClientConfig.PacSecret.Type, gitClientConfig.PacSecret.Name))
 			}
 		}
 
@@ -138,7 +138,7 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 			return gitlab.NewGitlabClientWithBasicAuth("token", string(secretData["ssh-privatekey"]), baseUrl) //TODO: that will not work probably
 		} else {
 			return nil, boerrors.NewBuildOpError(boerrors.EGitLabSecretTypeNotSupported,
-				fmt.Errorf("failed to create git client: GitLab application is not configured"))
+				fmt.Errorf("failed to create git client: unsupported secret type: %s, name: %s", gitClientConfig.PacSecret.Type, gitClientConfig.PacSecret.Name))
 		}
 
 	case "bitbucket":
@@ -157,7 +157,7 @@ type basicAuthData struct {
 func getBasicAuthSecretData(secret *corev1.Secret) (*basicAuthData, error) {
 	var authData = &basicAuthData{}
 	username, ok := secret.Data["username"]
-	if !ok {
+	if !ok || len(username) == 0 {
 		authData.isAuthToken = true
 	} else {
 		decoded, err := base64.StdEncoding.DecodeString(string(username))

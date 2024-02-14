@@ -468,74 +468,74 @@ var _ = Describe("Component initial build controller", func() {
 			expectSimpleBuildStatus(resourcePacPrepKey, 0, "", false)
 		})
 
-		//It("should reuse the same webhook secret for multi component repository", func() {
-		//	var webhookSecretStrings []string
-		//	SetupPaCWebhookFunc = func(repoUrl string, webhookUrl string, webhookSecret string) error {
-		//		webhookSecretStrings = append(webhookSecretStrings, webhookSecret)
-		//		return nil
-		//	}
-		//
-		//	pacSecretData := map[string]string{"github.token": "ghp_token"}
-		//	createSecret(pacSecretKey, pacSecretData)
-		//
-		//	component1Key := resourcePacPrepKey
-		//	component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
-		//	deleteAllPaCRepositories(component1Key.Namespace)
-		//
-		//	createComponentWithBuildRequest(component1Key, BuildRequestConfigurePaCAnnotationValue)
-		//	createComponentWithBuildRequestAndGit(component2Key, BuildRequestConfigurePaCAnnotationValue, SampleRepoLink+"-"+resourcePacPrepKey.Name, "main")
-		//	defer deletePaCRepository(component2Key)
-		//	defer deleteComponent(component2Key)
-		//
-		//	waitComponentAnnotationGone(component1Key, BuildRequestAnnotationName)
-		//	waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
-		//
-		//	pacRepository := waitPaCRepositoryCreated(component1Key)
-		//	Expect(pacRepository.OwnerReferences).To(HaveLen(2))
-		//
-		//	waitSecretCreated(namespacePaCSecretKey)
-		//	waitSecretCreated(webhookSecretKey)
-		//
-		//	Expect(len(webhookSecretStrings)).To(BeNumerically(">", 0))
-		//	for _, webhookSecret := range webhookSecretStrings {
-		//		Expect(webhookSecret).To(Equal(webhookSecretStrings[0]))
-		//	}
-		//})
-		//
-		//It("should use different webhook secrets for different components of the same application", func() {
-		//	var webhookSecretStrings []string
-		//	SetupPaCWebhookFunc = func(repoUrl string, webhookUrl string, webhookSecret string) error {
-		//		webhookSecretStrings = append(webhookSecretStrings, webhookSecret)
-		//		return nil
-		//	}
-		//
-		//	pacSecretData := map[string]string{"github.token": "ghp_token"}
-		//	createSecret(pacSecretKey, pacSecretData)
-		//
-		//	component1Key := resourcePacPrepKey
-		//	component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
-		//
-		//	createComponentWithBuildRequest(component1Key, BuildRequestConfigurePaCAnnotationValue)
-		//	createCustomComponentWithBuildRequest(componentConfig{
-		//		componentKey:   component2Key,
-		//		containerImage: "registry.io/username/image2:tag2",
-		//		gitURL:         "https://github.com/devfile-samples/devfile-sample-go-basic",
-		//	}, BuildRequestConfigurePaCAnnotationValue)
-		//	defer deletePaCRepository(component2Key)
-		//	defer deleteComponent(component2Key)
-		//
-		//	waitSecretCreated(namespacePaCSecretKey)
-		//	waitSecretCreated(webhookSecretKey)
-		//
-		//	waitPaCRepositoryCreated(component1Key)
-		//	waitPaCRepositoryCreated(component2Key)
-		//
-		//	waitComponentAnnotationGone(component1Key, BuildRequestAnnotationName)
-		//	waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
-		//
-		//	Expect(len(webhookSecretStrings)).To(Equal(2))
-		//	Expect(webhookSecretStrings[0]).ToNot(Equal(webhookSecretStrings[1]))
-		//})
+		It("should reuse the same webhook secret for multi component repository", func() {
+			var webhookSecretStrings []string
+			SetupPaCWebhookFunc = func(repoUrl string, webhookUrl string, webhookSecret string) error {
+				webhookSecretStrings = append(webhookSecretStrings, webhookSecret)
+				return nil
+			}
+
+			pacSecretData := map[string]string{"password": "ghp_token"}
+			createSCMSecret(namespacePaCSecretKey, pacSecretData, corev1.SecretTypeBasicAuth, map[string]string{})
+
+			component1Key := resourcePacPrepKey
+			component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
+			deleteAllPaCRepositories(component1Key.Namespace)
+
+			createComponentWithBuildRequest(component1Key, BuildRequestConfigurePaCAnnotationValue)
+			createComponentWithBuildRequestAndGit(component2Key, BuildRequestConfigurePaCAnnotationValue, SampleRepoLink+"-"+resourcePacPrepKey.Name, "main")
+			defer deletePaCRepository(component2Key)
+			defer deleteComponent(component2Key)
+
+			waitComponentAnnotationGone(component1Key, BuildRequestAnnotationName)
+			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
+
+			pacRepository := waitPaCRepositoryCreated(component1Key)
+			Expect(pacRepository.OwnerReferences).To(HaveLen(2))
+
+			waitSecretCreated(namespacePaCSecretKey)
+			waitSecretCreated(webhookSecretKey)
+
+			Expect(len(webhookSecretStrings)).To(BeNumerically(">", 0))
+			for _, webhookSecret := range webhookSecretStrings {
+				Expect(webhookSecret).To(Equal(webhookSecretStrings[0]))
+			}
+		})
+
+		It("should use different webhook secrets for different components of the same application", func() {
+			var webhookSecretStrings []string
+			SetupPaCWebhookFunc = func(repoUrl string, webhookUrl string, webhookSecret string) error {
+				webhookSecretStrings = append(webhookSecretStrings, webhookSecret)
+				return nil
+			}
+
+			pacSecretData := map[string]string{"password": "ghp_token"}
+			createSCMSecret(namespacePaCSecretKey, pacSecretData, corev1.SecretTypeBasicAuth, map[string]string{})
+
+			component1Key := resourcePacPrepKey
+			component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
+
+			createComponentWithBuildRequest(component1Key, BuildRequestConfigurePaCAnnotationValue)
+			createCustomComponentWithBuildRequest(componentConfig{
+				componentKey:   component2Key,
+				containerImage: "registry.io/username/image2:tag2",
+				gitURL:         "https://github.com/devfile-samples/devfile-sample-go-basic",
+			}, BuildRequestConfigurePaCAnnotationValue)
+			defer deletePaCRepository(component2Key)
+			defer deleteComponent(component2Key)
+
+			waitSecretCreated(namespacePaCSecretKey)
+			waitSecretCreated(webhookSecretKey)
+
+			waitPaCRepositoryCreated(component1Key)
+			waitPaCRepositoryCreated(component2Key)
+
+			waitComponentAnnotationGone(component1Key, BuildRequestAnnotationName)
+			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
+
+			Expect(len(webhookSecretStrings)).To(Equal(2))
+			Expect(webhookSecretStrings[0]).ToNot(Equal(webhookSecretStrings[1]))
+		})
 
 		It("should set error in status if invalid build action requested", func() {
 			createCustomComponentWithBuildRequest(componentConfig{
@@ -798,25 +798,25 @@ var _ = Describe("Component initial build controller", func() {
 			deleteComponent(resourceCleanupKey)
 		})
 
-		It("should successfully unconfigure PaC even when it isn't able to get PaC webhook", func() {
-			pacSecretData := map[string]string{
-				"github-application-id": "12345",
-				"github-private-key":    githubAppPrivateKey,
-			}
-			createSecret(pacSecretKey, pacSecretData)
-			createComponentAndProcessBuildRequest(resourceCleanupKey, BuildRequestConfigurePaCAnnotationValue)
-			waitPaCFinalizerOnComponent(resourceCleanupKey)
-
-			pacSecretData = map[string]string{}
-			deleteSecret(pacSecretKey)
-			createSecret(pacSecretKey, pacSecretData)
-			deleteRoute(pacRouteKey)
-
-			setComponentBuildRequest(resourceCleanupKey, BuildRequestUnconfigurePaCAnnotationValue)
-			waitPaCFinalizerOnComponentGone(resourceCleanupKey)
-			waitDoneMessageOnComponent(resourceCleanupKey)
-			expectPacBuildStatus(resourceCleanupKey, "disabled", 0, "", UndoPacMergeRequestURL)
-		})
+		//It("should successfully unconfigure PaC even when it isn't able to get PaC webhook", func() {
+		//	pacSecretData := map[string]string{
+		//		"github-application-id": "12345",
+		//		"github-private-key":    githubAppPrivateKey,
+		//	}
+		//	createSecret(pacSecretKey, pacSecretData)
+		//	createComponentAndProcessBuildRequest(resourceCleanupKey, BuildRequestConfigurePaCAnnotationValue)
+		//	waitPaCFinalizerOnComponent(resourceCleanupKey)
+		//
+		//	pacSecretData = map[string]string{}
+		//	deleteSecret(pacSecretKey)
+		//	createSecret(pacSecretKey, pacSecretData)
+		//	deleteRoute(pacRouteKey)
+		//
+		//	setComponentBuildRequest(resourceCleanupKey, BuildRequestUnconfigurePaCAnnotationValue)
+		//	waitPaCFinalizerOnComponentGone(resourceCleanupKey)
+		//	waitDoneMessageOnComponent(resourceCleanupKey)
+		//	expectPacBuildStatus(resourceCleanupKey, "disabled", 0, "", UndoPacMergeRequestURL)
+		//})
 
 		It("should successfully unconfigure PaC, removal MR not needed", func() {
 			pacSecretData := map[string]string{
@@ -1034,8 +1034,8 @@ var _ = Describe("Component initial build controller", func() {
 				return nil
 			}
 
-			pacSecretData := map[string]string{"github.token": "ghp_token"}
-			createSecret(pacSecretKey, pacSecretData)
+			pacSecretData := map[string]string{"password": "ghp_token"}
+			createSCMSecret(namespacePaCSecretKey, pacSecretData, corev1.SecretTypeBasicAuth, map[string]string{})
 
 			createComponentAndProcessBuildRequest(resourceCleanupKey, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourceCleanupKey)
@@ -1060,8 +1060,8 @@ var _ = Describe("Component initial build controller", func() {
 				return fmt.Errorf("failed to delete webhook")
 			}
 
-			pacSecretData := map[string]string{"github.token": "ghp_token"}
-			createSecret(pacSecretKey, pacSecretData)
+			pacSecretData := map[string]string{"password": "ghp_token"}
+			createSCMSecret(namespacePaCSecretKey, pacSecretData, corev1.SecretTypeBasicAuth, map[string]string{})
 
 			createComponentAndProcessBuildRequest(resourceCleanupKey, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourceCleanupKey)
