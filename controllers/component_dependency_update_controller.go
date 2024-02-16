@@ -54,6 +54,7 @@ const (
 	// PacEventTypeAnnotationName represents the current event type
 	PacEventTypeAnnotationName = "pipelinesascode.tekton.dev/event-type"
 	PacEventPushType           = "push"
+	NudgeFilesParamName        = "nudge-files"
 	ImageUrlParamName          = "IMAGE_URL"
 	ImageDigestParamName       = "IMAGE_DIGEST"
 
@@ -87,6 +88,7 @@ type BuildResult struct {
 	BuiltImageTag            string
 	Digest                   string
 	DistributionRepositories []string
+	FileMatches              []string
 	Component                *applicationapi.Component
 }
 
@@ -264,6 +266,16 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 		repo = image[0:index]
 		tag = image[index+1:]
 	}
+	// find any configurations for files to nudge in
+	nudgeFiles := []string{}
+	for _, p := range pipelineRun.Spec.Params {
+		if p.Name == NudgeFilesParamName {
+			nudgeFiles = append(nudgeFiles, p.Value.ArrayVal...)
+		}
+	}
+	if len(nudgeFiles) == 0 {
+		nudgeFiles = append(nudgeFiles, ".*Dockerfile.*", ".*.yaml", ".*Containerfile.*")
+	}
 
 	components := applicationapi.ComponentList{}
 	err := r.Client.List(ctx, &components, client.InNamespace(pipelineRun.Namespace))
@@ -318,7 +330,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 		}
 	}
 	var nudgeErr error
-	immediateRetry, nudgeErr = r.UpdateFunction(ctx, r.Client, r.Scheme, r.EventRecorder, toUpdate, &BuildResult{BuiltImageRepository: repo, BuiltImageTag: tag, Digest: digest, Component: updatedComponent, DistributionRepositories: distibutionRepositories})
+	immediateRetry, nudgeErr = r.UpdateFunction(ctx, r.Client, r.Scheme, r.EventRecorder, toUpdate, &BuildResult{BuiltImageRepository: repo, BuiltImageTag: tag, Digest: digest, Component: updatedComponent, DistributionRepositories: distibutionRepositories, FileMatches: nudgeFiles})
 
 	if nudgeErr != nil {
 
@@ -500,7 +512,7 @@ func generateRenovateConfigForNudge(slug string, repositories []renovateReposito
     	enabledManagers: "regex",
 		customManagers: [
 			{
-            	"fileMatch": [".*Dockerfile.*",".*.yaml",".*Containerfile.*",".*.env",".*.json"],
+            	"fileMatch": [{{range .FileMatches}},"{{.}}"{{end}}],
 				"customType": "regex",
 				"datasourceTemplate": "docker",
 				"matchStrings": [
@@ -547,6 +559,7 @@ func generateRenovateConfigForNudge(slug string, repositories []renovateReposito
 		BuiltImageTag            string
 		Digest                   string
 		DistributionRepositories []string
+		FileMatches              []string
 	}{
 
 		Slug:                     slug,
@@ -556,6 +569,7 @@ func generateRenovateConfigForNudge(slug string, repositories []renovateReposito
 		BuiltImageTag:            buildResult.BuiltImageTag,
 		Digest:                   buildResult.Digest,
 		DistributionRepositories: buildResult.DistributionRepositories,
+		FileMatches:              buildResult.FileMatches,
 	}
 
 	tmpl, err := template.New("renovate").Parse(body)

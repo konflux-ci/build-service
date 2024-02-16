@@ -387,6 +387,15 @@ func createBuildPipelineRun(name string, namespace string, component string) *te
 	run.Namespace = namespace
 	run.Name = name
 	run.Spec.PipelineSpec = pipelineSpec
+	run.Spec.Params = tektonapi.Params{
+		tektonapi.Param{
+			Name: "nudge-files",
+			Value: tektonapi.ParamValue{
+				Type:     tektonapi.ParamTypeArray,
+				ArrayVal: []string{".*Dockerfile.*", ".*.yaml", ".*Containerfile.*"},
+			},
+		},
+	}
 	err := k8sClient.Create(context.TODO(), &run)
 	Expect(err).ToNot(HaveOccurred())
 	return &run
