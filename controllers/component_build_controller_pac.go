@@ -563,7 +563,7 @@ func bestMatchingSecret(_ context.Context, cRepo string, secrets []corev1.Secret
 	}
 	if len(potentialMatches) == 0 && len(hostOnlySecrets) == 0 {
 		return nil // Nothing matched
-	} else if len(hostOnlySecrets) > 0 {
+	} else if len(potentialMatches) == 0 && len(hostOnlySecrets) > 0 {
 		return &hostOnlySecrets[0] // Return first host-only secret
 	} else {
 		// find the best matching secret
@@ -584,6 +584,8 @@ func slicesIntersection(s1, s2 []string) int {
 	for i, e1 := range s1 {
 		if i < len(s2) && e1 == s2[i] {
 			count++
+		} else {
+			break
 		}
 	}
 	return count

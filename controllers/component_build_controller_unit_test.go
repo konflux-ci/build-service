@@ -1510,6 +1510,42 @@ func TestGetRandomString(t *testing.T) {
 	}
 }
 
+func TestSlicesIntersection(t *testing.T) {
+	tests := []struct {
+		in1, in2     []string
+		intersection int
+	}{
+		{
+			in1:          []string{"a", "b", "c", "d", "e"},
+			in2:          []string{"a", "b", "c", "d", "e"},
+			intersection: 5,
+		},
+		{
+			in1:          []string{"a", "b", "c", "d", "e"},
+			in2:          []string{"a", "b", "c", "q", "y"},
+			intersection: 3,
+		},
+		{
+			in1:          []string{"a", "b", "c", "d", "e"},
+			in2:          []string{"a", "q", "c", "f", "y"},
+			intersection: 1,
+		},
+		{
+			in1:          []string{"a", "b", "c", "d", "e"},
+			in2:          []string{"f", "b", "c", "d", "e"},
+			intersection: 0,
+		},
+	}
+	for _, tt := range tests {
+		t.Run("intersection test", func(t *testing.T) {
+			got := slicesIntersection(tt.in1, tt.in2)
+			if got != tt.intersection {
+				t.Errorf("Got slice intersection %d but expected length is %d", got, tt.intersection)
+			}
+		})
+	}
+}
+
 /*
 add new
 override existing one
