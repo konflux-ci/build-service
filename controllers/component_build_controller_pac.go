@@ -554,7 +554,7 @@ func bestMatchingSecret(_ context.Context, cRepo string, secrets []corev1.Secret
 		wildcardRepos := slices.Filter(nil, repos, func(s string) bool { return strings.HasSuffix(s, "*") })
 
 		for _, repo := range wildcardRepos {
-			i := slicesIntersection(cRepoParts, strings.Split(repo, "/"))
+			i := slicesIntersection(cRepoParts, strings.Split(strings.TrimSuffix(repo, "*"), "/"))
 			if i > 0 && potentialMatches[idx] < i {
 				// Add whole secret index to potential matches
 				potentialMatches[idx] = i
