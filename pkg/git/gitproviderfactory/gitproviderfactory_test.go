@@ -20,6 +20,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"testing"
 
 	"github.com/redhat-appstudio/application-service/gitops"
@@ -375,6 +376,88 @@ func TestGetContainerImageRepository(t *testing.T) {
 
 			if gitClient == nil {
 				t.Errorf("git clinet is nil")
+			}
+		})
+	}
+}
+
+func TestBasicAuthRevealing(t *testing.T) {
+	tests := []struct {
+		testcase    string
+		in          corev1.Secret
+		expected    basicAuthData
+		expectError bool
+	}{
+		{
+			testcase: "Token Auth (Password field only)",
+			in: corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "secret1",
+				},
+				Data: map[string][]byte{
+					"password": []byte(base64.StdEncoding.EncodeToString([]byte("token"))),
+				},
+			},
+			expected: basicAuthData{
+				username:    "",
+				password:    "token",
+				isAuthToken: true,
+			},
+			expectError: false,
+		},
+		{
+			testcase: "Basic Auth (Username & Password fields)",
+			in: corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "secret1",
+				},
+				Data: map[string][]byte{
+					"username": []byte(base64.StdEncoding.EncodeToString([]byte("user"))),
+					"password": []byte(base64.StdEncoding.EncodeToString([]byte("token"))),
+				},
+			},
+			expected: basicAuthData{
+				username:    "user",
+				password:    "token",
+				isAuthToken: false,
+			},
+			expectError: false,
+		},
+		{
+			testcase: "Broken test data",
+			in: corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "secret1",
+				},
+				Data: map[string][]byte{
+					"username": []byte("some_undecodable_data"),
+					"password": []byte(base64.StdEncoding.EncodeToString([]byte("token"))),
+				},
+			},
+			expected: basicAuthData{
+				username:    "user",
+				password:    "token",
+				isAuthToken: false,
+			},
+			expectError: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run("intersection test", func(t *testing.T) {
+			got, err := getBasicAuthSecretData(&tt.in)
+			if err != nil {
+				if !tt.expectError {
+					t.Errorf("failed to extract secret data: %s", err.Error())
+				}
+				return
+			} else {
+				if tt.expectError {
+					t.Errorf("expected error in secret data read for git config")
+					return
+				}
+				if got.username != tt.expected.username || got.password != tt.expected.password || got.isAuthToken != tt.expected.isAuthToken {
+					t.Errorf("Got secret data mismatched in %s, got %s|%s|%t", tt.testcase, got.username, got.password, got.isAuthToken)
+				}
 			}
 		})
 	}
