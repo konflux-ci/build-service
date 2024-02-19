@@ -798,25 +798,25 @@ var _ = Describe("Component initial build controller", func() {
 			deleteComponent(resourceCleanupKey)
 		})
 
-		//It("should successfully unconfigure PaC even when it isn't able to get PaC webhook", func() {
-		//	pacSecretData := map[string]string{
-		//		"github-application-id": "12345",
-		//		"github-private-key":    githubAppPrivateKey,
-		//	}
-		//	createSecret(pacSecretKey, pacSecretData)
-		//	createComponentAndProcessBuildRequest(resourceCleanupKey, BuildRequestConfigurePaCAnnotationValue)
-		//	waitPaCFinalizerOnComponent(resourceCleanupKey)
-		//
-		//	pacSecretData = map[string]string{}
-		//	deleteSecret(pacSecretKey)
-		//	createSecret(pacSecretKey, pacSecretData)
-		//	deleteRoute(pacRouteKey)
-		//
-		//	setComponentBuildRequest(resourceCleanupKey, BuildRequestUnconfigurePaCAnnotationValue)
-		//	waitPaCFinalizerOnComponentGone(resourceCleanupKey)
-		//	waitDoneMessageOnComponent(resourceCleanupKey)
-		//	expectPacBuildStatus(resourceCleanupKey, "disabled", 0, "", UndoPacMergeRequestURL)
-		//})
+		It("should successfully unconfigure PaC even when it isn't able to get PaC webhook", func() {
+			pacSecretData := map[string]string{
+				"github-application-id": "12345",
+				"github-private-key":    githubAppPrivateKey,
+			}
+			createSecret(pacSecretKey, pacSecretData)
+			createComponentAndProcessBuildRequest(resourceCleanupKey, BuildRequestConfigurePaCAnnotationValue)
+			waitPaCFinalizerOnComponent(resourceCleanupKey)
+
+			pacSecretData = map[string]string{}
+			deleteSecret(pacSecretKey)
+			createSecret(pacSecretKey, pacSecretData)
+			deleteRoute(pacRouteKey)
+
+			setComponentBuildRequest(resourceCleanupKey, BuildRequestUnconfigurePaCAnnotationValue)
+			waitPaCFinalizerOnComponentGone(resourceCleanupKey)
+			waitDoneMessageOnComponent(resourceCleanupKey)
+			expectPacBuildStatus(resourceCleanupKey, "disabled", 0, "", UndoPacMergeRequestURL)
+		})
 
 		It("should successfully unconfigure PaC, removal MR not needed", func() {
 			pacSecretData := map[string]string{

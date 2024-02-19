@@ -604,11 +604,6 @@ func (r *ComponentBuildReconciler) lookupGHAppCSecret(ctx context.Context) (*cor
 		// Do not trigger a new reconcile. The PaC secret must be created first.
 		return nil, boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, fmt.Errorf(" Pipelines as Code secret not found in %s ", globalPaCSecretKey.Namespace))
 	}
-	// There is some secret but doesn't look like a GH App secret
-	if !gitops.IsPaCApplicationConfigured("github", pacSecret.Data) {
-		r.EventRecorder.Event(pacSecret, "Warning", "PaCSecretNotFound", "PaC secret is not configured for GitHub App")
-		return nil, boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, fmt.Errorf(" Pipelines as Code secret not found in %s ", globalPaCSecretKey.Namespace))
-	}
 	return pacSecret, nil
 }
 
