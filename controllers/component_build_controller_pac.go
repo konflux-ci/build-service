@@ -528,9 +528,10 @@ func (r *ComponentBuildReconciler) lookupPaCSecret(ctx context.Context, componen
 
 // finds the best matching secret for the given repository, considering the repository annotation match priority:
 //   - Highest priority is given to the secret with the direct repository path match to the component repository
-//   - If no direct match is found, the secret with the longest path intersection is returned
-//     i.e. secret with org/proj/* will have a higher priority than secret with just org/* and will be returned first
-//   - If no secret with matching repository annotation is found, the one with just hostname match is returned
+//   - If no direct match is found, the secret with the longest component paths intersection is returned
+//     i.e. for the org/proj/sub1 component URL, secret with org/proj/* will have a higher priority than secret with
+//     just org/* and will be returned first
+//   - If no secret with matching repository annotation is found, the one with just matching hostname label is returned
 func bestMatchingSecret(componentRepository string, secrets []corev1.Secret) *corev1.Secret {
 
 	// secrets without repository annotation
@@ -570,21 +571,22 @@ func bestMatchingSecret(componentRepository string, secrets []corev1.Secret) *co
 			}
 		}
 	}
-	if len(potentialMatches) == 0 && len(hostOnlySecrets) == 0 {
-		return nil // Nothing matched
-	} else if len(potentialMatches) == 0 && len(hostOnlySecrets) > 0 {
-		return &hostOnlySecrets[0] // Return first host-only secret
-	} else {
-		// find the best matching secret
-		var bestIdx, bestCount int
-		for idx, count := range potentialMatches {
-			if count > bestCount {
-				bestCount = count
-				bestIdx = idx
-			}
+	if len(potentialMatches) == 0 {
+		if len(hostOnlySecrets) == 0 {
+			return nil // Nothing matched
 		}
-		return &secrets[bestIdx]
+		return &hostOnlySecrets[0] // Return first host-only secret
 	}
+
+	// find the best matching secret
+	var bestIdx, bestCount int
+	for idx, count := range potentialMatches {
+		if count > bestCount {
+			bestCount = count
+			bestIdx = idx
+		}
+	}
+	return &secrets[bestIdx]
 }
 
 // slicesIntersection returns the number of elements intersection between two slices with respect to the order,
