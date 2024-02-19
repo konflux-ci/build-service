@@ -470,17 +470,16 @@ func (r *ComponentBuildReconciler) lookupPaCSecret(ctx context.Context, componen
 	log := ctrllog.FromContext(ctx)
 	sourceUrl := component.Spec.Source.GitSource.URL
 
-	//TODO: Do we have a better URL parser?
 	schemaless, _ := strings.CutPrefix(sourceUrl, "https://")
-	cHost, rest, _ := strings.Cut(schemaless, "/")
-	cRepo, _ := strings.CutSuffix(rest, ".git")
+	componentHost, rest, _ := strings.Cut(schemaless, "/")
+	componentRepo, _ := strings.CutSuffix(rest, ".git")
 
-	log.Info("Looking for Pipelines as Code SCM secret", "host", cHost, "repo", cRepo)
+	log.Info("Looking for Pipelines as Code SCM secret", "host", componentHost, "repo", componentRepo)
 
 	secretList := &corev1.SecretList{}
 	opts := client.ListOption(&client.MatchingLabels{
 		scmSecretMarkerLabel:   "scm",
-		scmSecretHostnameLabel: cHost,
+		scmSecretHostnameLabel: componentHost,
 	})
 
 	if err := r.Client.List(ctx, secretList, client.InNamespace(component.Namespace), opts); err != nil {
@@ -506,16 +505,16 @@ func (r *ComponentBuildReconciler) lookupPaCSecret(ctx context.Context, componen
 		case corev1.SecretTypeBasicAuth:
 			basicSecrets = append(basicSecrets, secret)
 		default:
-			log.Error(nil, "Unknown SCM secret type meet", "type", secret.Type, "host", cHost, "repo", cRepo)
+			log.Error(nil, "Unknown SCM secret type meet", "type", secret.Type, "host", componentHost, "repo", componentRepo)
 		}
 	}
 	log.Info("Found SCM secrets", "ssh", len(sshSecrets), "basic", len(basicSecrets))
 
 	// find the best matching secret, starting from SSH type
-	if sshSecret := bestMatchingSecret(cRepo, sshSecrets); sshSecret != nil {
+	if sshSecret := bestMatchingSecret(componentRepo, sshSecrets); sshSecret != nil {
 		return sshSecret, nil
 	}
-	if basicSecret := bestMatchingSecret(cRepo, basicSecrets); basicSecret != nil {
+	if basicSecret := bestMatchingSecret(componentRepo, basicSecrets); basicSecret != nil {
 		return basicSecret, nil
 	}
 	// No SCM secrets found in the component namespace, fall back to the global configuration
