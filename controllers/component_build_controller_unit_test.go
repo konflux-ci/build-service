@@ -1642,7 +1642,7 @@ func TestSecretMatching(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run("intersection test", func(t *testing.T) {
-			got := bestMatchingSecret(context.TODO(), tt.repo, tt.in)
+			got := bestMatchingSecret(tt.repo, tt.in)
 			if got.Name != tt.expected {
 				t.Errorf("Got secret mathed %s but expected is %s", got.Name, tt.expected)
 			}

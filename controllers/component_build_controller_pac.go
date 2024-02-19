@@ -512,22 +512,23 @@ func (r *ComponentBuildReconciler) lookupPaCSecret(ctx context.Context, componen
 	log.Info("Found SCM secrets", "ssh", len(sshSecrets), "basic", len(basicSecrets))
 
 	// find the best matching secret, starting from SSH type
-	if sshSecret := bestMatchingSecret(ctx, cRepo, sshSecrets); sshSecret != nil {
+	if sshSecret := bestMatchingSecret(cRepo, sshSecrets); sshSecret != nil {
 		return sshSecret, nil
-	} else if basicSecret := bestMatchingSecret(ctx, cRepo, basicSecrets); basicSecret != nil {
-		return basicSecret, nil
-	} else {
-		if gitProvider == "github" {
-			// No SCM secrets found in the component namespace, fall back to the global configuration
-			return r.lookupGHAppCSecret(ctx)
-		} else {
-			return nil, boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, fmt.Errorf("no matching Pipelines as Code secrets found in %s namespace", component.Namespace))
-		}
 	}
+	if basicSecret := bestMatchingSecret(cRepo, basicSecrets); basicSecret != nil {
+		return basicSecret, nil
+	}
+	// No SCM secrets found in the component namespace, fall back to the global configuration
+	if gitProvider == "github" {
+		return r.lookupGHAppCSecret(ctx)
+	} else {
+		return nil, boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, fmt.Errorf("no matching Pipelines as Code secrets found in %s namespace", component.Namespace))
+	}
+
 }
 
 // finds the best matching secret for the given repository
-func bestMatchingSecret(_ context.Context, cRepo string, secrets []corev1.Secret) *corev1.Secret {
+func bestMatchingSecret(cRepo string, secrets []corev1.Secret) *corev1.Secret {
 
 	// secrets without repository annotation
 	var hostOnlySecrets []corev1.Secret
