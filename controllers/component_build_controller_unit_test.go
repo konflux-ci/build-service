@@ -1581,7 +1581,7 @@ func TestSecretMatching(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "secret1",
 						Annotations: map[string]string{
-							scmSecretRepositoryAnnotation: "test/*, foo/bar",
+							scmSecretRepositoryAnnotation: "/test/*, /foo/bar",
 						},
 					},
 				},
@@ -1609,7 +1609,7 @@ func TestSecretMatching(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "secret2",
 						Annotations: map[string]string{
-							scmSecretRepositoryAnnotation: "test*",
+							scmSecretRepositoryAnnotation: "test/*",
 						},
 					},
 				},
@@ -1632,7 +1632,7 @@ func TestSecretMatching(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "secret2",
 						Annotations: map[string]string{
-							scmSecretRepositoryAnnotation: "test/repo*",
+							scmSecretRepositoryAnnotation: "test/repo/*",
 						},
 					},
 				},

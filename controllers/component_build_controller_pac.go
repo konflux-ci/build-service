@@ -491,7 +491,7 @@ func (r *ComponentBuildReconciler) lookupPaCSecret(ctx context.Context, componen
 	if len(secretList.Items) == 0 {
 		if gitProvider == "github" {
 			// No SCM secrets found in the component namespace, fall back to the global configuration
-			return r.lookupGHAppCSecret(ctx)
+			return r.lookupGHAppSecret(ctx)
 		} else {
 			return nil, boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, fmt.Errorf("no Pipelines as Code secrets found in %s namespace", component.Namespace))
 		}
@@ -520,45 +520,54 @@ func (r *ComponentBuildReconciler) lookupPaCSecret(ctx context.Context, componen
 	}
 	// No SCM secrets found in the component namespace, fall back to the global configuration
 	if gitProvider == "github" {
-		return r.lookupGHAppCSecret(ctx)
+		return r.lookupGHAppSecret(ctx)
 	} else {
 		return nil, boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, fmt.Errorf("no matching Pipelines as Code secrets found in %s namespace", component.Namespace))
 	}
 
 }
 
-// finds the best matching secret for the given repository
-func bestMatchingSecret(cRepo string, secrets []corev1.Secret) *corev1.Secret {
+// finds the best matching secret for the given repository, considering the repository annotation match priority:
+//   - Highest priority is given to the secret with the direct repository path match to the component repository
+//   - If no direct match is found, the secret with the longest path intersection is returned
+//     i.e. secret with org/proj/* will have a higher priority than secret with just org/* and will be returned first
+//   - If no secret with matching repository annotation is found, the one with just hostname match is returned
+func bestMatchingSecret(componentRepository string, secrets []corev1.Secret) *corev1.Secret {
 
 	// secrets without repository annotation
 	var hostOnlySecrets []corev1.Secret
 
-	// map of secret idx and its best path intersections count
+	// map of secret index and its best path intersections count, i.e. the count of path parts matched,
 	var potentialMatches = make(map[int]int, len(secrets))
 
-	for idx, secret := range secrets {
-		annValue, ok := secret.Annotations[scmSecretRepositoryAnnotation]
-		if !ok || annValue == "" {
+	for index, secret := range secrets {
+		repositoryAnnotation, exists := secret.Annotations[scmSecretRepositoryAnnotation]
+		if !exists || repositoryAnnotation == "" {
 			hostOnlySecrets = append(hostOnlySecrets, secret)
 			continue
 		}
-		repos := strings.Split(annValue, ",")
+		secretRepositories := strings.Split(repositoryAnnotation, ",")
+
+		//trim possible slashes at the beginning of the repository path
+		for i, repository := range secretRepositories {
+			secretRepositories[i] = strings.TrimPrefix(repository, "/")
+		}
 
 		// Direct repository match, return secret
-		if slices.Contains(repos, cRepo) {
+		if slices.Contains(secretRepositories, componentRepository) {
 			return &secret
 		}
-		// No direct match, check for wildcard match
-		cRepoParts := strings.Split(cRepo, "/")
+		// No direct match, check for wildcard match, i.e. org/repo/* matches org/repo/foo, org/repo/bar, etc.
+		componentRepoParts := strings.Split(componentRepository, "/")
 
 		// Find wildcard repositories
-		wildcardRepos := slices.Filter(nil, repos, func(s string) bool { return strings.HasSuffix(s, "*") })
+		wildcardRepos := slices.Filter(nil, secretRepositories, func(s string) bool { return strings.HasSuffix(s, "*") })
 
 		for _, repo := range wildcardRepos {
-			i := slicesIntersection(cRepoParts, strings.Split(strings.TrimSuffix(repo, "*"), "/"))
-			if i > 0 && potentialMatches[idx] < i {
+			i := slicesIntersection(componentRepoParts, strings.Split(strings.TrimSuffix(repo, "*"), "/"))
+			if i > 0 && potentialMatches[index] < i {
 				// Add whole secret index to potential matches
-				potentialMatches[idx] = i
+				potentialMatches[index] = i
 			}
 		}
 	}
@@ -579,7 +588,8 @@ func bestMatchingSecret(cRepo string, secrets []corev1.Secret) *corev1.Secret {
 	}
 }
 
-// slicesIntersection returns the number of intersections between two slices with respect to the order of elements
+// slicesIntersection returns the number of elements intersection between two slices with respect to the order,
+// i.e. slicesIntersection(["a", "b", "c"], ["a", "b", "d"]) == 2 but slicesIntersection(["a", "b", "c"], ["b", "a", "c"]) == 0
 func slicesIntersection(s1, s2 []string) int {
 	var count int
 	for i, e1 := range s1 {
@@ -592,7 +602,7 @@ func slicesIntersection(s1, s2 []string) int {
 	return count
 }
 
-func (r *ComponentBuildReconciler) lookupGHAppCSecret(ctx context.Context) (*corev1.Secret, error) {
+func (r *ComponentBuildReconciler) lookupGHAppSecret(ctx context.Context) (*corev1.Secret, error) {
 	pacSecret := &corev1.Secret{}
 	globalPaCSecretKey := types.NamespacedName{Namespace: buildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}
 	if err := r.Client.Get(ctx, globalPaCSecretKey, pacSecret); err != nil {
