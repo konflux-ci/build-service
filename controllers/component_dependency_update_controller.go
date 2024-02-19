@@ -500,7 +500,7 @@ func generateRenovateConfigForNudge(slug string, repositories []renovateReposito
     	enabledManagers: "regex",
 		customManagers: [
 			{
-            	"fileMatch": [".*Dockerfile.*",".*.yaml",".*Containerfile.*"],
+            	"fileMatch": [".*Dockerfile.*",".*.yaml",".*Containerfile.*",".*.env",".*.json"],
 				"customType": "regex",
 				"datasourceTemplate": "docker",
 				"matchStrings": [
