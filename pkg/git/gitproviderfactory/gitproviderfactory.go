@@ -24,15 +24,14 @@ import (
 	"github.com/redhat-appstudio/build-service/pkg/git/github"
 	"github.com/redhat-appstudio/build-service/pkg/git/gitlab"
 	"github.com/redhat-appstudio/build-service/pkg/git/gitprovider"
-	corev1 "k8s.io/api/core/v1"
 	"strconv"
 )
 
 var CreateGitClient func(gitClientConfig GitClientConfig) (gitprovider.GitProviderClient, error) = createGitClient
 
 type GitClientConfig struct {
-	// PacSecret Pipelines as Code secret
-	PacSecret *corev1.Secret
+	// PacSecretData are the content of Pipelines as Code secret
+	PacSecretData map[string][]byte
 	// GitProvider is type of the git provider to construct client for.
 	// Cannot be obtained from repo repository URL in case of self-hosted solution.
 	GitProvider string
@@ -50,30 +49,40 @@ type GitClientConfig struct {
 // createGitClient creates new git provider client for the requested config
 func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderClient, error) {
 	gitProvider := gitClientConfig.GitProvider
-	secretData := gitClientConfig.PacSecret.Data
+	secretData := gitClientConfig.PacSecretData
+	username, usernameExists := secretData["username"]
+	password, passwordExists := secretData["password"]
+	_, sshKeyExists := secretData["ssh-privatekey"]
 
 	isAppUsed := gitops.IsPaCApplicationConfigured(gitProvider, secretData)
 
 	switch gitProvider {
 	case "github":
 		if !isAppUsed {
-			if gitClientConfig.PacSecret.Type == corev1.SecretTypeBasicAuth {
-				basicAuthData, err := getBasicAuthSecretData(gitClientConfig.PacSecret)
+			if usernameExists && passwordExists {
+				username, err := base64.StdEncoding.DecodeString(string(username))
 				if err != nil {
-					return nil, boerrors.NewBuildOpError(boerrors.EGitHubSecretInvalid,
-						fmt.Errorf("failed to create git client: %w", err))
+					return nil, fmt.Errorf("failed to decode username: %w", err)
 				}
-				if basicAuthData.isAuthToken {
-					return github.NewGithubClient(basicAuthData.password), nil
-				} else {
-					return github.NewGithubClientWithBasicAuth(basicAuthData.username, basicAuthData.password), nil
+				password, err := base64.StdEncoding.DecodeString(string(password))
+				if err != nil {
+					return nil, fmt.Errorf("failed to decode password: %w", err)
 				}
-			} else if gitClientConfig.PacSecret.Type == corev1.SecretTypeSSHAuth {
-				return github.NewGithubClientWithBasicAuth("token", string(secretData["ssh-privatekey"])), nil
-			} else {
-				return nil, boerrors.NewBuildOpError(boerrors.EGitHubSecretTypeNotSupported,
-					fmt.Errorf("failed to create git client: unsupported secret type: %s, name: %s", gitClientConfig.PacSecret.Type, gitClientConfig.PacSecret.Name))
+				return github.NewGithubClientWithBasicAuth(string(username), string(password)), nil
 			}
+			if !usernameExists && passwordExists {
+				password, err := base64.StdEncoding.DecodeString(string(password))
+				if err != nil {
+					return nil, fmt.Errorf("failed to decode password: %w", err)
+				}
+				return github.NewGithubClient(string(password)), nil
+			}
+			if sshKeyExists {
+				return nil, boerrors.NewBuildOpError(boerrors.EGitHubSecretTypeNotSupported,
+					fmt.Errorf("failed to create git client: GitHub ssh key authentication not yet supported"))
+			}
+			return nil, boerrors.NewBuildOpError(boerrors.EGitHubSecretTypeNotSupported,
+				fmt.Errorf("failed to create git client:  unsupported secret data. Expected username/password or token"))
 		}
 
 		githubAppIdStr := string(secretData[gitops.PipelinesAsCode_githubAppIdKey])
@@ -121,56 +130,34 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 		if err != nil {
 			return nil, err
 		}
-
-		if gitClientConfig.PacSecret.Type == corev1.SecretTypeBasicAuth {
-			basicAuthData, err := getBasicAuthSecretData(gitClientConfig.PacSecret)
+		if usernameExists && passwordExists {
+			username, err := base64.StdEncoding.DecodeString(string(username))
 			if err != nil {
-				return nil, boerrors.NewBuildOpError(boerrors.EGitLabSecretInvalid,
-					fmt.Errorf("failed to create git client: %w", err))
+				return nil, fmt.Errorf("failed to decode username: %w", err)
 			}
-			if basicAuthData.isAuthToken {
-				// Access token is used instead of username/password
-				return gitlab.NewGitlabClient(basicAuthData.password, baseUrl)
-			} else {
-				return gitlab.NewGitlabClientWithBasicAuth(basicAuthData.username, basicAuthData.password, baseUrl)
+			password, err := base64.StdEncoding.DecodeString(string(password))
+			if err != nil {
+				return nil, fmt.Errorf("failed to decode password: %w", err)
 			}
-		} else if gitClientConfig.PacSecret.Type == corev1.SecretTypeSSHAuth {
-			return gitlab.NewGitlabClientWithBasicAuth("token", string(secretData["ssh-privatekey"]), baseUrl) //TODO: that will not work probably
-		} else {
-			return nil, boerrors.NewBuildOpError(boerrors.EGitLabSecretTypeNotSupported,
-				fmt.Errorf("failed to create git client: unsupported secret type: %s, name: %s", gitClientConfig.PacSecret.Type, gitClientConfig.PacSecret.Name))
+			return gitlab.NewGitlabClientWithBasicAuth(string(username), string(password), baseUrl)
 		}
+		if !usernameExists && passwordExists {
+			password, err := base64.StdEncoding.DecodeString(string(password))
+			if err != nil {
+				return nil, fmt.Errorf("failed to decode password: %w", err)
+			}
+			return gitlab.NewGitlabClient(string(password), baseUrl)
+		}
+		if sshKeyExists {
+			return nil, boerrors.NewBuildOpError(boerrors.EGitLabSecretTypeNotSupported,
+				fmt.Errorf("failed to create git client: GitLab ssh key authentication not yet supported"))
+		}
+		return nil, boerrors.NewBuildOpError(boerrors.EGitLabSecretTypeNotSupported,
+			fmt.Errorf("failed to create git client: unsupported secret data. Expected username/password or token"))
 
 	case "bitbucket":
 		return nil, boerrors.NewBuildOpError(boerrors.EUnknownGitProvider, fmt.Errorf("git provider %s is not supported", gitProvider))
 	default:
 		return nil, boerrors.NewBuildOpError(boerrors.EUnknownGitProvider, fmt.Errorf("git provider %s is not supported", gitProvider))
 	}
-}
-
-type basicAuthData struct {
-	username    string
-	password    string
-	isAuthToken bool
-}
-
-func getBasicAuthSecretData(secret *corev1.Secret) (*basicAuthData, error) {
-	var authData = &basicAuthData{}
-	username, ok := secret.Data["username"]
-	if !ok || len(username) == 0 {
-		authData.isAuthToken = true
-	} else {
-		decoded, err := base64.StdEncoding.DecodeString(string(username))
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode username: %w", err)
-		}
-		authData.username = string(decoded)
-	}
-	password := secret.Data["password"]
-	decoded, err := base64.StdEncoding.DecodeString(string(password))
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode password: %w", err)
-	}
-	authData.password = string(decoded)
-	return authData, nil
 }

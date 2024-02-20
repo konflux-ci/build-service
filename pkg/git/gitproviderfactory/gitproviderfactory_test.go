@@ -19,8 +19,6 @@ package gitproviderfactory
 import (
 	"encoding/base64"
 	"fmt"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"testing"
 
 	"github.com/redhat-appstudio/application-service/gitops"
@@ -68,11 +66,9 @@ func TestGetContainerImageRepository(t *testing.T) {
 		{
 			name: "should create GitHub client from app",
 			gitClientConfig: GitClientConfig{
-				PacSecret: &corev1.Secret{
-					Data: map[string][]byte{
-						gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
-						gitops.PipelinesAsCode_githubPrivateKey: []byte("private key"),
-					},
+				PacSecretData: map[string][]byte{
+					gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
+					gitops.PipelinesAsCode_githubPrivateKey: []byte("private key"),
 				},
 				GitProvider:               "github",
 				RepoUrl:                   repoUrl,
@@ -88,11 +84,9 @@ func TestGetContainerImageRepository(t *testing.T) {
 		{
 			name: "should not create GitHub client from app if the app is not installed into repository",
 			gitClientConfig: GitClientConfig{
-				PacSecret: &corev1.Secret{
-					Data: map[string][]byte{
-						gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
-						gitops.PipelinesAsCode_githubPrivateKey: []byte("private key"),
-					},
+				PacSecretData: map[string][]byte{
+					gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
+					gitops.PipelinesAsCode_githubPrivateKey: []byte("private key"),
 				},
 				GitProvider:               "github",
 				RepoUrl:                   repoUrl,
@@ -111,11 +105,9 @@ func TestGetContainerImageRepository(t *testing.T) {
 		{
 			name: "should not create GitHub client from app if app id is not a number",
 			gitClientConfig: GitClientConfig{
-				PacSecret: &corev1.Secret{
-					Data: map[string][]byte{
-						gitops.PipelinesAsCode_githubAppIdKey:   []byte("12abcd"),
-						gitops.PipelinesAsCode_githubPrivateKey: []byte("private key"),
-					},
+				PacSecretData: map[string][]byte{
+					gitops.PipelinesAsCode_githubAppIdKey:   []byte("12abcd"),
+					gitops.PipelinesAsCode_githubPrivateKey: []byte("private key"),
 				},
 				GitProvider:               "github",
 				RepoUrl:                   repoUrl,
@@ -131,11 +123,9 @@ func TestGetContainerImageRepository(t *testing.T) {
 		{
 			name: "should not create GitHub client from app if app id and private key mismatch or invalid",
 			gitClientConfig: GitClientConfig{
-				PacSecret: &corev1.Secret{
-					Data: map[string][]byte{
-						gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
-						gitops.PipelinesAsCode_githubPrivateKey: []byte("private key"),
-					},
+				PacSecretData: map[string][]byte{
+					gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
+					gitops.PipelinesAsCode_githubPrivateKey: []byte("private key"),
 				},
 				GitProvider:               "github",
 				RepoUrl:                   repoUrl,
@@ -151,11 +141,9 @@ func TestGetContainerImageRepository(t *testing.T) {
 		{
 			name: "should create GitHub client from app for repository where the app is not installed",
 			gitClientConfig: GitClientConfig{
-				PacSecret: &corev1.Secret{
-					Data: map[string][]byte{
-						gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
-						gitops.PipelinesAsCode_githubPrivateKey: []byte("private key"),
-					},
+				PacSecretData: map[string][]byte{
+					gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
+					gitops.PipelinesAsCode_githubPrivateKey: []byte("private key"),
 				},
 				GitProvider:               "github",
 				RepoUrl:                   repoUrl,
@@ -174,11 +162,9 @@ func TestGetContainerImageRepository(t *testing.T) {
 		{
 			name: "should not create GitHub client from app if client call fails",
 			gitClientConfig: GitClientConfig{
-				PacSecret: &corev1.Secret{
-					Data: map[string][]byte{
-						gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
-						gitops.PipelinesAsCode_githubPrivateKey: []byte("private key"),
-					},
+				PacSecretData: map[string][]byte{
+					gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
+					gitops.PipelinesAsCode_githubPrivateKey: []byte("private key"),
 				},
 				GitProvider:               "github",
 				RepoUrl:                   repoUrl,
@@ -194,11 +180,9 @@ func TestGetContainerImageRepository(t *testing.T) {
 		{
 			name: "should create GitHub client, but fail when check if the application is installed into target repository fails",
 			gitClientConfig: GitClientConfig{
-				PacSecret: &corev1.Secret{
-					Data: map[string][]byte{
-						gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
-						gitops.PipelinesAsCode_githubPrivateKey: []byte("private key"),
-					},
+				PacSecretData: map[string][]byte{
+					gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
+					gitops.PipelinesAsCode_githubPrivateKey: []byte("private key"),
 				},
 				GitProvider:               "github",
 				RepoUrl:                   repoUrl,
@@ -217,11 +201,8 @@ func TestGetContainerImageRepository(t *testing.T) {
 		{
 			name: "should create GitHub client from token",
 			gitClientConfig: GitClientConfig{
-				PacSecret: &corev1.Secret{
-					Type: corev1.SecretTypeBasicAuth,
-					Data: map[string][]byte{
-						"password": []byte(base64.StdEncoding.EncodeToString([]byte("token"))),
-					},
+				PacSecretData: map[string][]byte{
+					"password": []byte(base64.StdEncoding.EncodeToString([]byte("token"))),
 				},
 				GitProvider:               "github",
 				RepoUrl:                   repoUrl,
@@ -229,6 +210,10 @@ func TestGetContainerImageRepository(t *testing.T) {
 			},
 			allowConstructors: func() {
 				github.NewGithubClient = func(accessToken string) *github.GithubClient {
+					expectedToken := "token"
+					if accessToken != expectedToken {
+						t.Errorf("expected token %s, got %s", expectedToken, accessToken)
+					}
 					return &github.GithubClient{}
 				}
 			},
@@ -237,12 +222,9 @@ func TestGetContainerImageRepository(t *testing.T) {
 		{
 			name: "should create GitHub client from username and password",
 			gitClientConfig: GitClientConfig{
-				PacSecret: &corev1.Secret{
-					Type: corev1.SecretTypeBasicAuth,
-					Data: map[string][]byte{
-						"username": []byte(base64.StdEncoding.EncodeToString([]byte("user"))),
-						"password": []byte(base64.StdEncoding.EncodeToString([]byte("pass"))),
-					},
+				PacSecretData: map[string][]byte{
+					"username": []byte(base64.StdEncoding.EncodeToString([]byte("user"))),
+					"password": []byte(base64.StdEncoding.EncodeToString([]byte("pass"))),
 				},
 				GitProvider:               "github",
 				RepoUrl:                   repoUrl,
@@ -258,11 +240,8 @@ func TestGetContainerImageRepository(t *testing.T) {
 		{
 			name: "should create GitLab client from token",
 			gitClientConfig: GitClientConfig{
-				PacSecret: &corev1.Secret{
-					Type: corev1.SecretTypeBasicAuth,
-					Data: map[string][]byte{
-						"password": []byte(base64.StdEncoding.EncodeToString([]byte("token"))),
-					},
+				PacSecretData: map[string][]byte{
+					"password": []byte(base64.StdEncoding.EncodeToString([]byte("token"))),
 				},
 				GitProvider:               "gitlab",
 				RepoUrl:                   "https://gitlab.com/my-org/my-repo",
@@ -271,8 +250,12 @@ func TestGetContainerImageRepository(t *testing.T) {
 			allowConstructors: func() {
 				gitlab.NewGitlabClient = func(accessToken, baseUrl string) (*gitlab.GitlabClient, error) {
 					expectedBaseUrl := "https://gitlab.com/"
+					expectedToken := "token"
 					if baseUrl != expectedBaseUrl {
 						return nil, fmt.Errorf("Expected to get baseUrl: %s, got %s", expectedBaseUrl, baseUrl)
+					}
+					if accessToken != expectedToken {
+						return nil, fmt.Errorf("Expected to get token: %s, got %s", expectedToken, accessToken)
 					}
 					return &gitlab.GitlabClient{}, nil
 				}
@@ -280,14 +263,11 @@ func TestGetContainerImageRepository(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "should create GitLab client from token",
+			name: "should create GitLab client from username and password",
 			gitClientConfig: GitClientConfig{
-				PacSecret: &corev1.Secret{
-					Type: corev1.SecretTypeBasicAuth,
-					Data: map[string][]byte{
-						"username": []byte(base64.StdEncoding.EncodeToString([]byte("user"))),
-						"password": []byte(base64.StdEncoding.EncodeToString([]byte("pas"))),
-					},
+				PacSecretData: map[string][]byte{
+					"username": []byte(base64.StdEncoding.EncodeToString([]byte("user"))),
+					"password": []byte(base64.StdEncoding.EncodeToString([]byte("pass"))),
 				},
 				GitProvider:               "gitlab",
 				RepoUrl:                   "https://gitlab.com/my-org/my-repo",
@@ -307,10 +287,8 @@ func TestGetContainerImageRepository(t *testing.T) {
 		{
 			name: "should fail to create Gitlab client since the base url can't be detected",
 			gitClientConfig: GitClientConfig{
-				PacSecret: &corev1.Secret{
-					Data: map[string][]byte{
-						"gitlab_token": []byte("token"),
-					},
+				PacSecretData: map[string][]byte{
+					"gitlab_token": []byte("token"),
 				},
 				GitProvider:               "gitlab",
 				RepoUrl:                   "https://",
@@ -322,10 +300,8 @@ func TestGetContainerImageRepository(t *testing.T) {
 		{
 			name: "should not create BitBucket client",
 			gitClientConfig: GitClientConfig{
-				PacSecret: &corev1.Secret{
-					Data: map[string][]byte{
-						"bitbucket_token": []byte("token"),
-					},
+				PacSecretData: map[string][]byte{
+					"bitbucket_token": []byte("token"),
 				},
 				GitProvider:               "bitbucket",
 				RepoUrl:                   repoUrl,
@@ -338,10 +314,8 @@ func TestGetContainerImageRepository(t *testing.T) {
 		{
 			name: "should not create unknown client",
 			gitClientConfig: GitClientConfig{
-				PacSecret: &corev1.Secret{
-					Data: map[string][]byte{
-						"unknonw_token": []byte("token"),
-					},
+				PacSecretData: map[string][]byte{
+					"unknonw_token": []byte("token"),
 				},
 				GitProvider:               "unknown",
 				RepoUrl:                   repoUrl,
@@ -376,88 +350,6 @@ func TestGetContainerImageRepository(t *testing.T) {
 
 			if gitClient == nil {
 				t.Errorf("git clinet is nil")
-			}
-		})
-	}
-}
-
-func TestBasicAuthRevealing(t *testing.T) {
-	tests := []struct {
-		testcase    string
-		in          corev1.Secret
-		expected    basicAuthData
-		expectError bool
-	}{
-		{
-			testcase: "Token Auth (Password field only)",
-			in: corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "secret1",
-				},
-				Data: map[string][]byte{
-					"password": []byte(base64.StdEncoding.EncodeToString([]byte("token"))),
-				},
-			},
-			expected: basicAuthData{
-				username:    "",
-				password:    "token",
-				isAuthToken: true,
-			},
-			expectError: false,
-		},
-		{
-			testcase: "Basic Auth (Username & Password fields)",
-			in: corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "secret1",
-				},
-				Data: map[string][]byte{
-					"username": []byte(base64.StdEncoding.EncodeToString([]byte("user"))),
-					"password": []byte(base64.StdEncoding.EncodeToString([]byte("token"))),
-				},
-			},
-			expected: basicAuthData{
-				username:    "user",
-				password:    "token",
-				isAuthToken: false,
-			},
-			expectError: false,
-		},
-		{
-			testcase: "Broken test data",
-			in: corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "secret1",
-				},
-				Data: map[string][]byte{
-					"username": []byte("some_undecodable_data"),
-					"password": []byte(base64.StdEncoding.EncodeToString([]byte("token"))),
-				},
-			},
-			expected: basicAuthData{
-				username:    "user",
-				password:    "token",
-				isAuthToken: false,
-			},
-			expectError: true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run("intersection test", func(t *testing.T) {
-			got, err := getBasicAuthSecretData(&tt.in)
-			if err != nil {
-				if !tt.expectError {
-					t.Errorf("failed to extract secret data: %s", err.Error())
-				}
-				return
-			} else {
-				if tt.expectError {
-					t.Errorf("expected error in secret data read for git config")
-					return
-				}
-				if got.username != tt.expected.username || got.password != tt.expected.password || got.isAuthToken != tt.expected.isAuthToken {
-					t.Errorf("Got secret data mismatched in %s, got %s|%s|%t", tt.testcase, got.username, got.password, got.isAuthToken)
-				}
 			}
 		})
 	}

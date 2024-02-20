@@ -115,7 +115,7 @@ func (r *ComponentBuildReconciler) getBuildGitInfo(ctx context.Context, componen
 	repoUrl := component.Spec.Source.GitSource.URL
 
 	gitClient, err := gitproviderfactory.CreateGitClient(gitproviderfactory.GitClientConfig{
-		PacSecret:                 pacSecret,
+		PacSecretData:             pacSecret.Data,
 		GitProvider:               gitProvider,
 		RepoUrl:                   repoUrl,
 		IsAppInstallationExpected: false,

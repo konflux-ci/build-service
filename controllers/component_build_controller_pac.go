@@ -250,7 +250,7 @@ func (r *ComponentBuildReconciler) TriggerPaCBuild(ctx context.Context, componen
 	}
 
 	gitClient, err := gitproviderfactory.CreateGitClient(gitproviderfactory.GitClientConfig{
-		PacSecret:                 pacSecret,
+		PacSecretData:             pacSecret.Data,
 		GitProvider:               gitProvider,
 		RepoUrl:                   repoUrl,
 		IsAppInstallationExpected: true,
@@ -986,7 +986,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 	repoUrl := component.Spec.Source.GitSource.URL
 
 	gitClient, err := gitproviderfactory.CreateGitClient(gitproviderfactory.GitClientConfig{
-		PacSecret:                 pacSecret,
+		PacSecretData:             pacSecret.Data,
 		GitProvider:               gitProvider,
 		RepoUrl:                   repoUrl,
 		IsAppInstallationExpected: true,
@@ -1061,7 +1061,7 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 	repoUrl := component.Spec.Source.GitSource.URL
 
 	gitClient, err := gitproviderfactory.CreateGitClient(gitproviderfactory.GitClientConfig{
-		PacSecret:                 pacSecret,
+		PacSecretData:             pacSecret.Data,
 		GitProvider:               gitProvider,
 		RepoUrl:                   repoUrl,
 		IsAppInstallationExpected: true,
