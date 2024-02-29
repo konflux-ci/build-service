@@ -136,7 +136,8 @@ func GetGithubInstallationsForComponents(ctx context.Context, client client.Clie
 
 		gitSource := component.Spec.Source.GitSource
 
-		githubAppInstallation, slugTmp, err := github.GetAppInstallationsForRepository(githubAppIdStr, privateKey, gitSource.URL)
+		url := strings.TrimSuffix(strings.TrimSuffix(gitSource.URL, ".git"), "/")
+		githubAppInstallation, slugTmp, err := github.GetAppInstallationsForRepository(githubAppIdStr, privateKey, url)
 		if slug == "" {
 			slug = slugTmp
 		}
