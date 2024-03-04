@@ -59,21 +59,17 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 	switch gitProvider {
 	case "github":
 		if !isAppUsed {
-			if usernameExists && passwordExists {
-				username, err := base64.StdEncoding.DecodeString(string(username))
-				if err != nil {
-					return nil, fmt.Errorf("failed to decode username: %w", err)
-				}
+			if passwordExists {
 				password, err := base64.StdEncoding.DecodeString(string(password))
 				if err != nil {
 					return nil, fmt.Errorf("failed to decode password: %w", err)
 				}
-				return github.NewGithubClientWithBasicAuth(string(username), string(password)), nil
-			}
-			if !usernameExists && passwordExists {
-				password, err := base64.StdEncoding.DecodeString(string(password))
-				if err != nil {
-					return nil, fmt.Errorf("failed to decode password: %w", err)
+				if usernameExists {
+					username, err := base64.StdEncoding.DecodeString(string(username))
+					if err != nil {
+						return nil, fmt.Errorf("failed to decode username: %w", err)
+					}
+					return github.NewGithubClientWithBasicAuth(string(username), string(password)), nil
 				}
 				return github.NewGithubClient(string(password)), nil
 			}
