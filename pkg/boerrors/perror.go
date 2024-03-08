@@ -108,6 +108,8 @@ const (
 	// GitHub Application with specified ID does not exists.
 	// Correct configuration in the AppStudio installation ('pipelines-as-code-secret' secret in 'build-service' namespace).
 	EGitHubAppDoesNotExist BOErrorId = 73
+	// EGitHubAppSuspended Application in git repository is suspended
+	EGitHubAppSuspended BOErrorId = 78
 
 	// EGitHubTokenUnauthorized access token can't be recognized by GitHub and 401 is responded.
 	// This error may be caused by a malformed token string or an expired token.
@@ -171,6 +173,7 @@ var boErrorMessages = map[BOErrorId]string{
 	EGitHubAppMalformedId:          "malformed GitHub Application ID",
 	EGitHubAppPrivateKeyNotMatched: "GitHub Application private key does not match Application ID",
 	EGitHubAppDoesNotExist:         "GitHub Application with given ID does not exist",
+	EGitHubAppSuspended:            "GitHub Application is suspended for repository",
 
 	EGitHubTokenUnauthorized:     "Access token is unrecognizable by GitHub",
 	EGitHubNoResourceToOperateOn: "No resource for finishing the request",
