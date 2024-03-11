@@ -54,13 +54,13 @@ const (
 	// PacEventTypeAnnotationName represents the current event type
 	PacEventTypeAnnotationName = "pipelinesascode.tekton.dev/event-type"
 	PacEventPushType           = "push"
-	NudgeFilesParamName        = "nudge-files"
 	ImageUrlParamName          = "IMAGE_URL"
 	ImageDigestParamName       = "IMAGE_DIGEST"
 
 	NudgeProcessedAnnotationName = "build.appstudio.openshift.io/component-nudge-processed"
 	NudgeFinalizer               = "build.appstudio.openshift.io/build-nudge-finalizer"
 	FailureCountAnnotationName   = "build.appstudio.openshift.io/build-nudge-failures"
+	NudgeFilesAnnotationName     = "build.appstudio.openshift.io/build-nudge-files"
 
 	ComponentNudgedEventType      = "ComponentNudged"
 	ComponentNudgeFailedEventType = "ComponentNudgeFailed"
@@ -88,7 +88,7 @@ type BuildResult struct {
 	BuiltImageTag            string
 	Digest                   string
 	DistributionRepositories []string
-	FileMatches              []string
+	FileMatches              string
 	Component                *applicationapi.Component
 }
 
@@ -267,14 +267,12 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 		tag = image[index+1:]
 	}
 	// find any configurations for files to nudge in
-	nudgeFiles := []string{}
-	for _, p := range pipelineRun.Spec.Params {
-		if p.Name == NudgeFilesParamName {
-			nudgeFiles = append(nudgeFiles, p.Value.ArrayVal...)
-		}
+	if pipelineRun.Annotations == nil {
+		pipelineRun.Annotations = map[string]string{}
 	}
-	if len(nudgeFiles) == 0 {
-		nudgeFiles = append(nudgeFiles, ".*Dockerfile.*", ".*.yaml", ".*Containerfile.*")
+	nudgeFiles := pipelineRun.Annotations[NudgeFilesAnnotationName]
+	if nudgeFiles == "" {
+		nudgeFiles = ".*Dockerfile.*, .*.yaml, .*Containerfile.*"
 	}
 
 	components := applicationapi.ComponentList{}
@@ -512,7 +510,7 @@ func generateRenovateConfigForNudge(slug string, repositories []renovateReposito
     	enabledManagers: "regex",
 		customManagers: [
 			{
-            	"fileMatch": [{{range .FileMatches}},"{{.}}"{{end}}],
+            	"fileMatch": [{{.FileMatches}}],
 				"customType": "regex",
 				"datasourceTemplate": "docker",
 				"matchStrings": [
@@ -559,7 +557,7 @@ func generateRenovateConfigForNudge(slug string, repositories []renovateReposito
 		BuiltImageTag            string
 		Digest                   string
 		DistributionRepositories []string
-		FileMatches              []string
+		FileMatches              string
 	}{
 
 		Slug:                     slug,
