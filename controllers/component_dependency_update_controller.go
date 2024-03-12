@@ -498,6 +498,14 @@ func generateRenovateConfigForNudge(slug string, repositories []renovateReposito
 	buildResult := context.(*BuildResult)
 
 	repositoriesData, _ := json.Marshal(repositories)
+	fileMatchParts := strings.Split(buildResult.FileMatches, ",")
+	for i := range fileMatchParts {
+		fileMatchParts[i] = strings.TrimSpace(fileMatchParts[i])
+	}
+	fileMatch, err := json.Marshal(fileMatchParts)
+	if err != nil {
+		return "", err
+	}
 	body := `
 	{{with $root := .}}
 	module.exports = {
@@ -510,7 +518,7 @@ func generateRenovateConfigForNudge(slug string, repositories []renovateReposito
     	enabledManagers: "regex",
 		customManagers: [
 			{
-            	"fileMatch": [{{.FileMatches}}],
+            	"fileMatch": {{.FileMatches}},
 				"customType": "regex",
 				"datasourceTemplate": "docker",
 				"matchStrings": [
@@ -567,7 +575,7 @@ func generateRenovateConfigForNudge(slug string, repositories []renovateReposito
 		BuiltImageTag:            buildResult.BuiltImageTag,
 		Digest:                   buildResult.Digest,
 		DistributionRepositories: buildResult.DistributionRepositories,
-		FileMatches:              buildResult.FileMatches,
+		FileMatches:              string(fileMatch),
 	}
 
 	tmpl, err := template.New("renovate").Parse(body)
