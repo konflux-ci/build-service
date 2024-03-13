@@ -88,8 +88,11 @@ func newGithubClientByApp(appId int64, privateKeyPem []byte, repoUrl string) (*G
 		installId,
 		&github.InstallationTokenOptions{})
 	if err != nil {
-		// TODO analyze the error
-		return nil, err
+		if strings.Contains(err.Error(), "installation has been suspended") {
+			return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppSuspended, err)
+		} else {
+			return nil, err
+		}
 	}
 
 	githubClient := NewGithubClient(token.GetToken())
@@ -135,8 +138,11 @@ func newGithubClientForSimpleBuildByApp(appId int64, privateKeyPem []byte) (*Git
 		installId,
 		&github.InstallationTokenOptions{})
 	if err != nil {
-		// TODO analyze the error
-		return nil, err
+		if strings.Contains(err.Error(), "installation has been suspended") {
+			return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppSuspended, err)
+		} else {
+			return nil, err
+		}
 	}
 
 	return NewGithubClient(token.GetToken()), nil
