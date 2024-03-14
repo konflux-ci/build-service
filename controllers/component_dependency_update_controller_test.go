@@ -383,7 +383,7 @@ func createBuildPipelineRun(name string, namespace string, component string) *te
 	}
 	run := tektonapi.PipelineRun{}
 	run.Labels = map[string]string{ComponentNameLabelName: component, PipelineRunTypeLabelName: PipelineRunBuildType}
-	run.Annotations = map[string]string{PacEventTypeAnnotationName: PacEventPushType}
+	run.Annotations = map[string]string{PacEventTypeAnnotationName: PacEventPushType, NudgeFilesAnnotationName: ".*Dockerfile.*, .*.yaml, .*Containerfile.*"}
 	run.Namespace = namespace
 	run.Name = name
 	run.Spec.PipelineSpec = pipelineSpec
