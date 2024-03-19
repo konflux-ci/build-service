@@ -80,6 +80,7 @@ var (
 	pipelinesAsCodeComponentProvisionTimeMetric   prometheus.Histogram
 	pipelinesAsCodeComponentUnconfigureTimeMetric prometheus.Histogram
 	pushPipelineRebuildTriggerTimeMetric          prometheus.Histogram
+	buildServiceAvailableMetric                   prometheus.Gauge
 	componentTimesForMetrics                      = map[string]componentMetricsInfo{}
 )
 
@@ -127,6 +128,14 @@ func initMetrics() error {
 		Help:      "The time in seconds spent from the moment of requesting push pipeline rebuild till Pipelines-as-Code API trigger.",
 	})
 
+	buildServiceAvailableMetric = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: metricsNamespace,
+			Subsystem: metricsSubsystem,
+			Name:      "available",
+			Help:      "The availability of the build service",
+		})
+
 	if err := metrics.Registry.Register(componentOnboardingTimeMetric); err != nil {
 		return fmt.Errorf("failed to register the initial_build_or_pac_provision_creation_time metric: %w", err)
 	}
@@ -147,6 +156,10 @@ func initMetrics() error {
 		return fmt.Errorf("failed to register the Push_pipeline_rebuild_trigger_time metric: %w", err)
 	}
 
+	if err := metrics.Registry.Register(buildServiceAvailableMetric); err != nil {
+		return fmt.Errorf("failed to register the available metric: %w", err)
+	}
+	buildServiceAvailableMetric.Set(1)
 	return nil
 }
 
