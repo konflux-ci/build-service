@@ -157,7 +157,7 @@ func initMetrics() error {
 	}
 
 	if err := metrics.Registry.Register(buildServiceAvailableMetric); err != nil {
-		return fmt.Errorf("failed to register the available metric: %w", err)
+		return fmt.Errorf("failed to register the availability metric: %w", err)
 	}
 	buildServiceAvailableMetric.Set(1)
 	return nil
