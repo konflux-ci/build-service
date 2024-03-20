@@ -908,8 +908,10 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 			mrData.CommitMessage = fmt.Sprintf("%s update %s", appName, component.Name)
 			mrData.Title = fmt.Sprintf("%s update %s", appName, component.Name)
 			mrData.AuthorName = appSlug
+			buildServiceAvailableMetric.Set(1)
 		} else {
 			if gitProvider == "github" {
+				buildServiceAvailableMetric.Set(0)
 				log.Error(err, "failed to get PaC GitHub Application name", l.Action, l.ActionView, l.Audit, "true")
 				// Do not fail PaC provision if failed to read GitHub App info
 			}
@@ -1017,8 +1019,10 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 				mrData.CommitMessage = fmt.Sprintf("%s purge %s", appName, component.Name)
 				mrData.Title = fmt.Sprintf("%s purge %s", appName, component.Name)
 				mrData.AuthorName = appSlug
+				buildServiceAvailableMetric.Set(1)
 			} else {
 				if gitProvider == "github" {
+					buildServiceAvailableMetric.Set(0)
 					log.Error(err, "failed to get PaC GitHub Application name", l.Action, l.ActionView, l.Audit, "true")
 					// Do not fail PaC clean up PR if failed to read GitHub App info
 				}
