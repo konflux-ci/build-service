@@ -168,11 +168,21 @@ func (r *ComponentDependencyUpdateReconciler) Reconcile(ctx context.Context, req
 	component, err := GetComponentFromPipelineRun(r.Client, ctx, pipelineRun)
 	if err != nil || component == nil {
 		log.Error(err, "failed to get component")
+		// In case the component was deleted while running the pipeline
+		if controllerutil.ContainsFinalizer(pipelineRun, NudgeFinalizer) {
+			patch := client.MergeFrom(pipelineRun.DeepCopy())
+			return r.removePipelineFinalizer(ctx, pipelineRun, patch)
+		}
 		return ctrl.Result{}, err
 	}
 
 	if len(component.Spec.BuildNudgesRef) == 0 {
 		log.Info(fmt.Sprintf("component %s has no BuildNudgesRef set", component.Name))
+		// In case the nudge was removed while running the pipeline
+		if controllerutil.ContainsFinalizer(pipelineRun, NudgeFinalizer) {
+			patch := client.MergeFrom(pipelineRun.DeepCopy())
+			return r.removePipelineFinalizer(ctx, pipelineRun, patch)
+		}
 		return ctrl.Result{}, nil
 	}
 	log.Info("reconciling PipelineRun")
