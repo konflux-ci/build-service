@@ -19,6 +19,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/redhat-appstudio/build-service/pkg/metrics"
 	"os"
 	"regexp"
 	"strings"
@@ -204,8 +205,17 @@ func main() {
 		}
 	}
 
+	ctx := ctrl.SetupSignalHandler()
+	setupLog.Info("starting metrics")
+	buildMetrics := metrics.NewBuildMetrics(mgr.GetClient())
+	if err := buildMetrics.InitMetrics(); err != nil {
+		setupLog.Error(err, "unable to initialize metrics")
+		os.Exit(1)
+	}
+	buildMetrics.StartMetrics(ctx)
+
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
