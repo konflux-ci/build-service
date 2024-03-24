@@ -25,7 +25,7 @@ import (
 	"strings"
 
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
-	"github.com/redhat-appstudio/application-service/pkg/devfile"
+	devfile "github.com/redhat-appstudio/application-service/cdq-analysis/pkg"
 	buildappstudiov1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 	l "github.com/redhat-appstudio/build-service/pkg/logs"

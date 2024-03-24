@@ -4,7 +4,7 @@ go 1.20
 
 require (
 	github.com/bradleyfalzon/ghinstallation/v2 v2.8.0
-	github.com/devfile/api/v2 v2.2.1-alpha.0.20230413012049-a6c32fca0dbd
+	github.com/devfile/api/v2 v2.2.1
 	github.com/go-logr/logr v1.4.1
 	github.com/google/go-containerregistry v0.16.1
 	github.com/h2non/gock v1.2.0
@@ -27,17 +27,26 @@ require (
 	sigs.k8s.io/yaml v1.4.0
 )
 
+require (
+	github.com/devfile/alizer v1.2.2-0.20231004141146-f36141673c7f // indirect
+	github.com/distribution/distribution/v3 v3.0.0-20211118083504-a29a3c99a684 // indirect
+	github.com/redhat-appstudio/application-service/cdq-analysis v0.0.0 // indirect
+)
+
 // If you update dependencies below you must also update controllers/suite_test.go
 // Note that tekton is replaced below the require block
 require (
 	github.com/openshift-pipelines/pipelines-as-code v0.18.0
 	github.com/redhat-appstudio/application-api v0.0.0-20231026192857-89515ad2504f
-	github.com/redhat-appstudio/application-service v0.0.0-20230717184417-67d31a01a776
+	github.com/redhat-appstudio/application-service v0.0.0-20240324134056-ac595a80c5cf
 	github.com/redhat-appstudio/release-service v0.0.0-20231213200646-9aea1dba75c0
 	github.com/tektoncd/pipeline v0.49.0
 )
 
 replace github.com/tektoncd/pipeline v0.49.0 => github.com/tektoncd/pipeline v0.46.0
+
+// Without this replace go tried to lookg for the tag cdq-analysis/v0.0.0 which doesn't exist
+replace github.com/redhat-appstudio/application-service/cdq-analysis v0.0.0 => github.com/redhat-appstudio/application-service/cdq-analysis v0.0.0-20240324134056-ac595a80c5cf
 
 require (
 	code.gitea.io/sdk/gitea v0.15.1 // indirect
@@ -62,7 +71,7 @@ require (
 	github.com/containerd/typeurl/v2 v2.1.1 // indirect
 	github.com/cyphar/filepath-securejoin v0.2.4 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
-	github.com/devfile/library/v2 v2.2.1-0.20230418160146-e75481b7eebd // indirect
+	github.com/devfile/library/v2 v2.2.2-0.20240108233338-2a1d045e1e65 // indirect
 	github.com/devfile/registry-support/index/generator v0.0.0-20230123181701-4de4dadb13e7 // indirect
 	github.com/devfile/registry-support/registry-library v0.0.0-20230123181701-4de4dadb13e7 // indirect
 	github.com/docker/cli v24.0.4+incompatible // indirect
@@ -147,15 +156,14 @@ require (
 	github.com/prometheus/procfs v0.12.0 // indirect
 	github.com/prometheus/statsd_exporter v0.23.1 // indirect
 	github.com/redhat-appstudio/operator-toolkit v0.0.0-20231201124606-2087182322ae // indirect
-	github.com/redhat-developer/alizer/go v0.0.0-20230516215932-135a2bb3fb90 // indirect
-	github.com/redhat-developer/gitops-generator v0.0.0-20230614175323-aff86c6bc55e // indirect
+	github.com/redhat-developer/gitops-generator v0.0.0-20231030195824-c48f5bf6bf21 // indirect
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06 // indirect
 	github.com/sergi/go-diff v1.3.1 // indirect
 	github.com/shurcooL/githubv4 v0.0.0-20221229060216-a8d4a561cc93 // indirect
 	github.com/shurcooL/graphql v0.0.0-20220606043923-3cf50f8a0a29 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/skeema/knownhosts v1.2.1 // indirect
-	github.com/spf13/afero v1.9.3 // indirect
+	github.com/spf13/afero v1.9.5 // indirect
 	github.com/spf13/pflag v1.0.6-0.20210604193023-d5e0c0615ace // indirect
 	github.com/stretchr/testify v1.8.4 // indirect
 	github.com/vbatts/tar-split v0.11.3 // indirect
@@ -168,7 +176,7 @@ require (
 	go.opentelemetry.io/otel v1.24.0 // indirect
 	go.opentelemetry.io/otel/metric v1.24.0 // indirect
 	go.opentelemetry.io/otel/trace v1.24.0 // indirect
-	go.uber.org/atomic v1.10.0 // indirect
+	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/crypto v0.20.0 // indirect
 	golang.org/x/mod v0.15.0 // indirect
@@ -180,7 +188,7 @@ require (
 	golang.org/x/time v0.4.0 // indirect
 	golang.org/x/tools v0.18.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
-	google.golang.org/api v0.126.0 // indirect
+	google.golang.org/api v0.130.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/genproto v0.0.0-20240227224415-6ceb2ff114de // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20240213162025-012b6fc9bca9 // indirect
@@ -194,7 +202,7 @@ require (
 	k8s.io/component-base v0.28.3 // indirect
 	k8s.io/klog v1.0.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20231113174909-778a5567bc1e // indirect
-	k8s.io/pod-security-admission v0.26.1 // indirect
+	k8s.io/pod-security-admission v0.26.10 // indirect
 	k8s.io/utils v0.0.0-20230726121419-3b25d923346b // indirect
 	oras.land/oras-go v1.1.0 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
