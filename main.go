@@ -221,7 +221,6 @@ func main() {
 	}
 
 	ctx := ctrl.SetupSignalHandler()
-	setupLog.Info("starting metrics")
 	buildMetrics := metrics.NewBuildMetrics(mgr.GetClient())
 	if err := buildMetrics.InitMetrics(); err != nil {
 		setupLog.Error(err, "unable to initialize metrics")

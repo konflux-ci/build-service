@@ -58,22 +58,18 @@ func (m *BuildMetrics) StartMetrics(ctx context.Context) {
 	log.Info("Starting metrics")
 	go func() {
 		for {
-			log.Info("Metrics loop")
 			select {
 			case <-ctx.Done(): // Shutdown if context is canceled
 				log.Info("Shutting down metrics")
 				ticker.Stop()
 				return
 			case <-ticker.C:
-				log.Info("Tick")
 				for _, probe := range m.probes {
 					pingErr := probe.checkAvailability(ctx)
-
 					if pingErr != nil {
 						log.Error(pingErr, "Error checking connection", "probe", probe)
 						probe.availabilityMetric.Set(0)
 					} else {
-						log.Info("Connection is successful", "probe", probe)
 						probe.availabilityMetric.Set(1)
 					}
 
@@ -82,9 +78,9 @@ func (m *BuildMetrics) StartMetrics(ctx context.Context) {
 			}
 		}
 	}()
-	log.Info("Metrics started")
 }
 
+// AvailabilityProbe represents a probe that checks the availability of a certain aspects of the service
 type AvailabilityProbe struct {
 	checkAvailability  func(ctx context.Context) error
 	availabilityMetric prometheus.Gauge
