@@ -21,7 +21,7 @@ type GithubAppAvailabilityChecker struct {
 }
 
 func (g *GithubAppAvailabilityChecker) check(ctx context.Context) error {
-	log := ctrllog.FromContext(ctx)
+	log := ctrllog.FromContext(ctx).V(1)
 	pacSecret := corev1.Secret{}
 	globalPaCSecretKey := types.NamespacedName{Namespace: BuildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}
 	log.Info("Checking GitHub App availability")
