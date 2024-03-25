@@ -40,6 +40,7 @@ import (
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 	l "github.com/redhat-appstudio/build-service/pkg/logs"
+	"github.com/redhat-appstudio/build-service/pkg/webhook"
 )
 
 const (
@@ -190,9 +191,10 @@ type PaCBuildStatus struct {
 // provision Pipelines as Code configuration for the Component or
 // submit initial builds and dependent resources if PaC is not configured.
 type ComponentBuildReconciler struct {
-	Client        client.Client
-	Scheme        *runtime.Scheme
-	EventRecorder record.EventRecorder
+	Client           client.Client
+	Scheme           *runtime.Scheme
+	EventRecorder    record.EventRecorder
+	WebhookURLLoader webhook.WebhookURLLoader
 }
 
 // SetupWithManager sets up the controller with the Manager.

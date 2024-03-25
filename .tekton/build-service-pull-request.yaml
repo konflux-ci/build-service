@@ -14,6 +14,8 @@ spec:
       value: "{{revision}}"
     - name: output-image
       value: 'quay.io/redhat-appstudio/pull-request-builds:buildserv-{{revision}}'
+    - name: image-expires-after
+      value: '5d'
   pipelineRef:
     params:
       - name: bundle

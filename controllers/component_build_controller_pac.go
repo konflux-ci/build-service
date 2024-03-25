@@ -127,7 +127,7 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context,
 		}
 
 		// Obtain Pipelines as Code callback URL
-		webhookTargetUrl, err = r.getPaCWebhookTargetUrl(ctx)
+		webhookTargetUrl, err = r.getPaCWebhookTargetUrl(ctx, component.Spec.Source.GitSource.URL)
 		if err != nil {
 			return "", err
 		}
@@ -281,7 +281,7 @@ func (r *ComponentBuildReconciler) TriggerPaCBuild(ctx context.Context, componen
 		return true, nil
 	}
 
-	webhookTargetUrl, err := r.getPaCWebhookTargetUrl(ctx)
+	webhookTargetUrl, err := r.getPaCWebhookTargetUrl(ctx, component.Spec.Source.GitSource.URL)
 	if err != nil {
 		return false, err
 	}
@@ -430,7 +430,7 @@ func (r *ComponentBuildReconciler) UndoPaCProvisionForComponent(ctx context.Cont
 
 	webhookTargetUrl := ""
 	if !gitops.IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
-		webhookTargetUrl, err = r.getPaCWebhookTargetUrl(ctx)
+		webhookTargetUrl, err = r.getPaCWebhookTargetUrl(ctx, component.Spec.Source.GitSource.URL)
 		if err != nil {
 			// Just log the error and continue with pruning merge request creation
 			log.Error(err, "failed to get Pipelines as Code webhook target URL. Webhook will not be deleted.", l.Action, l.ActionView, l.Audit, "true")
@@ -571,8 +571,13 @@ func generatePaCWebhookSecretString() string {
 }
 
 // getPaCWebhookTargetUrl returns URL to which events from git repository should be sent.
-func (r *ComponentBuildReconciler) getPaCWebhookTargetUrl(ctx context.Context) (string, error) {
+func (r *ComponentBuildReconciler) getPaCWebhookTargetUrl(ctx context.Context, repositoryURL string) (string, error) {
 	webhookTargetUrl := os.Getenv(pipelinesAsCodeRouteEnvVar)
+
+	if webhookTargetUrl == "" {
+		webhookTargetUrl = r.WebhookURLLoader.Load(repositoryURL)
+	}
+
 	if webhookTargetUrl == "" {
 		// The env variable is not set
 		// Use the installed on the cluster Pipelines as Code

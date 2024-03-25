@@ -48,6 +48,7 @@ import (
 	releaseapi "github.com/redhat-appstudio/release-service/api/v1alpha1"
 
 	appstudioredhatcomv1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
+	"github.com/redhat-appstudio/build-service/pkg/webhook"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -149,10 +150,14 @@ var _ = BeforeSuite(func() {
 	})
 	Expect(err).ToNot(HaveOccurred())
 
+	webhookConfig, err := webhook.LoadMappingFromFile("", os.ReadFile)
+	Expect(err).ToNot(HaveOccurred())
+
 	err = (&ComponentBuildReconciler{
-		Client:        k8sManager.GetClient(),
-		Scheme:        k8sManager.GetScheme(),
-		EventRecorder: k8sManager.GetEventRecorderFor("ComponentOnboarding"),
+		Client:           k8sManager.GetClient(),
+		Scheme:           k8sManager.GetScheme(),
+		EventRecorder:    k8sManager.GetEventRecorderFor("ComponentOnboarding"),
+		WebhookURLLoader: webhook.NewConfigWebhookURLLoader(webhookConfig),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
