@@ -169,7 +169,6 @@ func generateConfigJS(slug string, repositories []renovateRepository, _ interfac
 				prBodyColumns: ["Package", "Change", "Notes"],
 				prBodyDefinitions: { "Notes": "{{#if (or (containsString updateType 'minor') (containsString updateType 'major'))}}:warning:[migration](https://github.com/redhat-appstudio/build-definitions/blob/main/task/{{{replace '%stask-' '' packageName}}}/{{{newVersion}}}/MIGRATION.md):warning:{{/if}}" },
 				prBodyTemplate: "{{{header}}}{{{table}}}{{{notes}}}{{{changelogs}}}{{{footer}}}",
-				recreateClosed: true,
 				recreateWhen: "always",
 				rebaseWhen: "behind-base-branch",
 				enabled: true

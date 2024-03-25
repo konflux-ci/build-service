@@ -20,6 +20,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
+	"text/template"
+	"time"
+
 	applicationapi "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	l "github.com/redhat-appstudio/build-service/pkg/logs"
 	releaseapi "github.com/redhat-appstudio/release-service/api/v1alpha1"
@@ -39,10 +44,6 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"strconv"
-	"strings"
-	"text/template"
-	"time"
 )
 
 const (
@@ -555,7 +556,6 @@ func generateRenovateConfigForNudge(slug string, repositories []renovateReposito
 			branchName: "rhtap/component-updates/{{.ComponentName}}",
 			commitMessageTopic: "{{.ComponentName}}",
 			prFooter: "To execute skipped test pipelines write comment ` + "`/ok-to-test`" + `",
-			recreateClosed: true,
 			recreateWhen: "always",
 			rebaseWhen: "behind-base-branch",
 			enabled: true,
