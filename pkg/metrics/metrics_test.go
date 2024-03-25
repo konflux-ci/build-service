@@ -9,7 +9,6 @@ import (
 )
 
 func TestRegisterMetrics(t *testing.T) {
-
 	t.Run("Should register and record availability metric", func(t *testing.T) {
 		probe := NewGithubAppAvailabilityProbe(fake.NewClientBuilder().Build())
 		buildMetrics := NewBuildMetrics([]AvailabilityProbe{probe})
@@ -30,5 +29,4 @@ func TestRegisterMetrics(t *testing.T) {
 			t.Errorf("Fail to record metric. Expected 1 got : %v", count)
 		}
 	})
-
 }
