@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/google/go-github/v45/github"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redhat-appstudio/application-service/gitops"
 	gitopsprepare "github.com/redhat-appstudio/application-service/gitops/prepare"
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
@@ -16,11 +17,25 @@ import (
 	"strconv"
 )
 
-type GithubAppAvailabilityChecker struct {
+type GithubAppAvailabilityProbe struct {
 	client client.Client
+	gauge  prometheus.Gauge
 }
 
-func (g *GithubAppAvailabilityChecker) check(ctx context.Context) error {
+func NewGithubAppAvailabilityProbe(client client.Client) *GithubAppAvailabilityProbe {
+	return &GithubAppAvailabilityProbe{
+		client: client,
+		gauge: prometheus.NewGauge(
+			prometheus.GaugeOpts{
+				Namespace: MetricsNamespace,
+				Subsystem: MetricsSubsystem,
+				Name:      "global_github_app_available",
+				Help:      "The availability of the Github App",
+			}),
+	}
+}
+
+func (g *GithubAppAvailabilityProbe) CheckAvailability(ctx context.Context) error {
 	log := ctrllog.FromContext(ctx).V(1)
 	pacSecret := corev1.Secret{}
 	globalPaCSecretKey := types.NamespacedName{Namespace: BuildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}
@@ -55,4 +70,8 @@ func (g *GithubAppAvailabilityChecker) check(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+func (g *GithubAppAvailabilityProbe) AvailabilityGauge() prometheus.Gauge {
+	return g.gauge
 }

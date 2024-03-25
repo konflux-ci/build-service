@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/prometheus/client_golang/prometheus"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	"time"
 )
 
@@ -22,30 +20,13 @@ type BuildMetrics struct {
 	probes []AvailabilityProbe
 }
 
-func NewBuildMetrics(client client.Client) *BuildMetrics {
-
-	checker := &GithubAppAvailabilityChecker{
-		client: client,
-	}
-
-	return &BuildMetrics{probes: []AvailabilityProbe{
-		{
-			checkAvailability: checker.check,
-			availabilityMetric: prometheus.NewGauge(
-				prometheus.GaugeOpts{
-					Namespace: MetricsNamespace,
-					Subsystem: MetricsSubsystem,
-					Name:      "global_github_app_available",
-					Help:      "The availability of the Github App",
-				}),
-		}}}
-
+func NewBuildMetrics(probes []AvailabilityProbe) *BuildMetrics {
+	return &BuildMetrics{probes: probes}
 }
 
-func (m *BuildMetrics) InitMetrics() error {
-
+func (m *BuildMetrics) InitMetrics(registerer prometheus.Registerer) error {
 	for _, probe := range m.probes {
-		if err := metrics.Registry.Register(probe.availabilityMetric); err != nil {
+		if err := registerer.Register(probe.AvailabilityGauge()); err != nil {
 			return fmt.Errorf("failed to register the availability metric: %w", err)
 		}
 	}
@@ -64,24 +45,27 @@ func (m *BuildMetrics) StartMetrics(ctx context.Context) {
 				ticker.Stop()
 				return
 			case <-ticker.C:
-				for _, probe := range m.probes {
-					pingErr := probe.checkAvailability(ctx)
-					if pingErr != nil {
-						log.Error(pingErr, "Error checking connection", "probe", probe)
-						probe.availabilityMetric.Set(0)
-					} else {
-						probe.availabilityMetric.Set(1)
-					}
-
-				}
-
+				m.checkProbes(ctx)
 			}
 		}
 	}()
 }
 
+func (m *BuildMetrics) checkProbes(ctx context.Context) {
+	for _, probe := range m.probes {
+		pingErr := probe.CheckAvailability(ctx)
+		if pingErr != nil {
+			log := ctrllog.FromContext(ctx)
+			log.Error(pingErr, "Error checking availability probe", "probe", probe)
+			probe.AvailabilityGauge().Set(0)
+		} else {
+			probe.AvailabilityGauge().Set(1)
+		}
+	}
+}
+
 // AvailabilityProbe represents a probe that checks the availability of a certain aspects of the service
-type AvailabilityProbe struct {
-	checkAvailability  func(ctx context.Context) error
-	availabilityMetric prometheus.Gauge
+type AvailabilityProbe interface {
+	CheckAvailability(ctx context.Context) error
+	AvailabilityGauge() prometheus.Gauge
 }
