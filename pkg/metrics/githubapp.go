@@ -25,7 +25,6 @@ func (g *GithubAppAvailabilityChecker) check(ctx context.Context) error {
 	pacSecret := corev1.Secret{}
 	globalPaCSecretKey := types.NamespacedName{Namespace: BuildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}
 	log.Info("Checking GitHub App availability")
-	log.Info("Reading Pipelines as Code secret from", "globalPaCSecretKey", globalPaCSecretKey)
 	if err := g.client.Get(ctx, globalPaCSecretKey, &pacSecret); err != nil {
 		return boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound,
 			fmt.Errorf(" Pipelines as Code secret not found in %s namespace nor in %s", BuildServiceNamespaceName, globalPaCSecretKey.Namespace))
@@ -44,7 +43,6 @@ func (g *GithubAppAvailabilityChecker) check(ctx context.Context) error {
 			fmt.Errorf("invalid configuration in Pipelines as Code secret"))
 
 	}
-	log.Info("Github App private key", "privateKey", privateKey)
 	itr, err := ghinstallation.NewAppsTransport(http.DefaultTransport, githubAppId, privateKey)
 	if err != nil {
 		// Inability to create transport based on a private key indicates that the key is bad formatted
