@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"context"
+	"errors"
 	"github.com/google/go-github/v45/github"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -28,6 +29,26 @@ func TestGithubAppAvailability(t *testing.T) {
 				return nil, nil, nil
 			},
 			expected: 1,
+		},
+		{name: "should not be able available if error on get github app credentials",
+			client: fake.NewClientBuilder().Build(),
+			getGithubAppCredentials: func(ctx context.Context, client client.Client) (int64, []byte, error) {
+				return 0, nil, errors.New("some error")
+			},
+			getGithubApp: func(ctx context.Context, tr http.RoundTripper, appID int64, privateKey []byte) (*github.App, *github.Response, error) {
+				return nil, nil, nil
+			},
+			expected: 0,
+		},
+		{name: "should not be able available if error on get github app information",
+			client: fake.NewClientBuilder().Build(),
+			getGithubAppCredentials: func(ctx context.Context, client client.Client) (int64, []byte, error) {
+				return 0, nil, nil
+			},
+			getGithubApp: func(ctx context.Context, tr http.RoundTripper, appID int64, privateKey []byte) (*github.App, *github.Response, error) {
+				return nil, nil, errors.New("some error")
+			},
+			expected: 0,
 		},
 	}
 
