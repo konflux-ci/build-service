@@ -24,8 +24,8 @@ import (
 	"testing"
 
 	"github.com/devfile/api/v2/pkg/apis/workspaces/v1alpha2"
+	devfile "github.com/redhat-appstudio/application-service/cdq-analysis/pkg"
 	"github.com/redhat-appstudio/application-service/gitops"
-	"github.com/redhat-appstudio/application-service/pkg/devfile"
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 	"gotest.tools/v3/assert"
 
@@ -241,7 +241,7 @@ func TestGenerateInitialPipelineRunForComponentDevfileError(t *testing.T) {
 	if err == nil {
 		t.Error("generateInitialPipelineRunForComponentDevfileError(): Didn't return error")
 	} else {
-		assert.ErrorContains(t, err, "failed to populateAndParseDevfile: failed to decode devfile json")
+		assert.ErrorContains(t, err, "invalid devfile due to error parsing devfile because of non-compliant data due to json")
 	}
 }
 
