@@ -36,7 +36,7 @@ func (m *BuildMetrics) InitMetrics(registerer prometheus.Registerer) error {
 func (m *BuildMetrics) StartMetrics(ctx context.Context) {
 	ticker := time.NewTicker(time.Minute)
 	log := ctrllog.FromContext(ctx)
-	log.Info("Starting metrics")
+	log.Info("Starting build service metrics")
 	go func() {
 		for {
 			select {
