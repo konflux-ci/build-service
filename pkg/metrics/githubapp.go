@@ -59,7 +59,7 @@ func githubAppCredentials(ctx context.Context, client client.Client) (int64, []b
 	log.Info("Checking GitHub App availability")
 	if err := client.Get(ctx, globalPaCSecretKey, &pacSecret); err != nil {
 		return 0, nil, boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound,
-			fmt.Errorf(" Pipelines as Code secret not found in %s namespace nor in %s", BuildServiceNamespaceName, globalPaCSecretKey.Namespace))
+			fmt.Errorf("pipelines as Code secret not found in %s namespace", BuildServiceNamespaceName))
 	}
 	config := pacSecret.Data
 	githubAppIdStr := string(config[gitops.PipelinesAsCode_githubAppIdKey])
@@ -79,14 +79,19 @@ func githubAppCredentials(ctx context.Context, client client.Client) (int64, []b
 }
 
 func getGithubApp(ctx context.Context, tr http.RoundTripper, appID int64, privateKey []byte) (*github.App, *github.Response, error) {
-	log := ctrllog.FromContext(ctx).V(1)
-	itr, err := ghinstallation.NewAppsTransport(tr, appID, privateKey)
+
+	transport, err := ghinstallation.NewAppsTransport(tr, appID, privateKey)
 	if err != nil {
+		// Inability to create transport based on a private key indicates that the key is bad formatted
+		return nil, nil, boerrors.NewBuildOpError(boerrors.EGitHubAppMalformedPrivateKey, err)
+	}
+	client := github.NewClient(&http.Client{Transport: transport})
+	app, resp, err := client.Apps.Get(ctx, "")
+	if err != nil {
+		ctrllog.FromContext(ctx).Error(err, "GitHub App communication error", "app", app, "resp", resp)
 		return nil, nil, err
 	}
-	client := github.NewClient(&http.Client{Transport: itr})
-	app, resp, err := client.Apps.Get(ctx, "")
-	log.Info("GitHub App", "app", app, "resp", resp, "err", err)
+
 	return app, resp, err
 }
 
