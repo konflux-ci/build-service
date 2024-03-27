@@ -78,9 +78,9 @@ func githubAppCredentials(ctx context.Context, client client.Client) (int64, []b
 	return githubAppId, privateKey, nil
 }
 
-func getGithubApp(ctx context.Context, tr http.RoundTripper, appID int64, privateKey []byte) (*github.App, *github.Response, error) {
+func getGithubApp(ctx context.Context, rt http.RoundTripper, appID int64, privateKey []byte) (*github.App, *github.Response, error) {
 
-	transport, err := ghinstallation.NewAppsTransport(tr, appID, privateKey)
+	transport, err := ghinstallation.NewAppsTransport(rt, appID, privateKey)
 	if err != nil {
 		// Inability to create transport based on a private key indicates that the key is bad formatted
 		return nil, nil, boerrors.NewBuildOpError(boerrors.EGitHubAppMalformedPrivateKey, err)
