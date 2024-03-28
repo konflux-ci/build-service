@@ -19,7 +19,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/redhat-appstudio/build-service/pkg/metrics"
+	"github.com/redhat-appstudio/build-service/pkg/bometrics"
 	"os"
 	"regexp"
 	"strings"
@@ -222,7 +222,7 @@ func main() {
 	}
 
 	ctx := ctrl.SetupSignalHandler()
-	buildMetrics := metrics.NewBuildMetrics([]metrics.AvailabilityProbe{metrics.NewGithubAppAvailabilityProbe(mgr.GetClient())})
+	buildMetrics := bometrics.NewBuildMetrics([]bometrics.AvailabilityProbe{bometrics.NewGithubAppAvailabilityProbe(mgr.GetClient())})
 	if err := buildMetrics.InitMetrics(cmetrics.Registry); err != nil {
 		setupLog.Error(err, "unable to initialize metrics")
 		os.Exit(1)
