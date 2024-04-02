@@ -47,7 +47,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-	cmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
@@ -223,11 +223,11 @@ func main() {
 
 	ctx := ctrl.SetupSignalHandler()
 	buildMetrics := bometrics.NewBuildMetrics([]bometrics.AvailabilityProbe{bometrics.NewGithubAppAvailabilityProbe(mgr.GetClient())})
-	if err := buildMetrics.InitMetrics(cmetrics.Registry); err != nil {
+	if err := buildMetrics.InitMetrics(metrics.Registry); err != nil {
 		setupLog.Error(err, "unable to initialize metrics")
 		os.Exit(1)
 	}
-	buildMetrics.StartMetrics(ctx)
+	buildMetrics.StartAvailabilityProbes(ctx)
 
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctx); err != nil {

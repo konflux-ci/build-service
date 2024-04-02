@@ -79,10 +79,10 @@ func (m *BuildMetrics) InitMetrics(registerer prometheus.Registerer) error {
 
 	return nil
 }
-func (m *BuildMetrics) StartMetrics(ctx context.Context) {
+func (m *BuildMetrics) StartAvailabilityProbes(ctx context.Context) {
 	ticker := time.NewTicker(time.Minute)
 	log := ctrllog.FromContext(ctx)
-	log.Info("Starting build service metrics")
+	log.Info("starting availability probes")
 	go func() {
 		for {
 			select {
