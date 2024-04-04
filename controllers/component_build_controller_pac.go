@@ -775,11 +775,20 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 					log.Info("An attempt to create second PaC Repository for the same git repository", "GitRepository", repository.Spec.URL, l.Action, l.ActionAdd, l.Audit, "true")
 					return boerrors.NewBuildOpError(boerrors.EPaCDuplicateRepository, err)
 				}
+
+				if strings.Contains(err.Error(), "denied the request: failed to validate url error") {
+					// PaC admission webhook denied creation of the PaC repository,
+					// because PaC repository object that references not allowed repository url.
+
+					log.Info("An attempt to create PaC Repository for not allowed repository url", "GitRepository", repository.Spec.URL, l.Action, l.ActionAdd, l.Audit, "true")
+					return boerrors.NewBuildOpError(boerrors.EPaCNotAllowedRepositoryUrl, err)
+				}
+
 				log.Error(err, "failed to create Component PaC repository object", l.Action, l.ActionAdd)
 				return err
-			} else {
-				log.Info("Created PaC Repository object for the component")
 			}
+			log.Info("Created PaC Repository object for the component")
+
 		} else {
 			log.Error(err, "failed to get Component PaC repository object", l.Action, l.ActionView)
 			return err
