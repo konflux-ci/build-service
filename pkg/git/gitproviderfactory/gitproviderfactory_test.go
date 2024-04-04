@@ -17,7 +17,6 @@ limitations under the License.
 package gitproviderfactory
 
 import (
-	"encoding/base64"
 	"fmt"
 	"testing"
 
@@ -202,7 +201,7 @@ func TestGetContainerImageRepository(t *testing.T) {
 			name: "should create GitHub client from token",
 			gitClientConfig: GitClientConfig{
 				PacSecretData: map[string][]byte{
-					"password": []byte(base64.StdEncoding.EncodeToString([]byte("token"))),
+					"password": []byte("token"),
 				},
 				GitProvider:               "github",
 				RepoUrl:                   repoUrl,
@@ -223,8 +222,8 @@ func TestGetContainerImageRepository(t *testing.T) {
 			name: "should create GitHub client from username and password",
 			gitClientConfig: GitClientConfig{
 				PacSecretData: map[string][]byte{
-					"username": []byte(base64.StdEncoding.EncodeToString([]byte("user"))),
-					"password": []byte(base64.StdEncoding.EncodeToString([]byte("pass"))),
+					"username": []byte("user"),
+					"password": []byte("pass"),
 				},
 				GitProvider:               "github",
 				RepoUrl:                   repoUrl,
@@ -241,7 +240,7 @@ func TestGetContainerImageRepository(t *testing.T) {
 			name: "should create GitLab client from token",
 			gitClientConfig: GitClientConfig{
 				PacSecretData: map[string][]byte{
-					"password": []byte(base64.StdEncoding.EncodeToString([]byte("token"))),
+					"password": []byte("token"),
 				},
 				GitProvider:               "gitlab",
 				RepoUrl:                   "https://gitlab.com/my-org/my-repo",
@@ -266,8 +265,8 @@ func TestGetContainerImageRepository(t *testing.T) {
 			name: "should create GitLab client from username and password",
 			gitClientConfig: GitClientConfig{
 				PacSecretData: map[string][]byte{
-					"username": []byte(base64.StdEncoding.EncodeToString([]byte("user"))),
-					"password": []byte(base64.StdEncoding.EncodeToString([]byte("pass"))),
+					"username": []byte("user"),
+					"password": []byte("pass"),
 				},
 				GitProvider:               "gitlab",
 				RepoUrl:                   "https://gitlab.com/my-org/my-repo",

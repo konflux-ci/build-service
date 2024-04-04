@@ -17,7 +17,6 @@ limitations under the License.
 package gitproviderfactory
 
 import (
-	"encoding/base64"
 	"fmt"
 	"github.com/redhat-appstudio/application-service/gitops"
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
@@ -60,15 +59,7 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 	case "github":
 		if !isAppUsed {
 			if passwordExists {
-				password, err := base64.StdEncoding.DecodeString(string(password))
-				if err != nil {
-					return nil, fmt.Errorf("failed to decode password: %w", err)
-				}
 				if usernameExists {
-					username, err := base64.StdEncoding.DecodeString(string(username))
-					if err != nil {
-						return nil, fmt.Errorf("failed to decode username: %w", err)
-					}
 					return github.NewGithubClientWithBasicAuth(string(username), string(password)), nil
 				}
 				return github.NewGithubClient(string(password)), nil
@@ -127,21 +118,9 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 			return nil, err
 		}
 		if usernameExists && passwordExists {
-			username, err := base64.StdEncoding.DecodeString(string(username))
-			if err != nil {
-				return nil, fmt.Errorf("failed to decode username: %w", err)
-			}
-			password, err := base64.StdEncoding.DecodeString(string(password))
-			if err != nil {
-				return nil, fmt.Errorf("failed to decode password: %w", err)
-			}
 			return gitlab.NewGitlabClientWithBasicAuth(string(username), string(password), baseUrl)
 		}
 		if !usernameExists && passwordExists {
-			password, err := base64.StdEncoding.DecodeString(string(password))
-			if err != nil {
-				return nil, fmt.Errorf("failed to decode password: %w", err)
-			}
 			return gitlab.NewGitlabClient(string(password), baseUrl)
 		}
 		if sshKeyExists {
