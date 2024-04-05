@@ -89,6 +89,8 @@ const (
 	EPaCRouteDoesNotExist BOErrorId = 52
 	// An attempt to create another PaC repository object that references the same git repository.
 	EPaCDuplicateRepository BOErrorId = 53
+	// Git repository url isn't allowed
+	EPaCNotAllowedRepositoryUrl BOErrorId = 54
 
 	// Happens when Component source repository is hosted on unsupported / unknown git provider.
 	// For example: https://my-gitlab.com
@@ -161,10 +163,11 @@ var boErrorMessages = map[BOErrorId]string{
 	ETransientError: "",
 	EUnknownError:   "unknown error",
 
-	EPaCSecretNotFound:      "Pipelines as Code secret does not exist",
-	EPaCSecretInvalid:       "Invalid Pipelines as Code secret",
-	EPaCRouteDoesNotExist:   "Pipelines as Code public route does not exist",
-	EPaCDuplicateRepository: "Git repository is already handled by Pipelines as Code",
+	EPaCSecretNotFound:          "Pipelines as Code secret does not exist",
+	EPaCSecretInvalid:           "Invalid Pipelines as Code secret",
+	EPaCRouteDoesNotExist:       "Pipelines as Code public route does not exist",
+	EPaCDuplicateRepository:     "Git repository is already handled by Pipelines as Code",
+	EPaCNotAllowedRepositoryUrl: "Git repository url isn't allowed",
 
 	EUnknownGitProvider: "unknown git provider of the source repository",
 
