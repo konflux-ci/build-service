@@ -97,6 +97,8 @@ const (
 	// If self-hosted instance of the supported git providers is used, then "git-provider" annotation must be set:
 	// git-provider: gitlab
 	EUnknownGitProvider BOErrorId = 60
+	// Insecure HTTP can't be used for git repository URL
+	EHttpUsedForRepository BOErrorId = 61
 
 	// Happens when configured in cluster Pipelines as Code application is not installed in Component source repository.
 	// User must install the application to fix this error.
@@ -169,7 +171,8 @@ var boErrorMessages = map[BOErrorId]string{
 	EPaCDuplicateRepository:     "Git repository is already handled by Pipelines as Code",
 	EPaCNotAllowedRepositoryUrl: "Git repository url isn't allowed",
 
-	EUnknownGitProvider: "unknown git provider of the source repository",
+	EUnknownGitProvider:    "unknown git provider of the source repository",
+	EHttpUsedForRepository: "http used for git repository, use secure connection",
 
 	EGitHubAppNotInstalled:         "GitHub Application is not installed in user repository",
 	EGitHubAppMalformedPrivateKey:  "malformed GitHub Application private key",
