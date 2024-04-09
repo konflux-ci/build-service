@@ -23,6 +23,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -75,7 +76,7 @@ const (
 	appstudioWorkspaceNameLabel      = "appstudio.redhat.com/workspace_name"
 	pacCustomParamAppstudioWorkspace = "appstudio_workspace"
 
-	scmSecretMarkerLabel          = "appstudio.redhat.com/credentials"
+	scmCredentialsSecretLabel     = "appstudio.redhat.com/credentials"
 	scmSecretHostnameLabel        = "appstudio.redhat.com/scm.host"
 	scmSecretRepositoryAnnotation = "appstudio.redhat.com/scm.repository"
 
@@ -470,16 +471,19 @@ func (r *ComponentBuildReconciler) lookupPaCSecret(ctx context.Context, componen
 	log := ctrllog.FromContext(ctx)
 	sourceUrl := component.Spec.Source.GitSource.URL
 
-	schemaless, _ := strings.CutPrefix(sourceUrl, "https://")
-	componentHost, rest, _ := strings.Cut(schemaless, "/")
-	componentRepo, _ := strings.CutSuffix(rest, ".git")
+	url, err := url.Parse(sourceUrl)
+	if err != nil {
+		r.EventRecorder.Event(&corev1.Secret{}, "Warning", "ErrorParsingPACRepo", err.Error())
+		return nil, fmt.Errorf("failed to parse component's source URL: %w", err)
+	}
+	componentRepo, _ := strings.CutSuffix(url.Path, ".git")
 
-	log.Info("Looking for Pipelines as Code SCM secret", "host", componentHost, "repo", componentRepo)
+	log.Info("Looking for Pipelines as Code SCM secret", "host", url.Hostname(), "repo", componentRepo)
 
 	secretList := &corev1.SecretList{}
 	opts := client.ListOption(&client.MatchingLabels{
-		scmSecretMarkerLabel:   "scm",
-		scmSecretHostnameLabel: componentHost,
+		scmCredentialsSecretLabel: "scm",
+		scmSecretHostnameLabel:    url.Hostname(),
 	})
 
 	if err := r.Client.List(ctx, secretList, client.InNamespace(component.Namespace), opts); err != nil {
@@ -505,7 +509,7 @@ func (r *ComponentBuildReconciler) lookupPaCSecret(ctx context.Context, componen
 		case corev1.SecretTypeBasicAuth:
 			basicSecrets = append(basicSecrets, secret)
 		default:
-			log.Error(nil, "Unknown SCM secret type meet", "type", secret.Type, "host", componentHost, "repo", componentRepo)
+			log.Error(nil, "Unknown SCM secret type meet", "type", secret.Type, "host", url.Hostname(), "repo", componentRepo)
 		}
 	}
 	log.Info("Found SCM secrets", "ssh", len(sshSecrets), "basic", len(basicSecrets))
