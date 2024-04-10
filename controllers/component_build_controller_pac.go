@@ -84,6 +84,8 @@ For more detailed information about running a PipelineRun, please refer to Pipel
 
 To customize the proposed PipelineRuns after merge, please refer to [Build Pipeline customization](https://redhat-appstudio.github.io/docs.appstudio.io/Documentation/main/how-to-guides/configuring-builds/proc_customize_build_pipeline/)
 `
+
+	GitProviderAnnotationURL = "git-provider-url"
 )
 
 // That way it can be mocked in tests
@@ -103,6 +105,18 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context,
 		// Do not reconcile, because configuration must be fixed before it is possible to proceed.
 		return "", boerrors.NewBuildOpError(boerrors.EUnknownGitProvider,
 			fmt.Errorf("error detecting git provider: %w", err))
+	}
+
+	if strings.HasPrefix(component.Spec.Source.GitSource.URL, "http:") {
+		return "", boerrors.NewBuildOpError(boerrors.EHttpUsedForRepository,
+			fmt.Errorf("Git repository URL can't use insecure HTTP: %s", component.Spec.Source.GitSource.URL))
+	}
+
+	if url, ok := component.Annotations[GitProviderAnnotationURL]; ok {
+		if strings.HasPrefix(url, "http:") {
+			return "", boerrors.NewBuildOpError(boerrors.EHttpUsedForRepository,
+				fmt.Errorf("Git repository URL in annotation %s can't use insecure HTTP: %s", GitProviderAnnotationURL, component.Spec.Source.GitSource.URL))
+		}
 	}
 
 	pacSecret, err := r.ensurePaCSecret(ctx, component, gitProvider)
