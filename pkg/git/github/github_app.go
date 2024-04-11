@@ -131,17 +131,25 @@ func newGithubClientForSimpleBuildByApp(appId int64, privateKeyPem []byte) (*Git
 	if len(installations) < 1 {
 		return nil, fmt.Errorf("GitHub app is not installed in any repository")
 	}
-	installId := installations[rand.Intn(len(installations))].GetID()
 
-	token, _, err := client.Apps.CreateInstallationToken(
-		context.Background(),
-		installId,
-		&github.InstallationTokenOptions{})
-	if err != nil {
-		if strings.Contains(err.Error(), "installation has been suspended") {
-			return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppSuspended, err)
-		} else {
-			return nil, err
+	var token *github.InstallationToken
+	attempts := 1
+	for token == nil {
+		installId := installations[rand.Intn(len(installations))].GetID()
+		token, _, err = client.Apps.CreateInstallationToken(
+			context.Background(),
+			installId,
+			&github.InstallationTokenOptions{})
+		if err != nil {
+			token = nil
+			if strings.Contains(err.Error(), "installation has been suspended") {
+				attempts += 1
+				if attempts > 5 {
+					return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppSuspended, err)
+				}
+			} else {
+				return nil, err
+			}
 		}
 	}
 
