@@ -711,6 +711,11 @@ func (r *ComponentBuildReconciler) tryMigratePaCSecret(ctx context.Context, comp
 		return false
 	}
 
+	token, present := oldPacSecret.Data[gitProviderName+".token"]
+	if !present {
+		return false
+	}
+
 	newPaCSecret := &corev1.Secret{
 		TypeMeta: oldPacSecret.TypeMeta,
 		ObjectMeta: metav1.ObjectMeta{
@@ -722,7 +727,7 @@ func (r *ComponentBuildReconciler) tryMigratePaCSecret(ctx context.Context, comp
 			},
 		},
 		Type: corev1.SecretTypeBasicAuth,
-		Data: map[string][]byte{"password": oldPacSecret.Data[gitProviderName+".token"]},
+		Data: map[string][]byte{"password": token},
 	}
 	if err := r.Client.Create(ctx, newPaCSecret); err != nil {
 		log.Error(err, "Failed to create new PaC secret")
