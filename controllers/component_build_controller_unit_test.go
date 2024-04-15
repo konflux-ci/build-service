@@ -20,13 +20,14 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"github.com/redhat-appstudio/build-service/pkg/bometrics"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/devfile/api/v2/pkg/apis/workspaces/v1alpha2"
+	devfile "github.com/redhat-appstudio/application-service/cdq-analysis/pkg"
 	"github.com/redhat-appstudio/application-service/gitops"
-	"github.com/redhat-appstudio/application-service/pkg/devfile"
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 	"gotest.tools/v3/assert"
 
@@ -42,7 +43,7 @@ import (
 const ghAppPrivateKeyStub = "-----BEGIN RSA PRIVATE KEY-----_key-content_-----END RSA PRIVATE KEY-----"
 
 func TestGetProvisionTimeMetricsBuckets(t *testing.T) {
-	buckets := getProvisionTimeMetricsBuckets()
+	buckets := bometrics.HistogramBuckets
 	for i := 1; i < len(buckets); i++ {
 		if buckets[i] <= buckets[i-1] {
 			t.Errorf("Buckets must be in increasing order, but got: %v", buckets)
@@ -242,7 +243,7 @@ func TestGenerateInitialPipelineRunForComponentDevfileError(t *testing.T) {
 	if err == nil {
 		t.Error("generateInitialPipelineRunForComponentDevfileError(): Didn't return error")
 	} else {
-		assert.ErrorContains(t, err, "failed to populateAndParseDevfile: failed to decode devfile json")
+		assert.ErrorContains(t, err, "invalid devfile due to error parsing devfile because of non-compliant data due to json")
 	}
 }
 

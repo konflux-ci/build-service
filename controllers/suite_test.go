@@ -48,6 +48,7 @@ import (
 	releaseapi "github.com/redhat-appstudio/release-service/api/v1alpha1"
 
 	appstudioredhatcomv1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
+	"github.com/redhat-appstudio/build-service/pkg/webhook"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -83,7 +84,7 @@ var _ = BeforeSuite(func() {
 	Expect(runKustomize(filepath.Join("..", "config", "crd"), crdsTempfile)).To(Succeed())
 	crdsTempfile.Close()
 
-	applicationServiceDepVersion := "v0.0.0-20230717184417-67d31a01a776"
+	applicationServiceDepVersion := "v0.0.0-20240324134056-ac595a80c5cf"
 	applicationApiDepVersion := "v0.0.0-20231026192857-89515ad2504f"
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
@@ -149,10 +150,14 @@ var _ = BeforeSuite(func() {
 	})
 	Expect(err).ToNot(HaveOccurred())
 
+	webhookConfig, err := webhook.LoadMappingFromFile("", os.ReadFile)
+	Expect(err).ToNot(HaveOccurred())
+
 	err = (&ComponentBuildReconciler{
-		Client:        k8sManager.GetClient(),
-		Scheme:        k8sManager.GetScheme(),
-		EventRecorder: k8sManager.GetEventRecorderFor("ComponentOnboarding"),
+		Client:           k8sManager.GetClient(),
+		Scheme:           k8sManager.GetScheme(),
+		EventRecorder:    k8sManager.GetEventRecorderFor("ComponentOnboarding"),
+		WebhookURLLoader: webhook.NewConfigWebhookURLLoader(webhookConfig),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 

@@ -33,9 +33,9 @@ import (
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	routev1 "github.com/openshift/api/route/v1"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
+	devfile "github.com/redhat-appstudio/application-service/cdq-analysis/pkg"
 	"github.com/redhat-appstudio/application-service/gitops"
 	gitopsprepare "github.com/redhat-appstudio/application-service/gitops/prepare"
-	"github.com/redhat-appstudio/application-service/pkg/devfile"
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 	gp "github.com/redhat-appstudio/build-service/pkg/git/gitprovider"
 	"github.com/redhat-appstudio/build-service/pkg/git/gitproviderfactory"
@@ -89,6 +89,8 @@ For more detailed information about running a PipelineRun, please refer to Pipel
 
 To customize the proposed PipelineRuns after merge, please refer to [Build Pipeline customization](https://redhat-appstudio.github.io/docs.appstudio.io/Documentation/main/how-to-guides/configuring-builds/proc_customize_build_pipeline/)
 `
+
+	GitProviderAnnotationURL = "git-provider-url"
 )
 
 // That way it can be mocked in tests
@@ -108,6 +110,18 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context,
 		// Do not reconcile, because configuration must be fixed before it is possible to proceed.
 		return "", boerrors.NewBuildOpError(boerrors.EUnknownGitProvider,
 			fmt.Errorf("error detecting git provider: %w", err))
+	}
+
+	if strings.HasPrefix(component.Spec.Source.GitSource.URL, "http:") {
+		return "", boerrors.NewBuildOpError(boerrors.EHttpUsedForRepository,
+			fmt.Errorf("Git repository URL can't use insecure HTTP: %s", component.Spec.Source.GitSource.URL))
+	}
+
+	if url, ok := component.Annotations[GitProviderAnnotationURL]; ok {
+		if strings.HasPrefix(url, "http:") {
+			return "", boerrors.NewBuildOpError(boerrors.EHttpUsedForRepository,
+				fmt.Errorf("Git repository URL in annotation %s can't use insecure HTTP: %s", GitProviderAnnotationURL, component.Spec.Source.GitSource.URL))
+		}
 	}
 
 	pacSecret, err := r.lookupPaCSecret(ctx, component, gitProvider)
@@ -132,7 +146,7 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context,
 		}
 
 		// Obtain Pipelines as Code callback URL
-		webhookTargetUrl, err = r.getPaCWebhookTargetUrl(ctx)
+		webhookTargetUrl, err = r.getPaCWebhookTargetUrl(ctx, component.Spec.Source.GitSource.URL)
 		if err != nil {
 			return "", err
 		}
@@ -286,7 +300,7 @@ func (r *ComponentBuildReconciler) TriggerPaCBuild(ctx context.Context, componen
 		return true, nil
 	}
 
-	webhookTargetUrl, err := r.getPaCWebhookTargetUrl(ctx)
+	webhookTargetUrl, err := r.getPaCWebhookTargetUrl(ctx, component.Spec.Source.GitSource.URL)
 	if err != nil {
 		return false, err
 	}
@@ -435,7 +449,7 @@ func (r *ComponentBuildReconciler) UndoPaCProvisionForComponent(ctx context.Cont
 
 	webhookTargetUrl := ""
 	if !gitops.IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
-		webhookTargetUrl, err = r.getPaCWebhookTargetUrl(ctx)
+		webhookTargetUrl, err = r.getPaCWebhookTargetUrl(ctx, component.Spec.Source.GitSource.URL)
 		if err != nil {
 			// Just log the error and continue with pruning merge request creation
 			log.Error(err, "failed to get Pipelines as Code webhook target URL. Webhook will not be deleted.", l.Action, l.ActionView, l.Audit, "true")
@@ -682,8 +696,13 @@ func generatePaCWebhookSecretString() string {
 }
 
 // getPaCWebhookTargetUrl returns URL to which events from git repository should be sent.
-func (r *ComponentBuildReconciler) getPaCWebhookTargetUrl(ctx context.Context) (string, error) {
+func (r *ComponentBuildReconciler) getPaCWebhookTargetUrl(ctx context.Context, repositoryURL string) (string, error) {
 	webhookTargetUrl := os.Getenv(pipelinesAsCodeRouteEnvVar)
+
+	if webhookTargetUrl == "" {
+		webhookTargetUrl = r.WebhookURLLoader.Load(repositoryURL)
+	}
+
 	if webhookTargetUrl == "" {
 		// The env variable is not set
 		// Use the installed on the cluster Pipelines as Code
@@ -895,11 +914,20 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 					log.Info("An attempt to create second PaC Repository for the same git repository", "GitRepository", repository.Spec.URL, l.Action, l.ActionAdd, l.Audit, "true")
 					return boerrors.NewBuildOpError(boerrors.EPaCDuplicateRepository, err)
 				}
+
+				if strings.Contains(err.Error(), "denied the request: failed to validate url error") {
+					// PaC admission webhook denied creation of the PaC repository,
+					// because PaC repository object that references not allowed repository url.
+
+					log.Info("An attempt to create PaC Repository for not allowed repository url", "GitRepository", repository.Spec.URL, l.Action, l.ActionAdd, l.Audit, "true")
+					return boerrors.NewBuildOpError(boerrors.EPaCNotAllowedRepositoryUrl, err)
+				}
+
 				log.Error(err, "failed to create Component PaC repository object", l.Action, l.ActionAdd)
 				return err
-			} else {
-				log.Info("Created PaC Repository object for the component")
 			}
+			log.Info("Created PaC Repository object for the component")
+
 		} else {
 			log.Error(err, "failed to get Component PaC repository object", l.Action, l.ActionView)
 			return err
@@ -1109,6 +1137,17 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 		return baseBranch, "", "", err
 	}
 
+	action_done := "close"
+	// Close merge request.
+	// To close a merge request it's enough to delete the branch.
+
+	// Non-existing source branch should not be an error, just ignore it,
+	// but other errors should be handled.
+	if _, err := gitClient.DeleteBranch(repoUrl, sourceBranch); err != nil {
+		return baseBranch, prUrl, action_done, err
+	}
+	log.Info(fmt.Sprintf("PaC configuration proposal branch %s is deleted", sourceBranch), l.Action, l.ActionDelete)
+
 	if mergeRequest == nil {
 		// Create new PaC configuration clean up merge request
 		mrData = &gp.MergeRequestData{
@@ -1139,20 +1178,11 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 			}
 		}
 
+		action_done = "delete"
 		prUrl, err = gitClient.UndoPaCMergeRequest(repoUrl, mrData)
-		return baseBranch, prUrl, "delete", err
-	} else {
-		// Close merge request.
-		// To close a merge request it's enough to delete the branch.
-
-		// Non-existing source branch should not be an error, just ignore it,
-		// but other errors should be handled.
-		if _, err := gitClient.DeleteBranch(repoUrl, sourceBranch); err != nil {
-			return baseBranch, "", "", err
-		}
-		log.Info(fmt.Sprintf("pull request source branch %s is deleted", sourceBranch), l.Action, l.ActionDelete)
-		return baseBranch, prUrl, "close", nil
 	}
+
+	return baseBranch, prUrl, action_done, err
 }
 
 // generatePaCPipelineRunForComponent returns pipeline run definition to build component source with.

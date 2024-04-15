@@ -33,9 +33,9 @@ func GetAllGithubInstallations(ctx context.Context, client client.Client, eventR
 	if err := client.Get(ctx, globalPaCSecretKey, &pacSecret); err != nil {
 		eventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
 		if errors.IsNotFound(err) {
-			log.Error(err, "not found Pipelines as Code secret in %s namespace: %w", globalPaCSecretKey.Namespace, err, logs.Action, logs.ActionView)
+			log.Error(err, "not found Pipelines as Code secret", "secret", prepare.PipelinesAsCodeSecretName, "namespace", buildServiceNamespaceName, logs.Action, logs.ActionView)
 		} else {
-			log.Error(err, "failed to get Pipelines as Code secret in %s namespace: %w", globalPaCSecretKey.Namespace, err, logs.Action, logs.ActionView)
+			log.Error(err, "failed to get Pipelines as Code secret", "secret", prepare.PipelinesAsCodeSecretName, "namespace", buildServiceNamespaceName, logs.Action, logs.ActionView)
 		}
 		return "", nil, nil
 	}
@@ -136,7 +136,8 @@ func GetGithubInstallationsForComponents(ctx context.Context, client client.Clie
 
 		gitSource := component.Spec.Source.GitSource
 
-		githubAppInstallation, slugTmp, err := github.GetAppInstallationsForRepository(githubAppIdStr, privateKey, gitSource.URL)
+		url := strings.TrimSuffix(strings.TrimSuffix(gitSource.URL, ".git"), "/")
+		githubAppInstallation, slugTmp, err := github.GetAppInstallationsForRepository(githubAppIdStr, privateKey, url)
 		if slug == "" {
 			slug = slugTmp
 		}

@@ -20,6 +20,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
+	"text/template"
+	"time"
+
 	applicationapi "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	l "github.com/redhat-appstudio/build-service/pkg/logs"
 	releaseapi "github.com/redhat-appstudio/release-service/api/v1alpha1"
@@ -39,10 +44,6 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"strconv"
-	"strings"
-	"text/template"
-	"time"
 )
 
 const (
@@ -60,6 +61,7 @@ const (
 	NudgeProcessedAnnotationName = "build.appstudio.openshift.io/component-nudge-processed"
 	NudgeFinalizer               = "build.appstudio.openshift.io/build-nudge-finalizer"
 	FailureCountAnnotationName   = "build.appstudio.openshift.io/build-nudge-failures"
+	NudgeFilesAnnotationName     = "build.appstudio.openshift.io/build-nudge-files"
 
 	ComponentNudgedEventType      = "ComponentNudged"
 	ComponentNudgeFailedEventType = "ComponentNudgeFailed"
@@ -87,6 +89,7 @@ type BuildResult struct {
 	BuiltImageTag            string
 	Digest                   string
 	DistributionRepositories []string
+	FileMatches              string
 	Component                *applicationapi.Component
 }
 
@@ -166,11 +169,21 @@ func (r *ComponentDependencyUpdateReconciler) Reconcile(ctx context.Context, req
 	component, err := GetComponentFromPipelineRun(r.Client, ctx, pipelineRun)
 	if err != nil || component == nil {
 		log.Error(err, "failed to get component")
+		// In case the component was deleted while running the pipeline
+		if controllerutil.ContainsFinalizer(pipelineRun, NudgeFinalizer) {
+			patch := client.MergeFrom(pipelineRun.DeepCopy())
+			return r.removePipelineFinalizer(ctx, pipelineRun, patch)
+		}
 		return ctrl.Result{}, err
 	}
 
 	if len(component.Spec.BuildNudgesRef) == 0 {
 		log.Info(fmt.Sprintf("component %s has no BuildNudgesRef set", component.Name))
+		// In case the nudge was removed while running the pipeline
+		if controllerutil.ContainsFinalizer(pipelineRun, NudgeFinalizer) {
+			patch := client.MergeFrom(pipelineRun.DeepCopy())
+			return r.removePipelineFinalizer(ctx, pipelineRun, patch)
+		}
 		return ctrl.Result{}, nil
 	}
 	log.Info("reconciling PipelineRun")
@@ -264,6 +277,14 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 		repo = image[0:index]
 		tag = image[index+1:]
 	}
+	// find any configurations for files to nudge in
+	if pipelineRun.Annotations == nil {
+		pipelineRun.Annotations = map[string]string{}
+	}
+	nudgeFiles := pipelineRun.Annotations[NudgeFilesAnnotationName]
+	if nudgeFiles == "" {
+		nudgeFiles = ".*Dockerfile.*, .*.yaml, .*Containerfile.*"
+	}
 
 	components := applicationapi.ComponentList{}
 	err := r.Client.List(ctx, &components, client.InNamespace(pipelineRun.Namespace))
@@ -318,7 +339,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 		}
 	}
 	var nudgeErr error
-	immediateRetry, nudgeErr = r.UpdateFunction(ctx, r.Client, r.Scheme, r.EventRecorder, toUpdate, &BuildResult{BuiltImageRepository: repo, BuiltImageTag: tag, Digest: digest, Component: updatedComponent, DistributionRepositories: distibutionRepositories})
+	immediateRetry, nudgeErr = r.UpdateFunction(ctx, r.Client, r.Scheme, r.EventRecorder, toUpdate, &BuildResult{BuiltImageRepository: repo, BuiltImageTag: tag, Digest: digest, Component: updatedComponent, DistributionRepositories: distibutionRepositories, FileMatches: nudgeFiles})
 
 	if nudgeErr != nil {
 
@@ -488,6 +509,14 @@ func generateRenovateConfigForNudge(slug string, repositories []renovateReposito
 	buildResult := context.(*BuildResult)
 
 	repositoriesData, _ := json.Marshal(repositories)
+	fileMatchParts := strings.Split(buildResult.FileMatches, ",")
+	for i := range fileMatchParts {
+		fileMatchParts[i] = strings.TrimSpace(fileMatchParts[i])
+	}
+	fileMatch, err := json.Marshal(fileMatchParts)
+	if err != nil {
+		return "", err
+	}
 	body := `
 	{{with $root := .}}
 	module.exports = {
@@ -500,7 +529,7 @@ func generateRenovateConfigForNudge(slug string, repositories []renovateReposito
     	enabledManagers: "regex",
 		customManagers: [
 			{
-            	"fileMatch": [".*Dockerfile.*",".*.yaml",".*Containerfile.*"],
+            	"fileMatch": {{.FileMatches}},
 				"customType": "regex",
 				"datasourceTemplate": "docker",
 				"matchStrings": [
@@ -527,7 +556,6 @@ func generateRenovateConfigForNudge(slug string, repositories []renovateReposito
 			branchName: "rhtap/component-updates/{{.ComponentName}}",
 			commitMessageTopic: "{{.ComponentName}}",
 			prFooter: "To execute skipped test pipelines write comment ` + "`/ok-to-test`" + `",
-			recreateClosed: true,
 			recreateWhen: "always",
 			rebaseWhen: "behind-base-branch",
 			enabled: true,
@@ -547,6 +575,7 @@ func generateRenovateConfigForNudge(slug string, repositories []renovateReposito
 		BuiltImageTag            string
 		Digest                   string
 		DistributionRepositories []string
+		FileMatches              string
 	}{
 
 		Slug:                     slug,
@@ -556,6 +585,7 @@ func generateRenovateConfigForNudge(slug string, repositories []renovateReposito
 		BuiltImageTag:            buildResult.BuiltImageTag,
 		Digest:                   buildResult.Digest,
 		DistributionRepositories: buildResult.DistributionRepositories,
+		FileMatches:              string(fileMatch),
 	}
 
 	tmpl, err := template.New("renovate").Parse(body)

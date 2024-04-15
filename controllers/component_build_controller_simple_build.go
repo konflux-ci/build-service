@@ -47,6 +47,11 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 	log := ctrllog.FromContext(ctx).WithName("SimpleBuild")
 	ctx = ctrllog.IntoContext(ctx, log)
 
+	if strings.HasPrefix(component.Spec.Source.GitSource.URL, "http:") {
+		return boerrors.NewBuildOpError(boerrors.EHttpUsedForRepository,
+			fmt.Errorf("Git repository URL can't use insecure HTTP: %s", component.Spec.Source.GitSource.URL))
+	}
+
 	pipelineRef, additionalPipelineParams, err := r.GetPipelineForComponent(ctx, component)
 	if err != nil {
 		return err

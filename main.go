@@ -19,6 +19,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/redhat-appstudio/build-service/pkg/bometrics"
 	"os"
 	"regexp"
 	"strings"
@@ -46,6 +47,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
@@ -56,6 +58,7 @@ import (
 	appstudioredhatcomv1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
 	"github.com/redhat-appstudio/build-service/controllers"
 	l "github.com/redhat-appstudio/build-service/pkg/logs"
+	"github.com/redhat-appstudio/build-service/pkg/webhook"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -78,11 +81,18 @@ func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
+	var webhookConfigPath string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+	flag.StringVar(
+		&webhookConfigPath,
+		"webhook-config-path",
+		"",
+		"Path to a file that contains webhook configurations",
+	)
 
 	zapOpts := zap.Options{
 		TimeEncoder: uberzapcore.ISO8601TimeEncoder,
@@ -143,10 +153,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	webhookConfig, err := webhook.LoadMappingFromFile(webhookConfigPath, os.ReadFile)
+	if err != nil {
+		setupLog.Error(err, "Failed to load webhook config file", "path", webhookConfigPath)
+		os.Exit(1)
+	}
+
 	if err = (&controllers.ComponentBuildReconciler{
-		Client:        mgr.GetClient(),
-		Scheme:        mgr.GetScheme(),
-		EventRecorder: mgr.GetEventRecorderFor("ComponentOnboarding"),
+		Client:           mgr.GetClient(),
+		Scheme:           mgr.GetScheme(),
+		EventRecorder:    mgr.GetEventRecorderFor("ComponentOnboarding"),
+		WebhookURLLoader: webhook.NewConfigWebhookURLLoader(webhookConfig),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ComponentOnboarding")
 		os.Exit(1)
@@ -204,8 +221,16 @@ func main() {
 		}
 	}
 
+	ctx := ctrl.SetupSignalHandler()
+	buildMetrics := bometrics.NewBuildMetrics([]bometrics.AvailabilityProbe{bometrics.NewGithubAppAvailabilityProbe(mgr.GetClient())})
+	if err := buildMetrics.InitMetrics(metrics.Registry); err != nil {
+		setupLog.Error(err, "unable to initialize metrics")
+		os.Exit(1)
+	}
+	buildMetrics.StartAvailabilityProbes(ctx)
+
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}

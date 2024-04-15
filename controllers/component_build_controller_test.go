@@ -39,9 +39,9 @@ import (
 
 	"github.com/devfile/api/v2/pkg/apis/workspaces/v1alpha2"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
+	devfile "github.com/redhat-appstudio/application-service/cdq-analysis/pkg"
 	"github.com/redhat-appstudio/application-service/gitops"
 	gitopsprepare "github.com/redhat-appstudio/application-service/gitops/prepare"
-	"github.com/redhat-appstudio/application-service/pkg/devfile"
 	buildappstudiov1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 	"github.com/redhat-appstudio/build-service/pkg/git/github"

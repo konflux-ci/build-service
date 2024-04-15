@@ -104,7 +104,7 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 			// For simple builds we need to query repositories where configured Pipelines as Code application is not installed.
 			githubClient, err := github.NewGithubClientForSimpleBuildByApp(githubAppId, privateKey)
 			if err != nil {
-				return nil, fmt.Errorf("failed to create GitHub client for simple build: %w", err)
+				return nil, err
 			}
 			return githubClient, nil
 		}
