@@ -506,11 +506,16 @@ func (r *ComponentBuildReconciler) lookupPaCSecret(ctx context.Context, componen
 	}
 
 	if len(secretList.Items) == 0 {
-		if gitProvider == "github" {
-			// No SCM secrets found in the component namespace, fall back to the global configuration
-			return r.lookupGHAppSecret(ctx)
+		// TODO: remove after secret migration passes
+		if r.tryMigratePaCSecret(ctx, component, gitProvider) {
+			return r.lookupPaCSecret(ctx, component, gitProvider)
 		} else {
-			return nil, boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, fmt.Errorf("no Pipelines as Code secrets found in %s namespace", component.Namespace))
+			if gitProvider == "github" {
+				// No SCM secrets found in the component namespace, fall back to the global configuration
+				return r.lookupGHAppSecret(ctx)
+			} else {
+				return nil, boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, fmt.Errorf("no Pipelines as Code secrets found in %s namespace", component.Namespace))
+			}
 		}
 	}
 
@@ -683,6 +688,49 @@ func (r *ComponentBuildReconciler) ensureWebhookSecret(ctx context.Context, comp
 	}
 
 	return webhookSecretString, nil
+}
+
+func (r *ComponentBuildReconciler) tryMigratePaCSecret(ctx context.Context, component *appstudiov1alpha1.Component, gitProviderName string) bool {
+	log := ctrllog.FromContext(ctx)
+	log.Info("Trying to migrate old secret to new format", "component", component.Name, "namespace", component.Namespace)
+	oldPacSecret := corev1.Secret{}
+	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: component.Namespace, Name: gitopsprepare.PipelinesAsCodeSecretName}, &oldPacSecret); err != nil {
+		if errors.IsNotFound(err) {
+			log.Error(err, "Old PaC secret not found")
+			return false
+		}
+		log.Error(err, "Failed to get old PaC secret")
+		r.EventRecorder.Event(&oldPacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
+		return false
+	}
+
+	sourceUrl := component.Spec.Source.GitSource.URL
+	url, err := url.Parse(sourceUrl)
+	if err != nil {
+		r.EventRecorder.Event(&oldPacSecret, "Warning", "ErrorParsingURL", err.Error())
+		return false
+	}
+
+	newPaCSecret := &corev1.Secret{
+		TypeMeta: oldPacSecret.TypeMeta,
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      component.Name + "-pac-secret",
+			Namespace: component.Namespace,
+			Labels: map[string]string{
+				scmCredentialsSecretLabel: "scm",
+				scmSecretHostnameLabel:    url.Hostname(),
+			},
+		},
+		Type: corev1.SecretTypeBasicAuth,
+		Data: map[string][]byte{"password": oldPacSecret.Data[gitProviderName+".token"]},
+	}
+	if err := r.Client.Create(ctx, newPaCSecret); err != nil {
+		log.Error(err, "Failed to create new PaC secret")
+		r.EventRecorder.Event(newPaCSecret, "Warning", "ErrorCreatingPaCSecret", err.Error())
+		return false
+	}
+	log.Info("PAC secret migration successful", "component", component.Name, "namespace", component.Namespace)
+	return true
 }
 
 // generatePaCWebhookSecretString generates string alike openssl rand -hex 20
