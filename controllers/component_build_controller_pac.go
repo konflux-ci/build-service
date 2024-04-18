@@ -490,7 +490,9 @@ func (r *ComponentBuildReconciler) lookupPaCSecret(ctx context.Context, componen
 		r.EventRecorder.Event(&corev1.Secret{}, "Warning", "ErrorParsingPACRepo", err.Error())
 		return nil, fmt.Errorf("failed to parse component's source URL: %w", err)
 	}
+	// cut off .git suffix and leading slash
 	componentRepo, _ := strings.CutSuffix(url.Path, ".git")
+	componentRepo = strings.TrimPrefix(componentRepo, "/")
 
 	log.Info("Looking for Pipelines as Code SCM secret", "host", url.Hostname(), "repo", componentRepo)
 
