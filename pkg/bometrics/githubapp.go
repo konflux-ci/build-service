@@ -39,24 +39,19 @@ func NewGithubAppAvailabilityProbe(client client.Client) *GithubAppAvailabilityP
 	}
 }
 
-func (g *GithubAppAvailabilityProbe) CheckAvailability(ctx context.Context) error {
+func (g *GithubAppAvailabilityProbe) CheckAvailability(ctx context.Context) bool {
 
 	githubAppId, privateKey, err := g.getGithubAppCredentials(ctx, g.client)
 	if err != nil {
-		return err
+		return false
 	}
 	_, _, err = g.getGithubApp(ctx, http.DefaultTransport, githubAppId, privateKey)
-	if err != nil {
-		return err
-	}
-	return nil
+	return err == nil
 }
 
 func githubAppCredentials(ctx context.Context, client client.Client) (int64, []byte, error) {
-	log := ctrllog.FromContext(ctx).V(1)
 	pacSecret := corev1.Secret{}
 	globalPaCSecretKey := types.NamespacedName{Namespace: BuildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}
-	log.Info("Checking GitHub App availability")
 	if err := client.Get(ctx, globalPaCSecretKey, &pacSecret); err != nil {
 		return 0, nil, boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound,
 			fmt.Errorf("pipelines as Code secret not found in %s namespace", BuildServiceNamespaceName))
@@ -68,7 +63,6 @@ func githubAppCredentials(ctx context.Context, client client.Client) (int64, []b
 		return 0, nil, boerrors.NewBuildOpError(boerrors.EGitHubAppMalformedId,
 			fmt.Errorf("failed to create git client: failed to convert %s to int: %w", githubAppIdStr, err))
 	}
-	log.Info("GitHub App ID", "githubAppId", githubAppId)
 	privateKey := config[gitops.PipelinesAsCode_githubPrivateKey]
 	if len(config[gitops.PipelinesAsCode_githubPrivateKey]) == 0 {
 		return 0, nil, boerrors.NewBuildOpError(boerrors.EPaCSecretInvalid,
