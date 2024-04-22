@@ -524,7 +524,7 @@ func generateRenovateConfigForNudge(slug string, repositories []renovateReposito
 		  {
 		  	"matchPackageNames": ["{{.BuiltImageRepository}}", {{range .DistributionRepositories}},"{{.}}"{{end}}],
 			groupName: "Component Update {{.ComponentName}}",
-			branchName: "rhtap/component-updates/{{.ComponentName}}",
+			branchName: "konflux/component-updates/{{.ComponentName}}",
 			commitMessageTopic: "{{.ComponentName}}",
 			prFooter: "To execute skipped test pipelines write comment ` + "`/ok-to-test`" + `",
 			recreateClosed: true,

@@ -160,10 +160,10 @@ func generateConfigJS(slug string, repositories []renovateRepository, _ interfac
 			  {
 				matchPackagePatterns: ["%s"],
 				matchDepPatterns: ["%s"],
-				groupName: "RHTAP references",
-				branchName: "rhtap/references/{{baseBranch}}",
+				groupName: "Konflux references",
+				branchName: "konflux/references/{{baseBranch}}",
 				commitMessageExtra: "",
-				commitMessageTopic: "RHTAP references",
+				commitMessageTopic: "Konflux references",
 				semanticCommits: "enabled",
 				prFooter: "To execute skipped test pipelines write comment ` + "`/ok-to-test`" + `",
 				prBodyColumns: ["Package", "Change", "Notes"],
