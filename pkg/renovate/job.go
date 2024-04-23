@@ -2,8 +2,6 @@ package renovate
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -21,13 +19,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logger "sigs.k8s.io/controller-runtime/pkg/log"
 
+	. "github.com/redhat-appstudio/build-service/pkg/common"
 	"github.com/redhat-appstudio/build-service/pkg/logs"
 )
 
 const (
 	TasksPerJob                = 20
 	InstallationsPerJobEnvName = "RENOVATE_INSTALLATIONS_PER_JOB"
-	BuildServiceNamespaceName  = "build-service"
 	TimeToLiveOfJob            = 24 * time.Hour
 	RenovateImageEnvName       = "RENOVATE_IMAGE"
 	DefaultRenovateImageUrl    = "quay.io/redhat-appstudio/renovate:v37.74.1"
@@ -68,14 +66,14 @@ func (j *JobCoordinator) Execute(ctx context.Context, tasks []*Task) error {
 	log := logger.FromContext(ctx)
 
 	timestamp := time.Now().Unix()
-	name := fmt.Sprintf("renovate-job-%d-%s", timestamp, getRandomString(5))
+	name := fmt.Sprintf("renovate-job-%d-%s", timestamp, RandomString(5))
 	log.V(logs.DebugLevel).Info(fmt.Sprintf("Creating renovate job %s for %d unique sets of scm repositories", name, len(tasks)))
 
 	secretTokens := map[string]string{}
 	configmaps := map[string]string{}
 	var renovateCmd []string
 	for _, task := range tasks {
-		taskId := getRandomString(5)
+		taskId := RandomString(5)
 		secretTokens[taskId] = task.Token
 
 		config, err := json.Marshal(task.JobConfig())
@@ -211,12 +209,4 @@ func (j *JobCoordinator) ExecuteWithLimits(ctx context.Context, tasks []*Task) e
 	}
 	return nil
 
-}
-
-func getRandomString(length int) string {
-	bytes := make([]byte, length/2+1)
-	if _, err := rand.Read(bytes); err != nil {
-		panic("Failed to read from random generator")
-	}
-	return hex.EncodeToString(bytes)[0:length]
 }

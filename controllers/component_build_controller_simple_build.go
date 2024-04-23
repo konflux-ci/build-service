@@ -18,8 +18,6 @@ package controllers
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -37,6 +35,7 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
+	. "github.com/redhat-appstudio/build-service/pkg/common"
 	"github.com/redhat-appstudio/build-service/pkg/git/gitproviderfactory"
 	l "github.com/redhat-appstudio/build-service/pkg/logs"
 )
@@ -211,7 +210,7 @@ func generatePipelineRunForComponent(component *appstudiov1alpha1.Component, pip
 	}
 
 	imageRepo := getContainerImageRepositoryForComponent(component)
-	image := fmt.Sprintf("%s:build-%s-%d", imageRepo, getRandomString(5), timestamp)
+	image := fmt.Sprintf("%s:build-%s-%d", imageRepo, RandomString(5), timestamp)
 
 	params := []tektonapi.Param{
 		{Name: "git-url", Value: tektonapi.ParamValue{Type: "string", StringVal: component.Spec.Source.GitSource.URL}},
@@ -312,12 +311,4 @@ func getGitProviderUrl(gitURL string) (string, error) {
 		return "", fmt.Errorf("failed to parse string into a URL: %v or scheme is empty", err)
 	}
 	return u.Scheme + "://" + u.Host, nil
-}
-
-func getRandomString(length int) string {
-	bytes := make([]byte, length/2+1)
-	if _, err := rand.Read(bytes); err != nil {
-		panic("Failed to read from random generator")
-	}
-	return hex.EncodeToString(bytes)[0:length]
 }
