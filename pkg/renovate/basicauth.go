@@ -37,20 +37,20 @@ func NewBasicAuthTaskProvider(credentialsProvider credentials.BasicAuthCredentia
 func (g BasicAuthTaskProvider) GetNewTasks(ctx context.Context, components []*git.ScmComponent) []*Task {
 	log := ctrllog.FromContext(ctx)
 	componentNamespaceMap := git.NamespaceToComponentMap(components)
-	log.V(logs.DebugLevel).Info("generating new renovate task in user's namespace", "count", len(componentNamespaceMap))
+	log.V(logs.DebugLevel).Info("generating new renovate task in user's namespace for components", "count", len(components))
 	var newTasks []*Task
-	for _, componentsInNamespace := range componentNamespaceMap {
-		log.V(logs.DebugLevel).Info("found component", "count", len(componentsInNamespace))
+	for namespace, componentsInNamespace := range componentNamespaceMap {
+		log.V(logs.DebugLevel).Info("found components", "namespace", namespace, "count", len(componentsInNamespace))
 
 		platformToComponentMap := git.PlatformToComponentMap(componentsInNamespace)
-		log.V(logs.DebugLevel).Info("found git platform", "count", len(platformToComponentMap))
+		log.V(logs.DebugLevel).Info("found git platform on namespace", "namespace", namespace, "count", len(platformToComponentMap))
 		for platform, componentsOnPlatform := range platformToComponentMap {
-			log.V(logs.DebugLevel).Info("processing components on platform", "platform", platform, "componentsOnPlatform", componentsOnPlatform)
+			log.V(logs.DebugLevel).Info("processing components on platform", "platform", platform, "count", len(componentsOnPlatform))
 			hostToComponentsMap := git.HostToComponentMap(componentsOnPlatform)
-			log.V(logs.DebugLevel).Info("found host on platform", "count", len(hostToComponentsMap))
+			log.V(logs.DebugLevel).Info("found hosts on platform", "namespace", namespace, "platform", platform, "count", len(hostToComponentsMap))
 			var tasksOnHost []*Task
 			for host, componentsOnHost := range hostToComponentsMap {
-				log.V(logs.DebugLevel).Info("processing components on host", "host", host, "componentsOnHost", componentsOnHost)
+				log.V(logs.DebugLevel).Info("processing components on host", "namespace", namespace, "platform", platform, "host", host, "count", len(componentsOnHost))
 				for _, component := range componentsOnHost {
 					if !AddNewBranchToTheExistedRepositoryTasksOnTheSameHosts(tasksOnHost, component) {
 						creds, err := g.credentialsProvider.GetBasicAuthCredentials(ctx, component)
@@ -75,7 +75,7 @@ func (g BasicAuthTaskProvider) GetNewTasks(ctx context.Context, components []*gi
 		}
 
 	}
-
+	log.V(logs.DebugLevel).Info("generated new renovate tasks", "count", len(newTasks))
 	return newTasks
 }
 

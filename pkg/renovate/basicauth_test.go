@@ -3,6 +3,7 @@ package renovate
 import (
 	"context"
 	"os"
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -160,6 +161,9 @@ func TestNewTasks(t *testing.T) {
 			//when
 			got := taskProvider.GetNewTasks(context.TODO(), tt.components)
 			//then
+			sort.Slice(got, func(i, j int) bool {
+				return got[i].Platform < got[j].Platform
+			})
 			assert.Equal(t, tt.expected, got)
 		})
 	}
