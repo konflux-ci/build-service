@@ -193,9 +193,6 @@ func (j *JobCoordinator) Execute(ctx context.Context, tasks []*Task) error {
 
 func (j *JobCoordinator) ExecuteWithLimits(ctx context.Context, tasks []*Task) error {
 
-	// Generate renovate jobs. Limit processed installations per job.
-	//var taskPerJobInt int
-
 	for i := 0; i < len(tasks); i += j.tasksPerJob {
 		end := i + j.tasksPerJob
 
