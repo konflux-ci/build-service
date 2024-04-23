@@ -28,11 +28,6 @@ import (
 
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	"github.com/redhat-appstudio/application-service/gitops"
-	gitopsprepare "github.com/redhat-appstudio/application-service/gitops/prepare"
-	"github.com/redhat-appstudio/build-service/pkg/boerrors"
-	. "github.com/redhat-appstudio/build-service/pkg/common"
-	"github.com/redhat-appstudio/build-service/pkg/git/gitproviderfactory"
-	l "github.com/redhat-appstudio/build-service/pkg/logs"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -40,6 +35,10 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/redhat-appstudio/build-service/pkg/boerrors"
+	"github.com/redhat-appstudio/build-service/pkg/git/gitproviderfactory"
+	l "github.com/redhat-appstudio/build-service/pkg/logs"
 )
 
 // SubmitNewBuild creates a new PipelineRun to build a new image for the given component.
@@ -62,12 +61,19 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 		return err
 	}
 
-	pacSecret := corev1.Secret{}
-	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: BuildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}, &pacSecret); err != nil {
-		log.Error(err, "failed to get git provider credentials secret", l.Action, l.ActionView)
+	gitProvider, err := gitops.GetGitProvider(*component)
+	if err != nil {
+		// There is no point to continue if git provider is not known
+		log.Error(err, "error detecting git provider")
+		return boerrors.NewBuildOpError(boerrors.EUnknownGitProvider, err)
+	}
+	pacSecret, err := r.lookupPaCSecret(ctx, component, gitProvider)
+	if err != nil {
+		log.Error(err, "secret cannot be found for the component")
 		return boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, err)
 	}
-	buildGitInfo, err := r.getBuildGitInfo(ctx, component, pacSecret.Data)
+
+	buildGitInfo, err := r.getBuildGitInfo(ctx, component, gitProvider, pacSecret.Data)
 	if err != nil {
 		return err
 	}
@@ -108,15 +114,8 @@ type buildGitInfo struct {
 }
 
 // getBuildGitInfo find out git source information the build is done from.
-func (r *ComponentBuildReconciler) getBuildGitInfo(ctx context.Context, component *appstudiov1alpha1.Component, pacConfig map[string][]byte) (*buildGitInfo, error) {
+func (r *ComponentBuildReconciler) getBuildGitInfo(ctx context.Context, component *appstudiov1alpha1.Component, gitProvider string, pacConfig map[string][]byte) (*buildGitInfo, error) {
 	log := ctrllog.FromContext(ctx).WithName("getBuildGitInfo")
-
-	gitProvider, err := gitops.GetGitProvider(*component)
-	if err != nil {
-		// There is no point to continue if git provider is not known
-		log.Error(err, "error detecting git provider")
-		return nil, boerrors.NewBuildOpError(boerrors.EUnknownGitProvider, err)
-	}
 
 	repoUrl := component.Spec.Source.GitSource.URL
 
