@@ -122,7 +122,7 @@ func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Re
 		}
 		scmComponents = append(scmComponents, scmComponent)
 	}
-	var tasks []renovate.Task
+	var tasks []*renovate.Task
 	for _, taskProvider := range r.taskProviders {
 		newTasks := taskProvider.GetNewTasks(ctx, scmComponents)
 		if len(newTasks) > 0 {

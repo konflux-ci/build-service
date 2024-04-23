@@ -73,6 +73,7 @@ func ComponentRepoToBranchesMap(components []*ScmComponent) map[string][]string 
 	}
 	return componentRepoToBranchesMap
 }
+
 func NamespaceToComponentMap(components []*ScmComponent) map[string][]*ScmComponent {
 	componentNamespaceNameMap := make(map[string][]*ScmComponent)
 	for _, component := range components {
@@ -90,7 +91,7 @@ func PlatformToComponentMap(components []*ScmComponent) map[string][]*ScmCompone
 func HostToComponentMap(components []*ScmComponent) map[string][]*ScmComponent {
 	componentNamespaceNameMap := make(map[string][]*ScmComponent)
 	for _, component := range components {
-		componentNamespaceNameMap[component.RepositoryHost()] = append(componentNamespaceNameMap[component.NamespaceName()], component)
+		componentNamespaceNameMap[component.RepositoryHost()] = append(componentNamespaceNameMap[component.RepositoryHost()], component)
 	}
 	return componentNamespaceNameMap
 }

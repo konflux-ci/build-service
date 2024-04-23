@@ -3,6 +3,8 @@ package renovate
 import (
 	"fmt"
 	"os"
+
+	"k8s.io/utils/strings/slices"
 )
 
 const (
@@ -15,21 +17,27 @@ var (
 )
 
 type JobConfig struct {
-	Platform            string       `json:"platform"`
-	Username            string       `json:"username"`
-	GitAuthor           string       `json:"gitAuthor"`
-	Onboarding          bool         `json:"onboarding"`
-	RequireConfig       string       `json:"requireConfig"`
-	EnabledManagers     []string     `json:"enabledManagers"`
-	Repositories        []Repository `json:"repositories"`
-	Tekton              Tekton       `json:"tekton"`
-	ForkProcessing      string       `json:"forkProcessing"`
-	DependencyDashboard bool         `json:"dependencyDashboard"`
+	Platform            string        `json:"platform"`
+	Username            string        `json:"username"`
+	GitAuthor           string        `json:"gitAuthor"`
+	Onboarding          bool          `json:"onboarding"`
+	RequireConfig       string        `json:"requireConfig"`
+	EnabledManagers     []string      `json:"enabledManagers"`
+	Repositories        []*Repository `json:"repositories"`
+	Tekton              Tekton        `json:"tekton"`
+	ForkProcessing      string        `json:"forkProcessing"`
+	DependencyDashboard bool          `json:"dependencyDashboard"`
 }
 
 type Repository struct {
 	Repository   string   `json:"repository"`
 	BaseBranches []string `json:"baseBranches"`
+}
+
+func (r *Repository) AddBranch(branch string) {
+	if !slices.Contains(r.BaseBranches, branch) {
+		r.BaseBranches = append(r.BaseBranches, branch)
+	}
 }
 
 type Tekton struct {
@@ -55,7 +63,7 @@ type PackageRule struct {
 	RebaseWhen           string   `json:"rebaseWhen,omitempty"`
 }
 
-func NewTektonJobConfig(platform, username, gitAuthor, renovatePattern string, repositories []Repository) JobConfig {
+func NewTektonJobConfig(platform, username, gitAuthor, renovatePattern string, repositories []*Repository) JobConfig {
 	return JobConfig{
 		Platform:        platform,
 		Username:        username,

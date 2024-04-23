@@ -20,7 +20,7 @@ type GithubAppRenovaterTaskProvider struct {
 func NewGithubAppRenovaterTaskProvider(appConfigReader githubapp.ConfigReader) GithubAppRenovaterTaskProvider {
 	return GithubAppRenovaterTaskProvider{appConfigReader: appConfigReader}
 }
-func (g GithubAppRenovaterTaskProvider) GetNewTasks(ctx context.Context, components []*git.ScmComponent) []Task {
+func (g GithubAppRenovaterTaskProvider) GetNewTasks(ctx context.Context, components []*git.ScmComponent) []*Task {
 	log := ctrllog.FromContext(ctx)
 	githubAppId, privateKey, err := g.appConfigReader.GetConfig(ctx)
 	if err != nil {
@@ -37,9 +37,9 @@ func (g GithubAppRenovaterTaskProvider) GetNewTasks(ctx context.Context, compone
 	componentUrlToBranchesMap := git.ComponentUrlToBranchesMap(components)
 
 	// Match installed repositories with Components and get custom branch if defined
-	var newTasks []Task
+	var newTasks []*Task
 	for _, githubAppInstallation := range githubAppInstallations {
-		var repositories []Repository
+		var repositories []*Repository
 		for _, repository := range githubAppInstallation.Repositories {
 			branches, ok := componentUrlToBranchesMap[repository.GetHTMLURL()]
 			// Filter repositories with installed GH App but missing Component
@@ -52,7 +52,7 @@ func (g GithubAppRenovaterTaskProvider) GetNewTasks(ctx context.Context, compone
 				}
 			}
 
-			repositories = append(repositories, Repository{
+			repositories = append(repositories, &Repository{
 				BaseBranches: branches,
 				Repository:   repository.GetFullName(),
 			})
@@ -66,8 +66,8 @@ func (g GithubAppRenovaterTaskProvider) GetNewTasks(ctx context.Context, compone
 	return newTasks
 }
 
-func newGithubTask(slug string, token string, repositories []Repository) Task {
-	return Task{
+func newGithubTask(slug string, token string, repositories []*Repository) *Task {
+	return &Task{
 		Platform:        "github",
 		Username:        fmt.Sprintf("%s[bot]", slug),
 		GitAuthor:       fmt.Sprintf("%s <123456+%s[bot]@users.noreply.github.com>", slug, slug),

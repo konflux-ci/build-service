@@ -2,24 +2,29 @@ package renovate
 
 import (
 	"context"
-	"reflect"
+	"os"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/redhat-appstudio/build-service/pkg/git"
 	"github.com/redhat-appstudio/build-service/pkg/git/credentials"
 )
 
-var staticCredentials = &credentials.BasicAuthCredentials{}
+var staticCredentials = &credentials.BasicAuthCredentials{Username: "usr", Password: "pwd-234"}
 var StaticCredentialsFunc credentials.BasicAuthCredentialsProviderFunc = func(ctx context.Context, component *git.ScmComponent) (*credentials.BasicAuthCredentials, error) {
 	return staticCredentials, nil
 }
 
 func TestNewTasks(t *testing.T) {
+	logf.SetLogger(zap.New(zap.WriteTo(os.Stdout), zap.UseDevMode(true)))
 	tests := []struct {
 		name            string
 		credentialsFunc credentials.BasicAuthCredentialsProviderFunc
 		components      []*git.ScmComponent
-		expected        []Task
+		expected        []*Task
 	}{
 		{
 			name:            "No components - no tasks",
@@ -29,8 +34,116 @@ func TestNewTasks(t *testing.T) {
 			name:            "Simple one component case",
 			credentialsFunc: StaticCredentialsFunc,
 			components:      []*git.ScmComponent{ignoreError(git.NewScmComponent("github", "https://github.com/umbrellacorp/devfile-sample-go-basic", "main", "devfile-sample-go-basic", "umbrellacorp-tenant")).(*git.ScmComponent)},
-			expected: []Task{
-				NewBasicAuthTask("github", "github.com", staticCredentials, []Repository{
+			expected: []*Task{
+				NewBasicAuthTask("github", "github.com", staticCredentials, []*Repository{
+					{
+						Repository:   "umbrellacorp/devfile-sample-go-basic",
+						BaseBranches: []string{"main"},
+					},
+				}),
+			},
+		},
+		{
+			name:            "Multiple components with the same host",
+			credentialsFunc: StaticCredentialsFunc,
+			components: []*git.ScmComponent{
+				ignoreError(
+					git.NewScmComponent(
+						"github",
+						"https://github.com/umbrellacorp/devfile-sample-python-basic",
+						"develop",
+						"devfile-sample-python-basic",
+						"umbrellacorp-tenant")).(*git.ScmComponent),
+
+				ignoreError(
+					git.NewScmComponent(
+						"github",
+						"https://github.com/umbrellacorp/devfile-sample-go-basic",
+						"main",
+						"devfile-sample-go-basic",
+						"umbrellacorp-tenant")).(*git.ScmComponent),
+			},
+			expected: []*Task{
+				NewBasicAuthTask("github", "github.com", staticCredentials, []*Repository{
+					{
+						Repository:   "umbrellacorp/devfile-sample-python-basic",
+						BaseBranches: []string{"develop"},
+					},
+					{
+						Repository:   "umbrellacorp/devfile-sample-go-basic",
+						BaseBranches: []string{"main"},
+					},
+				}),
+			},
+		},
+		{
+			name:            "Multiple components with the same host with two branches",
+			credentialsFunc: StaticCredentialsFunc,
+			components: []*git.ScmComponent{
+				ignoreError(
+					git.NewScmComponent(
+						"github",
+						"https://github.com/umbrellacorp/devfile-sample-python-basic",
+						"develop",
+						"devfile-sample-python-basic",
+						"umbrellacorp-tenant")).(*git.ScmComponent),
+				ignoreError(
+					git.NewScmComponent(
+						"github",
+						"https://github.com/umbrellacorp/devfile-sample-python-basic",
+						"main",
+						"devfile-sample-python-basic",
+						"umbrellacorp-tenant")).(*git.ScmComponent),
+
+				ignoreError(
+					git.NewScmComponent(
+						"github",
+						"https://github.com/umbrellacorp/devfile-sample-go-basic",
+						"main",
+						"devfile-sample-go-basic",
+						"umbrellacorp-tenant")).(*git.ScmComponent),
+			},
+			expected: []*Task{
+				NewBasicAuthTask("github", "github.com", staticCredentials, []*Repository{
+					{
+						Repository:   "umbrellacorp/devfile-sample-python-basic",
+						BaseBranches: []string{"develop", "main"},
+					},
+					{
+						Repository:   "umbrellacorp/devfile-sample-go-basic",
+						BaseBranches: []string{"main"},
+					},
+				}),
+			},
+		},
+		{
+			name:            "Multiple components with the different host",
+			credentialsFunc: StaticCredentialsFunc,
+			components: []*git.ScmComponent{
+				ignoreError(
+					git.NewScmComponent(
+						"github",
+						"https://github.com/umbrellacorp/devfile-sample-python-basic",
+						"develop",
+						"devfile-sample-python-basic",
+						"umbrellacorp-tenant")).(*git.ScmComponent),
+
+				ignoreError(
+					git.NewScmComponent(
+						"gitlab",
+						"https://gitlab.com/umbrellacorp/devfile-sample-go-basic",
+						"main",
+						"devfile-sample-go-basic",
+						"umbrellacorp-tenant")).(*git.ScmComponent),
+			},
+			expected: []*Task{
+				NewBasicAuthTask("github", "github.com", staticCredentials, []*Repository{
+					{
+						Repository:   "umbrellacorp/devfile-sample-python-basic",
+						BaseBranches: []string{"develop"},
+					},
+				}),
+				NewBasicAuthTask("gitlab", "gitlab.com", staticCredentials, []*Repository{
 					{
 						Repository:   "umbrellacorp/devfile-sample-go-basic",
 						BaseBranches: []string{"main"},
@@ -47,9 +160,7 @@ func TestNewTasks(t *testing.T) {
 			//when
 			got := taskProvider.GetNewTasks(context.TODO(), tt.components)
 			//then
-			if !reflect.DeepEqual(got, tt.expected) {
-				t.Errorf("got %v, want %v", got, tt.expected)
-			}
+			assert.Equal(t, tt.expected, got)
 		})
 	}
 

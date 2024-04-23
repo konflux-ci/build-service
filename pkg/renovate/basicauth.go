@@ -28,15 +28,18 @@ func NewBasicAuthTaskProvider(credentialsProvider credentials.BasicAuthCredentia
 // 1. Group components by namespace
 // 2. Group components by platform
 // 3. Group components by host
-// 4. For each component get the basic auth credentials
-// 5. For each component get branches and credentials to create Renovate task
+// 4. For each host creating tasksOnHost
+// 5. For each component looking for an existing task with the same repository and adding a new branch to it
+// 6. If there is no task with the same repository, looking for a task with the same credentials and adding a new repository to it
+// 7. If there is no task with the same credentials, creating a new task and adding it to the tasksOnHost
+// 8. Adding tasksOnHost to the newTasks
 
-func (g BasicAuthTaskProvider) GetNewTasks(ctx context.Context, components []*git.ScmComponent) []Task {
+func (g BasicAuthTaskProvider) GetNewTasks(ctx context.Context, components []*git.ScmComponent) []*Task {
 	log := ctrllog.FromContext(ctx)
 	componentNamespaceMap := git.NamespaceToComponentMap(components)
 	log.V(logs.DebugLevel).Info("generating new renovate task in user's namespace", "count", len(componentNamespaceMap))
-	var newTasks []Task
-	for namespaceName, componentsInNamespace := range componentNamespaceMap {
+	var newTasks []*Task
+	for _, componentsInNamespace := range componentNamespaceMap {
 		log.V(logs.DebugLevel).Info("found component", "count", len(componentsInNamespace))
 
 		platformToComponentMap := git.PlatformToComponentMap(componentsInNamespace)
@@ -45,29 +48,30 @@ func (g BasicAuthTaskProvider) GetNewTasks(ctx context.Context, components []*gi
 			log.V(logs.DebugLevel).Info("processing components on platform", "platform", platform, "componentsOnPlatform", componentsOnPlatform)
 			hostToComponentsMap := git.HostToComponentMap(componentsOnPlatform)
 			log.V(logs.DebugLevel).Info("found host on platform", "count", len(hostToComponentsMap))
+			var tasksOnHost []*Task
 			for host, componentsOnHost := range hostToComponentsMap {
 				log.V(logs.DebugLevel).Info("processing components on host", "host", host, "componentsOnHost", componentsOnHost)
 				for _, component := range componentsOnHost {
-					credentials, err := g.credentialsProvider.GetBasicAuthCredentials(ctx, component)
-					if err != nil {
-						if !boerrors.IsBuildOpError(err, boerrors.EComponentGitSecretMissing) {
-							log.Error(err, "failed to get basic auth credentials for component", "component", component)
+					if !AddNewBranchToTheExistedRepositoryTasksOnTheSameHosts(tasksOnHost, component) {
+						creds, err := g.credentialsProvider.GetBasicAuthCredentials(ctx, component)
+						if err != nil {
+							if !boerrors.IsBuildOpError(err, boerrors.EComponentGitSecretMissing) {
+								log.Error(err, "failed to get basic auth credentials for component", "component", component)
+							}
+							continue
 						}
-						continue
-					}
-					componentRepoToBranchesMap := git.ComponentRepoToBranchesMap(componentsOnHost)
-					log.V(logs.DebugLevel).Info("Found branches for components", "count", len(componentRepoToBranchesMap))
-					var repositories []Repository
-					for repo, branches := range componentRepoToBranchesMap {
-						repositories = append(repositories, Repository{
-							BaseBranches: branches,
-							Repository:   repo,
-						})
-						log.V(logs.DebugLevel).Info("Creating new task for component", "repo", repo, "branches", branches, "namespace", namespaceName, "platform", platform)
-						newTasks = append(newTasks, NewBasicAuthTask(platform, host, credentials, repositories))
+						if !AddNewRepoToTasksOnTheSameHostsWithSameCredentials(tasksOnHost, component, creds) {
+							tasksOnHost = append(tasksOnHost, NewBasicAuthTask(platform, host, creds, []*Repository{
+								{
+									Repository:   component.Repository(),
+									BaseBranches: []string{component.Branch()},
+								},
+							}))
+						}
 					}
 				}
 			}
+			newTasks = append(newTasks, tasksOnHost...)
 		}
 
 	}
@@ -75,9 +79,9 @@ func (g BasicAuthTaskProvider) GetNewTasks(ctx context.Context, components []*gi
 	return newTasks
 }
 
-func NewBasicAuthTask(platform string, host string, credentials *credentials.BasicAuthCredentials, repositories []Repository) Task {
+func NewBasicAuthTask(platform string, host string, credentials *credentials.BasicAuthCredentials, repositories []*Repository) *Task {
 
-	return Task{
+	return &Task{
 		Platform:        platform,
 		Username:        credentials.Username,
 		GitAuthor:       fmt.Sprintf("%s <123456+%s[bot]@users.noreply.%s>", credentials.Username, credentials.Username, host),

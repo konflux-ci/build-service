@@ -60,7 +60,7 @@ func NewJobCoordinator(client client.Client, scheme *runtime.Scheme) *JobCoordin
 	return &JobCoordinator{tasksPerJob: tasksPerJobInt, renovateImageUrl: renovateImageUrl, client: client, scheme: scheme, debug: false}
 }
 
-func (j *JobCoordinator) Execute(ctx context.Context, tasks []Task) error {
+func (j *JobCoordinator) Execute(ctx context.Context, tasks []*Task) error {
 
 	if len(tasks) == 0 {
 		return nil
@@ -193,7 +193,7 @@ func (j *JobCoordinator) Execute(ctx context.Context, tasks []Task) error {
 	return nil
 }
 
-func (j *JobCoordinator) ExecuteWithLimits(ctx context.Context, tasks []Task) error {
+func (j *JobCoordinator) ExecuteWithLimits(ctx context.Context, tasks []*Task) error {
 
 	// Generate renovate jobs. Limit processed installations per job.
 	//var taskPerJobInt int
