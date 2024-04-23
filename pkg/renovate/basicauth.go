@@ -80,7 +80,6 @@ func (g BasicAuthTaskProvider) GetNewTasks(ctx context.Context, components []*gi
 }
 
 func NewBasicAuthTask(platform string, host string, credentials *credentials.BasicAuthCredentials, repositories []*Repository) *Task {
-
 	return &Task{
 		Platform:        platform,
 		Username:        credentials.Username,
