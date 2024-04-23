@@ -28,6 +28,7 @@ import (
 	devfile "github.com/redhat-appstudio/application-service/cdq-analysis/pkg"
 	buildappstudiov1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
+	. "github.com/redhat-appstudio/build-service/pkg/common"
 	l "github.com/redhat-appstudio/build-service/pkg/logs"
 	pipelineselector "github.com/redhat-appstudio/build-service/pkg/pipeline-selector"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
@@ -53,7 +54,7 @@ func (r *ComponentBuildReconciler) GetPipelineForComponent(ctx context.Context, 
 		// Second try namespaced config
 		{Namespace: component.Namespace, Name: buildPipelineSelectorResourceName},
 		// Finally try global config
-		{Namespace: buildServiceNamespaceName, Name: buildPipelineSelectorResourceName},
+		{Namespace: BuildServiceNamespaceName, Name: buildPipelineSelectorResourceName},
 	}
 
 	for _, pipelineSelectorKey := range pipelineSelectorKeys {

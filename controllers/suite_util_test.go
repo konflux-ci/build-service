@@ -39,6 +39,7 @@ import (
 	gh "github.com/google/go-github/v45/github"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	buildappstudiov1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
+	. "github.com/redhat-appstudio/build-service/pkg/common"
 	"github.com/redhat-appstudio/build-service/pkg/git/github"
 )
 
@@ -66,7 +67,7 @@ const (
 )
 
 var (
-	defaultSelectorKey = types.NamespacedName{Name: buildPipelineSelectorResourceName, Namespace: buildServiceNamespaceName}
+	defaultSelectorKey = types.NamespacedName{Name: buildPipelineSelectorResourceName, Namespace: BuildServiceNamespaceName}
 )
 
 type componentConfig struct {

@@ -30,6 +30,7 @@ import (
 	"github.com/redhat-appstudio/application-service/gitops"
 	gitopsprepare "github.com/redhat-appstudio/application-service/gitops/prepare"
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
+	. "github.com/redhat-appstudio/build-service/pkg/common"
 	"github.com/redhat-appstudio/build-service/pkg/git/gitproviderfactory"
 	l "github.com/redhat-appstudio/build-service/pkg/logs"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
@@ -62,7 +63,7 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 	}
 
 	pacSecret := corev1.Secret{}
-	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: buildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}, &pacSecret); err != nil {
+	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: BuildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}, &pacSecret); err != nil {
 		log.Error(err, "failed to get git provider credentials secret", l.Action, l.ActionView)
 		return boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, err)
 	}

@@ -17,6 +17,7 @@ limitations under the License.
 package boerrors
 
 import (
+	"errors"
 	"fmt"
 )
 
@@ -210,4 +211,15 @@ var boErrorMessages = map[BOErrorId]string{
 
 	EPipelineRetrievalFailed:  "Failed to retrieve the pipeline selected for this component.",
 	EPipelineConversionFailed: "Failed to convert the selected pipeline to the supported Tekton API version.",
+}
+
+// IsBuildOpError returns true if the specified error is BuildOpError with certain code.
+func IsBuildOpError(err error, code BOErrorId) bool {
+	var boErr *BuildOpError
+	if err != nil && errors.As(err, &boErr) {
+		if boErr.GetErrorId() == int(code) {
+			return true
+		}
+	}
+	return false
 }
