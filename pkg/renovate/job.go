@@ -70,7 +70,7 @@ func (j *JobCoordinator) Execute(ctx context.Context, tasks []*Task) error {
 	log.V(logs.DebugLevel).Info(fmt.Sprintf("Creating renovate job %s for %d unique sets of scm repositories", name, len(tasks)))
 
 	secretTokens := map[string]string{}
-	configmaps := map[string]string{}
+	configMapData := map[string]string{}
 	var renovateCmd []string
 	for _, task := range tasks {
 		taskId := RandomString(5)
@@ -80,7 +80,7 @@ func (j *JobCoordinator) Execute(ctx context.Context, tasks []*Task) error {
 		if err != nil {
 			return err
 		}
-		configmaps[fmt.Sprintf("%s.json", taskId)] = string(config)
+		configMapData[fmt.Sprintf("%s.json", taskId)] = string(config)
 
 		log.V(logs.DebugLevel).Info(fmt.Sprintf("Creating renovate config map entry with length %d and value %s", len(config), config))
 		renovateCmd = append(renovateCmd,
@@ -103,7 +103,7 @@ func (j *JobCoordinator) Execute(ctx context.Context, tasks []*Task) error {
 			Name:      name,
 			Namespace: BuildServiceNamespaceName,
 		},
-		Data: configmaps,
+		Data: configMapData,
 	}
 
 	job := &batchv1.Job{
