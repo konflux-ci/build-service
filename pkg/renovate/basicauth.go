@@ -33,25 +33,28 @@ func NewBasicAuthTaskProvider(credentialsProvider credentials.BasicAuthCredentia
 // 6. If there is no task with the same repository, looking for a task with the same credentials and adding a new repository to it
 // 7. If there is no task with the same credentials, creating a new task and adding it to the tasksOnHost
 // 8. Adding tasksOnHost to the newTasks
-
 func (g BasicAuthTaskProvider) GetNewTasks(ctx context.Context, components []*git.ScmComponent) []*Task {
 	log := ctrllog.FromContext(ctx)
+	// Step 1
 	componentNamespaceMap := git.NamespaceToComponentMap(components)
 	log.V(logs.DebugLevel).Info("generating new renovate task in user's namespace for components", "count", len(components))
 	var newTasks []*Task
 	for namespace, componentsInNamespace := range componentNamespaceMap {
 		log.V(logs.DebugLevel).Info("found components", "namespace", namespace, "count", len(componentsInNamespace))
-
+		// Step 2
 		platformToComponentMap := git.PlatformToComponentMap(componentsInNamespace)
 		log.V(logs.DebugLevel).Info("found git platform on namespace", "namespace", namespace, "count", len(platformToComponentMap))
 		for platform, componentsOnPlatform := range platformToComponentMap {
 			log.V(logs.DebugLevel).Info("processing components on platform", "platform", platform, "count", len(componentsOnPlatform))
+			// Step 3
 			hostToComponentsMap := git.HostToComponentMap(componentsOnPlatform)
 			log.V(logs.DebugLevel).Info("found hosts on platform", "namespace", namespace, "platform", platform, "count", len(hostToComponentsMap))
+			// Step 4
 			var tasksOnHost []*Task
 			for host, componentsOnHost := range hostToComponentsMap {
 				log.V(logs.DebugLevel).Info("processing components on host", "namespace", namespace, "platform", platform, "host", host, "count", len(componentsOnHost))
 				for _, component := range componentsOnHost {
+					// Step 5
 					if !AddNewBranchToTheExistedRepositoryTasksOnTheSameHosts(tasksOnHost, component) {
 						creds, err := g.credentialsProvider.GetBasicAuthCredentials(ctx, component)
 						if err != nil {
@@ -60,7 +63,9 @@ func (g BasicAuthTaskProvider) GetNewTasks(ctx context.Context, components []*gi
 							}
 							continue
 						}
+						// Step 6
 						if !AddNewRepoToTasksOnTheSameHostsWithSameCredentials(tasksOnHost, component, creds) {
+							// Step 7
 							tasksOnHost = append(tasksOnHost, NewBasicAuthTask(platform, host, creds, []*Repository{
 								{
 									Repository:   component.Repository(),
@@ -71,6 +76,7 @@ func (g BasicAuthTaskProvider) GetNewTasks(ctx context.Context, components []*gi
 					}
 				}
 			}
+			//Step 8
 			newTasks = append(newTasks, tasksOnHost...)
 		}
 

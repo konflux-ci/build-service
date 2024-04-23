@@ -18,7 +18,7 @@ type Task struct {
 }
 
 // AddNewBranchToTheExistedRepositoryTasksOnTheSameHosts iterates over the tasks and adds a new branch to the repository if it already exists
-// NOTE: it is unsafe to perform this operation on a slice that cont
+// NOTE: performing this operation on a slice containing tasks from different platforms or hosts is unsafe.
 func AddNewBranchToTheExistedRepositoryTasksOnTheSameHosts(tasks []*Task, component *git.ScmComponent) bool {
 	for _, t := range tasks {
 		for _, r := range t.Repositories {
@@ -31,6 +31,8 @@ func AddNewBranchToTheExistedRepositoryTasksOnTheSameHosts(tasks []*Task, compon
 	return false
 }
 
+// AddNewRepoToTasksOnTheSameHostsWithSameCredentials iterates over the tasks and adds a new repository to the task with same credentials
+// NOTE: performing this operation on a slice containing tasks from different platforms or hosts is unsafe.
 func AddNewRepoToTasksOnTheSameHostsWithSameCredentials(tasks []*Task, component *git.ScmComponent, cred *credentials.BasicAuthCredentials) bool {
 	for _, t := range tasks {
 		if t.Token == cred.Password && t.Username == cred.Username {
