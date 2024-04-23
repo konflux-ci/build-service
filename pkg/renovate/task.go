@@ -17,6 +17,8 @@ type Task struct {
 	Repositories    []*Repository
 }
 
+// AddNewBranchToTheExistedRepositoryTasksOnTheSameHosts iterates over the tasks and adds a new branch to the repository if it already exists
+// NOTE: it is unsafe to perform this operation on a slice that cont
 func AddNewBranchToTheExistedRepositoryTasksOnTheSameHosts(tasks []*Task, component *git.ScmComponent) bool {
 	for _, t := range tasks {
 		for _, r := range t.Repositories {
