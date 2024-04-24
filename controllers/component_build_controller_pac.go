@@ -23,7 +23,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -37,6 +36,8 @@ import (
 	"github.com/redhat-appstudio/application-service/gitops"
 	gitopsprepare "github.com/redhat-appstudio/application-service/gitops/prepare"
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
+	. "github.com/redhat-appstudio/build-service/pkg/common"
+	"github.com/redhat-appstudio/build-service/pkg/git"
 	gp "github.com/redhat-appstudio/build-service/pkg/git/gitprovider"
 	"github.com/redhat-appstudio/build-service/pkg/git/gitproviderfactory"
 	l "github.com/redhat-appstudio/build-service/pkg/logs"
@@ -75,10 +76,6 @@ const (
 
 	appstudioWorkspaceNameLabel      = "appstudio.redhat.com/workspace_name"
 	pacCustomParamAppstudioWorkspace = "appstudio_workspace"
-
-	scmCredentialsSecretLabel     = "appstudio.redhat.com/credentials"
-	scmSecretHostnameLabel        = "appstudio.redhat.com/scm.host"
-	scmSecretRepositoryAnnotation = "appstudio.redhat.com/scm.repository"
 
 	mergeRequestDescription = `
 # Pipelines as Code configuration proposal
@@ -483,65 +480,30 @@ func (r *ComponentBuildReconciler) UndoPaCProvisionForComponent(ctx context.Cont
 
 func (r *ComponentBuildReconciler) lookupPaCSecret(ctx context.Context, component *appstudiov1alpha1.Component, gitProvider string) (*corev1.Secret, error) {
 	log := ctrllog.FromContext(ctx)
-	sourceUrl := component.Spec.Source.GitSource.URL
 
-	url, err := url.Parse(sourceUrl)
+	scmComponent, err := git.NewScmComponent(gitProvider, component.Spec.Source.GitSource.URL, component.Spec.Source.GitSource.Revision, component.Name, component.Namespace)
 	if err != nil {
-		r.EventRecorder.Event(&corev1.Secret{}, "Warning", "ErrorParsingPACRepo", err.Error())
-		return nil, fmt.Errorf("failed to parse component's source URL: %w", err)
+		return nil, err
 	}
-	// cut off .git suffix and leading slash
-	componentRepo, _ := strings.CutSuffix(url.Path, ".git")
-	componentRepo = strings.TrimPrefix(componentRepo, "/")
-
-	log.Info("Looking for Pipelines as Code SCM secret", "host", url.Hostname(), "repo", componentRepo)
-
-	secretList := &corev1.SecretList{}
-	opts := client.ListOption(&client.MatchingLabels{
-		scmCredentialsSecretLabel: "scm",
-		scmSecretHostnameLabel:    url.Hostname(),
-	})
-
-	if err := r.Client.List(ctx, secretList, client.InNamespace(component.Namespace), opts); err != nil {
-		r.EventRecorder.Event(&corev1.Secret{}, "Warning", "ErrorListingPaCSecrets", err.Error())
-		return nil, fmt.Errorf("failed to list Pipelines as Code secrets in %s namespace: %w", component.Namespace, err)
-	}
-
-	if len(secretList.Items) == 0 {
-		// TODO: remove after secret migration passes
-		if r.tryMigratePaCSecret(ctx, component, gitProvider) {
-			return r.lookupPaCSecret(ctx, component, gitProvider)
-		} else {
-			if gitProvider == "github" {
-				// No SCM secrets found in the component namespace, fall back to the global configuration
-				return r.lookupGHAppSecret(ctx)
-			} else {
-				return nil, boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, fmt.Errorf("no Pipelines as Code secrets found in %s namespace", component.Namespace))
-			}
-		}
-	}
-
-	// sort secrets into two slices by their type
-	var sshSecrets, basicSecrets []corev1.Secret
-	for _, secret := range secretList.Items {
-		switch secret.Type {
-		case corev1.SecretTypeSSHAuth:
-			sshSecrets = append(sshSecrets, secret)
-		case corev1.SecretTypeBasicAuth:
-			basicSecrets = append(basicSecrets, secret)
-		default:
-			log.Error(nil, "Unknown SCM secret type meet", "type", secret.Type, "host", url.Hostname(), "repo", componentRepo)
-		}
-	}
-	log.Info("Found SCM secrets", "ssh", len(sshSecrets), "basic", len(basicSecrets))
-
 	// find the best matching secret, starting from SSH type
-	if sshSecret := bestMatchingSecret(componentRepo, sshSecrets); sshSecret != nil {
-		return sshSecret, nil
+	secret, err := r.CredentialProvider.LookupSecret(ctx, scmComponent, corev1.SecretTypeSSHAuth)
+	if err != nil && !boerrors.IsBuildOpError(err, boerrors.EComponentGitSecretMissing) {
+		log.Error(err, "failed to get Pipelines as Code SSH secret", "scmComponent", scmComponent)
+		return nil, err
 	}
-	if basicSecret := bestMatchingSecret(componentRepo, basicSecrets); basicSecret != nil {
-		return basicSecret, nil
+	if secret != nil {
+		return secret, nil
 	}
+	// find the best matching secret, starting from BasicAuth type
+	secret, err = r.CredentialProvider.LookupSecret(ctx, scmComponent, corev1.SecretTypeBasicAuth)
+	if err != nil && !boerrors.IsBuildOpError(err, boerrors.EComponentGitSecretMissing) {
+		log.Error(err, "failed to get Pipelines as Code BasicAuth secret", "scmComponent", scmComponent)
+		return nil, err
+	}
+	if secret != nil {
+		return secret, nil
+	}
+
 	// No SCM secrets found in the component namespace, fall back to the global configuration
 	if gitProvider == "github" {
 		return r.lookupGHAppSecret(ctx)
@@ -551,86 +513,9 @@ func (r *ComponentBuildReconciler) lookupPaCSecret(ctx context.Context, componen
 
 }
 
-// finds the best matching secret for the given repository, considering the repository annotation match priority:
-//   - Highest priority is given to the secret with the direct repository path match to the component repository
-//   - If no direct match is found, the secret with the longest component paths intersection is returned
-//     i.e. for the org/proj/sub1 component URL, secret with org/proj/* will have a higher priority than secret with
-//     just org/* and will be returned first
-//   - If no secret with matching repository annotation is found, the one with just matching hostname label is returned
-func bestMatchingSecret(componentRepository string, secrets []corev1.Secret) *corev1.Secret {
-
-	// secrets without repository annotation
-	var hostOnlySecrets []corev1.Secret
-
-	// map of secret index and its best path intersections count, i.e. the count of path parts matched,
-	var potentialMatches = make(map[int]int, len(secrets))
-
-	for index, secret := range secrets {
-		repositoryAnnotation, exists := secret.Annotations[scmSecretRepositoryAnnotation]
-		if !exists || repositoryAnnotation == "" {
-			hostOnlySecrets = append(hostOnlySecrets, secret)
-			continue
-		}
-		secretRepositories := strings.Split(repositoryAnnotation, ",")
-
-		//trim possible slashes at the beginning of the repository path
-		for i, repository := range secretRepositories {
-			secretRepositories[i] = strings.TrimPrefix(repository, "/")
-		}
-
-		// Direct repository match, return secret
-		if slices.Contains(secretRepositories, componentRepository) {
-			return &secret
-		}
-		// No direct match, check for wildcard match, i.e. org/repo/* matches org/repo/foo, org/repo/bar, etc.
-		componentRepoParts := strings.Split(componentRepository, "/")
-
-		// Find wildcard repositories
-		wildcardRepos := slices.Filter(nil, secretRepositories, func(s string) bool { return strings.HasSuffix(s, "*") })
-
-		for _, repo := range wildcardRepos {
-			i := slicesIntersection(componentRepoParts, strings.Split(strings.TrimSuffix(repo, "*"), "/"))
-			if i > 0 && potentialMatches[index] < i {
-				// Add whole secret index to potential matches
-				potentialMatches[index] = i
-			}
-		}
-	}
-	if len(potentialMatches) == 0 {
-		if len(hostOnlySecrets) == 0 {
-			return nil // Nothing matched
-		}
-		return &hostOnlySecrets[0] // Return first host-only secret
-	}
-
-	// find the best matching secret
-	var bestIdx, bestCount int
-	for i, count := range potentialMatches {
-		if count > bestCount {
-			bestCount = count
-			bestIdx = i
-		}
-	}
-	return &secrets[bestIdx]
-}
-
-// slicesIntersection returns the number of elements intersection between two slices with respect to the order,
-// i.e. slicesIntersection(["a", "b", "c"], ["a", "b", "d"]) == 2 but slicesIntersection(["a", "b", "c"], ["b", "a", "c"]) == 0
-func slicesIntersection(s1, s2 []string) int {
-	var count int
-	for i, e1 := range s1 {
-		if i < len(s2) && e1 == s2[i] {
-			count++
-		} else {
-			break
-		}
-	}
-	return count
-}
-
 func (r *ComponentBuildReconciler) lookupGHAppSecret(ctx context.Context) (*corev1.Secret, error) {
 	pacSecret := &corev1.Secret{}
-	globalPaCSecretKey := types.NamespacedName{Namespace: buildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}
+	globalPaCSecretKey := types.NamespacedName{Namespace: BuildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}
 	if err := r.Client.Get(ctx, globalPaCSecretKey, pacSecret); err != nil {
 		if !errors.IsNotFound(err) {
 			r.EventRecorder.Event(pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
@@ -690,54 +575,6 @@ func (r *ComponentBuildReconciler) ensureWebhookSecret(ctx context.Context, comp
 	}
 
 	return webhookSecretString, nil
-}
-
-func (r *ComponentBuildReconciler) tryMigratePaCSecret(ctx context.Context, component *appstudiov1alpha1.Component, gitProviderName string) bool {
-	log := ctrllog.FromContext(ctx)
-	log.Info("Trying to migrate old secret to new format", "component", component.Name, "namespace", component.Namespace)
-	oldPacSecret := corev1.Secret{}
-	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: component.Namespace, Name: gitopsprepare.PipelinesAsCodeSecretName}, &oldPacSecret); err != nil {
-		if errors.IsNotFound(err) {
-			log.Error(err, "Old PaC secret not found")
-			return false
-		}
-		log.Error(err, "Failed to get old PaC secret")
-		r.EventRecorder.Event(&oldPacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
-		return false
-	}
-
-	sourceUrl := component.Spec.Source.GitSource.URL
-	url, err := url.Parse(sourceUrl)
-	if err != nil {
-		r.EventRecorder.Event(&oldPacSecret, "Warning", "ErrorParsingURL", err.Error())
-		return false
-	}
-
-	token, present := oldPacSecret.Data[gitProviderName+".token"]
-	if !present {
-		return false
-	}
-
-	newPaCSecret := &corev1.Secret{
-		TypeMeta: oldPacSecret.TypeMeta,
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      component.Name + "-pac-secret",
-			Namespace: component.Namespace,
-			Labels: map[string]string{
-				scmCredentialsSecretLabel: "scm",
-				scmSecretHostnameLabel:    url.Hostname(),
-			},
-		},
-		Type: corev1.SecretTypeBasicAuth,
-		Data: map[string][]byte{"password": token},
-	}
-	if err := r.Client.Create(ctx, newPaCSecret); err != nil {
-		log.Error(err, "Failed to create new PaC secret")
-		r.EventRecorder.Event(newPaCSecret, "Warning", "ErrorCreatingPaCSecret", err.Error())
-		return false
-	}
-	log.Info("PAC secret migration successful", "component", component.Name, "namespace", component.Namespace)
-	return true
 }
 
 // generatePaCWebhookSecretString generates string alike openssl rand -hex 20

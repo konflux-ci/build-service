@@ -19,7 +19,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/redhat-appstudio/build-service/pkg/bometrics"
+
 	"os"
 	"regexp"
 	"strings"
@@ -57,6 +57,8 @@ import (
 
 	appstudioredhatcomv1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
 	"github.com/redhat-appstudio/build-service/controllers"
+	"github.com/redhat-appstudio/build-service/pkg/bometrics"
+	"github.com/redhat-appstudio/build-service/pkg/k8s"
 	l "github.com/redhat-appstudio/build-service/pkg/logs"
 	"github.com/redhat-appstudio/build-service/pkg/webhook"
 	//+kubebuilder:scaffold:imports
@@ -160,10 +162,11 @@ func main() {
 	}
 
 	if err = (&controllers.ComponentBuildReconciler{
-		Client:           mgr.GetClient(),
-		Scheme:           mgr.GetScheme(),
-		EventRecorder:    mgr.GetEventRecorderFor("ComponentOnboarding"),
-		WebhookURLLoader: webhook.NewConfigWebhookURLLoader(webhookConfig),
+		Client:             mgr.GetClient(),
+		Scheme:             mgr.GetScheme(),
+		EventRecorder:      mgr.GetEventRecorderFor("ComponentOnboarding"),
+		WebhookURLLoader:   webhook.NewConfigWebhookURLLoader(webhookConfig),
+		CredentialProvider: k8s.NewGitCredentialProvider(mgr.GetClient()),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ComponentOnboarding")
 		os.Exit(1)
@@ -178,11 +181,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controllers.GitTektonResourcesRenovater{
-		Client:        mgr.GetClient(),
-		Scheme:        mgr.GetScheme(),
-		EventRecorder: mgr.GetEventRecorderFor("GitTektonResourcesRenovater"),
-	}).SetupWithManager(mgr); err != nil {
+	if err = (controllers.NewDefaultGitTektonResourcesRenovater(mgr.GetClient(), mgr.GetScheme(), mgr.GetEventRecorderFor("GitTektonResourcesRenovater"))).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "GitTektonResourcesRenovater")
 		os.Exit(1)
 	}

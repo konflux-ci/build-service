@@ -18,16 +18,9 @@ package controllers
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"os"
-	"regexp"
-	"strconv"
+
 	"time"
 
-	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
-	buildappstudiov1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
-	l "github.com/redhat-appstudio/build-service/pkg/logs"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -36,51 +29,58 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+
+	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
+	"github.com/redhat-appstudio/application-service/gitops"
+
+	buildappstudiov1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
+	. "github.com/redhat-appstudio/build-service/pkg/common"
+	"github.com/redhat-appstudio/build-service/pkg/git"
+	"github.com/redhat-appstudio/build-service/pkg/k8s"
+	l "github.com/redhat-appstudio/build-service/pkg/logs"
+	"github.com/redhat-appstudio/build-service/pkg/renovate"
 )
 
 const (
-	RenovateConfigName          = "renovate-config"
-	RenovateImageEnvName        = "RENOVATE_IMAGE"
-	DefaultRenovateImageUrl     = "quay.io/redhat-appstudio/renovate:v37.74.1"
-	DefaultRenovateMatchPattern = "^quay.io/redhat-appstudio-tekton-catalog/"
-	RenovateMatchPatternEnvName = "RENOVATE_PATTERN"
-	TimeToLiveOfJob             = 24 * time.Hour
-	NextReconcile               = 1 * time.Hour
-	InstallationsPerJob         = 20
-	InstallationsPerJobEnvName  = "RENOVATE_INSTALLATIONS_PER_JOB"
-	InternalDefaultBranch       = "$DEFAULTBRANCH"
+	NextReconcile = 1 * time.Hour
 )
 
 // GitTektonResourcesRenovater watches AppStudio BuildPipelineSelector object in order to update
 // existing .tekton directories.
 type GitTektonResourcesRenovater struct {
-	Client        client.Client
-	Scheme        *runtime.Scheme
-	EventRecorder record.EventRecorder
+	taskProviders  []renovate.TaskProvider
+	client         client.Client
+	eventRecorder  record.EventRecorder
+	jobCoordinator *renovate.JobCoordinator
 }
 
-type installationStruct struct {
-	id           int
-	token        string
-	repositories []renovateRepository
+func NewDefaultGitTektonResourcesRenovater(client client.Client, scheme *runtime.Scheme, eventRecorder record.EventRecorder) *GitTektonResourcesRenovater {
+	return NewGitTektonResourcesRenovater(client, scheme, eventRecorder,
+		[]renovate.TaskProvider{
+			renovate.NewGithubAppRenovaterTaskProvider(k8s.NewGithubAppConfigReader(client, scheme, eventRecorder)),
+			renovate.NewBasicAuthTaskProvider(k8s.NewGitCredentialProvider(client))})
 }
 
-type renovateRepository struct {
-	Repository   string   `json:"repository"`
-	BaseBranches []string `json:"baseBranches,omitempty"`
+func NewGitTektonResourcesRenovater(client client.Client, scheme *runtime.Scheme, eventRecorder record.EventRecorder, taskProviders []renovate.TaskProvider) *GitTektonResourcesRenovater {
+	return &GitTektonResourcesRenovater{
+		client:         client,
+		taskProviders:  taskProviders,
+		eventRecorder:  eventRecorder,
+		jobCoordinator: renovate.NewJobCoordinator(client, scheme),
+	}
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *GitTektonResourcesRenovater) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).For(&buildappstudiov1alpha1.BuildPipelineSelector{}, builder.WithPredicates(predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
-			return e.Object.GetNamespace() == buildServiceNamespaceName && e.Object.GetName() == buildPipelineSelectorResourceName
+			return e.Object.GetNamespace() == BuildServiceNamespaceName && e.Object.GetName() == buildPipelineSelectorResourceName
 		},
 		DeleteFunc: func(event.DeleteEvent) bool {
 			return false
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			return e.ObjectNew.GetNamespace() == buildServiceNamespaceName && e.ObjectNew.GetName() == buildPipelineSelectorResourceName
+			return e.ObjectNew.GetNamespace() == BuildServiceNamespaceName && e.ObjectNew.GetName() == buildPipelineSelectorResourceName
 		},
 		GenericFunc: func(event.GenericEvent) bool {
 			return false
@@ -102,86 +102,38 @@ func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Re
 
 	// Get Components
 	componentList := &appstudiov1alpha1.ComponentList{}
-	if err := r.Client.List(ctx, componentList, &client.ListOptions{}); err != nil {
+	if err := r.client.List(ctx, componentList, &client.ListOptions{}); err != nil {
 		log.Error(err, "failed to list Components", l.Action, l.ActionView)
 		return ctrl.Result{}, err
 	}
-
-	slug, installationsToUpdate, err := GetAllGithubInstallations(ctx, r.Client, r.EventRecorder, componentList.Items)
-	if err != nil || slug == "" {
-		return ctrl.Result{}, err
-	}
-
-	// Generate renovate jobs. Limit processed installations per job.
-	var installationPerJobInt int
-	installationPerJobStr := os.Getenv(InstallationsPerJobEnvName)
-	if regexp.MustCompile(`^\d{1,2}$`).MatchString(installationPerJobStr) {
-		installationPerJobInt, _ = strconv.Atoi(installationPerJobStr)
-		if installationPerJobInt == 0 {
-			installationPerJobInt = InstallationsPerJob
-		}
-	} else {
-		installationPerJobInt = InstallationsPerJob
-	}
-	for i := 0; i < len(installationsToUpdate); i += installationPerJobInt {
-		end := i + installationPerJobInt
-
-		if end > len(installationsToUpdate) {
-			end = len(installationsToUpdate)
-		}
-		err = CreateRenovaterJob(ctx, r.Client, r.Scheme, installationsToUpdate[i:end], slug, false, generateConfigJS, nil)
+	var scmComponents []*git.ScmComponent
+	for _, component := range componentList.Items {
+		gitProvider, err := gitops.GetGitProvider(component)
 		if err != nil {
-			log.Error(err, "failed to create a job", l.Action, l.ActionAdd)
+			// component misconfiguration shouldn't prevent other components from being updated
+			// deepcopy the component to avoid implicit memory aliasing in for loop
+			r.eventRecorder.Event(component.DeepCopy(), "Warning", "ErrorComponentProviderInfo", err.Error())
+			continue
+		}
+
+		scmComponent, err := git.NewScmComponent(gitProvider, component.Spec.Source.GitSource.URL, component.Spec.Source.GitSource.Revision, component.Name, component.Namespace)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		scmComponents = append(scmComponents, scmComponent)
+	}
+	var tasks []*renovate.Task
+	for _, taskProvider := range r.taskProviders {
+		newTasks := taskProvider.GetNewTasks(ctx, scmComponents)
+		if len(newTasks) > 0 {
+			tasks = append(tasks, newTasks...)
 		}
 	}
 
+	log.V(l.DebugLevel).Info("executing renovate tasks", "tasks", len(tasks))
+	err := r.jobCoordinator.ExecuteWithLimits(ctx, tasks)
+	if err != nil {
+		log.Error(err, "failed to create a job", l.Action, l.ActionAdd)
+	}
 	return ctrl.Result{RequeueAfter: NextReconcile}, nil
-}
-
-func generateConfigJS(slug string, repositories []renovateRepository, _ interface{}) (string, error) {
-	repositoriesData, _ := json.Marshal(repositories)
-	template := `
-	module.exports = {
-		platform: "github",
-		username: "%s[bot]",
-		gitAuthor:"%s <123456+%s[bot]@users.noreply.github.com>",
-		onboarding: false,
-		requireConfig: "ignored",
-		enabledManagers: ["tekton"],
-		repositories: %s,
-		tekton: {
-			fileMatch: ["\\.yaml$", "\\.yml$"],
-			includePaths: [".tekton/**"],
-			packageRules: [
-			  {
-				matchPackagePatterns: ["*"],
-				enabled: false
-			  },
-			  {
-				matchPackagePatterns: ["%s"],
-				matchDepPatterns: ["%s"],
-				groupName: "RHTAP references",
-				branchName: "konflux/references/{{baseBranch}}",
-				commitMessageExtra: "",
-				commitMessageTopic: "RHTAP references",
-				semanticCommits: "enabled",
-				prFooter: "To execute skipped test pipelines write comment ` + "`/ok-to-test`" + `",
-				prBodyColumns: ["Package", "Change", "Notes"],
-				prBodyDefinitions: { "Notes": "{{#if (or (containsString updateType 'minor') (containsString updateType 'major'))}}:warning:[migration](https://github.com/redhat-appstudio/build-definitions/blob/main/task/{{{replace '%stask-' '' packageName}}}/{{{newVersion}}}/MIGRATION.md):warning:{{/if}}" },
-				prBodyTemplate: "{{{header}}}{{{table}}}{{{notes}}}{{{changelogs}}}{{{footer}}}",
-				recreateWhen: "always",
-				rebaseWhen: "behind-base-branch",
-				enabled: true
-			  }
-			]
-		},
-		forkProcessing: "enabled",
-		dependencyDashboard: false
-	}
-	`
-	renovatePattern := os.Getenv(RenovateMatchPatternEnvName)
-	if renovatePattern == "" {
-		renovatePattern = DefaultRenovateMatchPattern
-	}
-	return fmt.Sprintf(template, slug, slug, slug, repositoriesData, renovatePattern, renovatePattern, renovatePattern), nil
 }

@@ -20,16 +20,19 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"github.com/redhat-appstudio/build-service/pkg/bometrics"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/redhat-appstudio/build-service/pkg/bometrics"
+	"github.com/redhat-appstudio/build-service/pkg/slices"
+
 	"github.com/devfile/api/v2/pkg/apis/workspaces/v1alpha2"
 	devfile "github.com/redhat-appstudio/application-service/cdq-analysis/pkg"
 	"github.com/redhat-appstudio/application-service/gitops"
-	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 	"gotest.tools/v3/assert"
+
+	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -1483,34 +1486,6 @@ func TestCreateWorkspaceBinding(t *testing.T) {
 	}
 }
 
-func TestGetRandomString(t *testing.T) {
-	tests := []struct {
-		name   string
-		length int
-	}{
-		{
-			name:   "should be able to generate one symbol rangom string",
-			length: 1,
-		},
-		{
-			name:   "should be able to generate rangom string",
-			length: 5,
-		},
-		{
-			name:   "should be able to generate long rangom string",
-			length: 100,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := getRandomString(tt.length)
-			if len(got) != tt.length {
-				t.Errorf("Got string %s has lenght %d but expected length is %d", got, len(got), tt.length)
-			}
-		})
-	}
-}
-
 func TestSlicesIntersection(t *testing.T) {
 	tests := []struct {
 		in1, in2     []string
@@ -1539,113 +1514,9 @@ func TestSlicesIntersection(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run("intersection test", func(t *testing.T) {
-			got := slicesIntersection(tt.in1, tt.in2)
+			got := slices.Intersection(tt.in1, tt.in2)
 			if got != tt.intersection {
 				t.Errorf("Got slice intersection %d but expected length is %d", got, tt.intersection)
-			}
-		})
-	}
-}
-
-func TestSecretMatching(t *testing.T) {
-	tests := []struct {
-		testcase string
-		in       []corev1.Secret
-		repo     string
-		expected string
-	}{
-		{
-			testcase: "Direct match vs nothing",
-			repo:     "test/repo",
-			in: []corev1.Secret{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "secret1",
-						Annotations: map[string]string{
-							scmSecretRepositoryAnnotation: "test/repo",
-						},
-					},
-				},
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "secret2",
-					},
-				},
-			},
-			expected: "secret1",
-		},
-		{
-			testcase: "Wildcard match vs nothing",
-			repo:     "test/repo",
-			in: []corev1.Secret{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "secret1",
-						Annotations: map[string]string{
-							scmSecretRepositoryAnnotation: "/test/*, /foo/bar",
-						},
-					},
-				},
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "secret2",
-					},
-				},
-			},
-			expected: "secret1",
-		},
-		{
-			testcase: "Direct vs wildcard match",
-			repo:     "test/repo",
-			in: []corev1.Secret{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "secret1",
-						Annotations: map[string]string{
-							scmSecretRepositoryAnnotation: "test/repo, foo/bar",
-						},
-					},
-				},
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "secret2",
-						Annotations: map[string]string{
-							scmSecretRepositoryAnnotation: "test/*",
-						},
-					},
-				},
-			},
-			expected: "secret1",
-		},
-		{
-			testcase: "Wildcard better match",
-			repo:     "test/repo",
-			in: []corev1.Secret{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "secret1",
-						Annotations: map[string]string{
-							scmSecretRepositoryAnnotation: "test/*",
-						},
-					},
-				},
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "secret2",
-						Annotations: map[string]string{
-							scmSecretRepositoryAnnotation: "test/repo/*",
-						},
-					},
-				},
-			},
-			expected: "secret2",
-		},
-	}
-	for _, tt := range tests {
-		t.Run("intersection test", func(t *testing.T) {
-			got := bestMatchingSecret(tt.repo, tt.in)
-			if got.Name != tt.expected {
-				t.Errorf("Got secret mathed %s but expected is %s", got.Name, tt.expected)
 			}
 		})
 	}

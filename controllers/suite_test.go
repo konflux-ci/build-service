@@ -29,7 +29,11 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	routev1 "github.com/openshift/api/route/v1"
+	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
+	releaseapi "github.com/redhat-appstudio/release-service/api/v1alpha1"
+	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -41,13 +45,8 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
-	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
-
-	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
-	releaseapi "github.com/redhat-appstudio/release-service/api/v1alpha1"
-
 	appstudioredhatcomv1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
+	"github.com/redhat-appstudio/build-service/pkg/k8s"
 	"github.com/redhat-appstudio/build-service/pkg/webhook"
 	//+kubebuilder:scaffold:imports
 )
@@ -154,10 +153,11 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	err = (&ComponentBuildReconciler{
-		Client:           k8sManager.GetClient(),
-		Scheme:           k8sManager.GetScheme(),
-		EventRecorder:    k8sManager.GetEventRecorderFor("ComponentOnboarding"),
-		WebhookURLLoader: webhook.NewConfigWebhookURLLoader(webhookConfig),
+		Client:             k8sManager.GetClient(),
+		Scheme:             k8sManager.GetScheme(),
+		EventRecorder:      k8sManager.GetEventRecorderFor("ComponentOnboarding"),
+		WebhookURLLoader:   webhook.NewConfigWebhookURLLoader(webhookConfig),
+		CredentialProvider: k8s.NewGitCredentialProvider(k8sManager.GetClient()),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
@@ -168,11 +168,7 @@ var _ = BeforeSuite(func() {
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
-	err = (&GitTektonResourcesRenovater{
-		Client:        k8sManager.GetClient(),
-		Scheme:        k8sManager.GetScheme(),
-		EventRecorder: k8sManager.GetEventRecorderFor("GitTektonResourcesRenovater"),
-	}).SetupWithManager(k8sManager)
+	err = (NewDefaultGitTektonResourcesRenovater(k8sManager.GetClient(), k8sManager.GetScheme(), k8sManager.GetEventRecorderFor("GitTektonResourcesRenovater"))).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 	err = (&ComponentDependencyUpdateReconciler{
 		Client:         k8sManager.GetClient(),

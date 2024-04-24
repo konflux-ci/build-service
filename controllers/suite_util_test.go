@@ -38,7 +38,9 @@ import (
 
 	gh "github.com/google/go-github/v45/github"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
+
 	buildappstudiov1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
+	. "github.com/redhat-appstudio/build-service/pkg/common"
 	"github.com/redhat-appstudio/build-service/pkg/git/github"
 )
 
@@ -66,7 +68,7 @@ const (
 )
 
 var (
-	defaultSelectorKey = types.NamespacedName{Name: buildPipelineSelectorResourceName, Namespace: buildServiceNamespaceName}
+	defaultSelectorKey = types.NamespacedName{Name: buildPipelineSelectorResourceName, Namespace: BuildServiceNamespaceName}
 )
 
 type componentConfig struct {
@@ -723,7 +725,7 @@ func deleteJobs(namespace string) {
 func generateInstallation(repositories []*gh.Repository) github.ApplicationInstallation {
 	return github.ApplicationInstallation{
 		ID:           int64(rand.Intn(100)),
-		Token:        getRandomString(30),
+		Token:        RandomString(30),
 		Repositories: repositories,
 	}
 }

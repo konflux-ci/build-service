@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/redhat-appstudio/build-service/pkg/bometrics"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -37,7 +36,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
+
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
+	"github.com/redhat-appstudio/build-service/pkg/bometrics"
+	"github.com/redhat-appstudio/build-service/pkg/k8s"
 	l "github.com/redhat-appstudio/build-service/pkg/logs"
 	"github.com/redhat-appstudio/build-service/pkg/webhook"
 )
@@ -67,7 +69,6 @@ const (
 	ImageRepoGenerateAnnotationName = "image.redhat.com/generate"
 	buildPipelineServiceAccountName = "appstudio-pipeline"
 
-	buildServiceNamespaceName         = "build-service"
 	buildPipelineSelectorResourceName = "build-pipeline-selector"
 )
 
@@ -107,10 +108,11 @@ type PaCBuildStatus struct {
 // provision Pipelines as Code configuration for the Component or
 // submit initial builds and dependent resources if PaC is not configured.
 type ComponentBuildReconciler struct {
-	Client           client.Client
-	Scheme           *runtime.Scheme
-	EventRecorder    record.EventRecorder
-	WebhookURLLoader webhook.WebhookURLLoader
+	Client             client.Client
+	Scheme             *runtime.Scheme
+	EventRecorder      record.EventRecorder
+	CredentialProvider *k8s.GitCredentialProvider
+	WebhookURLLoader   webhook.WebhookURLLoader
 }
 
 // SetupWithManager sets up the controller with the Manager.

@@ -9,9 +9,8 @@ import (
 )
 
 const (
-	MetricsNamespace          = "redhat_appstudio"
-	MetricsSubsystem          = "buildservice"
-	BuildServiceNamespaceName = "build-service"
+	MetricsNamespace = "redhat_appstudio"
+	MetricsSubsystem = "buildservice"
 )
 
 var (
