@@ -98,19 +98,16 @@ func (m *BuildMetrics) StartAvailabilityProbes(ctx context.Context) {
 
 func (m *BuildMetrics) checkProbes(ctx context.Context) {
 	for _, probe := range m.probes {
-		pingErr := probe.CheckAvailability(ctx)
-		if pingErr != nil {
-			log := ctrllog.FromContext(ctx)
-			log.Error(pingErr, "Error checking availability probe", "probe", probe)
-			probe.AvailabilityGauge().Set(0)
-		} else {
+		if probe.CheckAvailability(ctx) {
 			probe.AvailabilityGauge().Set(1)
+		} else {
+			probe.AvailabilityGauge().Set(0)
 		}
 	}
 }
 
 // AvailabilityProbe represents a probe that checks the availability of a certain aspects of the service
 type AvailabilityProbe interface {
-	CheckAvailability(ctx context.Context) error
+	CheckAvailability(ctx context.Context) bool
 	AvailabilityGauge() prometheus.Gauge
 }
