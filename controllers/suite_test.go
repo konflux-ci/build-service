@@ -83,13 +83,12 @@ var _ = BeforeSuite(func() {
 	Expect(runKustomize(filepath.Join("..", "config", "crd"), crdsTempfile)).To(Succeed())
 	crdsTempfile.Close()
 
-	applicationServiceDepVersion := "v0.0.0-20240324134056-ac595a80c5cf"
 	applicationApiDepVersion := "v0.0.0-20231026192857-89515ad2504f"
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
 			crdsTempfile.Name(),
+			filepath.Join("..", "hack", "routecrd", "route.yaml"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "redhat-appstudio", "application-api@"+applicationApiDepVersion, "config", "crd", "bases"),
-			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "redhat-appstudio", "application-service@"+applicationServiceDepVersion, "hack", "routecrd", "route.yaml"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "tektoncd", "pipeline@v0.46.0", "config"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "openshift-pipelines", "pipelines-as-code@v0.18.0", "config"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "redhat-appstudio", "release-service@v0.0.0-20231213200646-9aea1dba75c0", "config", "crd", "bases"),

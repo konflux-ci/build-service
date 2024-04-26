@@ -8,12 +8,10 @@ import (
 	"time"
 
 	"github.com/redhat-appstudio/application-api/api/v1alpha1"
-	"github.com/redhat-appstudio/application-service/gitops"
-	"github.com/redhat-appstudio/application-service/gitops/prepare"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
-	"k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	v12 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -43,8 +41,8 @@ type renovateRepository struct {
 func GetGithubInstallationsForComponents(ctx context.Context, client client.Client, eventRecorder record.EventRecorder, componentList []v1alpha1.Component) (string, []installationStruct, error) {
 	log := logger.FromContext(ctx)
 	// Check if GitHub Application is used, if not then skip
-	pacSecret := v1.Secret{}
-	globalPaCSecretKey := types.NamespacedName{Namespace: BuildServiceNamespaceName, Name: prepare.PipelinesAsCodeSecretName}
+	pacSecret := corev1.Secret{}
+	globalPaCSecretKey := types.NamespacedName{Namespace: BuildServiceNamespaceName, Name: PipelinesAsCodeGitHubAppSecretName}
 	if err := client.Get(ctx, globalPaCSecretKey, &pacSecret); err != nil {
 		eventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
 		if errors.IsNotFound(err) {
@@ -54,15 +52,15 @@ func GetGithubInstallationsForComponents(ctx context.Context, client client.Clie
 		}
 		return "", nil, nil
 	}
-	isApp := gitops.IsPaCApplicationConfigured("github", pacSecret.Data)
+	isApp := IsPaCApplicationConfigured("github", pacSecret.Data)
 	if !isApp {
 		log.Info("GitHub App is not set")
 		return "", nil, nil
 	}
 
 	// Load GitHub App and get GitHub Installations
-	githubAppIdStr := string(pacSecret.Data[gitops.PipelinesAsCode_githubAppIdKey])
-	privateKey := pacSecret.Data[gitops.PipelinesAsCode_githubPrivateKey]
+	githubAppIdStr := string(pacSecret.Data[PipelinesAsCodeGithubAppIdKey])
+	privateKey := pacSecret.Data[PipelinesAsCodeGithubPrivateKey]
 
 	// Match installed repositories with Components and get custom branch if defined
 	installationsToUpdate := []installationStruct{}
@@ -151,15 +149,15 @@ func CreateRenovaterPipeline(ctx context.Context, client client.Client, scheme *
 	if len(renovateCmds) == 0 {
 		return nil
 	}
-	secret := &v1.Secret{
-		ObjectMeta: v12.ObjectMeta{
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
 		},
 		StringData: secretTokens,
 	}
-	configMap := &v1.ConfigMap{
-		ObjectMeta: v12.ObjectMeta{
+	configMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
 		},
@@ -172,7 +170,7 @@ func CreateRenovaterPipeline(ctx context.Context, client client.Client, scheme *
 		renovateImageUrl = renovate.DefaultRenovateImageUrl
 	}
 	pipelineRun := &tektonapi.PipelineRun{
-		ObjectMeta: v12.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
 		},
@@ -185,38 +183,38 @@ func CreateRenovaterPipeline(ctx context.Context, client client.Client, scheme *
 							Steps: []tektonapi.Step{{
 								Name:  "renovate",
 								Image: renovateImageUrl,
-								EnvFrom: []v1.EnvFromSource{
+								EnvFrom: []corev1.EnvFromSource{
 									{
 										Prefix: "TOKEN_",
-										SecretRef: &v1.SecretEnvSource{
-											LocalObjectReference: v1.LocalObjectReference{
+										SecretRef: &corev1.SecretEnvSource{
+											LocalObjectReference: corev1.LocalObjectReference{
 												Name: name,
 											},
 										},
 									},
 								},
 								Command: []string{"bash", "-c", strings.Join(renovateCmds, "; ")},
-								VolumeMounts: []v1.VolumeMount{
+								VolumeMounts: []corev1.VolumeMount{
 									{
 										Name:      name,
 										MountPath: "/configs",
 									},
 								},
-								SecurityContext: &v1.SecurityContext{
-									Capabilities:             &v1.Capabilities{Drop: []v1.Capability{"ALL"}},
+								SecurityContext: &corev1.SecurityContext{
+									Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
 									RunAsNonRoot:             &trueBool,
 									AllowPrivilegeEscalation: &falseBool,
-									SeccompProfile: &v1.SeccompProfile{
-										Type: v1.SeccompProfileTypeRuntimeDefault,
+									SeccompProfile: &corev1.SeccompProfile{
+										Type: corev1.SeccompProfileTypeRuntimeDefault,
 									},
 								},
 							}},
-							Volumes: []v1.Volume{
+							Volumes: []corev1.Volume{
 								{
 									Name: name,
-									VolumeSource: v1.VolumeSource{
-										ConfigMap: &v1.ConfigMapVolumeSource{
-											LocalObjectReference: v1.LocalObjectReference{Name: name},
+									VolumeSource: corev1.VolumeSource{
+										ConfigMap: &corev1.ConfigMapVolumeSource{
+											LocalObjectReference: corev1.LocalObjectReference{Name: name},
 										},
 									},
 								},
@@ -228,7 +226,7 @@ func CreateRenovaterPipeline(ctx context.Context, client client.Client, scheme *
 		},
 	}
 	if debug {
-		pipelineRun.Spec.PipelineSpec.Tasks[0].TaskSpec.Steps[0].Env = append(pipelineRun.Spec.PipelineSpec.Tasks[0].TaskSpec.Steps[0].Env, v1.EnvVar{Name: "LOG_LEVEL", Value: "debug"})
+		pipelineRun.Spec.PipelineSpec.Tasks[0].TaskSpec.Steps[0].Env = append(pipelineRun.Spec.PipelineSpec.Tasks[0].TaskSpec.Steps[0].Env, corev1.EnvVar{Name: "LOG_LEVEL", Value: "debug"})
 	}
 
 	if err := client.Create(ctx, pipelineRun); err != nil {

@@ -6,10 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/redhat-appstudio/application-service/gitops"
-	"github.com/redhat-appstudio/application-service/gitops/prepare"
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -41,19 +38,19 @@ func NewGithubAppConfigReader(client client.Client, scheme *runtime.Scheme, even
 
 func (k ConfigReader) GetConfig(ctx context.Context) (githubAppIdStr string, appPrivateKeyPem []byte, err error) {
 	//Check if GitHub Application is used, if not then skip
-	pacSecret := v1.Secret{}
-	globalPaCSecretKey := types.NamespacedName{Namespace: BuildServiceNamespaceName, Name: prepare.PipelinesAsCodeSecretName}
+	pacSecret := corev1.Secret{}
+	globalPaCSecretKey := types.NamespacedName{Namespace: BuildServiceNamespaceName, Name: PipelinesAsCodeGitHubAppSecretName}
 	if err := k.client.Get(ctx, globalPaCSecretKey, &pacSecret); err != nil {
 		k.eventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
 		return "", nil, err
 	}
 
 	// validate content of the fields
-	if _, e := strconv.ParseInt(string(pacSecret.Data[gitops.PipelinesAsCode_githubAppIdKey]), 10, 64); e != nil {
+	if _, e := strconv.ParseInt(string(pacSecret.Data[PipelinesAsCodeGithubAppIdKey]), 10, 64); e != nil {
 		return "", nil, fmt.Errorf(" Pipelines as Code: failed to parse GitHub application ID. Cause: %w", e)
 	}
 
-	return string(pacSecret.Data[gitops.PipelinesAsCode_githubAppIdKey]), pacSecret.Data[gitops.PipelinesAsCode_githubPrivateKey], err
+	return string(pacSecret.Data[PipelinesAsCodeGithubAppIdKey]), pacSecret.Data[PipelinesAsCodeGithubPrivateKey], err
 }
 
 // GitCredentialProvider is an implementation of the git.CredentialsProvider that retrieves
