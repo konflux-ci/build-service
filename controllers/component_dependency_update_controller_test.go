@@ -367,6 +367,12 @@ var _ = Describe("Component nudge controller", func() {
 			Expect(strings.Contains(result, `a8dce08dbdf290e5d616a83672ad3afcb4b455ef`)).Should(BeTrue())
 		})
 	})
+
+	Context("Test mapping quay.io to registry.redhat.io", func() {
+		It("test regex match", func() {
+			Expect(mapToRegistryRedhatIo("quay.io/redhat-prod/multiarch-tuning----multiarch-tuning-rhel9-operator")).To(Equal("registry.redhat.io/multiarch-tuning/multiarch-tuning-rhel9-operator"))
+		})
+	})
 })
 
 func getPipelineRun(name string, namespace string) *tektonapi.PipelineRun {
