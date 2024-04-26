@@ -849,7 +849,12 @@ func generatePACRepository(component appstudiov1alpha1.Component, config map[str
 		}
 
 		if gitProvider == "gitlab" {
-			gitProviderConfig.URL = "https://gitlab.com"
+			if providerUrl, configured := component.Annotations[GitProviderAnnotationURL]; configured {
+				gitProviderConfig.URL = providerUrl
+			} else {
+				// Assume gitlab.com
+				gitProviderConfig.URL = "https://gitlab.com"
+			}
 		}
 	}
 
