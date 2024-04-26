@@ -52,7 +52,8 @@ func (g BasicAuthTaskProvider) GetNewTasks(ctx context.Context, components []*gi
 			// Step 4
 			var tasksOnHost []*Task
 			for host, componentsOnHost := range hostToComponentsMap {
-				log.V(logs.DebugLevel).Info("processing components on host", "namespace", namespace, "platform", platform, "host", host, "count", len(componentsOnHost))
+				endpoint := git.BuildEndpoint(platform).GetEndpoint(host)
+				log.V(logs.DebugLevel).Info("processing components on host", "namespace", namespace, "platform", platform, "host", host, "endpoint", endpoint, "count", len(componentsOnHost))
 				for _, component := range componentsOnHost {
 					// Step 5
 					if !AddNewBranchToTheExistedRepositoryTasksOnTheSameHosts(tasksOnHost, component) {
@@ -66,7 +67,7 @@ func (g BasicAuthTaskProvider) GetNewTasks(ctx context.Context, components []*gi
 						// Step 6
 						if !AddNewRepoToTasksOnTheSameHostsWithSameCredentials(tasksOnHost, component, creds) {
 							// Step 7
-							tasksOnHost = append(tasksOnHost, NewBasicAuthTask(platform, host, creds, []*Repository{
+							tasksOnHost = append(tasksOnHost, NewBasicAuthTask(platform, host, endpoint, creds, []*Repository{
 								{
 									Repository:   component.Repository(),
 									BaseBranches: []string{component.Branch()},
@@ -85,14 +86,14 @@ func (g BasicAuthTaskProvider) GetNewTasks(ctx context.Context, components []*gi
 	return newTasks
 }
 
-func NewBasicAuthTask(platform string, host string, credentials *credentials.BasicAuthCredentials, repositories []*Repository) *Task {
+func NewBasicAuthTask(platform, host, endpoint string, credentials *credentials.BasicAuthCredentials, repositories []*Repository) *Task {
 	return &Task{
 		Platform:       platform,
 		Username:       credentials.Username,
 		GitAuthor:      fmt.Sprintf("%s <123456+%s[bot]@users.noreply.%s>", credentials.Username, credentials.Username, host),
 		Token:          credentials.Password,
 		RepositoryHost: host,
-		Endpoint:       git.BuildEndpoint(platform).GetEndpoint(host),
+		Endpoint:       endpoint,
 		Repositories:   repositories,
 	}
 }

@@ -13,7 +13,7 @@ type GithubEndpoint struct {
 
 // GetEndpoint returns the GitHub endpoint.
 func (g *GithubEndpoint) GetEndpoint(host string) string {
-	return fmt.Sprintf("https://%s/api/v3/", host)
+	return fmt.Sprintf("https://api.%s/", host)
 }
 
 // GitlabEndpoint represents an endpoint for GitLab.
@@ -25,7 +25,7 @@ func (g *GitlabEndpoint) GetEndpoint(host string) string {
 	return fmt.Sprintf("https://%s/api/v4/", host)
 }
 
-// UnknownEndpoint represents an endpoint for GitLab.
+// UnknownEndpoint represents an endpoint for unknown or non existed provider. It returns empty string for endpoint.
 type UnknownEndpoint struct {
 }
 

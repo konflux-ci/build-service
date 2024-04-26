@@ -36,7 +36,7 @@ func TestNewTasks(t *testing.T) {
 			credentialsFunc: StaticCredentialsFunc,
 			components:      []*git.ScmComponent{ignoreError(git.NewScmComponent("github", "https://github.com/umbrellacorp/devfile-sample-go-basic", "main", "devfile-sample-go-basic", "umbrellacorp-tenant")).(*git.ScmComponent)},
 			expected: []*Task{
-				NewBasicAuthTask("github", "github.com", staticCredentials, []*Repository{
+				NewBasicAuthTask("github", "github.com", "https://github.com/api/v3/", staticCredentials, []*Repository{
 					{
 						Repository:   "umbrellacorp/devfile-sample-go-basic",
 						BaseBranches: []string{"main"},
@@ -65,7 +65,7 @@ func TestNewTasks(t *testing.T) {
 						"umbrellacorp-tenant")).(*git.ScmComponent),
 			},
 			expected: []*Task{
-				NewBasicAuthTask("github", "github.com", staticCredentials, []*Repository{
+				NewBasicAuthTask("github", "github.com", "https://github.com/api/v3/", staticCredentials, []*Repository{
 					{
 						Repository:   "umbrellacorp/devfile-sample-python-basic",
 						BaseBranches: []string{"develop"},
@@ -105,7 +105,7 @@ func TestNewTasks(t *testing.T) {
 						"umbrellacorp-tenant")).(*git.ScmComponent),
 			},
 			expected: []*Task{
-				NewBasicAuthTask("github", "github.com", staticCredentials, []*Repository{
+				NewBasicAuthTask("github", "github.com", "https://github.com/api/v3/", staticCredentials, []*Repository{
 					{
 						Repository:   "umbrellacorp/devfile-sample-python-basic",
 						BaseBranches: []string{"develop", "main"},
@@ -138,13 +138,13 @@ func TestNewTasks(t *testing.T) {
 						"umbrellacorp-tenant")).(*git.ScmComponent),
 			},
 			expected: []*Task{
-				NewBasicAuthTask("github", "github.com", staticCredentials, []*Repository{
+				NewBasicAuthTask("github", "github.com", "https://github.com/api/v3/", staticCredentials, []*Repository{
 					{
 						Repository:   "umbrellacorp/devfile-sample-python-basic",
 						BaseBranches: []string{"develop"},
 					},
 				}),
-				NewBasicAuthTask("gitlab", "gitlab.com", staticCredentials, []*Repository{
+				NewBasicAuthTask("gitlab", "gitlab.com", "https://gitlab.com/api/v4/", staticCredentials, []*Repository{
 					{
 						Repository:   "umbrellacorp/devfile-sample-go-basic",
 						BaseBranches: []string{"main"},

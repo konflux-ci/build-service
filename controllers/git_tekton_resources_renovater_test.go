@@ -25,10 +25,11 @@ import (
 	. "github.com/onsi/gomega"
 
 	gitopsprepare "github.com/redhat-appstudio/application-service/gitops/prepare"
+	"k8s.io/apimachinery/pkg/types"
+
 	. "github.com/redhat-appstudio/build-service/pkg/common"
 	"github.com/redhat-appstudio/build-service/pkg/git/github"
 	"github.com/redhat-appstudio/build-service/pkg/renovate"
-	"k8s.io/apimachinery/pkg/types"
 )
 
 var _ = Describe("Git tekton resources renovater", func() {
@@ -135,7 +136,7 @@ var _ = Describe("Git tekton resources renovater", func() {
 
 			deleteSecret(pacSecretKey)
 			createDefaultBuildPipelineRunSelector(defaultSelectorKey)
-			Eventually(listEvents).WithArguments("default").WithTimeout(timeout).ShouldNot(HaveLen(0))
+			Eventually(listEvents).WithArguments("default").WithTimeout(timeout).ShouldNot(BeEmpty())
 			allEvents := listEvents("default")
 			Expect(allEvents[0].Reason).To(Equal("ErrorReadingPaCSecret"))
 			deleteComponent(componentNamespacedName)
