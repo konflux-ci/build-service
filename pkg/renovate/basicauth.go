@@ -88,12 +88,11 @@ func (g BasicAuthTaskProvider) GetNewTasks(ctx context.Context, components []*gi
 
 func NewBasicAuthTask(platform, host, endpoint string, credentials *credentials.BasicAuthCredentials, repositories []*Repository) *Task {
 	return &Task{
-		Platform:       platform,
-		Username:       credentials.Username,
-		GitAuthor:      fmt.Sprintf("%s <123456+%s[bot]@users.noreply.%s>", credentials.Username, credentials.Username, host),
-		Token:          credentials.Password,
-		RepositoryHost: host,
-		Endpoint:       endpoint,
-		Repositories:   repositories,
+		Platform:     platform,
+		Username:     credentials.Username,
+		GitAuthor:    fmt.Sprintf("%s <123456+%s[bot]@users.noreply.%s>", credentials.Username, credentials.Username, host),
+		Token:        credentials.Password,
+		Endpoint:     endpoint,
+		Repositories: repositories,
 	}
 }
