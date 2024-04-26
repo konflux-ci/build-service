@@ -20,8 +20,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/redhat-appstudio/application-service/gitops"
-
+	. "github.com/redhat-appstudio/build-service/pkg/common"
 	"github.com/redhat-appstudio/build-service/pkg/git/github"
 	"github.com/redhat-appstudio/build-service/pkg/git/gitlab"
 )
@@ -66,8 +65,8 @@ func TestGetContainerImageRepository(t *testing.T) {
 			name: "should create GitHub client from app",
 			gitClientConfig: GitClientConfig{
 				PacSecretData: map[string][]byte{
-					gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
-					gitops.PipelinesAsCode_githubPrivateKey: []byte("private key"),
+					PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
+					PipelinesAsCodeGithubPrivateKey: []byte("private key"),
 				},
 				GitProvider:               "github",
 				RepoUrl:                   repoUrl,
@@ -84,8 +83,8 @@ func TestGetContainerImageRepository(t *testing.T) {
 			name: "should not create GitHub client from app if the app is not installed into repository",
 			gitClientConfig: GitClientConfig{
 				PacSecretData: map[string][]byte{
-					gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
-					gitops.PipelinesAsCode_githubPrivateKey: []byte("private key"),
+					PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
+					PipelinesAsCodeGithubPrivateKey: []byte("private key"),
 				},
 				GitProvider:               "github",
 				RepoUrl:                   repoUrl,
@@ -105,8 +104,8 @@ func TestGetContainerImageRepository(t *testing.T) {
 			name: "should not create GitHub client from app if app id is not a number",
 			gitClientConfig: GitClientConfig{
 				PacSecretData: map[string][]byte{
-					gitops.PipelinesAsCode_githubAppIdKey:   []byte("12abcd"),
-					gitops.PipelinesAsCode_githubPrivateKey: []byte("private key"),
+					PipelinesAsCodeGithubAppIdKey:   []byte("12abcd"),
+					PipelinesAsCodeGithubPrivateKey: []byte("private key"),
 				},
 				GitProvider:               "github",
 				RepoUrl:                   repoUrl,
@@ -123,8 +122,8 @@ func TestGetContainerImageRepository(t *testing.T) {
 			name: "should not create GitHub client from app if app id and private key mismatch or invalid",
 			gitClientConfig: GitClientConfig{
 				PacSecretData: map[string][]byte{
-					gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
-					gitops.PipelinesAsCode_githubPrivateKey: []byte("private key"),
+					PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
+					PipelinesAsCodeGithubPrivateKey: []byte("private key"),
 				},
 				GitProvider:               "github",
 				RepoUrl:                   repoUrl,
@@ -141,8 +140,8 @@ func TestGetContainerImageRepository(t *testing.T) {
 			name: "should create GitHub client from app for repository where the app is not installed",
 			gitClientConfig: GitClientConfig{
 				PacSecretData: map[string][]byte{
-					gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
-					gitops.PipelinesAsCode_githubPrivateKey: []byte("private key"),
+					PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
+					PipelinesAsCodeGithubPrivateKey: []byte("private key"),
 				},
 				GitProvider:               "github",
 				RepoUrl:                   repoUrl,
@@ -162,8 +161,8 @@ func TestGetContainerImageRepository(t *testing.T) {
 			name: "should not create GitHub client from app if client call fails",
 			gitClientConfig: GitClientConfig{
 				PacSecretData: map[string][]byte{
-					gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
-					gitops.PipelinesAsCode_githubPrivateKey: []byte("private key"),
+					PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
+					PipelinesAsCodeGithubPrivateKey: []byte("private key"),
 				},
 				GitProvider:               "github",
 				RepoUrl:                   repoUrl,
@@ -180,8 +179,8 @@ func TestGetContainerImageRepository(t *testing.T) {
 			name: "should create GitHub client, but fail when check if the application is installed into target repository fails",
 			gitClientConfig: GitClientConfig{
 				PacSecretData: map[string][]byte{
-					gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
-					gitops.PipelinesAsCode_githubPrivateKey: []byte("private key"),
+					PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
+					PipelinesAsCodeGithubPrivateKey: []byte("private key"),
 				},
 				GitProvider:               "github",
 				RepoUrl:                   repoUrl,

@@ -3,19 +3,18 @@ package bometrics
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"strconv"
+
 	"github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/google/go-github/v45/github"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/redhat-appstudio/application-service/gitops"
-	gitopsprepare "github.com/redhat-appstudio/application-service/gitops/prepare"
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 	. "github.com/redhat-appstudio/build-service/pkg/common"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"net/http"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
-	"strconv"
 )
 
 type GithubAppAvailabilityProbe struct {
@@ -52,20 +51,20 @@ func (g *GithubAppAvailabilityProbe) CheckAvailability(ctx context.Context) bool
 
 func githubAppCredentials(ctx context.Context, client client.Client) (int64, []byte, error) {
 	pacSecret := corev1.Secret{}
-	globalPaCSecretKey := types.NamespacedName{Namespace: BuildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}
+	globalPaCSecretKey := types.NamespacedName{Namespace: BuildServiceNamespaceName, Name: PipelinesAsCodeGitHubAppSecretName}
 	if err := client.Get(ctx, globalPaCSecretKey, &pacSecret); err != nil {
 		return 0, nil, boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound,
 			fmt.Errorf("pipelines as Code secret not found in %s namespace", BuildServiceNamespaceName))
 	}
 	config := pacSecret.Data
-	githubAppIdStr := string(config[gitops.PipelinesAsCode_githubAppIdKey])
+	githubAppIdStr := string(config[PipelinesAsCodeGithubAppIdKey])
 	githubAppId, err := strconv.ParseInt(githubAppIdStr, 10, 64)
 	if err != nil {
 		return 0, nil, boerrors.NewBuildOpError(boerrors.EGitHubAppMalformedId,
 			fmt.Errorf("failed to create git client: failed to convert %s to int: %w", githubAppIdStr, err))
 	}
-	privateKey := config[gitops.PipelinesAsCode_githubPrivateKey]
-	if len(config[gitops.PipelinesAsCode_githubPrivateKey]) == 0 {
+	privateKey := config[PipelinesAsCodeGithubPrivateKey]
+	if len(config[PipelinesAsCodeGithubPrivateKey]) == 0 {
 		return 0, nil, boerrors.NewBuildOpError(boerrors.EPaCSecretInvalid,
 			fmt.Errorf("invalid configuration in Pipelines as Code secret"))
 

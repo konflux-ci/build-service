@@ -18,12 +18,13 @@ package gitproviderfactory
 
 import (
 	"fmt"
-	"github.com/redhat-appstudio/application-service/gitops"
+	"strconv"
+
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
+	. "github.com/redhat-appstudio/build-service/pkg/common"
 	"github.com/redhat-appstudio/build-service/pkg/git/github"
 	"github.com/redhat-appstudio/build-service/pkg/git/gitlab"
 	"github.com/redhat-appstudio/build-service/pkg/git/gitprovider"
-	"strconv"
 )
 
 var CreateGitClient func(gitClientConfig GitClientConfig) (gitprovider.GitProviderClient, error) = createGitClient
@@ -53,7 +54,7 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 	password, passwordExists := secretData["password"]
 	_, sshKeyExists := secretData["ssh-privatekey"]
 
-	isAppUsed := gitops.IsPaCApplicationConfigured(gitProvider, secretData)
+	isAppUsed := IsPaCApplicationConfigured(gitProvider, secretData)
 
 	switch gitProvider {
 	case "github":
@@ -72,14 +73,14 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 				fmt.Errorf("failed to create git client:  unsupported secret data. Expected username/password or token"))
 		}
 
-		githubAppIdStr := string(secretData[gitops.PipelinesAsCode_githubAppIdKey])
+		githubAppIdStr := string(secretData[PipelinesAsCodeGithubAppIdKey])
 		githubAppId, err := strconv.ParseInt(githubAppIdStr, 10, 64)
 		if err != nil {
 			return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppMalformedId,
 				fmt.Errorf("failed to create git client: failed to convert %s to int: %w", githubAppIdStr, err))
 		}
 
-		privateKey := secretData[gitops.PipelinesAsCode_githubPrivateKey]
+		privateKey := secretData[PipelinesAsCodeGithubPrivateKey]
 
 		if gitClientConfig.IsAppInstallationExpected {
 			// It's required that the configured Pipelines as Code application is installed into user's account

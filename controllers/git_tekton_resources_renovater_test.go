@@ -24,7 +24,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	gitopsprepare "github.com/redhat-appstudio/application-service/gitops/prepare"
 	. "github.com/redhat-appstudio/build-service/pkg/common"
 	"github.com/redhat-appstudio/build-service/pkg/git/github"
 	"github.com/redhat-appstudio/build-service/pkg/renovate"
@@ -35,7 +34,7 @@ var _ = Describe("Git tekton resources renovater", func() {
 
 	var (
 		// All related to the component resources have the same key (but different type)
-		pacSecretKey = types.NamespacedName{Name: gitopsprepare.PipelinesAsCodeSecretName, Namespace: BuildServiceNamespaceName}
+		pacSecretKey = types.NamespacedName{Name: PipelinesAsCodeGitHubAppSecretName, Namespace: BuildServiceNamespaceName}
 	)
 
 	Context("Test Renovate jobs creation", Label("renovater"), func() {

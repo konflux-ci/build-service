@@ -24,19 +24,19 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/redhat-appstudio/build-service/pkg/bometrics"
-	"github.com/redhat-appstudio/build-service/pkg/slices"
-
-	"github.com/devfile/api/v2/pkg/apis/workspaces/v1alpha2"
-	devfile "github.com/redhat-appstudio/application-service/cdq-analysis/pkg"
-	"github.com/redhat-appstudio/application-service/gitops"
 	"gotest.tools/v3/assert"
-
-	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+
+	"github.com/redhat-appstudio/build-service/pkg/boerrors"
+	"github.com/redhat-appstudio/build-service/pkg/bometrics"
+	. "github.com/redhat-appstudio/build-service/pkg/common"
+	"github.com/redhat-appstudio/build-service/pkg/slices"
+
+	"github.com/devfile/api/v2/pkg/apis/workspaces/v1alpha2"
+	devfile "github.com/redhat-appstudio/application-service/cdq-analysis/pkg"
 
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
@@ -256,8 +256,8 @@ func TestGenerateInitialPipelineRunForComponentDockerfileContext(t *testing.T) {
 			Name:      "my-component",
 			Namespace: "my-namespace",
 			Annotations: map[string]string{
-				"skip-initial-checks":            "true",
-				gitops.GitProviderAnnotationName: "github",
+				"skip-initial-checks":     "true",
+				GitProviderAnnotationName: "github",
 			},
 		},
 		Spec: appstudiov1alpha1.ComponentSpec{
@@ -328,8 +328,8 @@ func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 			Name:      "my-component",
 			Namespace: "my-namespace",
 			Annotations: map[string]string{
-				"skip-initial-checks":            "true",
-				gitops.GitProviderAnnotationName: "github",
+				"skip-initial-checks":     "true",
+				GitProviderAnnotationName: "github",
 			},
 		},
 		Spec: appstudiov1alpha1.ComponentSpec{
@@ -459,8 +459,8 @@ func TestGeneratePaCPipelineRunForComponent(t *testing.T) {
 			Name:      "my-component",
 			Namespace: "my-namespace",
 			Annotations: map[string]string{
-				"skip-initial-checks":            "true",
-				gitops.GitProviderAnnotationName: "github",
+				"skip-initial-checks":     "true",
+				GitProviderAnnotationName: "github",
 			},
 		},
 		Spec: appstudiov1alpha1.ComponentSpec{
@@ -1048,8 +1048,8 @@ func TestValidatePaCConfiguration(t *testing.T) {
 			gitProvider: "github",
 			secret: corev1.Secret{
 				Data: map[string][]byte{
-					gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
-					gitops.PipelinesAsCode_githubPrivateKey: []byte(ghAppPrivateKeyStub),
+					PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
+					PipelinesAsCodeGithubPrivateKey: []byte(ghAppPrivateKeyStub),
 				},
 			},
 			expectError: false,
@@ -1059,8 +1059,8 @@ func TestValidatePaCConfiguration(t *testing.T) {
 			gitProvider: "github",
 			secret: corev1.Secret{
 				Data: map[string][]byte{
-					gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
-					gitops.PipelinesAsCode_githubPrivateKey: []byte(ghAppPrivateKeyStub + "\n"),
+					PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
+					PipelinesAsCodeGithubPrivateKey: []byte(ghAppPrivateKeyStub + "\n"),
 				},
 			},
 			expectError: false,
@@ -1115,10 +1115,9 @@ func TestValidatePaCConfiguration(t *testing.T) {
 			gitProvider: "github",
 			secret: corev1.Secret{
 				Data: map[string][]byte{
-					gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
-					gitops.PipelinesAsCode_githubPrivateKey: []byte(ghAppPrivateKeyStub),
-					"github.token":                          []byte("ghp_token"),
-					"gitlab.token":                          []byte("token"),
+					PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
+					PipelinesAsCodeGithubPrivateKey: []byte(ghAppPrivateKeyStub),
+					"password":                      []byte("ghp_token"),
 				},
 			},
 			expectError: false,
@@ -1128,8 +1127,8 @@ func TestValidatePaCConfiguration(t *testing.T) {
 			gitProvider: "github",
 			secret: corev1.Secret{
 				Data: map[string][]byte{
-					gitops.PipelinesAsCode_githubPrivateKey: []byte(ghAppPrivateKeyStub),
-					"github.token":                          []byte("ghp_token"),
+					PipelinesAsCodeGithubPrivateKey: []byte(ghAppPrivateKeyStub),
+					"password":                      []byte("ghp_token"),
 				},
 			},
 			expectError: true,
@@ -1139,8 +1138,8 @@ func TestValidatePaCConfiguration(t *testing.T) {
 			gitProvider: "github",
 			secret: corev1.Secret{
 				Data: map[string][]byte{
-					gitops.PipelinesAsCode_githubAppIdKey: []byte("12345"),
-					"github.token":                        []byte("ghp_token"),
+					PipelinesAsCodeGithubAppIdKey: []byte("12345"),
+					"password":                    []byte("ghp_token"),
 				},
 			},
 			expectError: true,
@@ -1150,8 +1149,8 @@ func TestValidatePaCConfiguration(t *testing.T) {
 			gitProvider: "github",
 			secret: corev1.Secret{
 				Data: map[string][]byte{
-					gitops.PipelinesAsCode_githubAppIdKey:   []byte("12ab"),
-					gitops.PipelinesAsCode_githubPrivateKey: []byte(ghAppPrivateKeyStub),
+					PipelinesAsCodeGithubAppIdKey:   []byte("12ab"),
+					PipelinesAsCodeGithubPrivateKey: []byte(ghAppPrivateKeyStub),
 				},
 			},
 			expectError: true,
@@ -1161,8 +1160,8 @@ func TestValidatePaCConfiguration(t *testing.T) {
 			gitProvider: "github",
 			secret: corev1.Secret{
 				Data: map[string][]byte{
-					gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
-					gitops.PipelinesAsCode_githubPrivateKey: []byte("private-key"),
+					PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
+					PipelinesAsCodeGithubPrivateKey: []byte("private-key"),
 				},
 			},
 			expectError: true,
@@ -1202,26 +1201,11 @@ func TestValidatePaCConfiguration(t *testing.T) {
 			expectError: true,
 		},
 		{
-			name:        "should accept Bitbucket webhook configuration even if other providers configured",
-			gitProvider: "bitbucket",
-			secret: corev1.Secret{
-				Data: map[string][]byte{
-					gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
-					gitops.PipelinesAsCode_githubPrivateKey: []byte(ghAppPrivateKeyStub),
-					"github.token":                          []byte("ghp_token"),
-					"gitlab.token":                          []byte("token"),
-					"bitbucket.token":                       []byte("token2"),
-					"username":                              []byte("user"),
-				},
-			},
-			expectError: false,
-		},
-		{
 			name:        "should reject empty Bitbucket webhook token",
 			gitProvider: "bitbucket",
 			secret: corev1.Secret{
 				Data: map[string][]byte{
-					"bitbucket.token": []byte(""),
+					"password": []byte(""),
 				},
 			},
 			expectError: true,
@@ -1231,29 +1215,8 @@ func TestValidatePaCConfiguration(t *testing.T) {
 			gitProvider: "bitbucket",
 			secret: corev1.Secret{
 				Data: map[string][]byte{
-					"bitbucket.token": []byte("token"),
-					"username":        []byte(""),
-				},
-			},
-			expectError: true,
-		},
-		{
-			name:        "should reject empty Bitbucket webhook token",
-			gitProvider: "gitlab",
-			secret: corev1.Secret{
-				Data: map[string][]byte{
-					"bitbucket.token": []byte(""),
-					"username":        []byte("user"),
-				},
-			},
-			expectError: true,
-		},
-		{
-			name:        "should reject Bitbucket webhook configuration with empty username",
-			gitProvider: "gitlab",
-			secret: corev1.Secret{
-				Data: map[string][]byte{
-					"bitbucket.token": []byte("token"),
+					"username": []byte(""),
+					"password": []byte("token"),
 				},
 			},
 			expectError: true,
@@ -1532,8 +1495,8 @@ func TestPaCRepoAddParamWorkspace(t *testing.T) {
 	const workspaceName = "someone-tenant"
 
 	pacConfig := map[string][]byte{
-		gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
-		gitops.PipelinesAsCode_githubPrivateKey: []byte(ghAppPrivateKeyStub),
+		PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
+		PipelinesAsCodeGithubPrivateKey: []byte(ghAppPrivateKeyStub),
 	}
 
 	component := getComponentData(componentConfig{})
@@ -1547,7 +1510,7 @@ func TestPaCRepoAddParamWorkspace(t *testing.T) {
 	}
 
 	t.Run("add to Spec.Params", func(t *testing.T) {
-		repository, _ := gitops.GeneratePACRepository(*component, pacConfig)
+		repository, _ := generatePACRepository(*component, pacConfig)
 		pacRepoAddParamWorkspaceName(log, repository, workspaceName)
 
 		params := convertCustomParamsToMap(repository)
@@ -1557,7 +1520,7 @@ func TestPaCRepoAddParamWorkspace(t *testing.T) {
 	})
 
 	t.Run("override existing workspace parameter, unset other fields btw", func(t *testing.T) {
-		repository, _ := gitops.GeneratePACRepository(*component, pacConfig)
+		repository, _ := generatePACRepository(*component, pacConfig)
 		params := []pacv1alpha1.Params{
 			{
 				Name:      pacCustomParamAppstudioWorkspace,
