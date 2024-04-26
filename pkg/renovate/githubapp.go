@@ -69,6 +69,7 @@ func (g GithubAppRenovaterTaskProvider) GetNewTasks(ctx context.Context, compone
 func newGithubTask(slug string, token string, repositories []*Repository) *Task {
 	return &Task{
 		Platform:     "github",
+		Endpoint:     git.BuildEndpoint("github").GetEndpoint("github.com"),
 		Username:     fmt.Sprintf("%s[bot]", slug),
 		GitAuthor:    fmt.Sprintf("%s <123456+%s[bot]@users.noreply.github.com>", slug, slug),
 		Token:        token,
