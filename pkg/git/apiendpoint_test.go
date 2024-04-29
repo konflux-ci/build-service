@@ -46,8 +46,8 @@ func TestBuildEndpoint(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := BuildEndpoint(tt.endpointType).GetEndpoint(tt.host); got != tt.wantEndpoint {
-				t.Errorf("BuildEndpoint() = %v, want %v", got, tt.wantEndpoint)
+			if got := BuildAPIEndpoint(tt.endpointType).APIEndpoint(tt.host); got != tt.wantEndpoint {
+				t.Errorf("BuildAPIEndpoint() = %v, want %v", got, tt.wantEndpoint)
 			}
 		})
 	}

@@ -51,7 +51,7 @@ func (g BasicAuthTaskProvider) GetNewTasks(ctx context.Context, components []*gi
 			// Step 4
 			var tasksOnHost []*Task
 			for host, componentsOnHost := range hostToComponentsMap {
-				endpoint := git.BuildEndpoint(platform).GetEndpoint(host)
+				endpoint := git.BuildAPIEndpoint(platform).APIEndpoint(host)
 				log.Info("processing components on host", "namespace", namespace, "platform", platform, "host", host, "endpoint", endpoint, "count", len(componentsOnHost))
 				for _, component := range componentsOnHost {
 					// Step 5
