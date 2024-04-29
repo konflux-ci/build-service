@@ -53,6 +53,7 @@ type PackageRule struct {
 	MatchDepPatterns     []string `json:"matchDepPatterns,omitempty"`
 	GroupName            string   `json:"groupName,omitempty"`
 	BranchName           string   `json:"branchName,omitempty"`
+	CommitBody           string   `json:"commitBody,omitempty"`
 	CommitMessageExtra   string   `json:"commitMessageExtra,omitempty"`
 	CommitMessageTopic   string   `json:"commitMessageTopic,omitempty"`
 	SemanticCommits      string   `json:"semanticCommits,omitempty"`
@@ -82,6 +83,7 @@ func NewTektonJobConfig(platform, endpoint, username, gitAuthor string, reposito
 			BranchName:           "konflux/references/{{baseBranch}}",
 			CommitMessageExtra:   "",
 			CommitMessageTopic:   "RHTAP references",
+			CommitBody:           "Signed-off-by: {{{gitAuthor}}}",
 			SemanticCommits:      "enabled",
 			PRFooter:             "To execute skipped test pipelines write comment `/ok-to-test`",
 			PRBodyColumns:        []string{"Package", "Change", "Notes"},
