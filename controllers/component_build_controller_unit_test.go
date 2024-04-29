@@ -18,20 +18,25 @@ package controllers
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"reflect"
 	"strings"
 	"testing"
 
-	"github.com/devfile/api/v2/pkg/apis/workspaces/v1alpha2"
-	"github.com/redhat-appstudio/application-service/gitops"
-	"github.com/redhat-appstudio/application-service/pkg/devfile"
-	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 	"gotest.tools/v3/assert"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+
+	"github.com/redhat-appstudio/build-service/pkg/boerrors"
+	"github.com/redhat-appstudio/build-service/pkg/bometrics"
+	. "github.com/redhat-appstudio/build-service/pkg/common"
+	"github.com/redhat-appstudio/build-service/pkg/slices"
+
+	"github.com/devfile/api/v2/pkg/apis/workspaces/v1alpha2"
+	devfile "github.com/redhat-appstudio/application-service/cdq-analysis/pkg"
 
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
@@ -41,7 +46,7 @@ import (
 const ghAppPrivateKeyStub = "-----BEGIN RSA PRIVATE KEY-----_key-content_-----END RSA PRIVATE KEY-----"
 
 func TestGetProvisionTimeMetricsBuckets(t *testing.T) {
-	buckets := getProvisionTimeMetricsBuckets()
+	buckets := bometrics.HistogramBuckets
 	for i := 1; i < len(buckets); i++ {
 		if buckets[i] <= buckets[i-1] {
 			t.Errorf("Buckets must be in increasing order, but got: %v", buckets)
@@ -241,7 +246,7 @@ func TestGenerateInitialPipelineRunForComponentDevfileError(t *testing.T) {
 	if err == nil {
 		t.Error("generateInitialPipelineRunForComponentDevfileError(): Didn't return error")
 	} else {
-		assert.ErrorContains(t, err, "failed to populateAndParseDevfile: failed to decode devfile json")
+		assert.ErrorContains(t, err, "invalid devfile due to error parsing devfile because of non-compliant data due to json")
 	}
 }
 
@@ -251,8 +256,8 @@ func TestGenerateInitialPipelineRunForComponentDockerfileContext(t *testing.T) {
 			Name:      "my-component",
 			Namespace: "my-namespace",
 			Annotations: map[string]string{
-				"skip-initial-checks":            "true",
-				gitops.GitProviderAnnotationName: "github",
+				"skip-initial-checks":     "true",
+				GitProviderAnnotationName: "github",
 			},
 		},
 		Spec: appstudiov1alpha1.ComponentSpec{
@@ -323,8 +328,8 @@ func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 			Name:      "my-component",
 			Namespace: "my-namespace",
 			Annotations: map[string]string{
-				"skip-initial-checks":            "true",
-				gitops.GitProviderAnnotationName: "github",
+				"skip-initial-checks":     "true",
+				GitProviderAnnotationName: "github",
 			},
 		},
 		Spec: appstudiov1alpha1.ComponentSpec{
@@ -454,8 +459,8 @@ func TestGeneratePaCPipelineRunForComponent(t *testing.T) {
 			Name:      "my-component",
 			Namespace: "my-namespace",
 			Annotations: map[string]string{
-				"skip-initial-checks":            "true",
-				gitops.GitProviderAnnotationName: "github",
+				"skip-initial-checks":     "true",
+				GitProviderAnnotationName: "github",
 			},
 		},
 		Spec: appstudiov1alpha1.ComponentSpec{
@@ -1035,183 +1040,207 @@ func TestValidatePaCConfiguration(t *testing.T) {
 	tests := []struct {
 		name        string
 		gitProvider string
-		config      map[string][]byte
+		secret      corev1.Secret
 		expectError bool
 	}{
 		{
 			name:        "should accept GitHub application configuration",
 			gitProvider: "github",
-			config: map[string][]byte{
-				gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
-				gitops.PipelinesAsCode_githubPrivateKey: []byte(ghAppPrivateKeyStub),
+			secret: corev1.Secret{
+				Data: map[string][]byte{
+					PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
+					PipelinesAsCodeGithubPrivateKey: []byte(ghAppPrivateKeyStub),
+				},
 			},
 			expectError: false,
 		},
 		{
 			name:        "should accept GitHub application configuration with end line",
 			gitProvider: "github",
-			config: map[string][]byte{
-				gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
-				gitops.PipelinesAsCode_githubPrivateKey: []byte(ghAppPrivateKeyStub + "\n"),
+			secret: corev1.Secret{
+				Data: map[string][]byte{
+					PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
+					PipelinesAsCodeGithubPrivateKey: []byte(ghAppPrivateKeyStub + "\n"),
+				},
 			},
 			expectError: false,
 		},
 		{
-			name:        "should accept GitHub webhook configuration",
+			name:        "should accept GitHub token configuration",
 			gitProvider: "github",
-			config: map[string][]byte{
-				"github.token": []byte("ghp_token"),
+			secret: corev1.Secret{
+				Type: corev1.SecretTypeBasicAuth,
+				Data: map[string][]byte{
+					"password": []byte(base64.StdEncoding.EncodeToString([]byte("ghp_token"))),
+				},
 			},
 			expectError: false,
 		},
 		{
-			name:        "should reject empty GitHub webhook token",
+			name:        "should accept GitHub basic auth configuration",
 			gitProvider: "github",
-			config: map[string][]byte{
-				"github.token": []byte(""),
+			secret: corev1.Secret{
+				Type: corev1.SecretTypeBasicAuth,
+				Data: map[string][]byte{
+					"username": []byte(base64.StdEncoding.EncodeToString([]byte("user"))),
+					"password": []byte(base64.StdEncoding.EncodeToString([]byte("password"))),
+				},
+			},
+			expectError: false,
+		},
+		{
+			name:        "should reject empty GitHub access token",
+			gitProvider: "github",
+			secret: corev1.Secret{
+				Type: corev1.SecretTypeBasicAuth,
+				Data: map[string][]byte{
+					"password": []byte(""),
+				},
+			},
+			expectError: true,
+		},
+		{
+			name:        "should reject empty GitHub password",
+			gitProvider: "github",
+			secret: corev1.Secret{
+				Type: corev1.SecretTypeBasicAuth,
+				Data: map[string][]byte{
+					"username": []byte(base64.StdEncoding.EncodeToString([]byte("user"))),
+				},
 			},
 			expectError: true,
 		},
 		{
 			name:        "should accept GitHub application configuration if both GitHub application and webhook configured",
 			gitProvider: "github",
-			config: map[string][]byte{
-				gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
-				gitops.PipelinesAsCode_githubPrivateKey: []byte(ghAppPrivateKeyStub),
-				"github.token":                          []byte("ghp_token"),
-				"gitlab.token":                          []byte("token"),
+			secret: corev1.Secret{
+				Data: map[string][]byte{
+					PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
+					PipelinesAsCodeGithubPrivateKey: []byte(ghAppPrivateKeyStub),
+					"password":                      []byte("ghp_token"),
+				},
 			},
 			expectError: false,
 		},
 		{
 			name:        "should reject GitHub application configuration if GitHub id is missing",
 			gitProvider: "github",
-			config: map[string][]byte{
-				gitops.PipelinesAsCode_githubPrivateKey: []byte(ghAppPrivateKeyStub),
-				"github.token":                          []byte("ghp_token"),
+			secret: corev1.Secret{
+				Data: map[string][]byte{
+					PipelinesAsCodeGithubPrivateKey: []byte(ghAppPrivateKeyStub),
+					"password":                      []byte("ghp_token"),
+				},
 			},
 			expectError: true,
 		},
 		{
 			name:        "should reject GitHub application configuration if GitHub application private key is missing",
 			gitProvider: "github",
-			config: map[string][]byte{
-				gitops.PipelinesAsCode_githubAppIdKey: []byte("12345"),
-				"github.token":                        []byte("ghp_token"),
+			secret: corev1.Secret{
+				Data: map[string][]byte{
+					PipelinesAsCodeGithubAppIdKey: []byte("12345"),
+					"password":                    []byte("ghp_token"),
+				},
 			},
 			expectError: true,
 		},
 		{
 			name:        "should reject GitHub application configuration if GitHub application id is invalid",
 			gitProvider: "github",
-			config: map[string][]byte{
-				gitops.PipelinesAsCode_githubAppIdKey:   []byte("12ab"),
-				gitops.PipelinesAsCode_githubPrivateKey: []byte(ghAppPrivateKeyStub),
+			secret: corev1.Secret{
+				Data: map[string][]byte{
+					PipelinesAsCodeGithubAppIdKey:   []byte("12ab"),
+					PipelinesAsCodeGithubPrivateKey: []byte(ghAppPrivateKeyStub),
+				},
 			},
 			expectError: true,
 		},
 		{
 			name:        "should reject GitHub application configuration if GitHub application application private key is invalid",
 			gitProvider: "github",
-			config: map[string][]byte{
-				gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
-				gitops.PipelinesAsCode_githubPrivateKey: []byte("private-key"),
+			secret: corev1.Secret{
+				Data: map[string][]byte{
+					PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
+					PipelinesAsCodeGithubPrivateKey: []byte("private-key"),
+				},
 			},
 			expectError: true,
 		},
 		{
 			name:        "should accept GitLab webhook configuration",
 			gitProvider: "gitlab",
-			config: map[string][]byte{
-				"gitlab.token": []byte("token"),
+			secret: corev1.Secret{
+				Type: corev1.SecretTypeBasicAuth,
+				Data: map[string][]byte{
+					"password": []byte(base64.StdEncoding.EncodeToString([]byte("token"))),
+				},
 			},
 			expectError: false,
 		},
 		{
-			name:        "should accept GitLab webhook configuration even if other providers configured",
+			name:        "should accept GitLab basic auth configuration",
 			gitProvider: "gitlab",
-			config: map[string][]byte{
-				gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
-				gitops.PipelinesAsCode_githubPrivateKey: []byte(ghAppPrivateKeyStub),
-				"github.token":                          []byte("ghp_token"),
-				"gitlab.token":                          []byte("token"),
-				"bitbucket.token":                       []byte("token2"),
+			secret: corev1.Secret{
+				Type: corev1.SecretTypeBasicAuth,
+				Data: map[string][]byte{
+					"username": []byte(base64.StdEncoding.EncodeToString([]byte("user"))),
+					"password": []byte(base64.StdEncoding.EncodeToString([]byte("password"))),
+				},
 			},
 			expectError: false,
 		},
 		{
 			name:        "should reject empty GitLab webhook token",
 			gitProvider: "gitlab",
-			config: map[string][]byte{
-				"gitlab.token": []byte(""),
+			secret: corev1.Secret{
+				Type: corev1.SecretTypeBasicAuth,
+				Data: map[string][]byte{
+					"password": []byte(""),
+				},
 			},
 			expectError: true,
 		},
 		{
-			name:        "should accept Bitbucket webhook configuration even if other providers configured",
-			gitProvider: "bitbucket",
-			config: map[string][]byte{
-				gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
-				gitops.PipelinesAsCode_githubPrivateKey: []byte(ghAppPrivateKeyStub),
-				"github.token":                          []byte("ghp_token"),
-				"gitlab.token":                          []byte("token"),
-				"bitbucket.token":                       []byte("token2"),
-				"username":                              []byte("user"),
-			},
-			expectError: false,
-		},
-		{
 			name:        "should reject empty Bitbucket webhook token",
 			gitProvider: "bitbucket",
-			config: map[string][]byte{
-				"bitbucket.token": []byte(""),
+			secret: corev1.Secret{
+				Data: map[string][]byte{
+					"password": []byte(""),
+				},
 			},
 			expectError: true,
 		},
 		{
 			name:        "test should reject empty Bitbucket username",
 			gitProvider: "bitbucket",
-			config: map[string][]byte{
-				"bitbucket.token": []byte("token"),
-				"username":        []byte(""),
-			},
-			expectError: true,
-		},
-		{
-			name:        "should reject empty Bitbucket webhook token",
-			gitProvider: "gitlab",
-			config: map[string][]byte{
-				"bitbucket.token": []byte(""),
-				"username":        []byte("user"),
-			},
-			expectError: true,
-		},
-		{
-			name:        "should reject Bitbucket webhook configuration with empty username",
-			gitProvider: "gitlab",
-			config: map[string][]byte{
-				"bitbucket.token": []byte("token"),
+			secret: corev1.Secret{
+				Data: map[string][]byte{
+					"username": []byte(""),
+					"password": []byte("token"),
+				},
 			},
 			expectError: true,
 		},
 		{
 			name:        "should reject unknown application configuration",
 			gitProvider: "unknown",
-			config:      map[string][]byte{},
+			secret: corev1.Secret{
+				Data: map[string][]byte{},
+			},
 			expectError: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validatePaCConfiguration(tt.gitProvider, tt.config)
+			err := validatePaCConfiguration(tt.gitProvider, tt.secret)
 			if err != nil {
 				if !tt.expectError {
-					t.Errorf("Expected that the configuration %#v from provider %s should be valid", tt.config, tt.gitProvider)
+					t.Errorf("Expected that the configuration %#v from provider %s should be valid", tt.secret.Data, tt.gitProvider)
 				}
 			} else {
 				if tt.expectError {
-					t.Errorf("Expected that the configuration %#v from provider %s fails", tt.config, tt.gitProvider)
+					t.Errorf("Expected that the configuration %#v from provider %s fails", tt.secret.Data, tt.gitProvider)
 				}
 			}
 		})
@@ -1420,29 +1449,37 @@ func TestCreateWorkspaceBinding(t *testing.T) {
 	}
 }
 
-func TestGetRandomString(t *testing.T) {
+func TestSlicesIntersection(t *testing.T) {
 	tests := []struct {
-		name   string
-		length int
+		in1, in2     []string
+		intersection int
 	}{
 		{
-			name:   "should be able to generate one symbol rangom string",
-			length: 1,
+			in1:          []string{"a", "b", "c", "d", "e"},
+			in2:          []string{"a", "b", "c", "d", "e"},
+			intersection: 5,
 		},
 		{
-			name:   "should be able to generate rangom string",
-			length: 5,
+			in1:          []string{"a", "b", "c", "d", "e"},
+			in2:          []string{"a", "b", "c", "q", "y"},
+			intersection: 3,
 		},
 		{
-			name:   "should be able to generate long rangom string",
-			length: 100,
+			in1:          []string{"a", "b", "c", "d", "e"},
+			in2:          []string{"a", "q", "c", "f", "y"},
+			intersection: 1,
+		},
+		{
+			in1:          []string{"a", "b", "c", "d", "e"},
+			in2:          []string{"f", "b", "c", "d", "e"},
+			intersection: 0,
 		},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := getRandomString(tt.length)
-			if len(got) != tt.length {
-				t.Errorf("Got string %s has lenght %d but expected length is %d", got, len(got), tt.length)
+		t.Run("intersection test", func(t *testing.T) {
+			got := slices.Intersection(tt.in1, tt.in2)
+			if got != tt.intersection {
+				t.Errorf("Got slice intersection %d but expected length is %d", got, tt.intersection)
 			}
 		})
 	}
@@ -1458,8 +1495,8 @@ func TestPaCRepoAddParamWorkspace(t *testing.T) {
 	const workspaceName = "someone-tenant"
 
 	pacConfig := map[string][]byte{
-		gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
-		gitops.PipelinesAsCode_githubPrivateKey: []byte(ghAppPrivateKeyStub),
+		PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
+		PipelinesAsCodeGithubPrivateKey: []byte(ghAppPrivateKeyStub),
 	}
 
 	component := getComponentData(componentConfig{})
@@ -1473,7 +1510,7 @@ func TestPaCRepoAddParamWorkspace(t *testing.T) {
 	}
 
 	t.Run("add to Spec.Params", func(t *testing.T) {
-		repository, _ := gitops.GeneratePACRepository(*component, pacConfig)
+		repository, _ := generatePACRepository(*component, pacConfig)
 		pacRepoAddParamWorkspaceName(log, repository, workspaceName)
 
 		params := convertCustomParamsToMap(repository)
@@ -1483,7 +1520,7 @@ func TestPaCRepoAddParamWorkspace(t *testing.T) {
 	})
 
 	t.Run("override existing workspace parameter, unset other fields btw", func(t *testing.T) {
-		repository, _ := gitops.GeneratePACRepository(*component, pacConfig)
+		repository, _ := generatePACRepository(*component, pacConfig)
 		params := []pacv1alpha1.Params{
 			{
 				Name:      pacCustomParamAppstudioWorkspace,

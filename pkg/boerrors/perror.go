@@ -17,6 +17,7 @@ limitations under the License.
 package boerrors
 
 import (
+	"errors"
 	"fmt"
 )
 
@@ -89,12 +90,16 @@ const (
 	EPaCRouteDoesNotExist BOErrorId = 52
 	// An attempt to create another PaC repository object that references the same git repository.
 	EPaCDuplicateRepository BOErrorId = 53
+	// Git repository url isn't allowed
+	EPaCNotAllowedRepositoryUrl BOErrorId = 54
 
 	// Happens when Component source repository is hosted on unsupported / unknown git provider.
 	// For example: https://my-gitlab.com
 	// If self-hosted instance of the supported git providers is used, then "git-provider" annotation must be set:
 	// git-provider: gitlab
 	EUnknownGitProvider BOErrorId = 60
+	// Insecure HTTP can't be used for git repository URL
+	EHttpUsedForRepository BOErrorId = 61
 
 	// Happens when configured in cluster Pipelines as Code application is not installed in Component source repository.
 	// User must install the application to fix this error.
@@ -108,6 +113,8 @@ const (
 	// GitHub Application with specified ID does not exists.
 	// Correct configuration in the AppStudio installation ('pipelines-as-code-secret' secret in 'build-service' namespace).
 	EGitHubAppDoesNotExist BOErrorId = 73
+	// EGitHubAppSuspended Application in git repository is suspended
+	EGitHubAppSuspended BOErrorId = 78
 
 	// EGitHubTokenUnauthorized access token can't be recognized by GitHub and 401 is responded.
 	// This error may be caused by a malformed token string or an expired token.
@@ -119,12 +126,20 @@ const (
 	EGitHubNoResourceToOperateOn BOErrorId = 75
 	// EGitHubReachRateLimit reach the GitHub REST API rate limit.
 	EGitHubReachRateLimit BOErrorId = 76
+	// EGitHubSecretInvalid the secret with GitHub App credentials is invalid.
+	EGitHubSecretInvalid = 77
+	// EGitHubSecretTypeNotSupported the secret type with GitHub App credentials is not supported.
+	EGitHubSecretTypeNotSupported = 78
 
 	// EGitLabTokenUnauthorized access token is not recognized by GitLab and 401 is responded.
 	// The access token may be malformed or expired.
 	EGitLabTokenUnauthorized BOErrorId = 90
 	// EGitLabTokenInsufficientScope the access token does not have sufficient scope and 403 is responded.
 	EGitLabTokenInsufficientScope BOErrorId = 91
+	// EGitLabSecretInvalid the secret with GitLab credentials is invalid.
+	EGitLabSecretInvalid BOErrorId = 92
+	// EGitLabSecretTypeNotSupported the secret type with GitLab credentials is not supported.
+	EGitLabSecretTypeNotSupported BOErrorId = 93
 
 	// Value of 'image.redhat.com/image' component annotation is not a valid json or the json has invalid structure.
 	EFailedToParseImageAnnotation BOErrorId = 200
@@ -159,18 +174,21 @@ var boErrorMessages = map[BOErrorId]string{
 	ETransientError: "",
 	EUnknownError:   "unknown error",
 
-	EPaCSecretNotFound:      "Pipelines as Code secret does not exist",
-	EPaCSecretInvalid:       "Invalid Pipelines as Code secret",
-	EPaCRouteDoesNotExist:   "Pipelines as Code public route does not exist",
-	EPaCDuplicateRepository: "Git repository is already handled by Pipelines as Code",
+	EPaCSecretNotFound:          "Pipelines as Code secret does not exist",
+	EPaCSecretInvalid:           "Invalid Pipelines as Code secret",
+	EPaCRouteDoesNotExist:       "Pipelines as Code public route does not exist",
+	EPaCDuplicateRepository:     "Git repository is already handled by Pipelines as Code",
+	EPaCNotAllowedRepositoryUrl: "Git repository url isn't allowed",
 
-	EUnknownGitProvider: "unknown git provider of the source repository",
+	EUnknownGitProvider:    "unknown git provider of the source repository",
+	EHttpUsedForRepository: "http used for git repository, use secure connection",
 
 	EGitHubAppNotInstalled:         "GitHub Application is not installed in user repository",
 	EGitHubAppMalformedPrivateKey:  "malformed GitHub Application private key",
 	EGitHubAppMalformedId:          "malformed GitHub Application ID",
 	EGitHubAppPrivateKeyNotMatched: "GitHub Application private key does not match Application ID",
 	EGitHubAppDoesNotExist:         "GitHub Application with given ID does not exist",
+	EGitHubAppSuspended:            "GitHub Application is suspended for repository",
 
 	EGitHubTokenUnauthorized:     "Access token is unrecognizable by GitHub",
 	EGitHubNoResourceToOperateOn: "No resource for finishing the request",
@@ -193,4 +211,15 @@ var boErrorMessages = map[BOErrorId]string{
 
 	EPipelineRetrievalFailed:  "Failed to retrieve the pipeline selected for this component.",
 	EPipelineConversionFailed: "Failed to convert the selected pipeline to the supported Tekton API version.",
+}
+
+// IsBuildOpError returns true if the specified error is BuildOpError with certain code.
+func IsBuildOpError(err error, code BOErrorId) bool {
+	var boErr *BuildOpError
+	if err != nil && errors.As(err, &boErr) {
+		if boErr.GetErrorId() == int(code) {
+			return true
+		}
+	}
+	return false
 }

@@ -17,8 +17,9 @@ limitations under the License.
 package logs
 
 const (
-	Action = "action"
-	Audit  = "audit"
+	Action     = "action"
+	Audit      = "audit"
+	DebugLevel = 1
 )
 
 // Action type represents all possible value of 'action' log field.

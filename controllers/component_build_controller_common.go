@@ -20,14 +20,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
-	"github.com/redhat-appstudio/application-service/pkg/devfile"
+	devfile "github.com/redhat-appstudio/application-service/cdq-analysis/pkg"
 	buildappstudiov1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
+	. "github.com/redhat-appstudio/build-service/pkg/common"
 	l "github.com/redhat-appstudio/build-service/pkg/logs"
 	pipelineselector "github.com/redhat-appstudio/build-service/pkg/pipeline-selector"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
@@ -42,6 +44,50 @@ import (
 // That way it can be mocked in tests
 var DevfileSearchForDockerfile = devfile.SearchForDockerfile
 
+// getGitProvider returns git provider name based on the repository url, e.g. github, gitlab, etc or git-privider annotation
+func getGitProvider(component appstudiov1alpha1.Component) (string, error) {
+	allowedGitProviders := map[string]bool{"github": true, "gitlab": true, "bitbucket": true}
+	gitProvider := ""
+
+	sourceUrl := component.Spec.Source.GitSource.URL
+
+	if strings.HasPrefix(sourceUrl, "git@") {
+		// git@github.com:redhat-appstudio/application-service.git
+		sourceUrl = strings.TrimPrefix(sourceUrl, "git@")
+		host := strings.Split(sourceUrl, ":")[0]
+		gitProvider = strings.Split(host, ".")[0]
+	} else {
+		// https://github.com/redhat-appstudio/application-service
+		u, err := url.Parse(sourceUrl)
+		if err != nil {
+			return "", err
+		}
+		uParts := strings.Split(u.Hostname(), ".")
+		if len(uParts) == 1 {
+			gitProvider = uParts[0]
+		} else {
+			gitProvider = uParts[len(uParts)-2]
+		}
+	}
+
+	var err error
+	if !allowedGitProviders[gitProvider] {
+		// Self-hosted git provider, check for git-provider annotation on the component
+		gitProviderAnnotationValue := component.GetAnnotations()[GitProviderAnnotationName]
+		if gitProviderAnnotationValue != "" {
+			if allowedGitProviders[gitProviderAnnotationValue] {
+				gitProvider = gitProviderAnnotationValue
+			} else {
+				err = fmt.Errorf("unsupported \"%s\" annotation value: %s", GitProviderAnnotationName, gitProviderAnnotationValue)
+			}
+		} else {
+			err = fmt.Errorf("self-hosted git provider is not specified via \"%s\" annotation in the component", GitProviderAnnotationName)
+		}
+	}
+
+	return gitProvider, err
+}
+
 // GetPipelineForComponent searches for the build pipeline to use on the component.
 func (r *ComponentBuildReconciler) GetPipelineForComponent(ctx context.Context, component *appstudiov1alpha1.Component) (*tektonapi.PipelineRef, []tektonapi.Param, error) {
 	var pipelineSelectors []buildappstudiov1alpha1.BuildPipelineSelector
@@ -53,7 +99,7 @@ func (r *ComponentBuildReconciler) GetPipelineForComponent(ctx context.Context, 
 		// Second try namespaced config
 		{Namespace: component.Namespace, Name: buildPipelineSelectorResourceName},
 		// Finally try global config
-		{Namespace: buildServiceNamespaceName, Name: buildPipelineSelectorResourceName},
+		{Namespace: BuildServiceNamespaceName, Name: buildPipelineSelectorResourceName},
 	}
 
 	for _, pipelineSelectorKey := range pipelineSelectorKeys {

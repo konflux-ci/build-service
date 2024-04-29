@@ -20,8 +20,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/redhat-appstudio/application-service/gitops"
-
+	. "github.com/redhat-appstudio/build-service/pkg/common"
 	"github.com/redhat-appstudio/build-service/pkg/git/github"
 	"github.com/redhat-appstudio/build-service/pkg/git/gitlab"
 )
@@ -40,7 +39,15 @@ func TestGetContainerImageRepository(t *testing.T) {
 			t.Errorf("should not be invoked")
 			return nil
 		}
+		github.NewGithubClientWithBasicAuth = func(username, password string) *github.GithubClient {
+			t.Errorf("should not be invoked")
+			return nil
+		}
 		gitlab.NewGitlabClient = func(accessToken, baseUrl string) (*gitlab.GitlabClient, error) {
+			t.Errorf("should not be invoked")
+			return nil, nil
+		}
+		gitlab.NewGitlabClientWithBasicAuth = func(username, password, baseUrl string) (*gitlab.GitlabClient, error) {
 			t.Errorf("should not be invoked")
 			return nil, nil
 		}
@@ -58,8 +65,8 @@ func TestGetContainerImageRepository(t *testing.T) {
 			name: "should create GitHub client from app",
 			gitClientConfig: GitClientConfig{
 				PacSecretData: map[string][]byte{
-					gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
-					gitops.PipelinesAsCode_githubPrivateKey: []byte("private key"),
+					PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
+					PipelinesAsCodeGithubPrivateKey: []byte("private key"),
 				},
 				GitProvider:               "github",
 				RepoUrl:                   repoUrl,
@@ -76,8 +83,8 @@ func TestGetContainerImageRepository(t *testing.T) {
 			name: "should not create GitHub client from app if the app is not installed into repository",
 			gitClientConfig: GitClientConfig{
 				PacSecretData: map[string][]byte{
-					gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
-					gitops.PipelinesAsCode_githubPrivateKey: []byte("private key"),
+					PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
+					PipelinesAsCodeGithubPrivateKey: []byte("private key"),
 				},
 				GitProvider:               "github",
 				RepoUrl:                   repoUrl,
@@ -97,8 +104,8 @@ func TestGetContainerImageRepository(t *testing.T) {
 			name: "should not create GitHub client from app if app id is not a number",
 			gitClientConfig: GitClientConfig{
 				PacSecretData: map[string][]byte{
-					gitops.PipelinesAsCode_githubAppIdKey:   []byte("12abcd"),
-					gitops.PipelinesAsCode_githubPrivateKey: []byte("private key"),
+					PipelinesAsCodeGithubAppIdKey:   []byte("12abcd"),
+					PipelinesAsCodeGithubPrivateKey: []byte("private key"),
 				},
 				GitProvider:               "github",
 				RepoUrl:                   repoUrl,
@@ -115,8 +122,8 @@ func TestGetContainerImageRepository(t *testing.T) {
 			name: "should not create GitHub client from app if app id and private key mismatch or invalid",
 			gitClientConfig: GitClientConfig{
 				PacSecretData: map[string][]byte{
-					gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
-					gitops.PipelinesAsCode_githubPrivateKey: []byte("private key"),
+					PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
+					PipelinesAsCodeGithubPrivateKey: []byte("private key"),
 				},
 				GitProvider:               "github",
 				RepoUrl:                   repoUrl,
@@ -133,8 +140,8 @@ func TestGetContainerImageRepository(t *testing.T) {
 			name: "should create GitHub client from app for repository where the app is not installed",
 			gitClientConfig: GitClientConfig{
 				PacSecretData: map[string][]byte{
-					gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
-					gitops.PipelinesAsCode_githubPrivateKey: []byte("private key"),
+					PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
+					PipelinesAsCodeGithubPrivateKey: []byte("private key"),
 				},
 				GitProvider:               "github",
 				RepoUrl:                   repoUrl,
@@ -154,8 +161,8 @@ func TestGetContainerImageRepository(t *testing.T) {
 			name: "should not create GitHub client from app if client call fails",
 			gitClientConfig: GitClientConfig{
 				PacSecretData: map[string][]byte{
-					gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
-					gitops.PipelinesAsCode_githubPrivateKey: []byte("private key"),
+					PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
+					PipelinesAsCodeGithubPrivateKey: []byte("private key"),
 				},
 				GitProvider:               "github",
 				RepoUrl:                   repoUrl,
@@ -172,8 +179,8 @@ func TestGetContainerImageRepository(t *testing.T) {
 			name: "should create GitHub client, but fail when check if the application is installed into target repository fails",
 			gitClientConfig: GitClientConfig{
 				PacSecretData: map[string][]byte{
-					gitops.PipelinesAsCode_githubAppIdKey:   []byte("12345"),
-					gitops.PipelinesAsCode_githubPrivateKey: []byte("private key"),
+					PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
+					PipelinesAsCodeGithubPrivateKey: []byte("private key"),
 				},
 				GitProvider:               "github",
 				RepoUrl:                   repoUrl,
@@ -193,7 +200,7 @@ func TestGetContainerImageRepository(t *testing.T) {
 			name: "should create GitHub client from token",
 			gitClientConfig: GitClientConfig{
 				PacSecretData: map[string][]byte{
-					"github_token": []byte("token"),
+					"password": []byte("token"),
 				},
 				GitProvider:               "github",
 				RepoUrl:                   repoUrl,
@@ -201,6 +208,28 @@ func TestGetContainerImageRepository(t *testing.T) {
 			},
 			allowConstructors: func() {
 				github.NewGithubClient = func(accessToken string) *github.GithubClient {
+					expectedToken := "token"
+					if accessToken != expectedToken {
+						t.Errorf("expected token %s, got %s", expectedToken, accessToken)
+					}
+					return &github.GithubClient{}
+				}
+			},
+			expectError: false,
+		},
+		{
+			name: "should create GitHub client from username and password",
+			gitClientConfig: GitClientConfig{
+				PacSecretData: map[string][]byte{
+					"username": []byte("user"),
+					"password": []byte("pass"),
+				},
+				GitProvider:               "github",
+				RepoUrl:                   repoUrl,
+				IsAppInstallationExpected: false,
+			},
+			allowConstructors: func() {
+				github.NewGithubClientWithBasicAuth = func(username, password string) *github.GithubClient {
 					return &github.GithubClient{}
 				}
 			},
@@ -210,7 +239,7 @@ func TestGetContainerImageRepository(t *testing.T) {
 			name: "should create GitLab client from token",
 			gitClientConfig: GitClientConfig{
 				PacSecretData: map[string][]byte{
-					"gitlab_token": []byte("token"),
+					"password": []byte("token"),
 				},
 				GitProvider:               "gitlab",
 				RepoUrl:                   "https://gitlab.com/my-org/my-repo",
@@ -218,6 +247,32 @@ func TestGetContainerImageRepository(t *testing.T) {
 			},
 			allowConstructors: func() {
 				gitlab.NewGitlabClient = func(accessToken, baseUrl string) (*gitlab.GitlabClient, error) {
+					expectedBaseUrl := "https://gitlab.com/"
+					expectedToken := "token"
+					if baseUrl != expectedBaseUrl {
+						return nil, fmt.Errorf("Expected to get baseUrl: %s, got %s", expectedBaseUrl, baseUrl)
+					}
+					if accessToken != expectedToken {
+						return nil, fmt.Errorf("Expected to get token: %s, got %s", expectedToken, accessToken)
+					}
+					return &gitlab.GitlabClient{}, nil
+				}
+			},
+			expectError: false,
+		},
+		{
+			name: "should create GitLab client from username and password",
+			gitClientConfig: GitClientConfig{
+				PacSecretData: map[string][]byte{
+					"username": []byte("user"),
+					"password": []byte("pass"),
+				},
+				GitProvider:               "gitlab",
+				RepoUrl:                   "https://gitlab.com/my-org/my-repo",
+				IsAppInstallationExpected: true,
+			},
+			allowConstructors: func() {
+				gitlab.NewGitlabClientWithBasicAuth = func(username, password, baseUrl string) (*gitlab.GitlabClient, error) {
 					expectedBaseUrl := "https://gitlab.com/"
 					if baseUrl != expectedBaseUrl {
 						return nil, fmt.Errorf("Expected to get baseUrl: %s, got %s", expectedBaseUrl, baseUrl)

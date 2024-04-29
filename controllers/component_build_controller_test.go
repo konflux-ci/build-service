@@ -39,11 +39,10 @@ import (
 
 	"github.com/devfile/api/v2/pkg/apis/workspaces/v1alpha2"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
-	"github.com/redhat-appstudio/application-service/gitops"
-	gitopsprepare "github.com/redhat-appstudio/application-service/gitops/prepare"
-	"github.com/redhat-appstudio/application-service/pkg/devfile"
+	devfile "github.com/redhat-appstudio/application-service/cdq-analysis/pkg"
 	buildappstudiov1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
+	. "github.com/redhat-appstudio/build-service/pkg/common"
 	"github.com/redhat-appstudio/build-service/pkg/git/github"
 	gp "github.com/redhat-appstudio/build-service/pkg/git/gitprovider"
 	gpf "github.com/redhat-appstudio/build-service/pkg/git/gitproviderfactory"
@@ -91,13 +90,13 @@ var _ = Describe("Component initial build controller", func() {
 	var (
 		// All related to the component resources have the same key (but different type)
 		pacRouteKey           = types.NamespacedName{Name: pipelinesAsCodeRouteName, Namespace: pipelinesAsCodeNamespace}
-		pacSecretKey          = types.NamespacedName{Name: gitopsprepare.PipelinesAsCodeSecretName, Namespace: buildServiceNamespaceName}
-		namespacePaCSecretKey = types.NamespacedName{Name: gitopsprepare.PipelinesAsCodeSecretName, Namespace: HASAppNamespace}
-		webhookSecretKey      = types.NamespacedName{Name: gitops.PipelinesAsCodeWebhooksSecretName, Namespace: HASAppNamespace}
+		pacSecretKey          = types.NamespacedName{Name: PipelinesAsCodeGitHubAppSecretName, Namespace: BuildServiceNamespaceName}
+		namespacePaCSecretKey = types.NamespacedName{Name: PipelinesAsCodeGitHubAppSecretName, Namespace: HASAppNamespace}
+		webhookSecretKey      = types.NamespacedName{Name: pipelinesAsCodeWebhooksSecretName, Namespace: HASAppNamespace}
 	)
 
 	BeforeEach(func() {
-		createNamespace(buildServiceNamespaceName)
+		createNamespace(BuildServiceNamespaceName)
 		createDefaultBuildPipelineRunSelector(defaultSelectorKey)
 		github.GetAllAppInstallations = func(githubAppIdStr string, appPrivateKeyPem []byte) ([]github.ApplicationInstallation, string, error) {
 			return nil, "slug", nil
@@ -114,7 +113,7 @@ var _ = Describe("Component initial build controller", func() {
 		_ = BeforeEach(func() {
 			createNamespace(pipelinesAsCodeNamespace)
 			createRoute(pacRouteKey, "pac-host")
-			createNamespace(buildServiceNamespaceName)
+			createNamespace(BuildServiceNamespaceName)
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",
 				"github-private-key":    githubAppPrivateKey,
@@ -361,28 +360,16 @@ var _ = Describe("Component initial build controller", func() {
 				Expect(d.AuthorEmail).ToNot(BeEmpty())
 				return "url", nil
 			}
-			isSetupPaCWebhookInvoked := false
-			SetupPaCWebhookFunc = func(repoUrl string, webhookUrl string, webhookSecret string) error {
-				isSetupPaCWebhookInvoked = true
-				Expect(webhookUrl).To(Equal(pacWebhookUrl))
-				Expect(webhookSecret).ToNot(BeEmpty())
-				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resourcePacPrepKey.Name))
-				return nil
-			}
 
-			pacSecretData := map[string]string{"github.token": "ghp_token"}
-			createSecret(pacSecretKey, pacSecretData)
+			pacSecretData := map[string]string{"password": "ghp_token"}
+			createSCMSecret(namespacePaCSecretKey, pacSecretData, corev1.SecretTypeBasicAuth, map[string]string{})
 
 			createComponentAndProcessBuildRequest(resourcePacPrepKey, BuildRequestConfigurePaCAnnotationValue)
 
 			waitSecretCreated(namespacePaCSecretKey)
-			waitSecretCreated(webhookSecretKey)
 			waitPaCRepositoryCreated(resourcePacPrepKey)
 			Eventually(func() bool {
 				return isCreatePaCPullRequestInvoked
-			}, timeout, interval).Should(BeTrue())
-			Eventually(func() bool {
-				return isSetupPaCWebhookInvoked
 			}, timeout, interval).Should(BeTrue())
 		})
 
@@ -487,8 +474,8 @@ var _ = Describe("Component initial build controller", func() {
 				return nil
 			}
 
-			pacSecretData := map[string]string{"github.token": "ghp_token"}
-			createSecret(pacSecretKey, pacSecretData)
+			pacSecretData := map[string]string{"password": "ghp_token"}
+			createSCMSecret(namespacePaCSecretKey, pacSecretData, corev1.SecretTypeBasicAuth, map[string]string{})
 
 			component1Key := resourcePacPrepKey
 			component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
@@ -521,8 +508,8 @@ var _ = Describe("Component initial build controller", func() {
 				return nil
 			}
 
-			pacSecretData := map[string]string{"github.token": "ghp_token"}
-			createSecret(pacSecretKey, pacSecretData)
+			pacSecretData := map[string]string{"password": "ghp_token"}
+			createSCMSecret(namespacePaCSecretKey, pacSecretData, corev1.SecretTypeBasicAuth, map[string]string{})
 
 			component1Key := resourcePacPrepKey
 			component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
@@ -796,7 +783,7 @@ var _ = Describe("Component initial build controller", func() {
 		_ = BeforeEach(func() {
 			createNamespace(pipelinesAsCodeNamespace)
 			createRoute(pacRouteKey, "pac-host")
-			createNamespace(buildServiceNamespaceName)
+			createNamespace(BuildServiceNamespaceName)
 
 			ResetTestGitProviderClient()
 		})
@@ -1046,8 +1033,8 @@ var _ = Describe("Component initial build controller", func() {
 				return nil
 			}
 
-			pacSecretData := map[string]string{"github.token": "ghp_token"}
-			createSecret(pacSecretKey, pacSecretData)
+			pacSecretData := map[string]string{"password": "ghp_token"}
+			createSCMSecret(namespacePaCSecretKey, pacSecretData, corev1.SecretTypeBasicAuth, map[string]string{})
 
 			createComponentAndProcessBuildRequest(resourceCleanupKey, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourceCleanupKey)
@@ -1072,8 +1059,8 @@ var _ = Describe("Component initial build controller", func() {
 				return fmt.Errorf("failed to delete webhook")
 			}
 
-			pacSecretData := map[string]string{"github.token": "ghp_token"}
-			createSecret(pacSecretKey, pacSecretData)
+			pacSecretData := map[string]string{"password": "ghp_token"}
+			createSCMSecret(namespacePaCSecretKey, pacSecretData, corev1.SecretTypeBasicAuth, map[string]string{})
 
 			createComponentAndProcessBuildRequest(resourceCleanupKey, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourceCleanupKey)
@@ -1210,7 +1197,7 @@ var _ = Describe("Component initial build controller", func() {
 
 			createNamespace(pipelinesAsCodeNamespace)
 			createRoute(pacRouteKey, "pac-host")
-			createNamespace(buildServiceNamespaceName)
+			createNamespace(BuildServiceNamespaceName)
 			ResetTestGitProviderClient()
 
 			pacSecretData := map[string]string{
@@ -1302,7 +1289,7 @@ var _ = Describe("Component initial build controller", func() {
 		var resouceSimpleBuildKey = types.NamespacedName{Name: HASCompName + "-simple", Namespace: HASAppNamespace}
 
 		_ = BeforeEach(func() {
-			createNamespace(buildServiceNamespaceName)
+			createNamespace(BuildServiceNamespaceName)
 			ResetTestGitProviderClient()
 
 			pacSecretData := map[string]string{
@@ -1685,7 +1672,7 @@ var _ = Describe("Component initial build controller", func() {
 		var resourceResBundleKey = types.NamespacedName{Name: HASCompName + "-resolvebundle", Namespace: HASAppNamespace}
 
 		BeforeEach(func() {
-			createNamespace(buildServiceNamespaceName)
+			createNamespace(BuildServiceNamespaceName)
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",
 				"github-private-key":    githubAppPrivateKey,
@@ -1855,7 +1842,7 @@ var _ = Describe("Component initial build controller", func() {
 			selectors := &buildappstudiov1alpha1.BuildPipelineSelector{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      buildPipelineSelectorResourceName,
-					Namespace: buildServiceNamespaceName,
+					Namespace: BuildServiceNamespaceName,
 				},
 				Spec: buildappstudiov1alpha1.BuildPipelineSelectorSpec{
 					Selectors: []buildappstudiov1alpha1.PipelineSelector{
@@ -2063,7 +2050,7 @@ var _ = Describe("Component initial build controller", func() {
 		_ = BeforeEach(func() {
 			createNamespace(pipelinesAsCodeNamespace)
 			createRoute(pacRouteKey, "pac-host")
-			createNamespace(buildServiceNamespaceName)
+			createNamespace(BuildServiceNamespaceName)
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",
 				"github-private-key":    githubAppPrivateKey,

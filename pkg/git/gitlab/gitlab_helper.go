@@ -206,7 +206,7 @@ func (g *GitlabClient) filesExistInDirectory(projectPath, branchName, directoryP
 }
 
 func (g *GitlabClient) commitFilesIntoBranch(projectPath, branchName, commitMessage, authorName, authorEmail string, files []gp.RepositoryFile) error {
-	actions := []*gitlab.CommitActionOptions{}
+	var actions []*gitlab.CommitActionOptions
 	for _, file := range files {
 		filePath := file.FullPath
 		content := string(file.Content)

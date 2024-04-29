@@ -147,6 +147,28 @@ var _ = Describe("Component nudge controller", func() {
 			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 
 		})
+
+		It("Test finalizer removed if component deleted", func() {
+			createBuildPipelineRun("test-pipeline-2", UserNamespace, BaseComponent)
+			Eventually(func() bool {
+				pr := getPipelineRun("test-pipeline-2", UserNamespace)
+				return controllerutil.ContainsFinalizer(pr, NudgeFinalizer)
+			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
+
+			componentList := applicationapi.ComponentList{}
+			err := k8sClient.List(context.TODO(), &componentList)
+			Expect(err).ToNot(HaveOccurred())
+			for i := range componentList.Items {
+				err = k8sClient.Delete(context.TODO(), &componentList.Items[i])
+				Expect(err).ToNot(HaveOccurred())
+			}
+			// Deleting the components prunes the PipelineRuns
+
+			Eventually(func() bool {
+				pr := getPipelineRun("test-pipeline-2", UserNamespace)
+				return pr == nil
+			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
+		})
 	})
 
 	Context("Test build nudges component", func() {
@@ -383,7 +405,7 @@ func createBuildPipelineRun(name string, namespace string, component string) *te
 	}
 	run := tektonapi.PipelineRun{}
 	run.Labels = map[string]string{ComponentNameLabelName: component, PipelineRunTypeLabelName: PipelineRunBuildType}
-	run.Annotations = map[string]string{PacEventTypeAnnotationName: PacEventPushType}
+	run.Annotations = map[string]string{PacEventTypeAnnotationName: PacEventPushType, NudgeFilesAnnotationName: ".*Dockerfile.*, .*.yaml, .*Containerfile.*"}
 	run.Namespace = namespace
 	run.Name = name
 	run.Spec.PipelineSpec = pipelineSpec

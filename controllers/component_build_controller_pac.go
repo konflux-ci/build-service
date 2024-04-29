@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -32,22 +33,22 @@ import (
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	routev1 "github.com/openshift/api/route/v1"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
-	"github.com/redhat-appstudio/application-service/gitops"
-	gitopsprepare "github.com/redhat-appstudio/application-service/gitops/prepare"
-	"github.com/redhat-appstudio/application-service/pkg/devfile"
+	devfile "github.com/redhat-appstudio/application-service/cdq-analysis/pkg"
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
+	. "github.com/redhat-appstudio/build-service/pkg/common"
+	"github.com/redhat-appstudio/build-service/pkg/git"
 	gp "github.com/redhat-appstudio/build-service/pkg/git/gitprovider"
 	"github.com/redhat-appstudio/build-service/pkg/git/gitproviderfactory"
 	l "github.com/redhat-appstudio/build-service/pkg/logs"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	tektonapi_v1beta1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	oci "github.com/tektoncd/pipeline/pkg/remote/oci"
-	"golang.org/x/exp/slices"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/strings/slices"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
@@ -55,16 +56,17 @@ import (
 )
 
 const (
-	PipelineRunOnPRExpirationEnvVar  = "IMAGE_TAG_ON_PR_EXPIRATION"
-	PipelineRunOnPRExpirationDefault = "5d"
-	pipelineRunOnPushSuffix          = "-on-push"
-	pipelineRunOnPRSuffix            = "-on-pull-request"
-	pipelineRunOnPushFilename        = "push.yaml"
-	pipelineRunOnPRFilename          = "pull-request.yaml"
-	pipelinesAsCodeNamespace         = "openshift-pipelines"
-	pipelinesAsCodeNamespaceFallback = "pipelines-as-code"
-	pipelinesAsCodeRouteName         = "pipelines-as-code-controller"
-	pipelinesAsCodeRouteEnvVar       = "PAC_WEBHOOK_URL"
+	PipelineRunOnPRExpirationEnvVar   = "IMAGE_TAG_ON_PR_EXPIRATION"
+	PipelineRunOnPRExpirationDefault  = "5d"
+	pipelineRunOnPushSuffix           = "-on-push"
+	pipelineRunOnPRSuffix             = "-on-pull-request"
+	pipelineRunOnPushFilename         = "push.yaml"
+	pipelineRunOnPRFilename           = "pull-request.yaml"
+	pipelinesAsCodeNamespace          = "openshift-pipelines"
+	pipelinesAsCodeNamespaceFallback  = "pipelines-as-code"
+	pipelinesAsCodeRouteName          = "pipelines-as-code-controller"
+	pipelinesAsCodeRouteEnvVar        = "PAC_WEBHOOK_URL"
+	pipelinesAsCodeWebhooksSecretName = "pipelines-as-code-webhooks-secret"
 
 	pacCelExpressionAnnotationName = "pipelinesascode.tekton.dev/on-cel-expression"
 	pacIncomingSecretNameSuffix    = "-incoming"
@@ -84,6 +86,10 @@ For more detailed information about running a PipelineRun, please refer to Pipel
 
 To customize the proposed PipelineRuns after merge, please refer to [Build Pipeline customization](https://redhat-appstudio.github.io/docs.appstudio.io/Documentation/main/how-to-guides/configuring-builds/proc_customize_build_pipeline/)
 `
+
+	// Annotation that specifies git provider id for self hosted SCM instances, e.g. github or gitlab.
+	GitProviderAnnotationName = "git-provider"
+	GitProviderAnnotationURL  = "git-provider-url"
 )
 
 // That way it can be mocked in tests
@@ -98,19 +104,31 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context,
 
 	log.Info("Starting Pipelines as Code provision for the Component")
 
-	gitProvider, err := gitops.GetGitProvider(*component)
+	gitProvider, err := getGitProvider(*component)
 	if err != nil {
 		// Do not reconcile, because configuration must be fixed before it is possible to proceed.
 		return "", boerrors.NewBuildOpError(boerrors.EUnknownGitProvider,
 			fmt.Errorf("error detecting git provider: %w", err))
 	}
 
-	pacSecret, err := r.ensurePaCSecret(ctx, component, gitProvider)
+	if strings.HasPrefix(component.Spec.Source.GitSource.URL, "http:") {
+		return "", boerrors.NewBuildOpError(boerrors.EHttpUsedForRepository,
+			fmt.Errorf("Git repository URL can't use insecure HTTP: %s", component.Spec.Source.GitSource.URL))
+	}
+
+	if url, ok := component.Annotations[GitProviderAnnotationURL]; ok {
+		if strings.HasPrefix(url, "http:") {
+			return "", boerrors.NewBuildOpError(boerrors.EHttpUsedForRepository,
+				fmt.Errorf("Git repository URL in annotation %s can't use insecure HTTP: %s", GitProviderAnnotationURL, component.Spec.Source.GitSource.URL))
+		}
+	}
+
+	pacSecret, err := r.lookupPaCSecret(ctx, component, gitProvider)
 	if err != nil {
 		return "", err
 	}
 
-	if err := validatePaCConfiguration(gitProvider, pacSecret.Data); err != nil {
+	if err := validatePaCConfiguration(gitProvider, *pacSecret); err != nil {
 		r.EventRecorder.Event(pacSecret, "Warning", "ErrorValidatingPaCSecret", err.Error())
 		// Do not reconcile, because configuration must be fixed before it is possible to proceed.
 		return "", boerrors.NewBuildOpError(boerrors.EPaCSecretInvalid,
@@ -118,7 +136,7 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context,
 	}
 
 	var webhookSecretString, webhookTargetUrl string
-	if !gitops.IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
+	if !IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
 		// Generate webhook secret for the component git repository if not yet generated
 		// and stores it in the corresponding k8s secret.
 		webhookSecretString, err = r.ensureWebhookSecret(ctx, component)
@@ -127,7 +145,7 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context,
 		}
 
 		// Obtain Pipelines as Code callback URL
-		webhookTargetUrl, err = r.getPaCWebhookTargetUrl(ctx)
+		webhookTargetUrl, err = r.getPaCWebhookTargetUrl(ctx, component.Spec.Source.GitSource.URL)
 		if err != nil {
 			return "", err
 		}
@@ -233,14 +251,14 @@ func (r *ComponentBuildReconciler) TriggerPaCBuild(ctx context.Context, componen
 	}
 
 	repoUrl := component.Spec.Source.GitSource.URL
-	gitProvider, err := gitops.GetGitProvider(*component)
+	gitProvider, err := getGitProvider(*component)
 	if err != nil {
 		log.Error(err, "error detecting git provider")
 		// There is no point to continue if git provider is not known.
 		return false, boerrors.NewBuildOpError(boerrors.EUnknownGitProvider, err)
 	}
 
-	pacSecret, err := r.ensurePaCSecret(ctx, component, gitProvider)
+	pacSecret, err := r.lookupPaCSecret(ctx, component, gitProvider)
 	if err != nil {
 		return false, err
 	}
@@ -281,7 +299,7 @@ func (r *ComponentBuildReconciler) TriggerPaCBuild(ctx context.Context, componen
 		return true, nil
 	}
 
-	webhookTargetUrl, err := r.getPaCWebhookTargetUrl(ctx)
+	webhookTargetUrl, err := r.getPaCWebhookTargetUrl(ctx, component.Spec.Source.GitSource.URL)
 	if err != nil {
 		return false, err
 	}
@@ -414,23 +432,23 @@ func (r *ComponentBuildReconciler) UndoPaCProvisionForComponent(ctx context.Cont
 
 	log.Info("Starting Pipelines as Code unprovision for the Component")
 
-	gitProvider, err := gitops.GetGitProvider(*component)
+	gitProvider, err := getGitProvider(*component)
 	if err != nil {
 		log.Error(err, "error detecting git provider")
 		// There is no point to continue if git provider is not known.
 		return "", boerrors.NewBuildOpError(boerrors.EUnknownGitProvider, err)
 	}
 
-	pacSecret := corev1.Secret{}
-	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: buildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}, &pacSecret); err != nil {
+	pacSecret, err := r.lookupPaCSecret(ctx, component, gitProvider)
+	if err != nil {
 		log.Error(err, "error getting git provider credentials secret", l.Action, l.ActionView)
 		// Cannot continue without accessing git provider credentials.
 		return "", boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, err)
 	}
 
 	webhookTargetUrl := ""
-	if !gitops.IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
-		webhookTargetUrl, err = r.getPaCWebhookTargetUrl(ctx)
+	if !IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
+		webhookTargetUrl, err = r.getPaCWebhookTargetUrl(ctx, component.Spec.Source.GitSource.URL)
 		if err != nil {
 			// Just log the error and continue with pruning merge request creation
 			log.Error(err, "failed to get Pipelines as Code webhook target URL. Webhook will not be deleted.", l.Action, l.ActionView, l.Audit, "true")
@@ -462,67 +480,68 @@ func (r *ComponentBuildReconciler) UndoPaCProvisionForComponent(ctx context.Cont
 	return mrUrl, nil
 }
 
-func (r *ComponentBuildReconciler) ensurePaCSecret(ctx context.Context, component *appstudiov1alpha1.Component, gitProvider string) (*corev1.Secret, error) {
-	// Expected that the secret contains token for Pipelines as Code webhook configuration,
-	// but under <git-provider>.token field. For example: github.token
-	// Also it can contain github-private-key and github-application-id
-	// in case GitHub Application is used instead of webhook.
-	pacSecret := corev1.Secret{}
-	pacSecretKey := types.NamespacedName{Namespace: component.Namespace, Name: gitopsprepare.PipelinesAsCodeSecretName}
-	if err := r.Client.Get(ctx, pacSecretKey, &pacSecret); err != nil {
-		if !errors.IsNotFound(err) {
-			r.EventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
-			return nil, fmt.Errorf("failed to get Pipelines as Code secret in %s namespace: %w", component.Namespace, err)
-		}
+func (r *ComponentBuildReconciler) lookupPaCSecret(ctx context.Context, component *appstudiov1alpha1.Component, gitProvider string) (*corev1.Secret, error) {
+	log := ctrllog.FromContext(ctx)
 
-		// Fallback to the global configuration
-		globalPaCSecretKey := types.NamespacedName{Namespace: buildServiceNamespaceName, Name: gitopsprepare.PipelinesAsCodeSecretName}
-		if err := r.Client.Get(ctx, globalPaCSecretKey, &pacSecret); err != nil {
-			if !errors.IsNotFound(err) {
-				r.EventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
-				return nil, fmt.Errorf("failed to get Pipelines as Code secret in %s namespace: %w", globalPaCSecretKey.Namespace, err)
-			}
-
-			r.EventRecorder.Event(&pacSecret, "Warning", "PaCSecretNotFound", err.Error())
-			// Do not trigger a new reconcile. The PaC secret must be created first.
-			return nil, boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound,
-				fmt.Errorf(" Pipelines as Code secret not found in %s namespace nor in %s", pacSecretKey.Namespace, globalPaCSecretKey.Namespace))
-		}
-
-		if !gitops.IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
-			// Webhook is used. We need to reference access token in the component namespace.
-			// Copy global PaC configuration in component namespace
-			localPaCSecret := &corev1.Secret{
-				TypeMeta: pacSecret.TypeMeta,
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      pacSecretKey.Name,
-					Namespace: pacSecretKey.Namespace,
-					Labels: map[string]string{
-						PartOfLabelName: PartOfAppStudioLabelValue,
-					},
-				},
-				Data: pacSecret.Data,
-			}
-			if err := r.Client.Create(ctx, localPaCSecret); err != nil {
-				return nil, fmt.Errorf("failed to create local PaC configuration secret: %w", err)
-			}
-		}
+	scmComponent, err := git.NewScmComponent(gitProvider, component.Spec.Source.GitSource.URL, component.Spec.Source.GitSource.Revision, component.Name, component.Namespace)
+	if err != nil {
+		return nil, err
+	}
+	// find the best matching secret, starting from SSH type
+	secret, err := r.CredentialProvider.LookupSecret(ctx, scmComponent, corev1.SecretTypeSSHAuth)
+	if err != nil && !boerrors.IsBuildOpError(err, boerrors.EComponentGitSecretMissing) {
+		log.Error(err, "failed to get Pipelines as Code SSH secret", "scmComponent", scmComponent)
+		return nil, err
+	}
+	if secret != nil {
+		return secret, nil
+	}
+	// find the best matching secret, starting from BasicAuth type
+	secret, err = r.CredentialProvider.LookupSecret(ctx, scmComponent, corev1.SecretTypeBasicAuth)
+	if err != nil && !boerrors.IsBuildOpError(err, boerrors.EComponentGitSecretMissing) {
+		log.Error(err, "failed to get Pipelines as Code BasicAuth secret", "scmComponent", scmComponent)
+		return nil, err
+	}
+	if secret != nil {
+		return secret, nil
 	}
 
-	return &pacSecret, nil
+	// No SCM secrets found in the component namespace, fall back to the global configuration
+	if gitProvider == "github" {
+		return r.lookupGHAppSecret(ctx)
+	} else {
+		return nil, boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, fmt.Errorf("no matching Pipelines as Code secrets found in %s namespace", component.Namespace))
+	}
+
+}
+
+func (r *ComponentBuildReconciler) lookupGHAppSecret(ctx context.Context) (*corev1.Secret, error) {
+	pacSecret := &corev1.Secret{}
+	globalPaCSecretKey := types.NamespacedName{Namespace: BuildServiceNamespaceName, Name: PipelinesAsCodeGitHubAppSecretName}
+	if err := r.Client.Get(ctx, globalPaCSecretKey, pacSecret); err != nil {
+		if !errors.IsNotFound(err) {
+			r.EventRecorder.Event(pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
+			return nil, fmt.Errorf("failed to get Pipelines as Code secret in %s namespace: %w", globalPaCSecretKey.Namespace, err)
+		}
+
+		r.EventRecorder.Event(pacSecret, "Warning", "PaCSecretNotFound", err.Error())
+		// Do not trigger a new reconcile. The PaC secret must be created first.
+		return nil, boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, fmt.Errorf(" Pipelines as Code secret not found in %s ", globalPaCSecretKey.Namespace))
+	}
+	return pacSecret, nil
 }
 
 // Returns webhook secret for given component.
-// Generates the webhook secret and saves it the k8s secret if doesn't exist.
+// Generates the webhook secret and saves it in the k8s secret if it doesn't exist.
 func (r *ComponentBuildReconciler) ensureWebhookSecret(ctx context.Context, component *appstudiov1alpha1.Component) (string, error) {
 	log := ctrllog.FromContext(ctx)
 
 	webhookSecretsSecret := &corev1.Secret{}
-	if err := r.Client.Get(ctx, types.NamespacedName{Name: gitops.PipelinesAsCodeWebhooksSecretName, Namespace: component.GetNamespace()}, webhookSecretsSecret); err != nil {
+	if err := r.Client.Get(ctx, types.NamespacedName{Name: pipelinesAsCodeWebhooksSecretName, Namespace: component.GetNamespace()}, webhookSecretsSecret); err != nil {
 		if errors.IsNotFound(err) {
 			webhookSecretsSecret = &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      gitops.PipelinesAsCodeWebhooksSecretName,
+					Name:      pipelinesAsCodeWebhooksSecretName,
 					Namespace: component.GetNamespace(),
 					Labels: map[string]string{
 						PartOfLabelName: PartOfAppStudioLabelValue,
@@ -540,7 +559,7 @@ func (r *ComponentBuildReconciler) ensureWebhookSecret(ctx context.Context, comp
 		return "", err
 	}
 
-	componentWebhookSecretKey := gitops.GetWebhookSecretKeyForComponent(*component)
+	componentWebhookSecretKey := getWebhookSecretKeyForComponent(*component)
 	if _, exists := webhookSecretsSecret.Data[componentWebhookSecretKey]; exists {
 		// The webhook secret already exists. Use single secret for the same repository.
 		return string(webhookSecretsSecret.Data[componentWebhookSecretKey]), nil
@@ -560,6 +579,13 @@ func (r *ComponentBuildReconciler) ensureWebhookSecret(ctx context.Context, comp
 	return webhookSecretString, nil
 }
 
+func getWebhookSecretKeyForComponent(component appstudiov1alpha1.Component) string {
+	gitRepoUrl := strings.TrimSuffix(component.Spec.Source.GitSource.URL, ".git")
+
+	notAllowedCharRegex, _ := regexp.Compile("[^-._a-zA-Z0-9]{1}")
+	return notAllowedCharRegex.ReplaceAllString(gitRepoUrl, "_")
+}
+
 // generatePaCWebhookSecretString generates string alike openssl rand -hex 20
 func generatePaCWebhookSecretString() string {
 	length := 20 // in bytes
@@ -571,8 +597,13 @@ func generatePaCWebhookSecretString() string {
 }
 
 // getPaCWebhookTargetUrl returns URL to which events from git repository should be sent.
-func (r *ComponentBuildReconciler) getPaCWebhookTargetUrl(ctx context.Context) (string, error) {
+func (r *ComponentBuildReconciler) getPaCWebhookTargetUrl(ctx context.Context, repositoryURL string) (string, error) {
 	webhookTargetUrl := os.Getenv(pipelinesAsCodeRouteEnvVar)
+
+	if webhookTargetUrl == "" {
+		webhookTargetUrl = r.WebhookURLLoader.Load(repositoryURL)
+	}
+
 	if webhookTargetUrl == "" {
 		// The env variable is not set
 		// Use the installed on the cluster Pipelines as Code
@@ -609,63 +640,44 @@ func (r *ComponentBuildReconciler) getPaCRoutePublicUrl(ctx context.Context) (st
 }
 
 // validatePaCConfiguration detects checks that all required fields is set for whatever method is used.
-func validatePaCConfiguration(gitProvider string, config map[string][]byte) error {
-	isApp := gitops.IsPaCApplicationConfigured(gitProvider, config)
-
-	expectedPaCWebhookConfigFields := []string{gitops.GetProviderTokenKey(gitProvider)}
-
-	var err error
-	switch gitProvider {
-	case "github":
-		if isApp {
+func validatePaCConfiguration(gitProvider string, pacSecret corev1.Secret) error {
+	if IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
+		if gitProvider == "github" {
 			// GitHub application
-
-			err = checkMandatoryFieldsNotEmpty(config, []string{gitops.PipelinesAsCode_githubAppIdKey, gitops.PipelinesAsCode_githubPrivateKey})
+			err := checkMandatoryFieldsNotEmpty(pacSecret.Data, []string{PipelinesAsCodeGithubAppIdKey, PipelinesAsCodeGithubPrivateKey})
 			if err != nil {
-				break
+				return err
 			}
 
 			// validate content of the fields
-			if _, e := strconv.ParseInt(string(config[gitops.PipelinesAsCode_githubAppIdKey]), 10, 64); e != nil {
-				err = fmt.Errorf(" Pipelines as Code: failed to parse GitHub application ID. Cause: %w", e)
-				break
+			if _, e := strconv.ParseInt(string(pacSecret.Data[PipelinesAsCodeGithubAppIdKey]), 10, 64); e != nil {
+				return fmt.Errorf(" Pipelines as Code: failed to parse GitHub application ID. Cause: %w", e)
 			}
 
-			privateKey := strings.TrimSpace(string(config[gitops.PipelinesAsCode_githubPrivateKey]))
+			privateKey := strings.TrimSpace(string(pacSecret.Data[PipelinesAsCodeGithubPrivateKey]))
 			if !strings.HasPrefix(privateKey, "-----BEGIN RSA PRIVATE KEY-----") ||
 				!strings.HasSuffix(privateKey, "-----END RSA PRIVATE KEY-----") {
-				err = fmt.Errorf(" Pipelines as Code secret: GitHub application private key is invalid")
-				break
+				return fmt.Errorf(" Pipelines as Code secret: GitHub application private key is invalid")
 			}
-		} else {
-			// webhook
-			err = checkMandatoryFieldsNotEmpty(config, expectedPaCWebhookConfigFields)
+			return nil
 		}
-
-	case "gitlab":
-		err = checkMandatoryFieldsNotEmpty(config, expectedPaCWebhookConfigFields)
-
-	case "bitbucket":
-		err = checkMandatoryFieldsNotEmpty(config, []string{gitops.GetProviderTokenKey(gitProvider)})
-		if err != nil {
-			break
-		}
-
-		if len(config["username"]) == 0 {
-			err = fmt.Errorf(" Pipelines as Code secret: name of the user field must be configured")
-		}
-
-	default:
-		err = fmt.Errorf("unsupported git provider: %s", gitProvider)
+		return fmt.Errorf(fmt.Sprintf("There is no applications for %s", gitProvider))
 	}
 
-	return err
+	switch pacSecret.Type {
+	case corev1.SecretTypeSSHAuth:
+		return checkMandatoryFieldsNotEmpty(pacSecret.Data, []string{"ssh-privatekey"})
+	case corev1.SecretTypeBasicAuth, corev1.SecretTypeOpaque:
+		return checkMandatoryFieldsNotEmpty(pacSecret.Data, []string{"password"})
+	default:
+		return fmt.Errorf("git secret: unsupported secret type: %s", pacSecret.Type)
+	}
 }
 
 func checkMandatoryFieldsNotEmpty(config map[string][]byte, mandatoryFields []string) error {
 	for _, field := range mandatoryFields {
 		if len(config[field]) == 0 {
-			return fmt.Errorf(" Pipelines as Code secret: %s field is not configured", field)
+			return fmt.Errorf("git secret: %s field is not configured", field)
 		}
 	}
 	return nil
@@ -743,7 +755,7 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 	}
 
 	// This is the first Component that does PaC provision for the git repository
-	repository, err = gitops.GeneratePACRepository(*component, pacConfig)
+	repository, err = generatePACRepository(*component, pacConfig)
 	if err != nil {
 		return err
 	}
@@ -770,11 +782,20 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 					log.Info("An attempt to create second PaC Repository for the same git repository", "GitRepository", repository.Spec.URL, l.Action, l.ActionAdd, l.Audit, "true")
 					return boerrors.NewBuildOpError(boerrors.EPaCDuplicateRepository, err)
 				}
+
+				if strings.Contains(err.Error(), "denied the request: failed to validate url error") {
+					// PaC admission webhook denied creation of the PaC repository,
+					// because PaC repository object that references not allowed repository url.
+
+					log.Info("An attempt to create PaC Repository for not allowed repository url", "GitRepository", repository.Spec.URL, l.Action, l.ActionAdd, l.Audit, "true")
+					return boerrors.NewBuildOpError(boerrors.EPaCNotAllowedRepositoryUrl, err)
+				}
+
 				log.Error(err, "failed to create Component PaC repository object", l.Action, l.ActionAdd)
 				return err
-			} else {
-				log.Info("Created PaC Repository object for the component")
 			}
+			log.Info("Created PaC Repository object for the component")
+
 		} else {
 			log.Error(err, "failed to get Component PaC repository object", l.Action, l.ActionView)
 			return err
@@ -802,6 +823,64 @@ func (r *ComponentBuildReconciler) findPaCRepositoryForComponent(ctx context.Con
 		}
 	}
 	return nil, nil
+}
+
+// generatePACRepository creates configuration of Pipelines as Code repository object.
+func generatePACRepository(component appstudiov1alpha1.Component, config map[string][]byte) (*pacv1alpha1.Repository, error) {
+	gitProvider, err := getGitProvider(component)
+	if err != nil {
+		return nil, err
+	}
+
+	isAppUsed := IsPaCApplicationConfigured(gitProvider, config)
+
+	var gitProviderConfig *pacv1alpha1.GitProvider = nil
+	if !isAppUsed {
+		// Webhook is used
+		gitProviderConfig = &pacv1alpha1.GitProvider{
+			Secret: &pacv1alpha1.Secret{
+				Name: PipelinesAsCodeGitHubAppSecretName,
+				Key:  "password", // basic-auth secret type expected
+			},
+			WebhookSecret: &pacv1alpha1.Secret{
+				Name: pipelinesAsCodeWebhooksSecretName,
+				Key:  getWebhookSecretKeyForComponent(component),
+			},
+		}
+
+		if gitProvider == "gitlab" {
+			if providerUrl, configured := component.Annotations[GitProviderAnnotationURL]; configured {
+				gitProviderConfig.URL = providerUrl
+			} else {
+				// Assume gitlab.com
+				gitProviderConfig.URL = "https://gitlab.com"
+			}
+		}
+	}
+
+	if url, ok := component.Annotations[GitProviderAnnotationURL]; ok {
+		if gitProviderConfig == nil {
+			gitProviderConfig = &pacv1alpha1.GitProvider{}
+		}
+		gitProviderConfig.URL = url
+	}
+
+	repository := &pacv1alpha1.Repository{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Repository",
+			APIVersion: "pipelinesascode.tekton.dev/v1alpha1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      component.Name,
+			Namespace: component.Namespace,
+		},
+		Spec: pacv1alpha1.RepositorySpec{
+			URL:         strings.TrimSuffix(strings.TrimSuffix(component.Spec.Source.GitSource.URL, ".git"), "/"),
+			GitProvider: gitProviderConfig,
+		},
+	}
+
+	return repository, nil
 }
 
 // generatePaCPipelineRunConfigs generates PipelineRun YAML configs for given component.
@@ -861,7 +940,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 	log := ctrllog.FromContext(ctx).WithValues("repository", component.Spec.Source.GitSource.URL)
 	ctx = ctrllog.IntoContext(ctx, log)
 
-	gitProvider, _ := gitops.GetGitProvider(*component)
+	gitProvider, _ := getGitProvider(*component)
 	repoUrl := component.Spec.Source.GitSource.URL
 
 	gitClient, err := gitproviderfactory.CreateGitClient(gitproviderfactory.GitClientConfig{
@@ -901,7 +980,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 		},
 	}
 
-	isAppUsed := gitops.IsPaCApplicationConfigured(gitProvider, pacConfig)
+	isAppUsed := IsPaCApplicationConfigured(gitProvider, pacConfig)
 	if isAppUsed {
 		// Customize PR data to reflect git application name
 		if appName, appSlug, err := gitClient.GetConfiguredGitAppName(); err == nil {
@@ -936,7 +1015,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Context, component *appstudiov1alpha1.Component, pacConfig map[string][]byte, webhookTargetUrl string) (baseBranch string, prUrl string, action string, err error) {
 	log := ctrllog.FromContext(ctx)
 
-	gitProvider, _ := gitops.GetGitProvider(*component)
+	gitProvider, _ := getGitProvider(*component)
 	repoUrl := component.Spec.Source.GitSource.URL
 
 	gitClient, err := gitproviderfactory.CreateGitClient(gitproviderfactory.GitClientConfig{
@@ -949,7 +1028,7 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 		return "", "", "", err
 	}
 
-	isAppUsed := gitops.IsPaCApplicationConfigured(gitProvider, pacConfig)
+	isAppUsed := IsPaCApplicationConfigured(gitProvider, pacConfig)
 	if !isAppUsed {
 		if webhookTargetUrl != "" {
 			err = gitClient.DeletePaCWebhook(repoUrl, webhookTargetUrl)
@@ -984,6 +1063,17 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 		return baseBranch, "", "", err
 	}
 
+	action_done := "close"
+	// Close merge request.
+	// To close a merge request it's enough to delete the branch.
+
+	// Non-existing source branch should not be an error, just ignore it,
+	// but other errors should be handled.
+	if _, err := gitClient.DeleteBranch(repoUrl, sourceBranch); err != nil {
+		return baseBranch, prUrl, action_done, err
+	}
+	log.Info(fmt.Sprintf("PaC configuration proposal branch %s is deleted", sourceBranch), l.Action, l.ActionDelete)
+
 	if mergeRequest == nil {
 		// Create new PaC configuration clean up merge request
 		mrData = &gp.MergeRequestData{
@@ -1014,20 +1104,11 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 			}
 		}
 
+		action_done = "delete"
 		prUrl, err = gitClient.UndoPaCMergeRequest(repoUrl, mrData)
-		return baseBranch, prUrl, "delete", err
-	} else {
-		// Close merge request.
-		// To close a merge request it's enough to delete the branch.
-
-		// Non-existing source branch should not be an error, just ignore it,
-		// but other errors should be handled.
-		if _, err := gitClient.DeleteBranch(repoUrl, sourceBranch); err != nil {
-			return baseBranch, "", "", err
-		}
-		log.Info(fmt.Sprintf("pull request source branch %s is deleted", sourceBranch), l.Action, l.ActionDelete)
-		return baseBranch, prUrl, "close", nil
 	}
+
+	return baseBranch, prUrl, action_done, err
 }
 
 // generatePaCPipelineRunForComponent returns pipeline run definition to build component source with.
