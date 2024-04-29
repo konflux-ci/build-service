@@ -67,7 +67,7 @@ func (j *JobCoordinator) Execute(ctx context.Context, tasks []*Task) error {
 
 	timestamp := time.Now().Unix()
 	name := fmt.Sprintf("renovate-job-%d-%s", timestamp, RandomString(5))
-	log.V(logs.DebugLevel).Info(fmt.Sprintf("Creating renovate job %s for %d unique sets of scm repositories", name, len(tasks)))
+	log.Info(fmt.Sprintf("Creating renovate job %s for %d unique sets of scm repositories", name, len(tasks)))
 
 	secretTokens := map[string]string{}
 	configMapData := map[string]string{}
@@ -82,7 +82,7 @@ func (j *JobCoordinator) Execute(ctx context.Context, tasks []*Task) error {
 		}
 		configMapData[fmt.Sprintf("%s.json", taskId)] = string(config)
 
-		log.V(logs.DebugLevel).Info(fmt.Sprintf("Creating renovate config map entry with length %d and value %s", len(config), config))
+		log.Info(fmt.Sprintf("Creating renovate config map entry with length %d and value %s", len(config), config))
 		renovateCmd = append(renovateCmd,
 			fmt.Sprintf("RENOVATE_TOKEN=$TOKEN_%s RENOVATE_CONFIG_FILE=/configs/%s.json renovate", taskId, taskId),
 		)

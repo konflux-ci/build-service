@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"reflect"
 
 	"time"
 
@@ -124,6 +125,7 @@ func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Re
 	var tasks []*renovate.Task
 	for _, taskProvider := range r.taskProviders {
 		newTasks := taskProvider.GetNewTasks(ctx, scmComponents)
+		log.Info("found new tasks", "tasks", len(newTasks), "provider", reflect.TypeOf(taskProvider).String())
 		if len(newTasks) > 0 {
 			tasks = append(tasks, newTasks...)
 		}

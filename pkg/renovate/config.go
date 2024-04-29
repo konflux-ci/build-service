@@ -27,6 +27,7 @@ type JobConfig struct {
 	Tekton              Tekton        `json:"tekton"`
 	ForkProcessing      string        `json:"forkProcessing"`
 	DependencyDashboard bool          `json:"dependencyDashboard"`
+	Endpoint            string        `json:"endpoint,omitempty"`
 }
 
 type Repository struct {
@@ -63,7 +64,8 @@ type PackageRule struct {
 	RebaseWhen           string   `json:"rebaseWhen,omitempty"`
 }
 
-func NewTektonJobConfig(platform, username, gitAuthor, renovatePattern string, repositories []*Repository) JobConfig {
+func NewTektonJobConfig(platform, endpoint, username, gitAuthor string, repositories []*Repository) JobConfig {
+	renovatePattern := GetRenovatePatternConfiguration()
 	return JobConfig{
 		Platform:        platform,
 		Username:        username,
@@ -71,6 +73,7 @@ func NewTektonJobConfig(platform, username, gitAuthor, renovatePattern string, r
 		Onboarding:      false,
 		RequireConfig:   "ignored",
 		EnabledManagers: []string{"tekton"},
+		Endpoint:        endpoint,
 		Repositories:    repositories,
 		Tekton: Tekton{FileMatch: []string{"\\.yaml$", "\\.yml$"}, IncludePaths: []string{".tekton/**"}, PackageRules: []PackageRule{DisableAllPackageRules, {
 			MatchPackagePatterns: []string{renovatePattern},

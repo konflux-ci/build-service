@@ -18,7 +18,6 @@ import (
 	. "github.com/redhat-appstudio/build-service/pkg/common"
 	"github.com/redhat-appstudio/build-service/pkg/git"
 	. "github.com/redhat-appstudio/build-service/pkg/git/credentials"
-	"github.com/redhat-appstudio/build-service/pkg/logs"
 	bslices "github.com/redhat-appstudio/build-service/pkg/slices"
 )
 
@@ -89,7 +88,7 @@ func (k *GitCredentialProvider) GetSSHCredentials(ctx context.Context, component
 func (k *GitCredentialProvider) LookupSecret(ctx context.Context, component *git.ScmComponent, secretType corev1.SecretType) (*corev1.Secret, error) {
 	log := ctrllog.FromContext(ctx)
 
-	log.V(logs.DebugLevel).Info("looking for scm secret", "component", component)
+	log.Info("looking for scm secret", "component", component)
 
 	secretList := &corev1.SecretList{}
 	opts := client.ListOption(&client.MatchingLabels{
@@ -100,7 +99,7 @@ func (k *GitCredentialProvider) LookupSecret(ctx context.Context, component *git
 	if err := k.client.List(ctx, secretList, client.InNamespace(component.NamespaceName()), opts); err != nil {
 		return nil, fmt.Errorf("failed to list Pipelines as Code secrets in %s namespace: %w", component.NamespaceName(), err)
 	}
-	log.V(logs.DebugLevel).Info("found secrets", "count", len(secretList.Items))
+	log.Info("found secrets", "count", len(secretList.Items))
 	secretsWithCredentialsCandidates := bslices.Filter(secretList.Items, func(secret corev1.Secret) bool {
 		return secret.Type == secretType && len(secret.Data) > 0
 	})
@@ -108,7 +107,7 @@ func (k *GitCredentialProvider) LookupSecret(ctx context.Context, component *git
 	if secretWithCredential != nil {
 		return secretWithCredential, nil
 	}
-	log.V(logs.DebugLevel).Info("no matching secret found for component", "component", component)
+	log.Info("no matching secret found for component", "component", component)
 	return nil, boerrors.NewBuildOpError(boerrors.EComponentGitSecretMissing, nil)
 }
 
@@ -128,24 +127,24 @@ func bestMatchingSecret(ctx context.Context, componentRepository string, secrets
 
 	for index, secret := range secrets {
 		repositoryAnnotation, exists := secret.Annotations[ScmSecretRepositoryAnnotation]
-		log.V(logs.DebugLevel).Info("found secret", "secret", secret.Name, "repositoryAnnotation", repositoryAnnotation, "exists", exists)
+		log.Info("found secret", "secret", secret.Name, "repositoryAnnotation", repositoryAnnotation, "exists", exists)
 		if !exists || repositoryAnnotation == "" {
 			hostOnlySecrets = append(hostOnlySecrets, secret)
 			continue
 		}
 		secretRepositories := strings.Split(repositoryAnnotation, ",")
-		log.V(logs.DebugLevel).Info("found secret repositories", "repositories", secretRepositories)
+		log.Info("found secret repositories", "repositories", secretRepositories)
 		//trim possible slashes at the beginning of the repository path
 		for i, repository := range secretRepositories {
 			secretRepositories[i] = strings.TrimPrefix(repository, "/")
 		}
 
 		// Direct repository match, return secret
-		log.V(logs.DebugLevel).Info("checking for direct match", "componentRepository", componentRepository, "secretRepositories", secretRepositories)
+		log.Info("checking for direct match", "componentRepository", componentRepository, "secretRepositories", secretRepositories)
 		if slices.Contains(secretRepositories, componentRepository) {
 			return &secret
 		}
-		log.V(logs.DebugLevel).Info("no direct match found", "componentRepository", componentRepository, "secretRepositories", secretRepositories)
+		log.Info("no direct match found", "componentRepository", componentRepository, "secretRepositories", secretRepositories)
 		// No direct match, check for wildcard match, i.e. org/repo/* matches org/repo/foo, org/repo/bar, etc.
 		componentRepoParts := strings.Split(componentRepository, "/")
 
@@ -160,14 +159,14 @@ func bestMatchingSecret(ctx context.Context, componentRepository string, secrets
 			}
 		}
 	}
-	log.V(logs.DebugLevel).Info("potential matches", "count", len(potentialMatches))
+	log.Info("potential matches", "count", len(potentialMatches))
 	if len(potentialMatches) == 0 {
 		if len(hostOnlySecrets) == 0 {
 			return nil // Nothing matched
 		}
 		return &hostOnlySecrets[0] // Return first host-only secret
 	}
-	log.V(logs.DebugLevel).Info("host only secrets", "count", len(hostOnlySecrets), "potentialMatches", potentialMatches)
+	log.Info("host only secrets", "count", len(hostOnlySecrets), "potentialMatches", potentialMatches)
 	// find the best matching secret
 	var bestIndex, bestCount int
 	for i, count := range potentialMatches {

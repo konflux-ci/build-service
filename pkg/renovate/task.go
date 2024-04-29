@@ -9,12 +9,12 @@ import (
 
 // Task represents a task to be executed by Renovate with credentials and repositories
 type Task struct {
-	Platform        string
-	Username        string
-	GitAuthor       string
-	RenovatePattern string
-	Token           string
-	Repositories    []*Repository
+	Platform     string
+	Username     string
+	GitAuthor    string
+	Token        string
+	Endpoint     string
+	Repositories []*Repository
 }
 
 // AddNewBranchToTheExistedRepositoryTasksOnTheSameHosts iterates over the tasks and adds a new branch to the repository if it already exists
@@ -58,5 +58,5 @@ type TaskProvider interface {
 }
 
 func (t *Task) JobConfig() JobConfig {
-	return NewTektonJobConfig(t.Platform, t.Username, t.GitAuthor, t.RenovatePattern, t.Repositories)
+	return NewTektonJobConfig(t.Platform, t.Endpoint, t.Username, t.GitAuthor, t.Repositories)
 }

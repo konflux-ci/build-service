@@ -9,7 +9,6 @@ import (
 	"github.com/redhat-appstudio/build-service/pkg/boerrors"
 	"github.com/redhat-appstudio/build-service/pkg/git"
 	"github.com/redhat-appstudio/build-service/pkg/git/credentials"
-	"github.com/redhat-appstudio/build-service/pkg/logs"
 )
 
 // BasicAuthTaskProvider is an implementation of the renovate.TaskProvider that creates the renovate.Task for the components
@@ -37,22 +36,23 @@ func (g BasicAuthTaskProvider) GetNewTasks(ctx context.Context, components []*gi
 	log := ctrllog.FromContext(ctx)
 	// Step 1
 	componentNamespaceMap := git.NamespaceToComponentMap(components)
-	log.V(logs.DebugLevel).Info("generating new renovate task in user's namespace for components", "count", len(components))
+	log.Info("generating new renovate task in user's namespace for components", "count", len(components))
 	var newTasks []*Task
 	for namespace, componentsInNamespace := range componentNamespaceMap {
-		log.V(logs.DebugLevel).Info("found components", "namespace", namespace, "count", len(componentsInNamespace))
+		log.Info("found components", "namespace", namespace, "count", len(componentsInNamespace))
 		// Step 2
 		platformToComponentMap := git.PlatformToComponentMap(componentsInNamespace)
-		log.V(logs.DebugLevel).Info("found git platform on namespace", "namespace", namespace, "count", len(platformToComponentMap))
+		log.Info("found git platform on namespace", "namespace", namespace, "count", len(platformToComponentMap))
 		for platform, componentsOnPlatform := range platformToComponentMap {
-			log.V(logs.DebugLevel).Info("processing components on platform", "platform", platform, "count", len(componentsOnPlatform))
+			log.Info("processing components on platform", "platform", platform, "count", len(componentsOnPlatform))
 			// Step 3
 			hostToComponentsMap := git.HostToComponentMap(componentsOnPlatform)
-			log.V(logs.DebugLevel).Info("found hosts on platform", "namespace", namespace, "platform", platform, "count", len(hostToComponentsMap))
+			log.Info("found hosts on platform", "namespace", namespace, "platform", platform, "count", len(hostToComponentsMap))
 			// Step 4
 			var tasksOnHost []*Task
 			for host, componentsOnHost := range hostToComponentsMap {
-				log.V(logs.DebugLevel).Info("processing components on host", "namespace", namespace, "platform", platform, "host", host, "count", len(componentsOnHost))
+				endpoint := git.BuildAPIEndpoint(platform).APIEndpoint(host)
+				log.Info("processing components on host", "namespace", namespace, "platform", platform, "host", host, "endpoint", endpoint, "count", len(componentsOnHost))
 				for _, component := range componentsOnHost {
 					// Step 5
 					if !AddNewBranchToTheExistedRepositoryTasksOnTheSameHosts(tasksOnHost, component) {
@@ -66,7 +66,7 @@ func (g BasicAuthTaskProvider) GetNewTasks(ctx context.Context, components []*gi
 						// Step 6
 						if !AddNewRepoToTasksOnTheSameHostsWithSameCredentials(tasksOnHost, component, creds) {
 							// Step 7
-							tasksOnHost = append(tasksOnHost, NewBasicAuthTask(platform, host, creds, []*Repository{
+							tasksOnHost = append(tasksOnHost, NewBasicAuthTask(platform, host, endpoint, creds, []*Repository{
 								{
 									Repository:   component.Repository(),
 									BaseBranches: []string{component.Branch()},
@@ -81,17 +81,17 @@ func (g BasicAuthTaskProvider) GetNewTasks(ctx context.Context, components []*gi
 		}
 
 	}
-	log.V(logs.DebugLevel).Info("generated new renovate tasks", "count", len(newTasks))
+	log.Info("generated new renovate tasks", "count", len(newTasks))
 	return newTasks
 }
 
-func NewBasicAuthTask(platform string, host string, credentials *credentials.BasicAuthCredentials, repositories []*Repository) *Task {
+func NewBasicAuthTask(platform, host, endpoint string, credentials *credentials.BasicAuthCredentials, repositories []*Repository) *Task {
 	return &Task{
-		Platform:        platform,
-		Username:        credentials.Username,
-		GitAuthor:       fmt.Sprintf("%s <123456+%s[bot]@users.noreply.%s>", credentials.Username, credentials.Username, host),
-		RenovatePattern: GetRenovatePatternConfiguration(),
-		Token:           credentials.Password,
-		Repositories:    repositories,
+		Platform:     platform,
+		Username:     credentials.Username,
+		GitAuthor:    fmt.Sprintf("%s <123456+%s[bot]@users.noreply.%s>", credentials.Username, credentials.Username, host),
+		Token:        credentials.Password,
+		Endpoint:     endpoint,
+		Repositories: repositories,
 	}
 }
