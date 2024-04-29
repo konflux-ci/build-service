@@ -25,7 +25,6 @@ import (
 	"time"
 
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
-	"github.com/redhat-appstudio/application-service/gitops"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -60,7 +59,7 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 		return err
 	}
 
-	gitProvider, err := gitops.GetGitProvider(*component)
+	gitProvider, err := getGitProvider(*component)
 	if err != nil {
 		// There is no point to continue if git provider is not known
 		log.Error(err, "error detecting git provider")

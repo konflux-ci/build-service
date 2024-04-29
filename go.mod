@@ -38,7 +38,6 @@ require (
 require (
 	github.com/openshift-pipelines/pipelines-as-code v0.18.0
 	github.com/redhat-appstudio/application-api v0.0.0-20231026192857-89515ad2504f
-	github.com/redhat-appstudio/application-service v0.0.0-20240324134056-ac595a80c5cf
 	github.com/redhat-appstudio/release-service v0.0.0-20231213200646-9aea1dba75c0
 	github.com/tektoncd/pipeline v0.49.0
 )
@@ -49,7 +48,6 @@ replace github.com/tektoncd/pipeline v0.49.0 => github.com/tektoncd/pipeline v0.
 replace github.com/redhat-appstudio/application-service/cdq-analysis v0.0.0 => github.com/redhat-appstudio/application-service/cdq-analysis v0.0.0-20240324134056-ac595a80c5cf
 
 require (
-	code.gitea.io/sdk/gitea v0.15.1 // indirect
 	contrib.go.opencensus.io/exporter/ocagent v0.7.1-0.20200907061046-05415f1de66d // indirect
 	contrib.go.opencensus.io/exporter/prometheus v0.4.2 // indirect
 	dario.cat/mergo v1.0.0 // indirect
@@ -60,7 +58,6 @@ require (
 	github.com/ProtonMail/go-crypto v1.0.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blendle/zapdriver v1.3.1 // indirect
-	github.com/bluekeyes/go-gitdiff v0.7.1 // indirect
 	github.com/census-instrumentation/opencensus-proto v0.4.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/cloudflare/circl v1.3.7 // indirect
@@ -126,7 +123,6 @@ require (
 	github.com/hashicorp/go-version v1.6.0 // indirect
 	github.com/imdario/mergo v0.3.16 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
-	github.com/jenkins-x/go-scm v1.13.13 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
@@ -135,7 +131,6 @@ require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.17 // indirect
 	github.com/matttproud/golang_protobuf_extensions/v2 v2.0.0 // indirect
-	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
 	github.com/moby/buildkit v0.12.5 // indirect
@@ -157,11 +152,8 @@ require (
 	github.com/prometheus/procfs v0.12.0 // indirect
 	github.com/prometheus/statsd_exporter v0.23.1 // indirect
 	github.com/redhat-appstudio/operator-toolkit v0.0.0-20231201124606-2087182322ae // indirect
-	github.com/redhat-developer/gitops-generator v0.0.0-20231030195824-c48f5bf6bf21 // indirect
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06 // indirect
 	github.com/sergi/go-diff v1.3.1 // indirect
-	github.com/shurcooL/githubv4 v0.0.0-20221229060216-a8d4a561cc93 // indirect
-	github.com/shurcooL/graphql v0.0.0-20220606043923-3cf50f8a0a29 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/skeema/knownhosts v1.2.1 // indirect
 	github.com/spf13/afero v1.9.5 // indirect

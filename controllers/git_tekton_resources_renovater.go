@@ -32,7 +32,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
-	"github.com/redhat-appstudio/application-service/gitops"
 
 	buildappstudiov1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
 	. "github.com/redhat-appstudio/build-service/pkg/common"
@@ -109,7 +108,7 @@ func (r *GitTektonResourcesRenovater) Reconcile(ctx context.Context, req ctrl.Re
 	}
 	var scmComponents []*git.ScmComponent
 	for _, component := range componentList.Items {
-		gitProvider, err := gitops.GetGitProvider(component)
+		gitProvider, err := getGitProvider(component)
 		if err != nil {
 			// component misconfiguration shouldn't prevent other components from being updated
 			// deepcopy the component to avoid implicit memory aliasing in for loop
