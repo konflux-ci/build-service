@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"text/template"
@@ -327,6 +328,10 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 				if compMapping.Name == updatedComponent.Name {
 					log.Info("added distribution repo", "repo", compMapping.Repository)
 					distibutionRepositories = append(distibutionRepositories, compMapping.Repository)
+					registryRedhatMapping := mapToRegistryRedhatIo(compMapping.Repository)
+					if registryRedhatMapping != "" {
+						distibutionRepositories = append(distibutionRepositories, registryRedhatMapping)
+					}
 				}
 			}
 		}
@@ -598,4 +603,19 @@ func generateRenovateConfigForNudge(slug string, repositories []renovateReposito
 		return "", err
 	}
 	return build.String(), nil
+}
+
+// See https://issues.redhat.com/browse/KFLUXBUGS-1233
+// This will map repsitories of the form 'quay.io/redhat-prod/foo----bar' to 'registry.redhat.io/foo/bar'
+func mapToRegistryRedhatIo(repo string) string {
+
+	regex, err := regexp.Compile(`^quay.io/redhat-prod/(.*)----(.*)$`)
+	if err != nil {
+		return ""
+	}
+	results := regex.FindStringSubmatch(repo)
+	if results == nil {
+		return ""
+	}
+	return "registry.redhat.io/" + results[1] + "/" + results[2]
 }
