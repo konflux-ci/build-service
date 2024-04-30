@@ -50,11 +50,22 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 			fmt.Errorf("Git repository URL can't use insecure HTTP: %s", component.Spec.Source.GitSource.URL))
 	}
 
-	pipelineRef, additionalPipelineParams, err := r.GetPipelineForComponent(ctx, component)
-	if err != nil {
-		return err
+	var pipelineName string
+	var pipelineBundle string
+	var additionalPipelineParams []tektonapi.Param
+	var pipelineRef *tektonapi.PipelineRef
+	var err error
+
+	// no need to check error because it would fail already in Reconcile
+	pipelineRef, _ = GetBuildPipelineFromComponentAnnotation(component)
+	if pipelineRef == nil {
+		pipelineRef, additionalPipelineParams, err = r.GetPipelineForComponent(ctx, component)
+		if err != nil {
+			return err
+		}
 	}
-	pipelineName, pipelineBundle, err := getPipelineNameAndBundle(pipelineRef)
+
+	pipelineName, pipelineBundle, err = getPipelineNameAndBundle(pipelineRef)
 	if err != nil {
 		return err
 	}
@@ -229,15 +240,25 @@ func generatePipelineRunForComponent(component *appstudiov1alpha1.Component, pip
 		params = append(params, tektonapi.Param{Name: "skip-checks", Value: tektonapi.ParamValue{Type: "string", StringVal: "true"}})
 	}
 
-	dockerFile, err := DevfileSearchForDockerfile([]byte(component.Status.Devfile))
-	if err != nil {
-		return nil, boerrors.NewBuildOpError(boerrors.EInvalidDevfile, err)
-	}
-	if dockerFile != nil {
-		if dockerFile.Uri != "" {
-			params = append(params, tektonapi.Param{Name: "dockerfile", Value: tektonapi.ParamValue{Type: "string", StringVal: dockerFile.Uri}})
+	// no need to check error because it would fail already in Reconcile
+	pipelineAnnotationUsed, _ := GetBuildPipelineFromComponentAnnotation(component)
+	if pipelineAnnotationUsed == nil {
+		dockerFile, err := DevfileSearchForDockerfile([]byte(component.Status.Devfile))
+		if err != nil {
+			return nil, boerrors.NewBuildOpError(boerrors.EInvalidDevfile, err)
 		}
-		pathContext := getPathContext(component.Spec.Source.GitSource.Context, dockerFile.BuildContext)
+		if dockerFile != nil {
+			if dockerFile.Uri != "" {
+				params = append(params, tektonapi.Param{Name: "dockerfile", Value: tektonapi.ParamValue{Type: "string", StringVal: dockerFile.Uri}})
+			}
+			pathContext := getPathContext(component.Spec.Source.GitSource.Context, dockerFile.BuildContext)
+			if pathContext != "" {
+				params = append(params, tektonapi.Param{Name: "path-context", Value: tektonapi.ParamValue{Type: "string", StringVal: pathContext}})
+			}
+		}
+	} else {
+		params = append(params, tektonapi.Param{Name: "dockerfile", Value: tektonapi.ParamValue{Type: "string", StringVal: "Dockerfile"}})
+		pathContext := getPathContext(component.Spec.Source.GitSource.Context, "")
 		if pathContext != "" {
 			params = append(params, tektonapi.Param{Name: "path-context", Value: tektonapi.ParamValue{Type: "string", StringVal: pathContext}})
 		}

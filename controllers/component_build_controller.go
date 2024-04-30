@@ -70,6 +70,7 @@ const (
 	buildPipelineServiceAccountName = "appstudio-pipeline"
 
 	buildPipelineSelectorResourceName = "build-pipeline-selector"
+	defaultBuildPipelineAnnotation    = "build.appstudio.openshift.io/pipeline"
 )
 
 type BuildStatus struct {
@@ -250,13 +251,44 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
-	// Ensure devfile model is set
-	if component.Status.Devfile == "" {
-		// The Component has been just created.
-		// Component controller (from Application Service) must set devfile model, wait for it.
-		log.Info("Waiting for devfile model in component")
-		// Do not requeue as after model update a new update event will trigger a new reconcile
+	pipelineRef, err := GetBuildPipelineFromComponentAnnotation(&component)
+	if err != nil {
+		log.Error(err, fmt.Sprintf("Failed to read %s annotation on component %s", defaultBuildPipelineAnnotation, component.Name), l.Action, l.ActionView)
+
+		buildStatus := readBuildStatus(&component)
+		// when reading pipeline annotation fails, we should end reconcile, unless transient error
+		if boErr, ok := err.(*boerrors.BuildOpError); ok && boErr.IsPersistent() {
+			buildStatus.Message = fmt.Sprintf("%d: %s", err.(*boerrors.BuildOpError).GetErrorId(), err.(*boerrors.BuildOpError).ShortError())
+		} else {
+			// transient error, retry
+			return ctrl.Result{}, err
+		}
+		writeBuildStatus(&component, buildStatus)
+		delete(component.Annotations, BuildRequestAnnotationName)
+
+		if err := r.Client.Update(ctx, &component); err != nil {
+			log.Error(err, fmt.Sprintf("failed to update component after wrong %s annotation", defaultBuildPipelineAnnotation))
+			return ctrl.Result{}, err
+		}
+		log.Info(fmt.Sprintf("updated component after wrong %s annotation", defaultBuildPipelineAnnotation))
+		r.WaitForCacheUpdate(ctx, req.NamespacedName, &component)
+
 		return ctrl.Result{}, nil
+	}
+
+	// when we are using already pipeline annotation we don't need anymore devfile
+	if pipelineRef == nil {
+		// Ensure devfile model is set
+		if component.Status.Devfile == "" {
+			// The Component has been just created.
+			// Component controller (from Application Service) must set devfile model, wait for it.
+			log.Info("Waiting for devfile model in component")
+			// Do not requeue as after model update a new update event will trigger a new reconcile
+			return ctrl.Result{}, nil
+		}
+	} else {
+		buildPipelineName, buildPipelineBundle, _ := getPipelineNameAndBundle(pipelineRef)
+		log.Info(fmt.Sprintf("Will use default pipeline from annotation %s : name: %s; bundle: %s", defaultBuildPipelineAnnotation, buildPipelineName, buildPipelineBundle))
 	}
 
 	// Ensure pipeline service account exists
@@ -509,6 +541,14 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// remove component from metrics map
 	delete(bometrics.ComponentTimesForMetrics, componentIdForMetrics)
 
+	r.WaitForCacheUpdate(ctx, req.NamespacedName, &component)
+
+	return ctrl.Result{}, nil
+}
+
+func (r *ComponentBuildReconciler) WaitForCacheUpdate(ctx context.Context, namespace types.NamespacedName, component *appstudiov1alpha1.Component) {
+	log := ctrllog.FromContext(ctx)
+
 	// Here we do some trick.
 	// The problem is that the component update triggers both: a new reconcile and operator cache update.
 	// In other words we are getting race condition. If a new reconcile is triggered before cache update,
@@ -518,7 +558,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// we are waiting for the cache update. This approach prevents next reconciles with outdated cache.
 	isComponentInCacheUpToDate := false
 	for i := 0; i < 20; i++ {
-		if err := r.Client.Get(ctx, req.NamespacedName, &component); err == nil {
+		if err := r.Client.Get(ctx, namespace, component); err == nil {
 			_, buildRequestAnnotationExists := component.Annotations[BuildRequestAnnotationName]
 			_, buildStatusAnnotationExists := component.Annotations[BuildStatusAnnotationName]
 			if !buildRequestAnnotationExists && buildStatusAnnotationExists {
@@ -540,8 +580,6 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if !isComponentInCacheUpToDate {
 		log.Info("failed to wait for updated cache. Requested action could be repeated.", l.Audit, "true")
 	}
-
-	return ctrl.Result{}, nil
 }
 
 func readBuildStatus(component *appstudiov1alpha1.Component) *BuildStatus {

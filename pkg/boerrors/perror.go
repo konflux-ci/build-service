@@ -149,6 +149,8 @@ const (
 	EComponentImageRegistrySecretMissing BOErrorId = 202
 	// The secret with git credentials not given for component with private git repository.
 	EComponentGitSecretNotSpecified BOErrorId = 203
+	// Value of 'build.appstudio.openshift.io/pipeline' component annotation is not a valid json or the json has invalid structure.
+	EFailedToParsePipelineAnnotation BOErrorId = 204
 
 	// EInvalidDevfile devfile of the component is not valid.
 	EInvalidDevfile BOErrorId = 220
@@ -201,6 +203,7 @@ var boErrorMessages = map[BOErrorId]string{
 	EComponentGitSecretMissing:           "Secret with git credential not found",
 	EComponentImageRegistrySecretMissing: "Component image repository secret not found",
 	EComponentGitSecretNotSpecified:      "Git credentials for private Component git repository not given",
+	EFailedToParsePipelineAnnotation:     "Failed to parse build.appstudio.openshift.io/pipeline annotation value",
 
 	EInvalidDevfile: "Component Devfile is invalid",
 

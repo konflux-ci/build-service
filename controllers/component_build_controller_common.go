@@ -41,6 +41,11 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
+type BuildPipeline struct {
+	Name   string `json:"name,omitempty"`
+	Bundle string `json:"bundle,omitempty"`
+}
+
 // That way it can be mocked in tests
 var DevfileSearchForDockerfile = devfile.SearchForDockerfile
 
@@ -90,6 +95,29 @@ func getGitProvider(component appstudiov1alpha1.Component) (string, error) {
 	}
 
 	return gitProvider, err
+}
+
+// GetBuildPipelineFromComponentAnnotation parses pipeline annotation on component and returns build pipeline
+func GetBuildPipelineFromComponentAnnotation(component *appstudiov1alpha1.Component) (*tektonapi.PipelineRef, error) {
+	buildPipeline, err := readBuildPipelineAnnotation(component)
+	if err != nil {
+		return nil, err
+	}
+
+	if buildPipeline.Bundle != "" {
+		// for now we will return PipelineRef format, because it is the same what methods which use build-selector are returning
+		pipelineRef := &tektonapi.PipelineRef{
+			ResolverRef: tektonapi.ResolverRef{
+				Resolver: "bundles",
+				Params: []tektonapi.Param{
+					{Name: "name", Value: *tektonapi.NewStructuredValues(buildPipeline.Name)},
+					{Name: "bundle", Value: *tektonapi.NewStructuredValues(buildPipeline.Bundle)},
+				},
+			},
+		}
+		return pipelineRef, nil
+	}
+	return nil, nil
 }
 
 // GetPipelineForComponent searches for the build pipeline to use on the component.
@@ -384,4 +412,22 @@ func getPipelineNameAndBundle(pipelineRef *tektonapi.PipelineRef) (string, strin
 	}
 
 	return name, bundle, nil
+}
+
+func readBuildPipelineAnnotation(component *appstudiov1alpha1.Component) (*BuildPipeline, error) {
+	if component.Annotations == nil {
+		return &BuildPipeline{}, nil
+	}
+
+	requestedPipeline, requestedPipelineExists := component.Annotations[defaultBuildPipelineAnnotation]
+	if requestedPipelineExists && requestedPipeline != "" {
+		buildPipeline := &BuildPipeline{}
+		buildPipelineBytes := []byte(requestedPipeline)
+
+		if err := json.Unmarshal(buildPipelineBytes, buildPipeline); err != nil {
+			return nil, boerrors.NewBuildOpError(boerrors.EFailedToParsePipelineAnnotation, err)
+		}
+		return buildPipeline, nil
+	}
+	return &BuildPipeline{}, nil
 }
