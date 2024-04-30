@@ -49,6 +49,10 @@ func getGitProvider(component appstudiov1alpha1.Component) (string, error) {
 	allowedGitProviders := map[string]bool{"github": true, "gitlab": true, "bitbucket": true}
 	gitProvider := ""
 
+	if component.Spec.Source.GitSource == nil {
+		err := fmt.Errorf("git source URL is not set for %s Component in %s namespace", component.Name, component.Namespace)
+		return "", err
+	}
 	sourceUrl := component.Spec.Source.GitSource.URL
 
 	if strings.HasPrefix(sourceUrl, "git@") {

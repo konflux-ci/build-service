@@ -950,7 +950,7 @@ func TestMergeAndSortTektonParams(t *testing.T) {
 	}
 }
 
-func TestGetGitProvider(t *testing.T) {
+func TestGetGitProviderUrl(t *testing.T) {
 	type args struct {
 		ctx    context.Context
 		gitURL string
@@ -1030,7 +1030,7 @@ func TestGetGitProvider(t *testing.T) {
 			if got, err := getGitProviderUrl(tt.args.gitURL); (got != tt.wantString) ||
 				(tt.wantErr == true && err == nil) ||
 				(tt.wantErr == false && err != nil) {
-				t.Errorf("UpdateServiceAccountIfSecretNotLinked() Got Error: = %v, want %v ; Got String:  = %v , want %v", err, tt.wantErr, got, tt.wantString)
+				t.Errorf("getGitProviderUrl() Got Error: = %v, want %v ; Got String:  = %v , want %v", err, tt.wantErr, got, tt.wantString)
 			}
 		})
 	}
@@ -1540,5 +1540,131 @@ func TestPaCRepoAddParamWorkspace(t *testing.T) {
 
 		assert.Equal(t, "", param.Filter)
 		assert.Assert(t, param.SecretRef == nil)
+	})
+}
+
+func TestGetGitProvider(t *testing.T) {
+	getComponent := func(repoUrl, annotationValue string) appstudiov1alpha1.Component {
+		componentMeta := metav1.ObjectMeta{
+			Name:      "testcomponent",
+			Namespace: "workspace-name",
+		}
+		if annotationValue != "" {
+			componentMeta.Annotations = map[string]string{
+				GitProviderAnnotationName: annotationValue,
+			}
+		}
+
+		component := appstudiov1alpha1.Component{
+			ObjectMeta: componentMeta,
+			Spec: appstudiov1alpha1.ComponentSpec{
+				Source: appstudiov1alpha1.ComponentSource{
+					ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
+						GitSource: &appstudiov1alpha1.GitSource{
+							URL: repoUrl,
+						},
+					},
+				},
+			},
+		}
+		return component
+	}
+
+	tests := []struct {
+		name                           string
+		componentRepoUrl               string
+		componentGitProviderAnnotation string
+		want                           string
+		expectError                    bool
+	}{
+		{
+			name:             "should detect github provider via http url",
+			componentRepoUrl: "https://github.com/user/test-component-repository",
+			want:             "github",
+		},
+		{
+			name:             "should detect github provider via git url",
+			componentRepoUrl: "git@github.com:user/test-component-repository",
+			want:             "github",
+		},
+		{
+			name:             "should detect gitlab provider via http url",
+			componentRepoUrl: "https://gitlab.com/user/test-component-repository",
+			want:             "gitlab",
+		},
+		{
+			name:             "should detect gitlab provider via git url",
+			componentRepoUrl: "git@gitlab.com:user/test-component-repository",
+			want:             "gitlab",
+		},
+		{
+			name:             "should detect bitbucket provider via http url",
+			componentRepoUrl: "https://bitbucket.org/user/test-component-repository",
+			want:             "bitbucket",
+		},
+		{
+			name:             "should detect bitbucket provider via git url",
+			componentRepoUrl: "git@bitbucket.org:user/test-component-repository",
+			want:             "bitbucket",
+		},
+		{
+			name:                           "should detect github provider via annotation",
+			componentRepoUrl:               "https://mydomain.com/user/test-component-repository",
+			componentGitProviderAnnotation: "github",
+			want:                           "github",
+		},
+		{
+			name:                           "should detect gitlab provider via annotation",
+			componentRepoUrl:               "https://mydomain.com/user/test-component-repository",
+			componentGitProviderAnnotation: "gitlab",
+			want:                           "gitlab",
+		},
+		{
+			name:                           "should detect bitbucket provider via annotation",
+			componentRepoUrl:               "https://mydomain.com/user/test-component-repository",
+			componentGitProviderAnnotation: "bitbucket",
+			want:                           "bitbucket",
+		},
+		{
+			name:             "should fail to detect git provider for self-hosted instance if annotation is not set",
+			componentRepoUrl: "https://mydomain.com/user/test-component-repository",
+			expectError:      true,
+		},
+		{
+			name:                           "should fail to detect git provider for self-hosted instance if annotation is set to invalid value",
+			componentRepoUrl:               "https://mydomain.com/user/test-component-repository",
+			componentGitProviderAnnotation: "mylab",
+			expectError:                    true,
+		},
+		{
+			name:             "should fail to detect git provider component repository URL is invalid",
+			componentRepoUrl: "12345",
+			expectError:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			component := getComponent(tt.componentRepoUrl, tt.componentGitProviderAnnotation)
+			got, err := getGitProvider(component)
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Detecting git provider for component with '%s' url and '%s' annotation value should fail", tt.componentRepoUrl, tt.componentGitProviderAnnotation)
+				}
+			} else {
+				if got != tt.want {
+					t.Errorf("Expected git provider is: %s, but got %s", tt.want, got)
+				}
+			}
+		})
+	}
+
+	t.Run("should return error if git source is nil", func(t *testing.T) {
+		component := getComponent("", "")
+		component.Spec.Source.GitSource = nil
+		_, err := getGitProvider(component)
+		if err == nil {
+			t.Error("Expected error for nil source URL")
+		}
 	})
 }
