@@ -4,6 +4,7 @@ go 1.20
 
 require (
 	github.com/bradleyfalzon/ghinstallation/v2 v2.8.0
+	github.com/chmeliik/some-go-lib v0.0.0-20240502154433-a51b711113bc
 	github.com/devfile/api/v2 v2.2.1
 	github.com/go-logr/logr v1.4.1
 	github.com/google/go-containerregistry v0.16.1
