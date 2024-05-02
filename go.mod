@@ -3,6 +3,7 @@ module github.com/redhat-appstudio/build-service
 go 1.20
 
 require (
+	github.com/acmiel-rhtap/some-go-lib v0.0.0-20240502160104-c756c7b9c8fb
 	github.com/bradleyfalzon/ghinstallation/v2 v2.8.0
 	github.com/chmeliik/some-go-lib v0.0.0-20240502154433-a51b711113bc
 	github.com/devfile/api/v2 v2.2.1

@@ -56,6 +56,8 @@ import (
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 
 	"github.com/chmeliik/some-go-lib"
+	somegolib2 "github.com/acmiel-rhtap/some-go-lib"
+
 	appstudioredhatcomv1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
 	"github.com/redhat-appstudio/build-service/controllers"
 	"github.com/redhat-appstudio/build-service/pkg/bometrics"
@@ -69,6 +71,7 @@ var (
 	scheme   = runtime.NewScheme()
 	setupLog logr.Logger
 	_        = somegolib.Hello()
+	_        = somegolib2.Hello()
 )
 
 func init() {
