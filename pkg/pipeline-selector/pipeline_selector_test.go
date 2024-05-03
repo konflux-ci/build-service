@@ -20,8 +20,8 @@ import (
 	"reflect"
 	"testing"
 
+	buildappstudiov1alpha1 "github.com/konflux-ci/build-service/api/v1alpha1"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
-	buildappstudiov1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )

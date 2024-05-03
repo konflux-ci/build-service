@@ -30,10 +30,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/redhat-appstudio/build-service/pkg/boerrors"
-	"github.com/redhat-appstudio/build-service/pkg/bometrics"
-	. "github.com/redhat-appstudio/build-service/pkg/common"
-	"github.com/redhat-appstudio/build-service/pkg/slices"
+	"github.com/konflux-ci/build-service/pkg/boerrors"
+	"github.com/konflux-ci/build-service/pkg/bometrics"
+	. "github.com/konflux-ci/build-service/pkg/common"
+	"github.com/konflux-ci/build-service/pkg/slices"
 
 	"github.com/devfile/api/v2/pkg/apis/workspaces/v1alpha2"
 	devfile "github.com/redhat-appstudio/application-service/cdq-analysis/pkg"

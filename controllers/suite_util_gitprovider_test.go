@@ -17,8 +17,8 @@ limitations under the License.
 package controllers
 
 import (
-	gp "github.com/redhat-appstudio/build-service/pkg/git/gitprovider"
-	gpf "github.com/redhat-appstudio/build-service/pkg/git/gitproviderfactory"
+	gp "github.com/konflux-ci/build-service/pkg/git/gitprovider"
+	gpf "github.com/konflux-ci/build-service/pkg/git/gitproviderfactory"
 )
 
 var (

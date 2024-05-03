@@ -17,7 +17,7 @@ package controllers
 
 import (
 	"fmt"
-	l "github.com/redhat-appstudio/build-service/pkg/logs"
+	l "github.com/konflux-ci/build-service/pkg/logs"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

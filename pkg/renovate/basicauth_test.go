@@ -10,8 +10,8 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/redhat-appstudio/build-service/pkg/git"
-	"github.com/redhat-appstudio/build-service/pkg/git/credentials"
+	"github.com/konflux-ci/build-service/pkg/git"
+	"github.com/konflux-ci/build-service/pkg/git/credentials"
 )
 
 var staticCredentials = &credentials.BasicAuthCredentials{Username: "usr", Password: "pwd-234"}

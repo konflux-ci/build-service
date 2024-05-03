@@ -1,4 +1,4 @@
-module github.com/redhat-appstudio/build-service
+module github.com/konflux-ci/build-service
 
 go 1.20
 
