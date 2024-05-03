@@ -358,13 +358,17 @@ var _ = Describe("Component nudge controller", func() {
 				BuiltImageRepository:     "quay.io/sdouglas/multi-component-parent-image",
 				BuiltImageTag:            "a8dce08dbdf290e5d616a83672ad3afcb4b455ef",
 				Digest:                   "sha256:716be32f12f0dd31adbab1f57e9d0b87066e03de51c89dce8ffb397fbac92314",
-				DistributionRepositories: []string{"registry.redhat.com/some-product"},
+				DistributionRepositories: []string{"registry.redhat.com/some-product", "registry.redhat.com/other-product"},
 				Component:                component,
 			}
 			result, err := generateRenovateConfigForNudge("slug1", []renovateRepository{{Repository: "repo1", BaseBranches: []string{"main"}}}, &buildResult)
 			println("!" + result + "!")
 			Expect(err).Should(Succeed())
 			Expect(strings.Contains(result, `a8dce08dbdf290e5d616a83672ad3afcb4b455ef`)).Should(BeTrue())
+			registryAlias1 := `"registry.redhat.com/some-product": "quay.io/sdouglas/multi-component-parent-image",`
+			registryAlias2 := `"registry.redhat.com/other-product": "quay.io/sdouglas/multi-component-parent-image"`
+			Expect(strings.Contains(result, registryAlias1)).Should(BeTrue())
+			Expect(strings.Contains(result, registryAlias2)).Should(BeTrue())
 		})
 	})
 
