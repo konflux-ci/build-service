@@ -55,12 +55,12 @@ import (
 	releaseapi "github.com/redhat-appstudio/release-service/api/v1alpha1"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 
-	appstudioredhatcomv1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
-	"github.com/redhat-appstudio/build-service/controllers"
-	"github.com/redhat-appstudio/build-service/pkg/bometrics"
-	"github.com/redhat-appstudio/build-service/pkg/k8s"
-	l "github.com/redhat-appstudio/build-service/pkg/logs"
-	"github.com/redhat-appstudio/build-service/pkg/webhook"
+	appstudioredhatcomv1alpha1 "github.com/konflux-ci/build-service/api/v1alpha1"
+	"github.com/konflux-ci/build-service/controllers"
+	"github.com/konflux-ci/build-service/pkg/bometrics"
+	"github.com/konflux-ci/build-service/pkg/k8s"
+	l "github.com/konflux-ci/build-service/pkg/logs"
+	"github.com/konflux-ci/build-service/pkg/webhook"
 	//+kubebuilder:scaffold:imports
 )
 

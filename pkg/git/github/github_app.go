@@ -27,7 +27,7 @@ import (
 
 	ghinstallation "github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/google/go-github/v45/github"
-	"github.com/redhat-appstudio/build-service/pkg/boerrors"
+	"github.com/konflux-ci/build-service/pkg/boerrors"
 )
 
 // Allow mocking for tests

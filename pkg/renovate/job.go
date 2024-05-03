@@ -19,8 +19,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logger "sigs.k8s.io/controller-runtime/pkg/log"
 
-	. "github.com/redhat-appstudio/build-service/pkg/common"
-	"github.com/redhat-appstudio/build-service/pkg/logs"
+	. "github.com/konflux-ci/build-service/pkg/common"
+	"github.com/konflux-ci/build-service/pkg/logs"
 )
 
 const (

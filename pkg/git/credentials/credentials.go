@@ -3,7 +3,7 @@ package credentials
 import (
 	"context"
 
-	"github.com/redhat-appstudio/build-service/pkg/git"
+	"github.com/konflux-ci/build-service/pkg/git"
 )
 
 const (

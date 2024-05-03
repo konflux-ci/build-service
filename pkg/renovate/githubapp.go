@@ -7,9 +7,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/redhat-appstudio/build-service/pkg/git"
-	"github.com/redhat-appstudio/build-service/pkg/git/github"
-	"github.com/redhat-appstudio/build-service/pkg/git/githubapp"
+	"github.com/konflux-ci/build-service/pkg/git"
+	"github.com/konflux-ci/build-service/pkg/git/github"
+	"github.com/konflux-ci/build-service/pkg/git/githubapp"
 )
 
 // GithubAppRenovaterTaskProvider is an implementation of TaskProvider that provides Renovate tasks for GitHub App installations.

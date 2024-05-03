@@ -20,11 +20,11 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/redhat-appstudio/build-service/pkg/boerrors"
-	. "github.com/redhat-appstudio/build-service/pkg/common"
-	"github.com/redhat-appstudio/build-service/pkg/git/github"
-	"github.com/redhat-appstudio/build-service/pkg/git/gitlab"
-	"github.com/redhat-appstudio/build-service/pkg/git/gitprovider"
+	"github.com/konflux-ci/build-service/pkg/boerrors"
+	. "github.com/konflux-ci/build-service/pkg/common"
+	"github.com/konflux-ci/build-service/pkg/git/github"
+	"github.com/konflux-ci/build-service/pkg/git/gitlab"
+	"github.com/konflux-ci/build-service/pkg/git/gitprovider"
 )
 
 var CreateGitClient func(gitClientConfig GitClientConfig) (gitprovider.GitProviderClient, error) = createGitClient

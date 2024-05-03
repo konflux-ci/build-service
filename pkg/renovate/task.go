@@ -3,8 +3,8 @@ package renovate
 import (
 	"context"
 
-	"github.com/redhat-appstudio/build-service/pkg/git"
-	"github.com/redhat-appstudio/build-service/pkg/git/credentials"
+	"github.com/konflux-ci/build-service/pkg/git"
+	"github.com/konflux-ci/build-service/pkg/git/credentials"
 )
 
 // Task represents a task to be executed by Renovate with credentials and repositories

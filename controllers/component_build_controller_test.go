@@ -38,14 +38,14 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/devfile/api/v2/pkg/apis/workspaces/v1alpha2"
+	buildappstudiov1alpha1 "github.com/konflux-ci/build-service/api/v1alpha1"
+	"github.com/konflux-ci/build-service/pkg/boerrors"
+	. "github.com/konflux-ci/build-service/pkg/common"
+	"github.com/konflux-ci/build-service/pkg/git/github"
+	gp "github.com/konflux-ci/build-service/pkg/git/gitprovider"
+	gpf "github.com/konflux-ci/build-service/pkg/git/gitproviderfactory"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	devfile "github.com/redhat-appstudio/application-service/cdq-analysis/pkg"
-	buildappstudiov1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
-	"github.com/redhat-appstudio/build-service/pkg/boerrors"
-	. "github.com/redhat-appstudio/build-service/pkg/common"
-	"github.com/redhat-appstudio/build-service/pkg/git/github"
-	gp "github.com/redhat-appstudio/build-service/pkg/git/gitprovider"
-	gpf "github.com/redhat-appstudio/build-service/pkg/git/gitproviderfactory"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	//+kubebuilder:scaffold:imports
 )

@@ -45,9 +45,9 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	appstudioredhatcomv1alpha1 "github.com/redhat-appstudio/build-service/api/v1alpha1"
-	"github.com/redhat-appstudio/build-service/pkg/k8s"
-	"github.com/redhat-appstudio/build-service/pkg/webhook"
+	appstudioredhatcomv1alpha1 "github.com/konflux-ci/build-service/api/v1alpha1"
+	"github.com/konflux-ci/build-service/pkg/k8s"
+	"github.com/konflux-ci/build-service/pkg/webhook"
 	//+kubebuilder:scaffold:imports
 )
 
