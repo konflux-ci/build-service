@@ -42,7 +42,7 @@ import (
 )
 
 const (
-	NextReconcile = 1 * time.Hour
+	NextReconcile = 6 * time.Hour
 )
 
 // GitTektonResourcesRenovater watches AppStudio BuildPipelineSelector object in order to update
