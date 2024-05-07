@@ -69,8 +69,9 @@ const (
 	ImageRepoGenerateAnnotationName = "image.redhat.com/generate"
 	buildPipelineServiceAccountName = "appstudio-pipeline"
 
-	buildPipelineSelectorResourceName = "build-pipeline-selector"
-	defaultBuildPipelineAnnotation    = "build.appstudio.openshift.io/pipeline"
+	buildPipelineSelectorResourceName  = "build-pipeline-selector"
+	defaultBuildPipelineAnnotation     = "build.appstudio.openshift.io/pipeline"
+	buildPipelineConfigMapResourceName = "build-pipeline-config"
 )
 
 type BuildStatus struct {

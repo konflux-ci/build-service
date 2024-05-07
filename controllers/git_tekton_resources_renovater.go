@@ -33,19 +33,19 @@ import (
 
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 
-	buildappstudiov1alpha1 "github.com/konflux-ci/build-service/api/v1alpha1"
 	. "github.com/konflux-ci/build-service/pkg/common"
 	"github.com/konflux-ci/build-service/pkg/git"
 	"github.com/konflux-ci/build-service/pkg/k8s"
 	l "github.com/konflux-ci/build-service/pkg/logs"
 	"github.com/konflux-ci/build-service/pkg/renovate"
+	corev1 "k8s.io/api/core/v1"
 )
 
 const (
 	NextReconcile = 6 * time.Hour
 )
 
-// GitTektonResourcesRenovater watches AppStudio BuildPipelineSelector object in order to update
+// GitTektonResourcesRenovater watches build pipeline ConfigMap object in order to update
 // existing .tekton directories.
 type GitTektonResourcesRenovater struct {
 	taskProviders  []renovate.TaskProvider
@@ -72,15 +72,15 @@ func NewGitTektonResourcesRenovater(client client.Client, scheme *runtime.Scheme
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *GitTektonResourcesRenovater) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).For(&buildappstudiov1alpha1.BuildPipelineSelector{}, builder.WithPredicates(predicate.Funcs{
+	return ctrl.NewControllerManagedBy(mgr).For(&corev1.ConfigMap{}, builder.WithPredicates(predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
-			return e.Object.GetNamespace() == BuildServiceNamespaceName && e.Object.GetName() == buildPipelineSelectorResourceName
+			return e.Object.GetNamespace() == BuildServiceNamespaceName && e.Object.GetName() == buildPipelineConfigMapResourceName
 		},
 		DeleteFunc: func(event.DeleteEvent) bool {
 			return false
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			return e.ObjectNew.GetNamespace() == BuildServiceNamespaceName && e.ObjectNew.GetName() == buildPipelineSelectorResourceName
+			return e.ObjectNew.GetNamespace() == BuildServiceNamespaceName && e.ObjectNew.GetName() == buildPipelineConfigMapResourceName
 		},
 		GenericFunc: func(event.GenericEvent) bool {
 			return false
