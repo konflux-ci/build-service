@@ -546,9 +546,8 @@ func generateRenovateConfigForNudge(slug string, repositories []renovateReposito
 			}
 		],
 		registryAliases: {
-			{{range $repo := .DistributionRepositories}}
-				"{{$repo}}": "{{$.BuiltImageRepository}}"
-			{{end}}
+			{{range $index, $repo := .DistributionRepositories}}{{if $index}},{{end}}
+				"{{$repo}}": "{{$.BuiltImageRepository}}"{{end}}
 		},
 		packageRules: [
 		  {
