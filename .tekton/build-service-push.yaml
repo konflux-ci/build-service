@@ -13,7 +13,7 @@ spec:
     - name: revision
       value: "{{revision}}"
     - name: output-image
-      value: 'quay.io/redhat-appstudio/build-service:{{revision}}'
+      value: 'quay.io/konflux-ci/build-service:{{revision}}'
     - name: infra-deployment-update-script
       value: |
         sed -i -e 's|\(https://github.com/konflux-ci/build-service/.*?ref=\)\(.*\)|\1{{ revision }}|' -e 's/\(newTag: \).*/\1{{ revision }}/' components/build-service/development/kustomization.yaml
