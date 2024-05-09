@@ -1641,6 +1641,11 @@ func TestGetGitProvider(t *testing.T) {
 			componentRepoUrl: "12345",
 			expectError:      true,
 		},
+		{
+			name:             "should return error if git source URL is empty",
+			componentRepoUrl: "",
+			expectError:      true,
+		},
 	}
 
 	for _, tt := range tests {

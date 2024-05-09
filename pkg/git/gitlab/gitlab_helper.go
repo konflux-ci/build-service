@@ -106,6 +106,9 @@ func refineGitHostingServiceError(response *http.Response, originErr error) erro
 func (g *GitlabClient) getBranch(projectPath, branchName string) (*gitlab.Branch, error) {
 	branch, resp, err := g.client.Branches.GetBranch(projectPath, branchName)
 	if err != nil {
+		if resp == nil {
+			return nil, err
+		}
 		if resp.StatusCode == 404 {
 			return nil, nil
 		}
@@ -117,6 +120,9 @@ func (g *GitlabClient) getBranch(projectPath, branchName string) (*gitlab.Branch
 func (g *GitlabClient) branchExist(projectPath, branchName string) (bool, error) {
 	_, resp, err := g.client.Branches.GetBranch(projectPath, branchName)
 	if err != nil {
+		if resp == nil {
+			return false, err
+		}
 		if resp.StatusCode == 404 {
 			return false, nil
 		}
@@ -163,7 +169,7 @@ func (g *GitlabClient) filesUpToDate(projectPath, branchName string, files []gp.
 		}
 		fileContent, resp, err := g.client.RepositoryFiles.GetRawFile(projectPath, file.FullPath, opts)
 		if err != nil {
-			if resp.StatusCode != 404 {
+			if resp == nil || resp.StatusCode != 404 {
 				return false, err
 			}
 			return false, nil
@@ -187,6 +193,9 @@ func (g *GitlabClient) filesExistInDirectory(projectPath, branchName, directoryP
 	}
 	dirContent, resp, err := g.client.Repositories.ListTree(projectPath, opts)
 	if err != nil {
+		if resp == nil {
+			return nil, err
+		}
 		if resp.StatusCode == 404 {
 			return existingFiles, nil
 		}
@@ -216,7 +225,7 @@ func (g *GitlabClient) commitFilesIntoBranch(projectPath, branchName, commitMess
 		opts := &gitlab.GetRawFileOptions{Ref: &branchName}
 		_, resp, err := g.client.RepositoryFiles.GetRawFile(projectPath, file.FullPath, opts)
 		if err != nil {
-			if resp.StatusCode != 404 {
+			if resp == nil || resp.StatusCode != 404 {
 				return err
 			}
 			fileAction = gitlab.FileCreate
@@ -351,6 +360,9 @@ func (g *GitlabClient) updatePaCWebhook(projectPath string, webhookId int, webho
 
 func (g *GitlabClient) deleteWebhook(projectPath string, webhookId int) error {
 	resp, err := g.client.Projects.DeleteProjectHook(projectPath, webhookId)
+	if resp == nil {
+		return err
+	}
 	if resp.StatusCode == 404 {
 		return nil
 	}
@@ -374,10 +386,12 @@ func getPaCWebhookOpts(webhookTargetUrl, webhookSecret string) *gitlab.AddProjec
 	}
 }
 
-// IsRepositoryPublic returns true if the repository could be accessed without authentication
 func (g *GitlabClient) getProjectInfo(projectPath string) (*gitlab.Project, error) {
 	project, resp, err := g.client.Projects.GetProject(projectPath, &gitlab.GetProjectOptions{})
 	if err != nil {
+		if resp == nil {
+			return nil, err
+		}
 		if resp.StatusCode == 404 {
 			return nil, nil
 		}
