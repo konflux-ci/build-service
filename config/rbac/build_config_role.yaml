@@ -1,0 +1,10 @@
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: build-pipeline-config-read-only
+  namespace: build-service
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  resourceNames: ["build-pipeline-config"]
+  verbs: ["get"]
