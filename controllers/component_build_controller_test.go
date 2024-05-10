@@ -107,6 +107,104 @@ var _ = Describe("Component initial build controller", func() {
 		deleteBuildPipelineRunSelector(defaultSelectorKey)
 	})
 
+	Context("Test Pipelines as Code build preparation without build pipeline selector", func() {
+		var resourcePacPrepKey = types.NamespacedName{Name: HASCompName + "-pacprepannotation", Namespace: HASAppNamespace}
+
+		_ = BeforeEach(func() {
+			deleteBuildPipelineRunSelector(defaultSelectorKey)
+			createNamespace(pipelinesAsCodeNamespace)
+			createRoute(pacRouteKey, "pac-host")
+			createNamespace(BuildServiceNamespaceName)
+			pacSecretData := map[string]string{
+				"github-application-id": "12345",
+				"github-private-key":    githubAppPrivateKey,
+			}
+			createSecret(pacSecretKey, pacSecretData)
+
+			ResetTestGitProviderClient()
+		})
+
+		_ = AfterEach(func() {
+			deleteComponent(resourcePacPrepKey)
+			deletePaCRepository(resourcePacPrepKey)
+
+			deleteSecret(webhookSecretKey)
+			deleteSecret(namespacePaCSecretKey)
+
+			deleteSecret(pacSecretKey)
+			deleteRoute(pacRouteKey)
+		})
+
+		It("should successfully submit PR with PaC definitions using GitHub application", func() {
+			mergeUrl := "merge-url"
+
+			isCreatePaCPullRequestInvoked := false
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				isCreatePaCPullRequestInvoked = true
+				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resourcePacPrepKey.Name))
+				Expect(len(d.Files)).To(Equal(2))
+				for _, file := range d.Files {
+					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
+				}
+				Expect(d.CommitMessage).ToNot(BeEmpty())
+				Expect(d.BranchName).ToNot(BeEmpty())
+				Expect(d.BaseBranchName).To(Equal("main"))
+				Expect(d.Title).ToNot(BeEmpty())
+				Expect(d.Text).ToNot(BeEmpty())
+				Expect(d.AuthorName).ToNot(BeEmpty())
+				Expect(d.AuthorEmail).ToNot(BeEmpty())
+				return mergeUrl, nil
+			}
+			SetupPaCWebhookFunc = func(string, string, string) error {
+				defer GinkgoRecover()
+				Fail("Should not create webhook if GitHub application is used")
+				return nil
+			}
+
+			annotationValue := fmt.Sprintf("{\"name\":\"%s\",\"bundle\":\"%s\"}", defaultPipelineName, defaultPipelineBundle)
+			annotations := map[string]string{defaultBuildPipelineAnnotation: annotationValue}
+			createCustomComponentWithBuildRequestWithoutDevfile(componentConfig{
+				componentKey: resourcePacPrepKey,
+				annotations:  annotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
+
+			pacRepo := waitPaCRepositoryCreated(resourcePacPrepKey)
+			Expect(pacRepo.Spec.Params).ShouldNot(BeNil())
+			existingParams := map[string]string{}
+			for _, param := range *pacRepo.Spec.Params {
+				existingParams[param.Name] = param.Value
+			}
+			val, ok := existingParams[pacCustomParamAppstudioWorkspace]
+			Expect(ok).Should(BeTrue())
+			Expect(val).Should(Equal("build"))
+
+			waitPaCFinalizerOnComponent(resourcePacPrepKey)
+			Eventually(func() bool {
+				return isCreatePaCPullRequestInvoked
+			}, timeout, interval).Should(BeTrue())
+
+			expectPacBuildStatus(resourcePacPrepKey, "enabled", 0, "", mergeUrl)
+		})
+
+		It("should fail to submit PR if build pipeline annotation isn't valid json", func() {
+			annotations := map[string]string{defaultBuildPipelineAnnotation: "wrong"}
+			createCustomComponentWithBuildRequestWithoutDevfile(componentConfig{
+				componentKey: resourcePacPrepKey,
+				annotations:  annotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
+			waitComponentAnnotationGone(resourcePacPrepKey, BuildRequestAnnotationName)
+
+			expectError := boerrors.NewBuildOpError(boerrors.EFailedToParsePipelineAnnotation, nil)
+
+			buildStatus := readBuildStatus(getComponent(resourcePacPrepKey))
+			Expect(buildStatus).ToNot(BeNil())
+			errorMessage := fmt.Sprintf("%d: %s", expectError.GetErrorId(), expectError.ShortError())
+			Expect(buildStatus.Message).To(ContainSubstring(errorMessage))
+		})
+	})
+
+	// when build pipeline selector will be removed
+	// move all tests to "Test Pipelines as Code build preparation without build pipeline selector" without using build selector and remove all build selector related tests
 	Context("Test Pipelines as Code build preparation", func() {
 		var resourcePacPrepKey = types.NamespacedName{Name: HASCompName + "-pacprep", Namespace: HASAppNamespace}
 
@@ -1285,6 +1383,71 @@ var _ = Describe("Component initial build controller", func() {
 		})
 	})
 
+	Context("Test simple build flow without build pipeline selector", func() {
+		var resouceSimpleBuildKey = types.NamespacedName{Name: HASCompName + "-simpleannotation", Namespace: HASAppNamespace}
+
+		_ = BeforeEach(func() {
+			deleteBuildPipelineRunSelector(defaultSelectorKey)
+			createNamespace(BuildServiceNamespaceName)
+			ResetTestGitProviderClient()
+
+			pacSecretData := map[string]string{
+				"github-application-id": "12345",
+				"github-private-key":    githubAppPrivateKey,
+			}
+			createSecret(pacSecretKey, pacSecretData)
+		})
+
+		_ = AfterEach(func() {
+			deleteSecret(pacSecretKey)
+
+			deleteBuildPipelineRunSelector(defaultSelectorKey)
+			deleteComponentPipelineRuns(resouceSimpleBuildKey)
+			deleteComponent(resouceSimpleBuildKey)
+			// wait for pruner operator to finish, so it won't prune runs from new test
+			time.Sleep(time.Second)
+		})
+
+		It("should submit initial build on component creation", func() {
+			gitSourceSHA := "d1a9e858489d1515621398fb02942da068f1c956"
+			isGetBranchShaInvoked := false
+			GetBranchShaFunc = func(repoUrl string, branchName string) (string, error) {
+				isGetBranchShaInvoked = true
+				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resouceSimpleBuildKey.Name))
+				return gitSourceSHA, nil
+			}
+			GetBrowseRepositoryAtShaLinkFunc = func(repoUrl, sha string) string {
+				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resouceSimpleBuildKey.Name))
+				Expect(sha).To(Equal(gitSourceSHA))
+				return "https://github.com/devfile-samples/devfile-sample-java-springboot-basic?rev=" + gitSourceSHA
+			}
+
+			annotationValue := fmt.Sprintf("{\"name\":\"%s\",\"bundle\":\"%s\"}", defaultPipelineName, defaultPipelineBundle)
+			annotations := map[string]string{defaultBuildPipelineAnnotation: annotationValue}
+			createCustomComponentWithoutBuildRequestWithoutDevfile(componentConfig{
+				componentKey: resouceSimpleBuildKey,
+				annotations:  annotations})
+
+			Eventually(func() bool {
+				return isGetBranchShaInvoked
+			}, timeout, interval).Should(BeTrue())
+
+			waitOneInitialPipelineRunCreated(resouceSimpleBuildKey)
+			waitComponentAnnotationGone(resouceSimpleBuildKey, BuildRequestAnnotationName)
+			expectSimpleBuildStatus(resouceSimpleBuildKey, 0, "", false)
+
+			// Check pipeline run labels and annotations
+			pipelineRun := listComponentPipelineRuns(resouceSimpleBuildKey)[0]
+			Expect(pipelineRun.Annotations[gitCommitShaAnnotationName]).To(Equal(gitSourceSHA))
+			Expect(pipelineRun.Annotations[gitRepoAtShaAnnotationName]).To(
+				Equal("https://github.com/devfile-samples/devfile-sample-java-springboot-basic?rev=" + gitSourceSHA))
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/pipeline_name"]).To(Equal(defaultPipelineName))
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(defaultPipelineBundle))
+		})
+	})
+
+	// when build pipeline selector will be removed
+	// move all tests to "Test simple build flow without build pipeline selector" without using build selector and remove all build selector related tests
 	Context("Test simple build flow", func() {
 		var resouceSimpleBuildKey = types.NamespacedName{Name: HASCompName + "-simple", Namespace: HASAppNamespace}
 

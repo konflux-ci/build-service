@@ -43,7 +43,10 @@ import (
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 )
 
-const ghAppPrivateKeyStub = "-----BEGIN RSA PRIVATE KEY-----_key-content_-----END RSA PRIVATE KEY-----"
+const (
+	ghAppPrivateKeyStub    = "-----BEGIN RSA PRIVATE KEY-----_key-content_-----END RSA PRIVATE KEY-----"
+	testPipelineAnnotation = "{\"name\":\"pipeline_name\",\"bundle\":\"bundle_name\"}"
+)
 
 func TestGetProvisionTimeMetricsBuckets(t *testing.T) {
 	buckets := bometrics.HistogramBuckets
@@ -250,6 +253,7 @@ func TestGenerateInitialPipelineRunForComponentDevfileError(t *testing.T) {
 	}
 }
 
+// remove when removing build pipeline selector
 func TestGenerateInitialPipelineRunForComponentDockerfileContext(t *testing.T) {
 	component := &appstudiov1alpha1.Component{
 		ObjectMeta: metav1.ObjectMeta{
@@ -268,6 +272,7 @@ func TestGenerateInitialPipelineRunForComponentDockerfileContext(t *testing.T) {
 					GitSource: &appstudiov1alpha1.GitSource{
 						URL:      "https://githost.com/user/repo.git",
 						Revision: "custom-branch",
+						Context:  "./base_context",
 					},
 				},
 			},
@@ -307,7 +312,7 @@ func TestGenerateInitialPipelineRunForComponentDockerfileContext(t *testing.T) {
 	for _, param := range pipelineRun.Spec.Params {
 		switch param.Name {
 		case "path-context":
-			if param.Value.StringVal != dockerfileContext {
+			if param.Value.StringVal != "base_context/some_context" {
 				t.Errorf("generateInitialPipelineRunForComponentDockerfileContext(): wrong pipeline parameter %s", param.Name)
 			}
 		case "dockerfile":
@@ -322,6 +327,81 @@ func TestGenerateInitialPipelineRunForComponentDockerfileContext(t *testing.T) {
 	}
 }
 
+func TestGenerateInitialPipelineRunForComponentDockerfileContextPipelineFromAnnotation(t *testing.T) {
+	component := &appstudiov1alpha1.Component{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-component",
+			Namespace: "my-namespace",
+			Annotations: map[string]string{
+				"skip-initial-checks":          "true",
+				GitProviderAnnotationName:      "github",
+				defaultBuildPipelineAnnotation: testPipelineAnnotation,
+			},
+		},
+		Spec: appstudiov1alpha1.ComponentSpec{
+			Application:    "my-application",
+			ContainerImage: "registry.io/username/image:tag",
+			Source: appstudiov1alpha1.ComponentSource{
+				ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
+					GitSource: &appstudiov1alpha1.GitSource{
+						URL:      "https://githost.com/user/repo.git",
+						Revision: "custom-branch",
+						Context:  "./base_context",
+					},
+				},
+			},
+		},
+		Status: appstudiov1alpha1.ComponentStatus{},
+	}
+	pipelineRef := &tektonapi.PipelineRef{
+		ResolverRef: tektonapi.ResolverRef{
+			Resolver: "bundles",
+			Params: []tektonapi.Param{
+				{Name: "name", Value: *tektonapi.NewStructuredValues("pipeline-name")},
+				{Name: "bundle", Value: *tektonapi.NewStructuredValues("pipeline-bundle")},
+			},
+		},
+	}
+	additionalParams := []tektonapi.Param{
+		{Name: "rebuild", Value: tektonapi.ParamValue{Type: "string", StringVal: "true"}},
+	}
+
+	dockerfileContext := "some_context"
+	dockerfileURI := "some_uri"
+	DevfileSearchForDockerfile = func(devfileBytes []byte) (*v1alpha2.DockerfileImage, error) {
+		dockerfileImage := v1alpha2.DockerfileImage{
+			BaseImage:     v1alpha2.BaseImage{},
+			DockerfileSrc: v1alpha2.DockerfileSrc{Uri: dockerfileURI},
+			Dockerfile:    v1alpha2.Dockerfile{BuildContext: dockerfileContext},
+		}
+		return &dockerfileImage, nil
+	}
+
+	pipelineRun, err := generatePipelineRunForComponent(component, pipelineRef, additionalParams, &buildGitInfo{})
+
+	if err != nil {
+		t.Error("generateInitialPipelineRunForComponentDockerfileContext(): Failed to generate pipeline run")
+	}
+
+	for _, param := range pipelineRun.Spec.Params {
+		switch param.Name {
+		case "path-context":
+			if param.Value.StringVal != "base_context" {
+				t.Errorf("generateInitialPipelineRunForComponentDockerfileContext(): wrong pipeline parameter %s", param.Name)
+			}
+		case "dockerfile":
+			if param.Value.StringVal != "Dockerfile" {
+				t.Errorf("generateInitialPipelineRunForComponentDockerfileContext(): wrong pipeline parameter %s", param.Name)
+			}
+		case "revision":
+			if param.Value.StringVal != "custom-branch" {
+				t.Errorf("generateInitialPipelineRunForComponentDockerfileContext(): wrong pipeline parameter %s", param.Name)
+			}
+		}
+	}
+}
+
+// remove when removing build pipeline selector
 func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 	component := &appstudiov1alpha1.Component{
 		ObjectMeta: metav1.ObjectMeta{
@@ -340,6 +420,7 @@ func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 					GitSource: &appstudiov1alpha1.GitSource{
 						URL:      "https://githost.com/user/repo.git",
 						Revision: "custom-branch",
+						Context:  "./base_context",
 					},
 				},
 			},
@@ -367,6 +448,7 @@ func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 		browseRepositoryAtShaLink: "https://githost.com/user/repo?rev=" + commitSha,
 	}
 	DevfileSearchForDockerfile = devfile.SearchForDockerfile
+
 	pipelineRun, err := generatePipelineRunForComponent(component, pipelineRef, additionalParams, pRunGitInfo)
 	if err != nil {
 		t.Error("generateInitialPipelineRunForComponent(): Failed to genertate pipeline run")
@@ -453,6 +535,146 @@ func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 	}
 }
 
+func TestGenerateInitialPipelineRunForComponentPipelineFromAnnotation(t *testing.T) {
+	component := &appstudiov1alpha1.Component{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-component",
+			Namespace: "my-namespace",
+			Annotations: map[string]string{
+				"skip-initial-checks":          "true",
+				GitProviderAnnotationName:      "github",
+				defaultBuildPipelineAnnotation: testPipelineAnnotation,
+			},
+		},
+		Spec: appstudiov1alpha1.ComponentSpec{
+			Application:    "my-application",
+			ContainerImage: "registry.io/username/image:tag",
+			Source: appstudiov1alpha1.ComponentSource{
+				ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
+					GitSource: &appstudiov1alpha1.GitSource{
+						URL:      "https://githost.com/user/repo.git",
+						Revision: "custom-branch",
+						Context:  "./base_context",
+					},
+				},
+			},
+		},
+		Status: appstudiov1alpha1.ComponentStatus{},
+	}
+	pipelineRef := &tektonapi.PipelineRef{
+		ResolverRef: tektonapi.ResolverRef{
+			Resolver: "bundles",
+			Params: []tektonapi.Param{
+				{Name: "name", Value: *tektonapi.NewStructuredValues("pipeline-name")},
+				{Name: "bundle", Value: *tektonapi.NewStructuredValues("pipeline-bundle")},
+			},
+		},
+	}
+	additionalParams := []tektonapi.Param{
+		{Name: "rebuild", Value: tektonapi.ParamValue{Type: "string", StringVal: "true"}},
+	}
+	commitSha := "26239c94569cea79b32bce32f12c8abd8bbd0fd7"
+
+	pRunGitInfo := &buildGitInfo{
+		gitSourceSha:              commitSha,
+		browseRepositoryAtShaLink: "https://githost.com/user/repo?rev=" + commitSha,
+	}
+
+	pipelineRun, err := generatePipelineRunForComponent(component, pipelineRef, additionalParams, pRunGitInfo)
+	if err != nil {
+		t.Error("generateInitialPipelineRunForComponent(): Failed to genertate pipeline run")
+	}
+
+	if pipelineRun.GenerateName == "" {
+		t.Error("generateInitialPipelineRunForComponent(): pipeline generatename must not be empty")
+	}
+	if pipelineRun.Namespace != "my-namespace" {
+		t.Error("generateInitialPipelineRunForComponent(): pipeline namespace doesn't match")
+	}
+
+	if pipelineRun.Labels[ApplicationNameLabelName] != "my-application" {
+		t.Errorf("generateInitialPipelineRunForComponent(): wrong %s label value", ApplicationNameLabelName)
+	}
+	if pipelineRun.Labels[ComponentNameLabelName] != "my-component" {
+		t.Errorf("generateInitialPipelineRunForComponent(): wrong %s label value", ComponentNameLabelName)
+	}
+	if pipelineRun.Labels["pipelines.appstudio.openshift.io/type"] != "build" {
+		t.Error("generateInitialPipelineRunForComponent(): wrong pipelines.appstudio.openshift.io/type label value")
+	}
+
+	if pipelineRun.Annotations["build.appstudio.redhat.com/target_branch"] != "custom-branch" {
+		t.Error("generateInitialPipelineRunForComponent(): wrong build.appstudio.redhat.com/target_branch annotation value")
+	}
+	if pipelineRun.Annotations["build.appstudio.redhat.com/pipeline_name"] != "pipeline-name" {
+		t.Error("generateInitialPipelineRunForComponent(): wrong build.appstudio.redhat.com/pipeline_name annotation value")
+	}
+	if pipelineRun.Annotations["build.appstudio.redhat.com/bundle"] != "pipeline-bundle" {
+		t.Error("generateInitialPipelineRunForComponent(): wrong build.appstudio.redhat.com/bundle annotation value")
+	}
+	if pipelineRun.Annotations[gitCommitShaAnnotationName] != commitSha {
+		t.Errorf("generateInitialPipelineRunForComponent(): wrong %s annotation value", gitCommitShaAnnotationName)
+	}
+	if pipelineRun.Annotations[gitRepoAtShaAnnotationName] != "https://githost.com/user/repo?rev="+commitSha {
+		t.Errorf("generateInitialPipelineRunForComponent(): wrong %s annotation value", gitRepoAtShaAnnotationName)
+	}
+
+	if getPipelineName(pipelineRun.Spec.PipelineRef) != "pipeline-name" {
+		t.Error("generateInitialPipelineRunForComponent(): wrong pipeline name in pipeline reference")
+	}
+	if getPipelineBundle(pipelineRun.Spec.PipelineRef) != "pipeline-bundle" {
+		t.Error("generateInitialPipelineRunForComponent(): wrong pipeline bundle in pipeline reference")
+	}
+
+	if len(pipelineRun.Spec.Params) != 7 {
+		t.Error("generateInitialPipelineRunForComponent(): wrong number of pipeline params")
+	}
+	for _, param := range pipelineRun.Spec.Params {
+		switch param.Name {
+		case "git-url":
+			if param.Value.StringVal != "https://githost.com/user/repo.git" {
+				t.Errorf("generateInitialPipelineRunForComponent(): wrong pipeline parameter %s", param.Name)
+			}
+		case "revision":
+			if param.Value.StringVal != commitSha {
+				t.Errorf("generateInitialPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
+			}
+		case "output-image":
+			if !strings.HasPrefix(param.Value.StringVal, "registry.io/username/image:build-") {
+				t.Errorf("generateInitialPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
+			}
+		case "rebuild":
+			if param.Value.StringVal != "true" {
+				t.Errorf("generateInitialPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
+			}
+		case "skip-checks":
+			if param.Value.StringVal != "true" {
+				t.Errorf("generateInitialPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
+			}
+		case "dockerfile":
+			if param.Value.StringVal != "Dockerfile" {
+				t.Errorf("generateInitialPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
+			}
+		case "path-context":
+			if param.Value.StringVal != "base_context" {
+				t.Errorf("generateInitialPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
+			}
+		default:
+			t.Errorf("generateInitialPipelineRunForComponent(): unexpected pipeline parameter %v", param)
+		}
+	}
+
+	if len(pipelineRun.Spec.Workspaces) != 1 {
+		t.Error("generateInitialPipelineRunForComponent(): wrong number of pipeline workspaces")
+	}
+	for _, workspace := range pipelineRun.Spec.Workspaces {
+		if workspace.Name == "workspace" {
+			continue
+		}
+		t.Errorf("generateInitialPipelineRunForComponent(): unexpected pipeline workspaces %v", workspace)
+	}
+}
+
+// remove when removing build pipeline selector
 func TestGeneratePaCPipelineRunForComponent(t *testing.T) {
 	component := &appstudiov1alpha1.Component{
 		ObjectMeta: metav1.ObjectMeta{
@@ -469,7 +691,8 @@ func TestGeneratePaCPipelineRunForComponent(t *testing.T) {
 			Source: appstudiov1alpha1.ComponentSource{
 				ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
 					GitSource: &appstudiov1alpha1.GitSource{
-						URL: "https://githost.com/user/repo.git",
+						URL:     "https://githost.com/user/repo.git",
+						Context: "./base_context",
 					},
 				},
 			},
@@ -526,7 +749,8 @@ func TestGeneratePaCPipelineRunForComponent(t *testing.T) {
 		t.Error("generatePaCPipelineRunForComponent(): wrong pipelines.appstudio.openshift.io/type label value")
 	}
 
-	if pipelineRun.Annotations["pipelinesascode.tekton.dev/on-cel-expression"] != `event == "pull_request" && target_branch == "custom-branch"` {
+	onCel := `event == "pull_request" && target_branch == "custom-branch" && ( "./base_context/***".pathChanged() || ".tekton/my-component-pull-request.yaml".pathChanged() )`
+	if pipelineRun.Annotations["pipelinesascode.tekton.dev/on-cel-expression"] != onCel {
 		t.Errorf("generatePaCPipelineRunForComponent(): wrong pipelinesascode.tekton.dev/on-cel-expression annotation value")
 	}
 	if pipelineRun.Annotations["pipelinesascode.tekton.dev/max-keep-runs"] != "3" {
@@ -571,11 +795,11 @@ func TestGeneratePaCPipelineRunForComponent(t *testing.T) {
 				t.Errorf("generatePaCPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
 			}
 		case "dockerfile":
-			if param.Value.StringVal != dockerfileURI {
+			if param.Value.StringVal != "dockerfile" {
 				t.Errorf("generatePaCPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
 			}
 		case "path-context":
-			if param.Value.StringVal != dockerfileContext {
+			if param.Value.StringVal != "base_context/docker" {
 				t.Errorf("generatePaCPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
 			}
 		default:
@@ -597,6 +821,143 @@ func TestGeneratePaCPipelineRunForComponent(t *testing.T) {
 	}
 }
 
+func TestGeneratePaCPipelineRunForComponentPipelineFromAnnotation(t *testing.T) {
+	component := &appstudiov1alpha1.Component{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-component",
+			Namespace: "my-namespace",
+			Annotations: map[string]string{
+				"skip-initial-checks":          "true",
+				GitProviderAnnotationName:      "github",
+				defaultBuildPipelineAnnotation: testPipelineAnnotation,
+			},
+		},
+		Spec: appstudiov1alpha1.ComponentSpec{
+			Application:    "my-application",
+			ContainerImage: "registry.io/username/image:tag",
+			Source: appstudiov1alpha1.ComponentSource{
+				ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
+					GitSource: &appstudiov1alpha1.GitSource{
+						URL:     "https://githost.com/user/repo.git",
+						Context: "./base_context",
+					},
+				},
+			},
+		},
+		Status: appstudiov1alpha1.ComponentStatus{},
+	}
+	pipelineSpec := &tektonapi.PipelineSpec{
+		Workspaces: []tektonapi.PipelineWorkspaceDeclaration{
+			{
+				Name: "git-auth",
+			},
+			{
+				Name: "workspace",
+			},
+		},
+	}
+	additionalParams := []tektonapi.Param{
+		{Name: "revision", Value: tektonapi.ParamValue{Type: "string", StringVal: "2378a064bf6b66a8ffc650ad88d404cca24ade29"}},
+		{Name: "rebuild", Value: tektonapi.ParamValue{Type: "string", StringVal: "true"}},
+	}
+	branchName := "custom-branch"
+	ResetTestGitProviderClient()
+
+	pipelineRun, err := generatePaCPipelineRunForComponent(component, pipelineSpec, additionalParams, true, branchName, testGitProviderClient)
+	if err != nil {
+		t.Error("generatePaCPipelineRunForComponent(): Failed to genertate pipeline run")
+	}
+
+	if pipelineRun.Name != component.Name+pipelineRunOnPRSuffix {
+		t.Error("generatePaCPipelineRunForComponent(): wrong pipeline name")
+	}
+	if pipelineRun.Namespace != "my-namespace" {
+		t.Error("generatePaCPipelineRunForComponent(): pipeline namespace doesn't match")
+	}
+
+	if pipelineRun.Labels[ApplicationNameLabelName] != "my-application" {
+		t.Errorf("generatePaCPipelineRunForComponent(): wrong %s label value", ApplicationNameLabelName)
+	}
+	if pipelineRun.Labels[ComponentNameLabelName] != "my-component" {
+		t.Errorf("generatePaCPipelineRunForComponent(): wrong %s label value", ComponentNameLabelName)
+	}
+	if pipelineRun.Labels["pipelines.appstudio.openshift.io/type"] != "build" {
+		t.Error("generatePaCPipelineRunForComponent(): wrong pipelines.appstudio.openshift.io/type label value")
+	}
+
+	onCel := `event == "pull_request" && target_branch == "custom-branch" && ( "./base_context/***".pathChanged() || ".tekton/my-component-pull-request.yaml".pathChanged() )`
+	if pipelineRun.Annotations["pipelinesascode.tekton.dev/on-cel-expression"] != onCel {
+		t.Errorf("generatePaCPipelineRunForComponent(): wrong pipelinesascode.tekton.dev/on-cel-expression annotation value")
+	}
+	if pipelineRun.Annotations["pipelinesascode.tekton.dev/max-keep-runs"] != "3" {
+		t.Error("generatePaCPipelineRunForComponent(): wrong pipelinesascode.tekton.dev/max-keep-runs annotation value")
+	}
+	if pipelineRun.Annotations["build.appstudio.redhat.com/target_branch"] != "{{target_branch}}" {
+		t.Error("generatePaCPipelineRunForComponent(): wrong build.appstudio.redhat.com/target_branch annotation value")
+	}
+	if pipelineRun.Annotations[gitCommitShaAnnotationName] != "{{revision}}" {
+		t.Errorf("generatePaCPipelineRunForComponent(): wrong %s annotation value", gitCommitShaAnnotationName)
+	}
+	if pipelineRun.Annotations[gitRepoAtShaAnnotationName] != "https://githost.com/user/repo?rev={{revision}}" {
+		t.Errorf("generatePaCPipelineRunForComponent(): wrong %s annotation value", gitRepoAtShaAnnotationName)
+	}
+	if pipelineRun.Annotations["build.appstudio.redhat.com/pull_request_number"] != "{{pull_request_number}}" {
+		t.Errorf("generatePaCPipelineRunForComponent(): wrong build.appstudio.redhat.com/pull_request_number annotation value")
+	}
+
+	if len(pipelineRun.Spec.Params) != 7 {
+		t.Error("generatePaCPipelineRunForComponent(): wrong number of pipeline params")
+	}
+	for _, param := range pipelineRun.Spec.Params {
+		switch param.Name {
+		case "git-url":
+			if param.Value.StringVal != "{{source_url}}" {
+				t.Errorf("generatePaCPipelineRunForComponent(): wrong pipeline parameter %s", param.Name)
+			}
+		case "revision":
+			if param.Value.StringVal != "2378a064bf6b66a8ffc650ad88d404cca24ade29" {
+				t.Errorf("generatePaCPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
+			}
+		case "output-image":
+			if !strings.HasPrefix(param.Value.StringVal, "registry.io/username/image:on-pr-{{revision}}") {
+				t.Errorf("generatePaCPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
+			}
+		case "rebuild":
+			if param.Value.StringVal != "true" {
+				t.Errorf("generatePaCPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
+			}
+		case "image-expires-after":
+			if param.Value.StringVal != "5d" {
+				t.Errorf("generatePaCPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
+			}
+		case "dockerfile":
+			if param.Value.StringVal != "Dockerfile" {
+				t.Errorf("generatePaCPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
+			}
+		case "path-context":
+			if param.Value.StringVal != "base_context" {
+				t.Errorf("generatePaCPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
+			}
+		default:
+			t.Errorf("generatePaCPipelineRunForComponent(): unexpected pipeline parameter %v", param)
+		}
+	}
+
+	if len(pipelineRun.Spec.Workspaces) != 2 {
+		t.Error("generatePaCPipelineRunForComponent(): wrong number of pipeline workspaces")
+	}
+	for _, workspace := range pipelineRun.Spec.Workspaces {
+		if workspace.Name == "workspace" {
+			continue
+		}
+		if workspace.Name == "git-auth" {
+			continue
+		}
+		t.Errorf("generatePaCPipelineRunForComponent(): unexpected pipeline workspaces %v", workspace)
+	}
+}
+
+// remove when removing build pipeline selector
 func TestGeneratePaCPipelineRunForComponent_ShouldStopOnDevfileError(t *testing.T) {
 	component := &appstudiov1alpha1.Component{
 		ObjectMeta: metav1.ObjectMeta{

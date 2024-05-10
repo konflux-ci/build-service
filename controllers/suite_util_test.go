@@ -181,6 +181,27 @@ func createComponentWithBuildRequestAndGit(componentKey types.NamespacedName, bu
 	createCustomComponentWithBuildRequest(componentConfig{componentKey: componentKey, gitURL: gitURL, gitRevision: gitRevision}, buildRequest)
 }
 
+func createCustomComponentWithoutBuildRequestWithoutDevfile(config componentConfig) {
+	component := getComponentData(config)
+	if component.Annotations == nil {
+		component.Annotations = make(map[string]string)
+	}
+
+	Expect(k8sClient.Create(ctx, component)).Should(Succeed())
+	getComponent(config.componentKey)
+}
+
+func createCustomComponentWithBuildRequestWithoutDevfile(config componentConfig, buildRequest string) {
+	component := getComponentData(config)
+	if component.Annotations == nil {
+		component.Annotations = make(map[string]string)
+	}
+	component.Annotations[BuildRequestAnnotationName] = buildRequest
+
+	Expect(k8sClient.Create(ctx, component)).Should(Succeed())
+	getComponent(config.componentKey)
+}
+
 func createCustomComponentWithBuildRequest(config componentConfig, buildRequest string) {
 	component := getComponentData(config)
 	if component.Annotations == nil {
