@@ -26,10 +26,12 @@ FROM registry.access.redhat.com/ubi9/ubi-minimal:9.3
 COPY --from=builder /opt/app-root/src/manager /
 USER 65532:65532
 
-LABEL description="RHTAP Build Service operator"
-LABEL io.k8s.description="RHTAP Build Service operator"
-LABEL io.k8s.display-name="build-service-operator"
-LABEL io.openshift.tags="rhtap"
-LABEL summary="RHTAP Build Service"
+LABEL description="Konflux Build Service operator"
+LABEL io.k8s.description="Konflux Build Service operator"
+LABEL io.k8s.display-name="konflux-build-service-operator"
+LABEL io.openshift.tags="konflux"
+LABEL summary="Konflux Build Service"
+LABEL name="konflux-build-service"
+LABEL com.redhat.component="konflux-build-service-operator"
 
 ENTRYPOINT ["/manager"]
