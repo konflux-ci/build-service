@@ -26,10 +26,16 @@ FROM registry.access.redhat.com/ubi9/ubi-minimal:9.3
 COPY --from=builder /opt/app-root/src/manager /
 USER 65532:65532
 
-LABEL description="RHTAP Build Service operator"
-LABEL io.k8s.description="RHTAP Build Service operator"
-LABEL io.k8s.display-name="build-service-operator"
-LABEL io.openshift.tags="rhtap"
-LABEL summary="RHTAP Build Service"
+# Required for ecosystem-cert-preflight-checks
+# https://access.redhat.com/documentation/en-us/red_hat_software_certification/2024/html-single/red_hat_openshift_software_certification_policy_guide/index#assembly-requirements-for-container-images_openshift-sw-cert-policy-introduction
+COPY LICENSE /licenses/LICENSE
+
+LABEL description="Konflux Build Service operator"
+LABEL io.k8s.description="Konflux Build Service operator"
+LABEL io.k8s.display-name="konflux-build-service-operator"
+LABEL io.openshift.tags="konflux"
+LABEL summary="Konflux Build Service"
+LABEL name="konflux-build-service"
+LABEL com.redhat.component="konflux-build-service-operator"
 
 ENTRYPOINT ["/manager"]
