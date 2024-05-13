@@ -1846,6 +1846,195 @@ func TestSlicesIntersection(t *testing.T) {
 	}
 }
 
+func TestGeneratePACRepository(t *testing.T) {
+	getComponent := func(repoUrl string, annotations map[string]string) appstudiov1alpha1.Component {
+		return appstudiov1alpha1.Component{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        "testcomponent",
+				Namespace:   "workspace-name",
+				Annotations: annotations,
+			},
+			Spec: appstudiov1alpha1.ComponentSpec{
+				Source: appstudiov1alpha1.ComponentSource{
+					ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
+						GitSource: &appstudiov1alpha1.GitSource{
+							URL: repoUrl,
+						},
+					},
+				},
+			},
+		}
+	}
+
+	tests := []struct {
+		name                      string
+		repoUrl                   string
+		componentAnnotations      map[string]string
+		pacConfig                 map[string][]byte
+		expectedGitProviderConfig *pacv1alpha1.GitProvider
+	}{
+		{
+			name:    "should create PaC repository for Github application",
+			repoUrl: "https://github.com/user/test-component-repository",
+			pacConfig: map[string][]byte{
+				PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
+				PipelinesAsCodeGithubPrivateKey: []byte("private-key"),
+			},
+			expectedGitProviderConfig: nil,
+		},
+		{
+			name:    "should create PaC repository for Github application even if Github webhook configured",
+			repoUrl: "https://github.com/user/test-component-repository",
+			pacConfig: map[string][]byte{
+				PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
+				PipelinesAsCodeGithubPrivateKey: []byte("private-key"),
+				"password":                      []byte("ghp_token"),
+			},
+			expectedGitProviderConfig: nil,
+		},
+		{
+			name:    "should create PaC repository for Github webhook",
+			repoUrl: "https://github.com/user/test-component-repository",
+			pacConfig: map[string][]byte{
+				"password": []byte("ghp_token"),
+			},
+			expectedGitProviderConfig: &pacv1alpha1.GitProvider{
+				Secret: &pacv1alpha1.Secret{
+					Name: PipelinesAsCodeGitHubAppSecretName,
+					Key:  "password",
+				},
+				WebhookSecret: &pacv1alpha1.Secret{
+					Name: pipelinesAsCodeWebhooksSecretName,
+					Key:  getWebhookSecretKeyForComponent(getComponent("https://github.com/user/test-component-repository", nil)),
+				},
+			},
+		},
+		{
+			name:    "should create PaC repository for GitLab webhook",
+			repoUrl: "https://gitlab.com/user/test-component-repository/",
+			pacConfig: map[string][]byte{
+				"password": []byte("glpat-token"),
+			},
+			expectedGitProviderConfig: &pacv1alpha1.GitProvider{
+				Secret: &pacv1alpha1.Secret{
+					Name: PipelinesAsCodeGitHubAppSecretName,
+					Key:  "password",
+				},
+				WebhookSecret: &pacv1alpha1.Secret{
+					Name: pipelinesAsCodeWebhooksSecretName,
+					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.com/user/test-component-repository/", nil)),
+				},
+				URL: "https://gitlab.com",
+			},
+		},
+		{
+			name:    "should create PaC repository for GitLab webhook even if GitHub application configured",
+			repoUrl: "https://gitlab.com/user/test-component-repository.git",
+			pacConfig: map[string][]byte{
+				PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
+				PipelinesAsCodeGithubPrivateKey: []byte("private-key"),
+				"password":                      []byte("glpat-token"),
+			},
+			expectedGitProviderConfig: &pacv1alpha1.GitProvider{
+				Secret: &pacv1alpha1.Secret{
+					Name: PipelinesAsCodeGitHubAppSecretName,
+					Key:  "password",
+				},
+				WebhookSecret: &pacv1alpha1.Secret{
+					Name: pipelinesAsCodeWebhooksSecretName,
+					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.com/user/test-component-repository", nil)),
+				},
+				URL: "https://gitlab.com",
+			},
+		},
+		{
+			name:    "should create PaC repository for self-hosted GitLab webhook and figure out provider URL from source URL",
+			repoUrl: "https://gitlab.self-hosted.com/user/test-component-repository/",
+			componentAnnotations: map[string]string{
+				GitProviderAnnotationName: "gitlab",
+			},
+			pacConfig: map[string][]byte{
+				"password": []byte("glpat-token"),
+			},
+			expectedGitProviderConfig: &pacv1alpha1.GitProvider{
+				Secret: &pacv1alpha1.Secret{
+					Name: PipelinesAsCodeGitHubAppSecretName,
+					Key:  "password",
+				},
+				WebhookSecret: &pacv1alpha1.Secret{
+					Name: pipelinesAsCodeWebhooksSecretName,
+					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.self-hosted.com/user/test-component-repository/", nil)),
+				},
+				URL: "https://gitlab.self-hosted.com",
+			},
+		},
+		{
+			name:    "should create PaC repository for self-hosted GitLab webhook and use provider URL from annotation",
+			repoUrl: "https://gitlab.self-hosted.com/user/test-component-repository/",
+			componentAnnotations: map[string]string{
+				GitProviderAnnotationName: "gitlab",
+				GitProviderAnnotationURL:  "https://gitlab.self-hosted-proxy.com",
+			},
+			pacConfig: map[string][]byte{
+				"password": []byte("glpat-token"),
+			},
+			expectedGitProviderConfig: &pacv1alpha1.GitProvider{
+				Secret: &pacv1alpha1.Secret{
+					Name: PipelinesAsCodeGitHubAppSecretName,
+					Key:  "password",
+				},
+				WebhookSecret: &pacv1alpha1.Secret{
+					Name: pipelinesAsCodeWebhooksSecretName,
+					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.self-hosted.com/user/test-component-repository/", nil)),
+				},
+				URL: "https://gitlab.self-hosted-proxy.com",
+			},
+		},
+		{
+			name:    "should create PaC repository for Github application on self-hosted Github",
+			repoUrl: "https://github.self-hosted.com/user/test-component-repository",
+			componentAnnotations: map[string]string{
+				GitProviderAnnotationName: "github",
+				GitProviderAnnotationURL:  "https://github.self-hosted.com",
+			},
+			pacConfig: map[string][]byte{
+				PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
+				PipelinesAsCodeGithubPrivateKey: []byte("private-key"),
+			},
+			expectedGitProviderConfig: &pacv1alpha1.GitProvider{
+				URL: "https://github.self-hosted.com",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			component := getComponent(tt.repoUrl, tt.componentAnnotations)
+
+			pacRepo, err := generatePACRepository(component, tt.pacConfig)
+
+			if err != nil {
+				t.Errorf("Failed to generate PaC repository object. Cause: %v", err)
+			}
+
+			if pacRepo.Name != component.Name {
+				t.Errorf("Generated PaC repository must have the same name as corresponding component")
+			}
+			if pacRepo.Namespace != component.Namespace {
+				t.Errorf("Generated PaC repository must have the same namespace as corresponding component")
+			}
+
+			expectedRepo := strings.TrimSuffix(strings.TrimSuffix(tt.repoUrl, ".git"), "/")
+			if pacRepo.Spec.URL != expectedRepo {
+				t.Errorf("Wrong git repository URL in PaC repository: %s, want %s", pacRepo.Spec.URL, expectedRepo)
+			}
+			if !reflect.DeepEqual(pacRepo.Spec.GitProvider, tt.expectedGitProviderConfig) {
+				t.Errorf("Wrong git provider config in PaC repository: %#v, want %#v", pacRepo.Spec.GitProvider, tt.expectedGitProviderConfig)
+			}
+		})
+	}
+}
+
 /*
 add new
 override existing one

@@ -23,6 +23,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"strconv"
@@ -852,8 +853,12 @@ func generatePACRepository(component appstudiov1alpha1.Component, config map[str
 			if providerUrl, configured := component.Annotations[GitProviderAnnotationURL]; configured {
 				gitProviderConfig.URL = providerUrl
 			} else {
-				// Assume gitlab.com
-				gitProviderConfig.URL = "https://gitlab.com"
+				// Get git provider URL from source URL.
+				u, err := url.Parse(component.Spec.Source.GitSource.URL)
+				if err != nil {
+					return nil, err
+				}
+				gitProviderConfig.URL = u.Scheme + "://" + u.Host
 			}
 		}
 	}
