@@ -42,6 +42,7 @@ import (
 	buildappstudiov1alpha1 "github.com/konflux-ci/build-service/api/v1alpha1"
 	. "github.com/konflux-ci/build-service/pkg/common"
 	"github.com/konflux-ci/build-service/pkg/git/github"
+	"gopkg.in/yaml.v2"
 )
 
 const (
@@ -68,7 +69,8 @@ const (
 )
 
 var (
-	defaultSelectorKey = types.NamespacedName{Name: buildPipelineSelectorResourceName, Namespace: BuildServiceNamespaceName}
+	defaultSelectorKey          = types.NamespacedName{Name: buildPipelineSelectorResourceName, Namespace: BuildServiceNamespaceName}
+	defaultPipelineConfigMapKey = types.NamespacedName{Name: buildPipelineConfigMapResourceName, Namespace: BuildServiceNamespaceName}
 )
 
 type componentConfig struct {
@@ -79,6 +81,16 @@ type componentConfig struct {
 	gitSourceContext string
 	application      string
 	annotations      map[string]string
+}
+
+type pipelineEntry struct {
+	Name   string `yaml:"name"`
+	Bundle string `yaml:"bundle"`
+}
+
+type pipelineConfig struct {
+	DefaultPipelineName string          `yaml:"default-pipeline-name"`
+	Pipelines           []pipelineEntry `yaml:"pipelines"`
 }
 
 func isOwnedBy(resource []metav1.OwnerReference, component appstudiov1alpha1.Component) bool {
@@ -684,10 +696,12 @@ func deleteRoute(routeKey types.NamespacedName) {
 	}
 }
 
+// remove when removing build pipeline selector
 func createDefaultBuildPipelineRunSelector(selectorKey types.NamespacedName) {
 	createBuildPipelineRunSelector(selectorKey, defaultPipelineBundle, defaultPipelineName)
 }
 
+// remove when removing build pipeline selector
 func createBuildPipelineRunSelector(selectorKey types.NamespacedName, pipelineBundle, pipelineName string) {
 	buildPipelineSelector := buildappstudiov1alpha1.BuildPipelineSelector{
 		ObjectMeta: metav1.ObjectMeta{Name: selectorKey.Name, Namespace: selectorKey.Namespace},
@@ -706,6 +720,7 @@ func createBuildPipelineRunSelector(selectorKey types.NamespacedName, pipelineBu
 	}
 }
 
+// remove when removing build pipeline selector
 func deleteBuildPipelineRunSelector(selectorKey types.NamespacedName) {
 	buildPipelineSelector := buildappstudiov1alpha1.BuildPipelineSelector{}
 	if err := k8sClient.Get(ctx, selectorKey, &buildPipelineSelector); err != nil {
@@ -715,6 +730,42 @@ func deleteBuildPipelineRunSelector(selectorKey types.NamespacedName) {
 		Fail(err.Error())
 	}
 	if err := k8sClient.Delete(ctx, &buildPipelineSelector); err != nil && !k8sErrors.IsNotFound(err) {
+		Fail(err.Error())
+	}
+}
+
+func createDefaultBuildPipelineConfigMap(configMapKey types.NamespacedName) {
+	createBuildPipelineConfigMap(configMapKey, defaultPipelineBundle, defaultPipelineName)
+}
+
+func createBuildPipelineConfigMap(configMapKey types.NamespacedName, pipelineBundle, pipelineName string) {
+	configMapData := map[string]string{}
+	buildPipelineData := pipelineConfig{
+		DefaultPipelineName: pipelineName,
+		Pipelines:           []pipelineEntry{{Name: pipelineName, Bundle: pipelineBundle}},
+	}
+	yamlData, _ := yaml.Marshal(&buildPipelineData)
+	configMapData["config.yaml"] = string(yamlData)
+
+	buildPipelineConfigMap := corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: configMapKey.Name, Namespace: configMapKey.Namespace},
+		Data:       configMapData,
+	}
+
+	if err := k8sClient.Create(ctx, &buildPipelineConfigMap); err != nil && !k8sErrors.IsAlreadyExists(err) {
+		Fail(err.Error())
+	}
+}
+
+func deleteBuildPipelineConfigMap(configMapKey types.NamespacedName) {
+	buildPipelineConfigMap := corev1.ConfigMap{}
+	if err := k8sClient.Get(ctx, configMapKey, &buildPipelineConfigMap); err != nil {
+		if k8sErrors.IsNotFound(err) {
+			return
+		}
+		Fail(err.Error())
+	}
+	if err := k8sClient.Delete(ctx, &buildPipelineConfigMap); err != nil && !k8sErrors.IsNotFound(err) {
 		Fail(err.Error())
 	}
 }
