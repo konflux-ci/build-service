@@ -164,6 +164,14 @@ const (
 	EUnsupportedPipelineRef BOErrorId = 302
 	// EMissingParamsForBundleResolver The pipelineRef selected for a component is missing parameters required for the bundle resolver.
 	EMissingParamsForBundleResolver BOErrorId = 303
+	// EWrongPipelineAnnotation Value of 'build.appstudio.openshift.io/pipeline' component annotation has wrong or missing values
+	EWrongPipelineAnnotation BOErrorId = 304
+	// EBuildPipelineConfigNotDefined build-pipeline-config configMap not found
+	EBuildPipelineConfigNotDefined BOErrorId = 305
+	// EBuildPipelineConfigNotValid build-pipeline-config configMap is not valid yaml
+	EBuildPipelineConfigNotValid BOErrorId = 306
+	// EBuildPipelineInvalid  pipeline in 'build.appstudio.openshift.io/pipeline' doesn't exist in build-pipeline-config configMap
+	EBuildPipelineInvalid BOErrorId = 307
 
 	// EPipelineRetrievalFailed Failed to retrieve a Tekton Pipeline.
 	EPipelineRetrievalFailed BOErrorId = 400
@@ -211,6 +219,10 @@ var boErrorMessages = map[BOErrorId]string{
 	EBuildPipelineSelectorNotDefined: "Build pipeline selector is not defined yet.",
 	EUnsupportedPipelineRef:          "The pipelineRef for this component (based on pipeline selectors) is not supported.",
 	EMissingParamsForBundleResolver:  "The pipelineRef for this component is missing required parameters ('name' and/or 'bundle').",
+	EWrongPipelineAnnotation:         "'build.appstudio.openshift.io/pipeline' component annotation has wrong or missing values",
+	EBuildPipelineConfigNotDefined:   "build-pipeline-config ConfigMap not found",
+	EBuildPipelineConfigNotValid:     "build-pipeline-config ConfigMap data in config.yaml is not valid yaml",
+	EBuildPipelineInvalid:            "pipeline referenced in 'build.appstudio.openshift.io/pipeline' annotation doesn't exist in build-pipeline-config ConfigMap",
 
 	EPipelineRetrievalFailed:  "Failed to retrieve the pipeline selected for this component.",
 	EPipelineConversionFailed: "Failed to convert the selected pipeline to the supported Tekton API version.",
