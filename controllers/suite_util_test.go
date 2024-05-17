@@ -83,16 +83,6 @@ type componentConfig struct {
 	annotations      map[string]string
 }
 
-type pipelineEntry struct {
-	Name   string `yaml:"name"`
-	Bundle string `yaml:"bundle"`
-}
-
-type pipelineConfig struct {
-	DefaultPipelineName string          `yaml:"default-pipeline-name"`
-	Pipelines           []pipelineEntry `yaml:"pipelines"`
-}
-
 func isOwnedBy(resource []metav1.OwnerReference, component appstudiov1alpha1.Component) bool {
 	if len(resource) == 0 {
 		return false
@@ -742,10 +732,10 @@ func createBuildPipelineConfigMap(configMapKey types.NamespacedName, pipelineBun
 	configMapData := map[string]string{}
 	buildPipelineData := pipelineConfig{
 		DefaultPipelineName: pipelineName,
-		Pipelines:           []pipelineEntry{{Name: pipelineName, Bundle: pipelineBundle}},
+		Pipelines:           []BuildPipeline{{Name: pipelineName, Bundle: pipelineBundle}},
 	}
 	yamlData, _ := yaml.Marshal(&buildPipelineData)
-	configMapData["config.yaml"] = string(yamlData)
+	configMapData[buildPipelineConfigName] = string(yamlData)
 
 	buildPipelineConfigMap := corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{Name: configMapKey.Name, Namespace: configMapKey.Namespace},

@@ -245,7 +245,7 @@ func TestGenerateInitialPipelineRunForComponentDevfileError(t *testing.T) {
 		browseRepositoryAtShaLink: "https://githost.com/user/repo?rev=" + commitSha,
 	}
 
-	_, err := generatePipelineRunForComponent(component, pipelineRef, additionalParams, pRunGitInfo)
+	_, err := generatePipelineRunForComponent(component, pipelineRef, additionalParams, pRunGitInfo, false)
 	if err == nil {
 		t.Error("generateInitialPipelineRunForComponentDevfileError(): Didn't return error")
 	} else {
@@ -303,7 +303,7 @@ func TestGenerateInitialPipelineRunForComponentDockerfileContext(t *testing.T) {
 		return &dockerfileImage, nil
 	}
 
-	pipelineRun, err := generatePipelineRunForComponent(component, pipelineRef, additionalParams, &buildGitInfo{})
+	pipelineRun, err := generatePipelineRunForComponent(component, pipelineRef, additionalParams, &buildGitInfo{}, false)
 
 	if err != nil {
 		t.Error("generateInitialPipelineRunForComponentDockerfileContext(): Failed to generate pipeline run")
@@ -377,7 +377,7 @@ func TestGenerateInitialPipelineRunForComponentDockerfileContextPipelineFromAnno
 		return &dockerfileImage, nil
 	}
 
-	pipelineRun, err := generatePipelineRunForComponent(component, pipelineRef, additionalParams, &buildGitInfo{})
+	pipelineRun, err := generatePipelineRunForComponent(component, pipelineRef, additionalParams, &buildGitInfo{}, true)
 
 	if err != nil {
 		t.Error("generateInitialPipelineRunForComponentDockerfileContext(): Failed to generate pipeline run")
@@ -449,7 +449,7 @@ func TestGenerateInitialPipelineRunForComponent(t *testing.T) {
 	}
 	DevfileSearchForDockerfile = devfile.SearchForDockerfile
 
-	pipelineRun, err := generatePipelineRunForComponent(component, pipelineRef, additionalParams, pRunGitInfo)
+	pipelineRun, err := generatePipelineRunForComponent(component, pipelineRef, additionalParams, pRunGitInfo, false)
 	if err != nil {
 		t.Error("generateInitialPipelineRunForComponent(): Failed to genertate pipeline run")
 	}
@@ -580,7 +580,7 @@ func TestGenerateInitialPipelineRunForComponentPipelineFromAnnotation(t *testing
 		browseRepositoryAtShaLink: "https://githost.com/user/repo?rev=" + commitSha,
 	}
 
-	pipelineRun, err := generatePipelineRunForComponent(component, pipelineRef, additionalParams, pRunGitInfo)
+	pipelineRun, err := generatePipelineRunForComponent(component, pipelineRef, additionalParams, pRunGitInfo, true)
 	if err != nil {
 		t.Error("generateInitialPipelineRunForComponent(): Failed to genertate pipeline run")
 	}
@@ -727,7 +727,7 @@ func TestGeneratePaCPipelineRunForComponent(t *testing.T) {
 	branchName := "custom-branch"
 	ResetTestGitProviderClient()
 
-	pipelineRun, err := generatePaCPipelineRunForComponent(component, pipelineSpec, additionalParams, true, branchName, testGitProviderClient)
+	pipelineRun, err := generatePaCPipelineRunForComponent(component, pipelineSpec, additionalParams, true, branchName, testGitProviderClient, false)
 	if err != nil {
 		t.Error("generatePaCPipelineRunForComponent(): Failed to genertate pipeline run")
 	}
@@ -863,7 +863,7 @@ func TestGeneratePaCPipelineRunForComponentPipelineFromAnnotation(t *testing.T) 
 	branchName := "custom-branch"
 	ResetTestGitProviderClient()
 
-	pipelineRun, err := generatePaCPipelineRunForComponent(component, pipelineSpec, additionalParams, true, branchName, testGitProviderClient)
+	pipelineRun, err := generatePaCPipelineRunForComponent(component, pipelineSpec, additionalParams, true, branchName, testGitProviderClient, true)
 	if err != nil {
 		t.Error("generatePaCPipelineRunForComponent(): Failed to genertate pipeline run")
 	}
@@ -984,7 +984,7 @@ func TestGeneratePaCPipelineRunForComponent_ShouldStopOnDevfileError(t *testing.
 	}
 	ResetTestGitProviderClient()
 
-	_, err := generatePaCPipelineRunForComponent(component, nil, nil, true, "main", testGitProviderClient)
+	_, err := generatePaCPipelineRunForComponent(component, nil, nil, true, "main", testGitProviderClient, false)
 	DevfileSearchForDockerfile = devfile.SearchForDockerfile
 	if err == nil {
 		t.Errorf("generatePaCPipelineRunForComponent(): expected error")
@@ -998,7 +998,7 @@ func TestGeneratePaCPipelineRunForComponent_ShouldStopOnDevfileError(t *testing.
 }
 
 func TestGeneratePaCPipelineRunForComponent_ShouldStopIfTargetBranchIsNotSet(t *testing.T) {
-	_, err := generatePaCPipelineRunForComponent(nil, nil, nil, true, "", nil)
+	_, err := generatePaCPipelineRunForComponent(nil, nil, nil, true, "", nil, false)
 	if err == nil {
 		t.Errorf("generatePaCPipelineRunForComponent(): expected error")
 	}

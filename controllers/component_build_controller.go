@@ -72,6 +72,7 @@ const (
 	buildPipelineSelectorResourceName  = "build-pipeline-selector"
 	defaultBuildPipelineAnnotation     = "build.appstudio.openshift.io/pipeline"
 	buildPipelineConfigMapResourceName = "build-pipeline-config"
+	buildPipelineConfigName            = "config.yaml"
 )
 
 type BuildStatus struct {
@@ -252,7 +253,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
-	pipelineRef, err := GetBuildPipelineFromComponentAnnotation(&component)
+	pipelineRef, err := r.GetBuildPipelineFromComponentAnnotation(ctx, &component)
 	if err != nil {
 		log.Error(err, fmt.Sprintf("Failed to read %s annotation on component %s", defaultBuildPipelineAnnotation, component.Name), l.Action, l.ActionView)
 

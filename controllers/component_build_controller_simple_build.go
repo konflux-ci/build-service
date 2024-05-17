@@ -57,8 +57,10 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 	var err error
 
 	// no need to check error because it would fail already in Reconcile
-	pipelineRef, _ = GetBuildPipelineFromComponentAnnotation(component)
+	pipelineRef, _ = r.GetBuildPipelineFromComponentAnnotation(ctx, component)
+	pipelineAnnotationUsed := true
 	if pipelineRef == nil {
+		pipelineAnnotationUsed = false
 		pipelineRef, additionalPipelineParams, err = r.GetPipelineForComponent(ctx, component)
 		if err != nil {
 			return err
@@ -87,7 +89,7 @@ func (r *ComponentBuildReconciler) SubmitNewBuild(ctx context.Context, component
 		return err
 	}
 
-	buildPipelineRun, err := generatePipelineRunForComponent(component, pipelineRef, additionalPipelineParams, buildGitInfo)
+	buildPipelineRun, err := generatePipelineRunForComponent(component, pipelineRef, additionalPipelineParams, buildGitInfo, pipelineAnnotationUsed)
 	if err != nil {
 		log.Error(err, fmt.Sprintf("Failed to generate PipelineRun to build %s component in %s namespace", component.Name, component.Namespace))
 		return err
@@ -199,7 +201,7 @@ func (r *ComponentBuildReconciler) getBuildGitInfo(ctx context.Context, componen
 	}, nil
 }
 
-func generatePipelineRunForComponent(component *appstudiov1alpha1.Component, pipelineRef *tektonapi.PipelineRef, additionalPipelineParams []tektonapi.Param, pRunGitInfo *buildGitInfo) (*tektonapi.PipelineRun, error) {
+func generatePipelineRunForComponent(component *appstudiov1alpha1.Component, pipelineRef *tektonapi.PipelineRef, additionalPipelineParams []tektonapi.Param, pRunGitInfo *buildGitInfo, pipelineAnnotationUsed bool) (*tektonapi.PipelineRun, error) {
 	timestamp := time.Now().Unix()
 	pipelineGenerateName := fmt.Sprintf("%s-", component.Name)
 	gitBranch := ""
@@ -241,8 +243,7 @@ func generatePipelineRunForComponent(component *appstudiov1alpha1.Component, pip
 	}
 
 	// no need to check error because it would fail already in Reconcile
-	pipelineAnnotationUsed, _ := GetBuildPipelineFromComponentAnnotation(component)
-	if pipelineAnnotationUsed == nil {
+	if !pipelineAnnotationUsed {
 		dockerFile, err := DevfileSearchForDockerfile([]byte(component.Status.Devfile))
 		if err != nil {
 			return nil, boerrors.NewBuildOpError(boerrors.EInvalidDevfile, err)

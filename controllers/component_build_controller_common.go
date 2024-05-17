@@ -33,6 +33,7 @@ import (
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	devfile "github.com/redhat-appstudio/application-service/cdq-analysis/pkg"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
+	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -44,6 +45,11 @@ import (
 type BuildPipeline struct {
 	Name   string `json:"name,omitempty"`
 	Bundle string `json:"bundle,omitempty"`
+}
+
+type pipelineConfig struct {
+	DefaultPipelineName string          `yaml:"default-pipeline-name"`
+	Pipelines           []BuildPipeline `yaml:"pipelines"`
 }
 
 // That way it can be mocked in tests
@@ -98,26 +104,59 @@ func getGitProvider(component appstudiov1alpha1.Component) (string, error) {
 }
 
 // GetBuildPipelineFromComponentAnnotation parses pipeline annotation on component and returns build pipeline
-func GetBuildPipelineFromComponentAnnotation(component *appstudiov1alpha1.Component) (*tektonapi.PipelineRef, error) {
+func (r *ComponentBuildReconciler) GetBuildPipelineFromComponentAnnotation(ctx context.Context, component *appstudiov1alpha1.Component) (*tektonapi.PipelineRef, error) {
 	buildPipeline, err := readBuildPipelineAnnotation(component)
 	if err != nil {
 		return nil, err
 	}
-
-	if buildPipeline.Bundle != "" {
-		// for now we will return PipelineRef format, because it is the same what methods which use build-selector are returning
-		pipelineRef := &tektonapi.PipelineRef{
-			ResolverRef: tektonapi.ResolverRef{
-				Resolver: "bundles",
-				Params: []tektonapi.Param{
-					{Name: "name", Value: *tektonapi.NewStructuredValues(buildPipeline.Name)},
-					{Name: "bundle", Value: *tektonapi.NewStructuredValues(buildPipeline.Bundle)},
-				},
-			},
-		}
-		return pipelineRef, nil
+	if buildPipeline == nil {
+		return nil, nil
 	}
-	return nil, nil
+	if buildPipeline.Bundle == "" || buildPipeline.Name == "" {
+		err = fmt.Errorf("missing name or bundle in pipeline annotation: name=%s bundle=%s", buildPipeline.Name, buildPipeline.Bundle)
+		return nil, boerrors.NewBuildOpError(boerrors.EWrongPipelineAnnotation, err)
+	}
+	finalBundle := buildPipeline.Bundle
+
+	if buildPipeline.Bundle == "latest" {
+		pipelinesConfigMap := &corev1.ConfigMap{}
+		if err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineConfigMapResourceName, Namespace: BuildServiceNamespaceName}, pipelinesConfigMap); err != nil {
+			if errors.IsNotFound(err) {
+				return nil, boerrors.NewBuildOpError(boerrors.EBuildPipelineConfigNotDefined, err)
+			}
+			return nil, err
+		}
+
+		buildPipelineData := &pipelineConfig{}
+		if err := yaml.Unmarshal([]byte(pipelinesConfigMap.Data[buildPipelineConfigName]), buildPipelineData); err != nil {
+			return nil, boerrors.NewBuildOpError(boerrors.EBuildPipelineConfigNotValid, err)
+		}
+
+		for _, pipeline := range buildPipelineData.Pipelines {
+			if pipeline.Name == buildPipeline.Name {
+				finalBundle = pipeline.Bundle
+				break
+			}
+		}
+
+		// requested pipeline was not found in configMap
+		if finalBundle == "latest" {
+			err = fmt.Errorf("invalid pipeline name in pipeline annotation: name=%s", buildPipeline.Name)
+			return nil, boerrors.NewBuildOpError(boerrors.EBuildPipelineInvalid, err)
+		}
+	}
+
+	// for now we will return PipelineRef format, because it is the same what methods which use build-selector are returning
+	pipelineRef := &tektonapi.PipelineRef{
+		ResolverRef: tektonapi.ResolverRef{
+			Resolver: "bundles",
+			Params: []tektonapi.Param{
+				{Name: "name", Value: *tektonapi.NewStructuredValues(buildPipeline.Name)},
+				{Name: "bundle", Value: *tektonapi.NewStructuredValues(finalBundle)},
+			},
+		},
+	}
+	return pipelineRef, nil
 }
 
 // GetPipelineForComponent searches for the build pipeline to use on the component.
@@ -416,7 +455,7 @@ func getPipelineNameAndBundle(pipelineRef *tektonapi.PipelineRef) (string, strin
 
 func readBuildPipelineAnnotation(component *appstudiov1alpha1.Component) (*BuildPipeline, error) {
 	if component.Annotations == nil {
-		return &BuildPipeline{}, nil
+		return nil, nil
 	}
 
 	requestedPipeline, requestedPipelineExists := component.Annotations[defaultBuildPipelineAnnotation]
@@ -429,5 +468,5 @@ func readBuildPipelineAnnotation(component *appstudiov1alpha1.Component) (*Build
 		}
 		return buildPipeline, nil
 	}
-	return &BuildPipeline{}, nil
+	return nil, nil
 }

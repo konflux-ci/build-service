@@ -186,6 +186,59 @@ var _ = Describe("Component initial build controller", func() {
 			expectPacBuildStatus(resourcePacPrepKey, "enabled", 0, "", mergeUrl)
 		})
 
+		It("should successfully submit PR with PaC definitions using GitHub application, using 'latest' bundle", func() {
+			mergeUrl := "merge-url"
+
+			isCreatePaCPullRequestInvoked := false
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				isCreatePaCPullRequestInvoked = true
+				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resourcePacPrepKey.Name))
+				Expect(len(d.Files)).To(Equal(2))
+				for _, file := range d.Files {
+					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
+				}
+				Expect(d.CommitMessage).ToNot(BeEmpty())
+				Expect(d.BranchName).ToNot(BeEmpty())
+				Expect(d.BaseBranchName).To(Equal("main"))
+				Expect(d.Title).ToNot(BeEmpty())
+				Expect(d.Text).ToNot(BeEmpty())
+				Expect(d.AuthorName).ToNot(BeEmpty())
+				Expect(d.AuthorEmail).ToNot(BeEmpty())
+				return mergeUrl, nil
+			}
+			SetupPaCWebhookFunc = func(string, string, string) error {
+				defer GinkgoRecover()
+				Fail("Should not create webhook if GitHub application is used")
+				return nil
+			}
+
+			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
+			annotationValue := fmt.Sprintf("{\"name\":\"%s\",\"bundle\":\"%s\"}", defaultPipelineName, "latest")
+			annotations := map[string]string{defaultBuildPipelineAnnotation: annotationValue}
+			createCustomComponentWithBuildRequestWithoutDevfile(componentConfig{
+				componentKey: resourcePacPrepKey,
+				annotations:  annotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
+
+			pacRepo := waitPaCRepositoryCreated(resourcePacPrepKey)
+			Expect(pacRepo.Spec.Params).ShouldNot(BeNil())
+			existingParams := map[string]string{}
+			for _, param := range *pacRepo.Spec.Params {
+				existingParams[param.Name] = param.Value
+			}
+			val, ok := existingParams[pacCustomParamAppstudioWorkspace]
+			Expect(ok).Should(BeTrue())
+			Expect(val).Should(Equal("build"))
+
+			waitPaCFinalizerOnComponent(resourcePacPrepKey)
+			Eventually(func() bool {
+				return isCreatePaCPullRequestInvoked
+			}, timeout, interval).Should(BeTrue())
+
+			expectPacBuildStatus(resourcePacPrepKey, "enabled", 0, "", mergeUrl)
+			deleteBuildPipelineConfigMap(defaultPipelineConfigMapKey)
+		})
+
 		It("should fail to submit PR if build pipeline annotation isn't valid json", func() {
 			annotations := map[string]string{defaultBuildPipelineAnnotation: "wrong"}
 			createCustomComponentWithBuildRequestWithoutDevfile(componentConfig{
@@ -200,6 +253,44 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(buildStatus).ToNot(BeNil())
 			errorMessage := fmt.Sprintf("%d: %s", expectError.GetErrorId(), expectError.ShortError())
 			Expect(buildStatus.Message).To(ContainSubstring(errorMessage))
+		})
+
+		It("should fail to submit PR if build pipeline annotation has non existing pipeline", func() {
+			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
+			annotationValue := fmt.Sprintf("{\"name\":\"%s\",\"bundle\":\"%s\"}", "wrong-pipeline", "latest")
+			annotations := map[string]string{defaultBuildPipelineAnnotation: annotationValue}
+			createCustomComponentWithBuildRequestWithoutDevfile(componentConfig{
+				componentKey: resourcePacPrepKey,
+				annotations:  annotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
+			waitComponentAnnotationGone(resourcePacPrepKey, BuildRequestAnnotationName)
+
+			expectError := boerrors.NewBuildOpError(boerrors.EBuildPipelineInvalid, nil)
+
+			buildStatus := readBuildStatus(getComponent(resourcePacPrepKey))
+			Expect(buildStatus).ToNot(BeNil())
+			errorMessage := fmt.Sprintf("%d: %s", expectError.GetErrorId(), expectError.ShortError())
+			Expect(buildStatus.Message).To(ContainSubstring(errorMessage))
+			deleteBuildPipelineConfigMap(defaultPipelineConfigMapKey)
+		})
+
+		It("should fail to submit PR if build pipeline annotation is missing bundle and name", func() {
+			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
+			annotationValue := "{\"some\":\"wrong\"}"
+			annotations := map[string]string{defaultBuildPipelineAnnotation: annotationValue}
+			createCustomComponentWithBuildRequestWithoutDevfile(componentConfig{
+				componentKey: resourcePacPrepKey,
+				annotations:  annotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
+			waitComponentAnnotationGone(resourcePacPrepKey, BuildRequestAnnotationName)
+
+			expectError := boerrors.NewBuildOpError(boerrors.EWrongPipelineAnnotation, nil)
+
+			buildStatus := readBuildStatus(getComponent(resourcePacPrepKey))
+			Expect(buildStatus).ToNot(BeNil())
+			errorMessage := fmt.Sprintf("%d: %s", expectError.GetErrorId(), expectError.ShortError())
+			Expect(buildStatus.Message).To(ContainSubstring(errorMessage))
+			deleteBuildPipelineConfigMap(defaultPipelineConfigMapKey)
 		})
 	})
 
@@ -1443,6 +1534,46 @@ var _ = Describe("Component initial build controller", func() {
 				Equal("https://github.com/devfile-samples/devfile-sample-java-springboot-basic?rev=" + gitSourceSHA))
 			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/pipeline_name"]).To(Equal(defaultPipelineName))
 			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(defaultPipelineBundle))
+		})
+
+		It("should submit initial build on component creation, using 'latest' bundle", func() {
+			gitSourceSHA := "d1a9e858489d1515621398fb02942da068f1c956"
+			isGetBranchShaInvoked := false
+			GetBranchShaFunc = func(repoUrl string, branchName string) (string, error) {
+				isGetBranchShaInvoked = true
+				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resouceSimpleBuildKey.Name))
+				return gitSourceSHA, nil
+			}
+			GetBrowseRepositoryAtShaLinkFunc = func(repoUrl, sha string) string {
+				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resouceSimpleBuildKey.Name))
+				Expect(sha).To(Equal(gitSourceSHA))
+				return "https://github.com/devfile-samples/devfile-sample-java-springboot-basic?rev=" + gitSourceSHA
+			}
+
+			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
+			annotationValue := fmt.Sprintf("{\"name\":\"%s\",\"bundle\":\"%s\"}", defaultPipelineName, "latest")
+			annotations := map[string]string{defaultBuildPipelineAnnotation: annotationValue}
+			createCustomComponentWithoutBuildRequestWithoutDevfile(componentConfig{
+				componentKey: resouceSimpleBuildKey,
+				annotations:  annotations})
+
+			Eventually(func() bool {
+				return isGetBranchShaInvoked
+			}, timeout, interval).Should(BeTrue())
+
+			waitOneInitialPipelineRunCreated(resouceSimpleBuildKey)
+			waitComponentAnnotationGone(resouceSimpleBuildKey, BuildRequestAnnotationName)
+			expectSimpleBuildStatus(resouceSimpleBuildKey, 0, "", false)
+
+			// Check pipeline run labels and annotations
+			pipelineRun := listComponentPipelineRuns(resouceSimpleBuildKey)[0]
+			Expect(pipelineRun.Annotations[gitCommitShaAnnotationName]).To(Equal(gitSourceSHA))
+			Expect(pipelineRun.Annotations[gitRepoAtShaAnnotationName]).To(
+				Equal("https://github.com/devfile-samples/devfile-sample-java-springboot-basic?rev=" + gitSourceSHA))
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/pipeline_name"]).To(Equal(defaultPipelineName))
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(defaultPipelineBundle))
+
+			deleteBuildPipelineConfigMap(defaultPipelineConfigMapKey)
 		})
 	})
 
