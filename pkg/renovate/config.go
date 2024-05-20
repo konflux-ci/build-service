@@ -87,7 +87,7 @@ func NewTektonJobConfig(platform, endpoint, username, gitAuthor string, reposito
 			SemanticCommits:      "enabled",
 			PRFooter:             "To execute skipped test pipelines write comment `/ok-to-test`",
 			PRBodyColumns:        []string{"Package", "Change", "Notes"},
-			PRBodyDefinitions:    fmt.Sprintf("{ \"Notes\": \"{{#if (or (containsString updateType 'minor') (containsString updateType 'major'))}}:warning:[migration](https://github.com/redhat-appstudio/build-definitions/blob/main/task/{{{replace '%stask-' '' packageName}}}/{{{newVersion}}}/MIGRATION.md):warning:{{/if}}\" }", renovatePattern),
+			PRBodyDefinitions:    fmt.Sprintf("{ \"Notes\": \"{{#if (or (containsString updateType 'minor') (containsString updateType 'major'))}}:warning:[migration](https://github.com/konflux-ci/build-definitions/blob/main/task/{{{replace '%stask-' '' packageName}}}/{{{newVersion}}}/MIGRATION.md):warning:{{/if}}\" }", renovatePattern),
 			PRBodyTemplate:       "{{{header}}}{{{table}}}{{{notes}}}{{{changelogs}}}{{{footer}}}",
 			RecreateWhen:         "always",
 			RebaseWhen:           "behind-base-branch",
