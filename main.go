@@ -55,7 +55,6 @@ import (
 	releaseapi "github.com/redhat-appstudio/release-service/api/v1alpha1"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 
-	appstudioredhatcomv1alpha1 "github.com/konflux-ci/build-service/api/v1alpha1"
 	"github.com/konflux-ci/build-service/controllers"
 	"github.com/konflux-ci/build-service/pkg/bometrics"
 	"github.com/konflux-ci/build-service/pkg/k8s"
@@ -73,7 +72,6 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(appstudiov1alpha1.AddToScheme(scheme))
-	utilruntime.Must(appstudioredhatcomv1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 

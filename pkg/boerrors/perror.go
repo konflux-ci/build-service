@@ -155,12 +155,7 @@ const (
 	// EInvalidDevfile devfile of the component is not valid.
 	EInvalidDevfile BOErrorId = 220
 
-	// ENoPipelineIsSelected no pipeline can be selected based on a component repository
-	ENoPipelineIsSelected BOErrorId = 300
-	// EBuildPipelineSelectorNotDefined A BuildPipelineSelector CR cannot be found from all supported search places and with supported names.
-	EBuildPipelineSelectorNotDefined BOErrorId = 301
-	// EUnsupportedPipelineRef The pipelineRef selected for a component (based on a BuildPipelineSelector)
-	// uses a feature that build-service does not support (e.g. unsupported resolver).
+	// EUnsupportedPipelineRef The pipelineRef selected for a component
 	EUnsupportedPipelineRef BOErrorId = 302
 	// EMissingParamsForBundleResolver The pipelineRef selected for a component is missing parameters required for the bundle resolver.
 	EMissingParamsForBundleResolver BOErrorId = 303
@@ -172,6 +167,8 @@ const (
 	EBuildPipelineConfigNotValid BOErrorId = 306
 	// EBuildPipelineInvalid  pipeline in 'build.appstudio.openshift.io/pipeline' doesn't exist in build-pipeline-config configMap
 	EBuildPipelineInvalid BOErrorId = 307
+	// EMissingPipelineAnnotation 'build.appstudio.openshift.io/pipeline' component annotation is missing
+	EMissingPipelineAnnotation BOErrorId = 308
 
 	// EPipelineRetrievalFailed Failed to retrieve a Tekton Pipeline.
 	EPipelineRetrievalFailed BOErrorId = 400
@@ -215,14 +212,13 @@ var boErrorMessages = map[BOErrorId]string{
 
 	EInvalidDevfile: "Component Devfile is invalid",
 
-	ENoPipelineIsSelected:            "No pipeline is selected for component repository based on predefined selectors.",
-	EBuildPipelineSelectorNotDefined: "Build pipeline selector is not defined yet.",
-	EUnsupportedPipelineRef:          "The pipelineRef for this component (based on pipeline selectors) is not supported.",
-	EMissingParamsForBundleResolver:  "The pipelineRef for this component is missing required parameters ('name' and/or 'bundle').",
-	EWrongPipelineAnnotation:         "'build.appstudio.openshift.io/pipeline' component annotation has wrong or missing values",
-	EBuildPipelineConfigNotDefined:   "build-pipeline-config ConfigMap not found",
-	EBuildPipelineConfigNotValid:     "build-pipeline-config ConfigMap data in config.yaml is not valid yaml",
-	EBuildPipelineInvalid:            "pipeline referenced in 'build.appstudio.openshift.io/pipeline' annotation doesn't exist in build-pipeline-config ConfigMap",
+	EUnsupportedPipelineRef:         "The pipelineRef for this component is not supported.",
+	EMissingParamsForBundleResolver: "The pipelineRef for this component is missing required parameters ('name' and/or 'bundle').",
+	EWrongPipelineAnnotation:        "'build.appstudio.openshift.io/pipeline' component annotation has wrong or missing values",
+	EBuildPipelineConfigNotDefined:  "build-pipeline-config ConfigMap not found",
+	EBuildPipelineConfigNotValid:    "build-pipeline-config ConfigMap data in config.yaml is not valid yaml",
+	EBuildPipelineInvalid:           "pipeline referenced in 'build.appstudio.openshift.io/pipeline' annotation doesn't exist in build-pipeline-config ConfigMap",
+	EMissingPipelineAnnotation:      "'build.appstudio.openshift.io/pipeline' component annotation is missing",
 
 	EPipelineRetrievalFailed:  "Failed to retrieve the pipeline selected for this component.",
 	EPipelineConversionFailed: "Failed to convert the selected pipeline to the supported Tekton API version.",
