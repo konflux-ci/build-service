@@ -153,6 +153,7 @@ func (r *ComponentBuildReconciler) GetBuildPipelineFromComponentAnnotation(ctx c
 			Params: []tektonapi.Param{
 				{Name: "name", Value: *tektonapi.NewStructuredValues(buildPipeline.Name)},
 				{Name: "bundle", Value: *tektonapi.NewStructuredValues(finalBundle)},
+				{Name: "kind", Value: *tektonapi.NewStructuredValues("pipeline")},
 			},
 		},
 	}
