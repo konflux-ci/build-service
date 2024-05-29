@@ -9,7 +9,7 @@ import (
 
 const (
 	RenovateMatchPatternEnvName = "RENOVATE_PATTERN"
-	DefaultRenovateMatchPattern = "^quay.io/redhat-appstudio-tekton-catalog/"
+	DefaultRenovateMatchPattern = "^quay.io/(redhat-appstudio-tekton-catalog|konflux-ci/tekton-catalog)/"
 )
 
 var (
