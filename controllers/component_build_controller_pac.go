@@ -31,12 +31,6 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/google/go-containerregistry/pkg/authn"
-	"github.com/konflux-ci/build-service/pkg/boerrors"
-	. "github.com/konflux-ci/build-service/pkg/common"
-	"github.com/konflux-ci/build-service/pkg/git"
-	gp "github.com/konflux-ci/build-service/pkg/git/gitprovider"
-	"github.com/konflux-ci/build-service/pkg/git/gitproviderfactory"
-	l "github.com/konflux-ci/build-service/pkg/logs"
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	routev1 "github.com/openshift/api/route/v1"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
@@ -54,6 +48,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/yaml"
+
+	"github.com/konflux-ci/build-service/pkg/boerrors"
+	. "github.com/konflux-ci/build-service/pkg/common"
+	"github.com/konflux-ci/build-service/pkg/git"
+	gp "github.com/konflux-ci/build-service/pkg/git/gitprovider"
+	"github.com/konflux-ci/build-service/pkg/git/gitproviderfactory"
+	l "github.com/konflux-ci/build-service/pkg/logs"
 )
 
 const (
@@ -985,13 +986,13 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 	}
 
 	mrData := &gp.MergeRequestData{
-		CommitMessage:  "Appstudio update " + component.Name,
+		CommitMessage:  "Konflux update " + component.Name,
 		BranchName:     generateMergeRequestSourceBranch(component),
 		BaseBranchName: baseBranch,
-		Title:          "Appstudio update " + component.Name,
+		Title:          "Konflux update " + component.Name,
 		Text:           mergeRequestDescription,
-		AuthorName:     "redhat-appstudio",
-		AuthorEmail:    "rhtap@redhat.com",
+		AuthorName:     "konflux",
+		AuthorEmail:    "konflux@konflux-ci.com",
 		Files: []gp.RepositoryFile{
 			{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPushFilename, Content: pipelineRunOnPushYaml},
 			{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPRFilename, Content: pipelineRunOnPRYaml},
@@ -1073,7 +1074,7 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 	mrData := &gp.MergeRequestData{
 		BranchName:     sourceBranch,
 		BaseBranchName: baseBranch,
-		AuthorName:     "redhat-appstudio",
+		AuthorName:     "konflux",
 	}
 
 	mergeRequest, err := gitClient.FindUnmergedPaCMergeRequest(repoUrl, mrData)
@@ -1095,13 +1096,13 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 	if mergeRequest == nil {
 		// Create new PaC configuration clean up merge request
 		mrData = &gp.MergeRequestData{
-			CommitMessage:  "Appstudio purge " + component.Name,
-			BranchName:     "appstudio-purge-" + component.Name,
+			CommitMessage:  "Konflux purge " + component.Name,
+			BranchName:     "konflux-purge-" + component.Name,
 			BaseBranchName: baseBranch,
-			Title:          "Appstudio purge " + component.Name,
+			Title:          "Konflux purge " + component.Name,
 			Text:           "Pipelines as Code configuration removal",
-			AuthorName:     "redhat-appstudio",
-			AuthorEmail:    "rhtap@redhat.com",
+			AuthorName:     "konflux",
+			AuthorEmail:    "konflux@konflux-ci.com",
 			Files: []gp.RepositoryFile{
 				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPushFilename},
 				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPRFilename},
