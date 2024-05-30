@@ -26,7 +26,6 @@ import (
 	"text/template"
 	"time"
 
-	l "github.com/konflux-ci/build-service/pkg/logs"
 	applicationapi "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	releaseapi "github.com/redhat-appstudio/release-service/api/v1alpha1"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
@@ -45,6 +44,8 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	l "github.com/konflux-ci/build-service/pkg/logs"
 )
 
 const (
@@ -557,7 +558,7 @@ func generateRenovateConfigForNudge(slug string, repositories []renovateReposito
 		  {
 		  	"matchPackageNames": ["{{.BuiltImageRepository}}", {{range .DistributionRepositories}},"{{.}}"{{end}}],
 			groupName: "Component Update {{.ComponentName}}",
-			branchName: "rhtap/component-updates/{{.ComponentName}}",
+			branchName: "konflux/component-updates/{{.ComponentName}}",
 			commitMessageTopic: "{{.ComponentName}}",
 			prFooter: "To execute skipped test pipelines write comment ` + "`/ok-to-test`" + `",
 			recreateWhen: "always",
