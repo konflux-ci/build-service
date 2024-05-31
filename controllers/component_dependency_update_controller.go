@@ -26,7 +26,6 @@ import (
 	"text/template"
 	"time"
 
-	l "github.com/konflux-ci/build-service/pkg/logs"
 	applicationapi "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	releaseapi "github.com/redhat-appstudio/release-service/api/v1alpha1"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
@@ -45,6 +44,8 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	l "github.com/konflux-ci/build-service/pkg/logs"
 )
 
 const (
@@ -418,7 +419,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 	var finalizerError error
 	for i := range pipelines.Items {
 		possiblyStalePr := pipelines.Items[i]
-		if possiblyStalePr.Annotations == nil || possiblyStalePr.Annotations[PacEventTypeAnnotationName] != PacEventPushType || possiblyStalePr.Name == pipelineRun.Name {
+		if possiblyStalePr.Annotations == nil || !strings.EqualFold(possiblyStalePr.Annotations[PacEventTypeAnnotationName], PacEventPushType) || possiblyStalePr.Name == pipelineRun.Name {
 			continue
 		}
 		if possiblyStalePr.Status.CompletionTime == nil && possiblyStalePr.CreationTimestamp.Before(&pipelineRun.CreationTimestamp) {
@@ -470,7 +471,7 @@ func IsBuildPushPipelineRun(object client.Object) bool {
 			return false
 		}
 		if pipelineRun.Labels != nil && pipelineRun.Annotations != nil {
-			if pipelineRun.Labels[PipelineRunTypeLabelName] == PipelineRunBuildType && pipelineRun.Annotations[PacEventTypeAnnotationName] == PacEventPushType {
+			if pipelineRun.Labels[PipelineRunTypeLabelName] == PipelineRunBuildType && strings.EqualFold(pipelineRun.Annotations[PacEventTypeAnnotationName], PacEventPushType) {
 				return true
 			}
 		}
