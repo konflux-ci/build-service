@@ -2010,8 +2010,18 @@ func TestGeneratePACRepository(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			component := getComponent(tt.repoUrl, tt.componentAnnotations)
-
-			pacRepo, err := generatePACRepository(component, tt.pacConfig)
+			secret := &corev1.Secret{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "v1",
+					Kind:       "Secret",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pac-secret",
+					Namespace: component.Namespace,
+				},
+				Data: tt.pacConfig,
+			}
+			pacRepo, err := generatePACRepository(component, secret)
 
 			if err != nil {
 				t.Errorf("Failed to generate PaC repository object. Cause: %v", err)
@@ -2049,6 +2059,18 @@ func TestPaCRepoAddParamWorkspace(t *testing.T) {
 		PipelinesAsCodeGithubPrivateKey: []byte(ghAppPrivateKeyStub),
 	}
 
+	secret := &corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "Secret",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pac-secret",
+			Namespace: workspaceName,
+		},
+		Data: pacConfig,
+	}
+
 	component := getComponentData(componentConfig{})
 
 	convertCustomParamsToMap := func(repository *pacv1alpha1.Repository) map[string]pacv1alpha1.Params {
@@ -2060,7 +2082,7 @@ func TestPaCRepoAddParamWorkspace(t *testing.T) {
 	}
 
 	t.Run("add to Spec.Params", func(t *testing.T) {
-		repository, _ := generatePACRepository(*component, pacConfig)
+		repository, _ := generatePACRepository(*component, secret)
 		pacRepoAddParamWorkspaceName(log, repository, workspaceName)
 
 		params := convertCustomParamsToMap(repository)
@@ -2070,7 +2092,7 @@ func TestPaCRepoAddParamWorkspace(t *testing.T) {
 	})
 
 	t.Run("override existing workspace parameter, unset other fields btw", func(t *testing.T) {
-		repository, _ := generatePACRepository(*component, pacConfig)
+		repository, _ := generatePACRepository(*component, secret)
 		params := []pacv1alpha1.Params{
 			{
 				Name:      pacCustomParamAppstudioWorkspace,
