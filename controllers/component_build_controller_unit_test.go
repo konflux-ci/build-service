@@ -2016,7 +2016,7 @@ func TestGeneratePACRepository(t *testing.T) {
 					Kind:       "Secret",
 				},
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "pac-secret",
+					Name:      PipelinesAsCodeGitHubAppSecretName,
 					Namespace: component.Namespace,
 				},
 				Data: tt.pacConfig,
