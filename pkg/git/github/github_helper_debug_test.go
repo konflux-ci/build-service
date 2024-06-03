@@ -99,7 +99,7 @@ func TestCreatePaCPullRequest(t *testing.T) {
 		Title:          "Konflux update " + componentName,
 		Text:           "Pipelines as Code configuration proposal",
 		AuthorName:     "konflux",
-		AuthorEmail:    "konflux@no-replay.konflux-ci.com",
+		AuthorEmail:    "konflux@no-reply.konflux-ci.dev",
 		Files: []gp.RepositoryFile{
 			{FullPath: ".tekton/" + componentName + "-push.yaml", Content: pipelineOnPush},
 			{FullPath: ".tekton/" + componentName + "-pull-request.yaml", Content: pipelineOnPR},
