@@ -992,7 +992,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 		Title:          "Konflux update " + component.Name,
 		Text:           mergeRequestDescription,
 		AuthorName:     "konflux",
-		AuthorEmail:    "konflux@no-replay.konflux-ci.com",
+		AuthorEmail:    "konflux@no-reply.konflux-ci.dev",
 		Files: []gp.RepositoryFile{
 			{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPushFilename, Content: pipelineRunOnPushYaml},
 			{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPRFilename, Content: pipelineRunOnPRYaml},
