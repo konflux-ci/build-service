@@ -1078,6 +1078,7 @@ func TestGenerateCelExpressionForPipeline(t *testing.T) {
                             dockerfile:
                                 uri: docker-root-dir/Dockerfile
                 `
+				component.Spec.Source.GitSource.DockerfileURL = "docker-root-dir/Dockerfile"
 				return component
 			}(),
 			targetBranch: "my-branch",
@@ -1123,6 +1124,7 @@ func TestGenerateCelExpressionForPipeline(t *testing.T) {
                             dockerfile:
                                 uri: docker-root-dir/Dockerfile
                 `
+				component.Spec.Source.GitSource.DockerfileURL = "docker-root-dir/Dockerfile"
 				return component
 			}(),
 			targetBranch: "my-branch",

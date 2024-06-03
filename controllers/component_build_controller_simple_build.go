@@ -258,7 +258,11 @@ func generatePipelineRunForComponent(component *appstudiov1alpha1.Component, pip
 			}
 		}
 	} else {
-		params = append(params, tektonapi.Param{Name: "dockerfile", Value: tektonapi.ParamValue{Type: "string", StringVal: "Dockerfile"}})
+		if component.Spec.Source.GitSource.DockerfileURL != "" {
+			params = append(params, tektonapi.Param{Name: "dockerfile", Value: tektonapi.ParamValue{Type: "string", StringVal: component.Spec.Source.GitSource.DockerfileURL}})
+		} else {
+			params = append(params, tektonapi.Param{Name: "dockerfile", Value: tektonapi.ParamValue{Type: "string", StringVal: "Dockerfile"}})
+		}
 		pathContext := getPathContext(component.Spec.Source.GitSource.Context, "")
 		if pathContext != "" {
 			params = append(params, tektonapi.Param{Name: "path-context", Value: tektonapi.ParamValue{Type: "string", StringVal: pathContext}})
