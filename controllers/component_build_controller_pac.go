@@ -992,7 +992,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 		Title:          "Konflux update " + component.Name,
 		Text:           mergeRequestDescription,
 		AuthorName:     "konflux",
-		AuthorEmail:    "konflux@konflux-ci.com",
+		AuthorEmail:    "konflux@no-replay.konflux-ci.com",
 		Files: []gp.RepositoryFile{
 			{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPushFilename, Content: pipelineRunOnPushYaml},
 			{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPRFilename, Content: pipelineRunOnPRYaml},
@@ -1102,7 +1102,7 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 			Title:          "Konflux purge " + component.Name,
 			Text:           "Pipelines as Code configuration removal",
 			AuthorName:     "konflux",
-			AuthorEmail:    "konflux@konflux-ci.com",
+			AuthorEmail:    "konflux@no-replay.konflux-ci.com",
 			Files: []gp.RepositoryFile{
 				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPushFilename},
 				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPRFilename},

@@ -59,7 +59,7 @@ func TestEnsurePaCMergeRequest(t *testing.T) {
 		Title:          "Konflux update " + componentName,
 		Text:           "Pipelines as Code configuration proposal",
 		AuthorName:     "konflux",
-		AuthorEmail:    "konflux@konflux-ci.com",
+		AuthorEmail:    "konflux@no-replay.konflux-ci.com",
 		Files: []gp.RepositoryFile{
 			{FullPath: ".tekton/" + componentName + "-push.yaml", Content: pipelineOnPush},
 			{FullPath: ".tekton/" + componentName + "-pull-request.yaml", Content: pipelineOnPR},
@@ -98,7 +98,7 @@ func TestUndoPaCMergeRequest(t *testing.T) {
 		Title:          "Konflux purge " + componentName,
 		Text:           "Pipelines as Code configuration removal",
 		AuthorName:     "konflux",
-		AuthorEmail:    "konflux@konflux-ci.com",
+		AuthorEmail:    "konflux@no-replay.konflux-ci.com",
 		Files: []gp.RepositoryFile{
 			{FullPath: ".tekton/" + componentName + "-push.yaml"},
 			{FullPath: ".tekton/" + componentName + "-pull-request.yaml"},
