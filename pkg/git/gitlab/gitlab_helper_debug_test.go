@@ -98,7 +98,7 @@ func TestUndoPaCMergeRequest(t *testing.T) {
 		Title:          "Konflux purge " + componentName,
 		Text:           "Pipelines as Code configuration removal",
 		AuthorName:     "konflux",
-		AuthorEmail:    "konflux@no-replay.konflux-ci.com",
+		AuthorEmail:    "konflux@no-reply.konflux-ci.dev",
 		Files: []gp.RepositoryFile{
 			{FullPath: ".tekton/" + componentName + "-push.yaml"},
 			{FullPath: ".tekton/" + componentName + "-pull-request.yaml"},
