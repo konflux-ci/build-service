@@ -40,7 +40,6 @@ import (
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	routev1 "github.com/openshift/api/route/v1"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
-	devfile "github.com/redhat-appstudio/application-service/cdq-analysis/pkg"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	tektonapi_v1beta1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	oci "github.com/tektoncd/pipeline/pkg/remote/oci"
@@ -1204,7 +1203,11 @@ func generatePaCPipelineRunForComponent(
 			}
 		}
 	} else {
-		params = append(params, tektonapi.Param{Name: "dockerfile", Value: tektonapi.ParamValue{Type: "string", StringVal: "Dockerfile"}})
+		if component.Spec.Source.GitSource.DockerfileURL != "" {
+			params = append(params, tektonapi.Param{Name: "dockerfile", Value: tektonapi.ParamValue{Type: "string", StringVal: component.Spec.Source.GitSource.DockerfileURL}})
+		} else {
+			params = append(params, tektonapi.Param{Name: "dockerfile", Value: tektonapi.ParamValue{Type: "string", StringVal: "Dockerfile"}})
+		}
 		pathContext := getPathContext(component.Spec.Source.GitSource.Context, "")
 		if pathContext != "" {
 			params = append(params, tektonapi.Param{Name: "path-context", Value: tektonapi.ParamValue{Type: "string", StringVal: pathContext}})
@@ -1240,7 +1243,7 @@ func generatePaCPipelineRunForComponent(
 // in order to have better flexibility with git events filtering.
 // Examples of returned values:
 // event == "push" && target_branch == "main"
-// event == "pull_request" && target_branch == "my-branch" && ( "component-src-dir/***".pathChanged() || "dockerfiles/my-component/Dockerfile".pathChanged() )
+// event == "pull_request" && target_branch == "my-branch" && ( "component-src-dir/***".pathChanged() || ".tekton/pipeline.yaml".pathChanged() || "dockerfiles/my-component/Dockerfile".pathChanged() )
 func generateCelExpressionForPipeline(component *appstudiov1alpha1.Component, gitClient gp.GitProviderClient, targetBranch string, onPull bool) (string, error) {
 	eventType := "push"
 	if onPull {
@@ -1262,15 +1265,15 @@ func generateCelExpressionForPipeline(component *appstudiov1alpha1.Component, gi
 		// If a Dockerfile is defined for the Component,
 		// we should rebuild the Component if the Dockerfile has been changed.
 		dockerfilePathChangedSuffix := ""
-		dockerfile, err := devfile.SearchForDockerfile([]byte(component.Status.Devfile))
-		if err == nil && dockerfile != nil && dockerfile.Uri != "" {
+		dockerfile := component.Spec.Source.GitSource.DockerfileURL
+		if dockerfile != "" {
 			// Ignore dockerfile that is not stored in the same git repository but downloaded by an URL.
-			if !strings.Contains(dockerfile.Uri, "://") {
-				// dockerfile.Uri could be relative to the context directory or repository root.
+			if !strings.Contains(dockerfile, "://") {
+				// dockerfile could be relative to the context directory or repository root.
 				// To avoid unessesary builds, it's required to pass absolute path to the Dockerfile.
 				repoUrl := component.Spec.Source.GitSource.URL
 				branch := component.Spec.Source.GitSource.Revision
-				dockerfilePath := contextDir + dockerfile.Uri
+				dockerfilePath := contextDir + dockerfile
 				isDockerfileInContextDir, err := gitClient.IsFileExist(repoUrl, branch, dockerfilePath)
 				if err != nil {
 					return "", err
@@ -1278,7 +1281,7 @@ func generateCelExpressionForPipeline(component *appstudiov1alpha1.Component, gi
 				// If the Dockerfile is inside context directory, no changes to event filter needed.
 				if !isDockerfileInContextDir {
 					// Pipelines as Code doesn't match path if it starts from /
-					dockerfileAbsolutePath := strings.TrimPrefix(dockerfile.Uri, "/")
+					dockerfileAbsolutePath := strings.TrimPrefix(dockerfile, "/")
 					dockerfilePathChangedSuffix = fmt.Sprintf(`|| "%s".pathChanged() `, dockerfileAbsolutePath)
 				}
 			}
