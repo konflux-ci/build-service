@@ -79,10 +79,10 @@ func NewTektonJobConfig(platform, endpoint, username, gitAuthor string, reposito
 		Tekton: Tekton{FileMatch: []string{"\\.yaml$", "\\.yml$"}, IncludePaths: []string{".tekton/**"}, PackageRules: []PackageRule{DisableAllPackageRules, {
 			MatchPackagePatterns: []string{renovatePattern},
 			MatchDepPatterns:     []string{renovatePattern},
-			GroupName:            "RHTAP references",
+			GroupName:            "Konflux references",
 			BranchName:           "konflux/references/{{baseBranch}}",
 			CommitMessageExtra:   "",
-			CommitMessageTopic:   "RHTAP references",
+			CommitMessageTopic:   "Konflux references",
 			CommitBody:           "Signed-off-by: {{{gitAuthor}}}",
 			SemanticCommits:      "enabled",
 			PRFooter:             "To execute skipped test pipelines write comment `/ok-to-test`",

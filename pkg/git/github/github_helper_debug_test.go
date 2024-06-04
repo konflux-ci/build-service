@@ -93,13 +93,13 @@ func TestCreatePaCPullRequest(t *testing.T) {
 
 	componentName := "unittest-component-name"
 	prData := &gp.MergeRequestData{
-		CommitMessage:  "Appstudio update " + componentName,
-		BranchName:     "appstudio-" + componentName,
+		CommitMessage:  "Konflux update " + componentName,
+		BranchName:     "konflux-" + componentName,
 		BaseBranchName: "",
-		Title:          "Appstudio update " + componentName,
+		Title:          "Konflux update " + componentName,
 		Text:           "Pipelines as Code configuration proposal",
-		AuthorName:     "redhat-appstudio",
-		AuthorEmail:    "rhtap@redhat.com",
+		AuthorName:     "konflux",
+		AuthorEmail:    "konflux@no-reply.konflux-ci.dev",
 		Files: []gp.RepositoryFile{
 			{FullPath: ".tekton/" + componentName + "-push.yaml", Content: pipelineOnPush},
 			{FullPath: ".tekton/" + componentName + "-pull-request.yaml", Content: pipelineOnPR},
@@ -123,13 +123,13 @@ func TestUndoPaCPullRequest(t *testing.T) {
 
 	componentName := "unittest-component-name"
 	prData := &gp.MergeRequestData{
-		CommitMessage:  "Appstudio purge " + componentName,
-		BranchName:     "appstudio-purge-" + componentName,
+		CommitMessage:  "Konflux purge " + componentName,
+		BranchName:     "konflux-purge-" + componentName,
 		BaseBranchName: "",
-		Title:          "Appstudio purge " + componentName,
+		Title:          "Konflux purge " + componentName,
 		Text:           "Pipelines as Code configuration removal",
-		AuthorName:     "redhat-appstudio",
-		AuthorEmail:    "rhtap@redhat.com",
+		AuthorName:     "konflux",
+		AuthorEmail:    "konflux@no-reply.konflux-ci.dev",
 		Files: []gp.RepositoryFile{
 			{FullPath: ".tekton/" + componentName + "-push.yaml"},
 			{FullPath: ".tekton/" + componentName + "-pull-request.yaml"},
