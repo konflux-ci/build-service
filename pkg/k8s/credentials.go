@@ -164,6 +164,7 @@ func bestMatchingSecret(ctx context.Context, componentRepository string, secrets
 		if len(hostOnlySecrets) == 0 {
 			return nil // Nothing matched
 		}
+		log.Info("Using host only secret", "name", hostOnlySecrets[0].Name)
 		return &hostOnlySecrets[0] // Return first host-only secret
 	}
 	log.Info("host only secrets", "count", len(hostOnlySecrets), "potentialMatches", potentialMatches)

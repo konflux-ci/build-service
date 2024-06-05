@@ -152,7 +152,7 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context,
 		}
 	}
 
-	if err := r.ensurePaCRepository(ctx, component, pacSecret.Data); err != nil {
+	if err := r.ensurePaCRepository(ctx, component, pacSecret); err != nil {
 		return "", err
 	}
 
@@ -724,7 +724,7 @@ func (r *ComponentBuildReconciler) getNamespace(ctx context.Context, name string
 	}
 }
 
-func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, component *appstudiov1alpha1.Component, pacConfig map[string][]byte) error {
+func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, component *appstudiov1alpha1.Component, pacConfig *corev1.Secret) error {
 	log := ctrllog.FromContext(ctx)
 
 	// Check multi component git repository scenario.
@@ -827,21 +827,21 @@ func (r *ComponentBuildReconciler) findPaCRepositoryForComponent(ctx context.Con
 }
 
 // generatePACRepository creates configuration of Pipelines as Code repository object.
-func generatePACRepository(component appstudiov1alpha1.Component, config map[string][]byte) (*pacv1alpha1.Repository, error) {
+func generatePACRepository(component appstudiov1alpha1.Component, config *corev1.Secret) (*pacv1alpha1.Repository, error) {
 	gitProvider, err := getGitProvider(component)
 	if err != nil {
 		return nil, err
 	}
 
-	isAppUsed := IsPaCApplicationConfigured(gitProvider, config)
+	isAppUsed := IsPaCApplicationConfigured(gitProvider, config.Data)
 
 	var gitProviderConfig *pacv1alpha1.GitProvider = nil
 	if !isAppUsed {
 		// Webhook is used
 		gitProviderConfig = &pacv1alpha1.GitProvider{
 			Secret: &pacv1alpha1.Secret{
-				Name: PipelinesAsCodeGitHubAppSecretName,
-				Key:  "password", // basic-auth secret type expected
+				Name: config.Name,
+				Key:  corev1.BasicAuthPasswordKey, // basic-auth secret type expected
 			},
 			WebhookSecret: &pacv1alpha1.Secret{
 				Name: pipelinesAsCodeWebhooksSecretName,
