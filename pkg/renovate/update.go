@@ -84,7 +84,7 @@ func (j *UpdateCoordinator) ExecuteUpdate(ctx context.Context, updates []*Authen
 
 		log.Info("Creating renovate config map entry ", "json", config)
 		renovateCmd = append(renovateCmd,
-			fmt.Sprintf("RENOVATE_TOKEN=$TOKEN_%s RENOVATE_CONFIG_FILE=/configs/%s.json renovate", taskId, taskId),
+			fmt.Sprintf("RENOVATE_TOKEN=$TOKEN_%s RENOVATE_CONFIG_FILE=/configs/%s.json renovate || true", taskId, taskId),
 		)
 	}
 	if len(renovateCmd) == 0 {
@@ -239,7 +239,7 @@ func (j *UpdateCoordinator) ExecutePipelineRun(ctx context.Context, namespace st
 
 		log.Info(fmt.Sprintf("Creating renovate config map entry  value %s", config))
 		renovateCmd = append(renovateCmd,
-			fmt.Sprintf("RENOVATE_TOKEN=$TOKEN_%s RENOVATE_CONFIG_FILE=/configs/%s.json renovate", taskId, taskId),
+			fmt.Sprintf("RENOVATE_TOKEN=$TOKEN_%s RENOVATE_CONFIG_FILE=/configs/%s.json renovate || true", taskId, taskId),
 		)
 	}
 	if len(renovateCmd) == 0 {
