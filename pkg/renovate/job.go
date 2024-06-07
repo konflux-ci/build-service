@@ -84,7 +84,7 @@ func (j *JobCoordinator) Execute(ctx context.Context, tasks []*Task) error {
 
 		log.Info(fmt.Sprintf("Creating renovate config map entry with length %d and value %s", len(config), config))
 		renovateCmd = append(renovateCmd,
-			fmt.Sprintf("RENOVATE_TOKEN=$TOKEN_%s RENOVATE_CONFIG_FILE=/configs/%s.json renovate", taskId, taskId),
+			fmt.Sprintf("RENOVATE_TOKEN=$TOKEN_%s RENOVATE_CONFIG_FILE=/configs/%s.json renovate || true", taskId, taskId),
 		)
 	}
 	if len(renovateCmd) == 0 {
