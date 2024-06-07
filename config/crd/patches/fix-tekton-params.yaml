@@ -1,6 +1,0 @@
-# replace the generated schema for params[].value with a custom one
-# (Tekton uses custom marshalling and unmarshalling for param values)
-- op: replace
-  path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/selectors/items/properties/pipelineRef/properties/params/items/properties/value
-  value:
-    type: string

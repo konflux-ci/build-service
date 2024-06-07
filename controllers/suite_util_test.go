@@ -39,7 +39,6 @@ import (
 	gh "github.com/google/go-github/v45/github"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 
-	buildappstudiov1alpha1 "github.com/konflux-ci/build-service/api/v1alpha1"
 	. "github.com/konflux-ci/build-service/pkg/common"
 	"github.com/konflux-ci/build-service/pkg/git/github"
 	"gopkg.in/yaml.v2"
@@ -65,11 +64,9 @@ const (
 
 	defaultPipelineName   = "docker-build"
 	defaultPipelineBundle = "quay.io/redhat-appstudio-tekton-catalog/pipeline-docker-build:07ec767c565b36296b4e185b01f05536848d9c12"
-	v1beta1PipelineBundle = "quay.io/redhat-appstudio-tekton-catalog/pipeline-docker-build:8cf8982d58a841922b687b7166f0cfdc1cc3fc72"
 )
 
 var (
-	defaultSelectorKey          = types.NamespacedName{Name: buildPipelineSelectorResourceName, Namespace: BuildServiceNamespaceName}
 	defaultPipelineConfigMapKey = types.NamespacedName{Name: buildPipelineConfigMapResourceName, Namespace: BuildServiceNamespaceName}
 )
 
@@ -93,14 +90,6 @@ func isOwnedBy(resource []metav1.OwnerReference, component appstudiov1alpha1.Com
 		return true
 	}
 	return false
-}
-
-func getMinimalDevfile() string {
-	return `
-        schemaVersion: 2.2.0
-        metadata:
-            name: minimal-devfile
-    `
 }
 
 func getComponentData(config componentConfig) *appstudiov1alpha1.Component {
@@ -130,7 +119,9 @@ func getComponentData(config componentConfig) *appstudiov1alpha1.Component {
 	}
 	annotations := make(map[string]string)
 	if config.annotations != nil {
-		annotations = config.annotations
+		for key, value := range config.annotations {
+			annotations[key] = value
+		}
 	}
 	return &appstudiov1alpha1.Component{
 		TypeMeta: metav1.TypeMeta{
@@ -166,39 +157,16 @@ func getSampleComponentData(componentKey types.NamespacedName) *appstudiov1alpha
 // createComponentAndProcessBuildRequest create a component with specified build request and
 // waits until the request annotation is removed, which means the request was processed by the operator.
 // Use createCustomComponentWithBuildRequest if there is no need to wait.
-func createComponentAndProcessBuildRequest(componentKey types.NamespacedName, buildRequest string) {
-	createCustomComponentWithBuildRequest(componentConfig{componentKey: componentKey}, buildRequest)
-	waitComponentAnnotationGone(componentKey, BuildRequestAnnotationName)
+func createComponentAndProcessBuildRequest(config componentConfig, buildRequest string) {
+	createCustomComponentWithBuildRequest(config, buildRequest)
+	waitComponentAnnotationGone(config.componentKey, BuildRequestAnnotationName)
 }
 
-// createComponentWithBuildRequest create a component with specified build request.
-// This method also sets devfile model, so the component is ready to be processed.
-func createComponentWithBuildRequest(componentKey types.NamespacedName, buildRequest string) {
-	createCustomComponentWithBuildRequest(componentConfig{componentKey: componentKey}, buildRequest)
-}
-
-// createComponentWithBuildRequestAndGitcreate a component with specified build request, and provided gitURL and revision.
-// This method also sets devfile model, so the component is ready to be processed.
-func createComponentWithBuildRequestAndGit(componentKey types.NamespacedName, buildRequest string, gitURL string, gitRevision string) {
-	createCustomComponentWithBuildRequest(componentConfig{componentKey: componentKey, gitURL: gitURL, gitRevision: gitRevision}, buildRequest)
-}
-
-func createCustomComponentWithoutBuildRequestWithoutDevfile(config componentConfig) {
+func createCustomComponentWithoutBuildRequest(config componentConfig) {
 	component := getComponentData(config)
 	if component.Annotations == nil {
 		component.Annotations = make(map[string]string)
 	}
-
-	Expect(k8sClient.Create(ctx, component)).Should(Succeed())
-	getComponent(config.componentKey)
-}
-
-func createCustomComponentWithBuildRequestWithoutDevfile(config componentConfig, buildRequest string) {
-	component := getComponentData(config)
-	if component.Annotations == nil {
-		component.Annotations = make(map[string]string)
-	}
-	component.Annotations[BuildRequestAnnotationName] = buildRequest
 
 	Expect(k8sClient.Create(ctx, component)).Should(Succeed())
 	getComponent(config.componentKey)
@@ -213,7 +181,6 @@ func createCustomComponentWithBuildRequest(config componentConfig, buildRequest 
 
 	Expect(k8sClient.Create(ctx, component)).Should(Succeed())
 	getComponent(config.componentKey)
-	setComponentDevfileModel(config.componentKey)
 }
 
 func setComponentBuildRequest(componentKey types.NamespacedName, buildRequest string) {
@@ -224,22 +191,6 @@ func setComponentBuildRequest(componentKey types.NamespacedName, buildRequest st
 	component.Annotations[BuildRequestAnnotationName] = buildRequest
 
 	Expect(k8sClient.Update(ctx, component)).To(Succeed())
-}
-
-// createComponentForPaCBuild is deprecated
-func createComponentForPaCBuild(sampleComponentData *appstudiov1alpha1.Component) types.NamespacedName {
-	sampleComponentData.Annotations = map[string]string{
-		BuildRequestAnnotationName: BuildRequestConfigurePaCAnnotationValue,
-	}
-
-	Expect(k8sClient.Create(ctx, sampleComponentData)).Should(Succeed())
-
-	lookupKey := types.NamespacedName{
-		Name:      sampleComponentData.Name,
-		Namespace: sampleComponentData.Namespace,
-	}
-	getComponent(lookupKey)
-	return lookupKey
 }
 
 // createComponent creates sample component resource and verifies it was properly created
@@ -293,23 +244,6 @@ func deleteComponent(componentKey types.NamespacedName) {
 	Eventually(func() bool {
 		return k8sErrors.IsNotFound(k8sClient.Get(ctx, componentKey, component))
 	}, timeout, interval).Should(BeTrue())
-}
-
-func setComponentDevfile(componentKey types.NamespacedName, devfile string) {
-	component := &appstudiov1alpha1.Component{}
-	Eventually(func() error {
-		Expect(k8sClient.Get(ctx, componentKey, component)).To(Succeed())
-		component.Status.Devfile = devfile
-		return k8sClient.Status().Update(ctx, component)
-	}, timeout, interval).Should(Succeed())
-
-	component = getComponent(componentKey)
-	Expect(component.Status.Devfile).Should(Not(Equal("")))
-}
-
-func setComponentDevfileModel(componentKey types.NamespacedName) {
-	devfile := getMinimalDevfile()
-	setComponentDevfile(componentKey, devfile)
 }
 
 func waitFinalizerOnComponent(componentKey types.NamespacedName, finalizerName string, finalizerShouldBePresent bool) {
@@ -649,14 +583,6 @@ func waitComponentAnnotationGone(componentKey types.NamespacedName, annotationNa
 	}, timeout, interval).Should(BeTrue())
 }
 
-func ensureComponentAnnotationValue(componentKey types.NamespacedName, annotationName string, annotationValue string) {
-	Consistently(func() bool {
-		component := getComponent(componentKey)
-		annotations := component.GetAnnotations()
-		return annotations != nil && annotations[annotationName] == annotationValue
-	}, ensureTimeout, interval).Should(BeTrue())
-}
-
 func createRoute(routeKey types.NamespacedName, host string) {
 	route := routev1.Route{
 		ObjectMeta: metav1.ObjectMeta{
@@ -682,44 +608,6 @@ func deleteRoute(routeKey types.NamespacedName) {
 		Fail(err.Error())
 	}
 	if err := k8sClient.Delete(ctx, route); err != nil && !k8sErrors.IsNotFound(err) {
-		Fail(err.Error())
-	}
-}
-
-// remove when removing build pipeline selector
-func createDefaultBuildPipelineRunSelector(selectorKey types.NamespacedName) {
-	createBuildPipelineRunSelector(selectorKey, defaultPipelineBundle, defaultPipelineName)
-}
-
-// remove when removing build pipeline selector
-func createBuildPipelineRunSelector(selectorKey types.NamespacedName, pipelineBundle, pipelineName string) {
-	buildPipelineSelector := buildappstudiov1alpha1.BuildPipelineSelector{
-		ObjectMeta: metav1.ObjectMeta{Name: selectorKey.Name, Namespace: selectorKey.Namespace},
-		Spec: buildappstudiov1alpha1.BuildPipelineSelectorSpec{
-			Selectors: []buildappstudiov1alpha1.PipelineSelector{
-				{
-					Name:           SelectorDefaultName,
-					PipelineRef:    newBundleResolverPipelineRef(pipelineBundle, pipelineName),
-					PipelineParams: []buildappstudiov1alpha1.PipelineParam{},
-					WhenConditions: buildappstudiov1alpha1.WhenCondition{},
-				}}},
-	}
-
-	if err := k8sClient.Create(ctx, &buildPipelineSelector); err != nil && !k8sErrors.IsAlreadyExists(err) {
-		Fail(err.Error())
-	}
-}
-
-// remove when removing build pipeline selector
-func deleteBuildPipelineRunSelector(selectorKey types.NamespacedName) {
-	buildPipelineSelector := buildappstudiov1alpha1.BuildPipelineSelector{}
-	if err := k8sClient.Get(ctx, selectorKey, &buildPipelineSelector); err != nil {
-		if k8sErrors.IsNotFound(err) {
-			return
-		}
-		Fail(err.Error())
-	}
-	if err := k8sClient.Delete(ctx, &buildPipelineSelector); err != nil && !k8sErrors.IsNotFound(err) {
 		Fail(err.Error())
 	}
 }
@@ -816,18 +704,4 @@ func getPipelineName(pipelineRef *tektonapi.PipelineRef) string {
 func getPipelineBundle(pipelineRef *tektonapi.PipelineRef) string {
 	_, bundle, _ := getPipelineNameAndBundle(pipelineRef)
 	return bundle
-}
-
-// Return a pipelineRef that refers to a pipeline with the specified name in the specified bundle
-func newBundleResolverPipelineRef(bundle, name string) tektonapi.PipelineRef {
-	return tektonapi.PipelineRef{
-		ResolverRef: tektonapi.ResolverRef{
-			Resolver: "bundles",
-			Params: []tektonapi.Param{
-				{Name: "kind", Value: *tektonapi.NewStructuredValues("pipeline")},
-				{Name: "bundle", Value: *tektonapi.NewStructuredValues(bundle)},
-				{Name: "name", Value: *tektonapi.NewStructuredValues(name)},
-			},
-		},
-	}
 }

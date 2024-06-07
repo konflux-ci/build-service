@@ -19,9 +19,7 @@ package controllers
 import (
 	"context"
 	"go/build"
-	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -45,7 +43,6 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	appstudioredhatcomv1alpha1 "github.com/konflux-ci/build-service/api/v1alpha1"
 	"github.com/konflux-ci/build-service/pkg/k8s"
 	"github.com/konflux-ci/build-service/pkg/webhook"
 	//+kubebuilder:scaffold:imports
@@ -77,17 +74,9 @@ var _ = BeforeSuite(func() {
 
 	By("bootstrapping test environment")
 
-	// Envtest doesn't respect kustomization.yaml for CRDs, apply it ourselves
-	crdsTempfile, err := os.CreateTemp("", "crds*.yaml")
-	Expect(err).NotTo(HaveOccurred())
-	defer os.Remove(crdsTempfile.Name())
-	Expect(runKustomize(filepath.Join("..", "config", "crd"), crdsTempfile)).To(Succeed())
-	crdsTempfile.Close()
-
 	applicationApiDepVersion := "v0.0.0-20231026192857-89515ad2504f"
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
-			crdsTempfile.Name(),
 			filepath.Join("..", "hack", "routecrd", "route.yaml"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "redhat-appstudio", "application-api@"+applicationApiDepVersion, "config", "crd", "bases"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "tektoncd", "pipeline@v0.46.0", "config"),
@@ -112,9 +101,6 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 
 	err = pacv1alpha1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = appstudioredhatcomv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	err = releaseapi.AddToScheme(scheme.Scheme)
@@ -181,13 +167,6 @@ var _ = BeforeSuite(func() {
 		Expect(err).ToNot(HaveOccurred(), "failed to run manager")
 	}()
 })
-
-func runKustomize(dir string, out io.Writer) error {
-	kubectl := filepath.Join(os.Getenv("KUBEBUILDER_ASSETS"), "kubectl")
-	cmd := exec.Command(kubectl, "kustomize", dir)
-	cmd.Stdout = out
-	return cmd.Run()
-}
 
 // The Tekton PipelineRun CRD defines v1beta1 as the storage version. When build-service creates
 // a v1 PipelineRun, it needs to be converted to v1beta1 before it gets stored in etcd. Normally,

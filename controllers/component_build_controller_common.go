@@ -25,13 +25,10 @@ import (
 	"sort"
 	"strings"
 
-	buildappstudiov1alpha1 "github.com/konflux-ci/build-service/api/v1alpha1"
 	"github.com/konflux-ci/build-service/pkg/boerrors"
 	. "github.com/konflux-ci/build-service/pkg/common"
 	l "github.com/konflux-ci/build-service/pkg/logs"
-	pipelineselector "github.com/konflux-ci/build-service/pkg/pipeline-selector"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
-	devfile "github.com/redhat-appstudio/application-service/cdq-analysis/pkg"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
@@ -51,9 +48,6 @@ type pipelineConfig struct {
 	DefaultPipelineName string          `yaml:"default-pipeline-name"`
 	Pipelines           []BuildPipeline `yaml:"pipelines"`
 }
-
-// That way it can be mocked in tests
-var DevfileSearchForDockerfile = devfile.SearchForDockerfile
 
 // getGitProvider returns git provider name based on the repository url, e.g. github, gitlab, etc or git-privider annotation
 func getGitProvider(component appstudiov1alpha1.Component) (string, error) {
@@ -103,6 +97,37 @@ func getGitProvider(component appstudiov1alpha1.Component) (string, error) {
 	return gitProvider, err
 }
 
+// SetDefaultBuildPipelineComponentAnnotation sets default build pipeline to component pipeline annotation
+func (r *ComponentBuildReconciler) SetDefaultBuildPipelineComponentAnnotation(ctx context.Context, component *appstudiov1alpha1.Component) error {
+	log := ctrllog.FromContext(ctx)
+	pipelinesConfigMap := &corev1.ConfigMap{}
+
+	if err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineConfigMapResourceName, Namespace: BuildServiceNamespaceName}, pipelinesConfigMap); err != nil {
+		if errors.IsNotFound(err) {
+			return boerrors.NewBuildOpError(boerrors.EBuildPipelineConfigNotDefined, err)
+		}
+		return err
+	}
+
+	buildPipelineData := &pipelineConfig{}
+	if err := yaml.Unmarshal([]byte(pipelinesConfigMap.Data[buildPipelineConfigName]), buildPipelineData); err != nil {
+		return boerrors.NewBuildOpError(boerrors.EBuildPipelineConfigNotValid, err)
+	}
+
+	pipelineAnnotation := fmt.Sprintf("{\"name\":\"%s\",\"bundle\":\"%s\"}", buildPipelineData.DefaultPipelineName, "latest")
+	if component.Annotations == nil {
+		component.Annotations = make(map[string]string)
+	}
+	component.Annotations[defaultBuildPipelineAnnotation] = pipelineAnnotation
+
+	if err := r.Client.Update(ctx, component); err != nil {
+		log.Error(err, fmt.Sprintf("failed to update component with default pipeline annotation %s", defaultBuildPipelineAnnotation))
+		return err
+	}
+	log.Info(fmt.Sprintf("updated component with default pipeline annotation %s", defaultBuildPipelineAnnotation))
+	return nil
+}
+
 // GetBuildPipelineFromComponentAnnotation parses pipeline annotation on component and returns build pipeline
 func (r *ComponentBuildReconciler) GetBuildPipelineFromComponentAnnotation(ctx context.Context, component *appstudiov1alpha1.Component) (*tektonapi.PipelineRef, error) {
 	buildPipeline, err := readBuildPipelineAnnotation(component)
@@ -110,7 +135,8 @@ func (r *ComponentBuildReconciler) GetBuildPipelineFromComponentAnnotation(ctx c
 		return nil, err
 	}
 	if buildPipeline == nil {
-		return nil, nil
+		err := fmt.Errorf("missing or empty pipeline annotation: %s, will add default one to the component", component.Annotations[defaultBuildPipelineAnnotation])
+		return nil, boerrors.NewBuildOpError(boerrors.EMissingPipelineAnnotation, err)
 	}
 	if buildPipeline.Bundle == "" || buildPipeline.Name == "" {
 		err = fmt.Errorf("missing name or bundle in pipeline annotation: name=%s bundle=%s", buildPipeline.Name, buildPipeline.Bundle)
@@ -146,7 +172,6 @@ func (r *ComponentBuildReconciler) GetBuildPipelineFromComponentAnnotation(ctx c
 		}
 	}
 
-	// for now we will return PipelineRef format, because it is the same what methods which use build-selector are returning
 	pipelineRef := &tektonapi.PipelineRef{
 		ResolverRef: tektonapi.ResolverRef{
 			Resolver: "bundles",
@@ -158,45 +183,6 @@ func (r *ComponentBuildReconciler) GetBuildPipelineFromComponentAnnotation(ctx c
 		},
 	}
 	return pipelineRef, nil
-}
-
-// GetPipelineForComponent searches for the build pipeline to use on the component.
-func (r *ComponentBuildReconciler) GetPipelineForComponent(ctx context.Context, component *appstudiov1alpha1.Component) (*tektonapi.PipelineRef, []tektonapi.Param, error) {
-	var pipelineSelectors []buildappstudiov1alpha1.BuildPipelineSelector
-	pipelineSelector := &buildappstudiov1alpha1.BuildPipelineSelector{}
-
-	pipelineSelectorKeys := []types.NamespacedName{
-		// First try specific config for the application
-		{Namespace: component.Namespace, Name: component.Spec.Application},
-		// Second try namespaced config
-		{Namespace: component.Namespace, Name: buildPipelineSelectorResourceName},
-		// Finally try global config
-		{Namespace: BuildServiceNamespaceName, Name: buildPipelineSelectorResourceName},
-	}
-
-	for _, pipelineSelectorKey := range pipelineSelectorKeys {
-		if err := r.Client.Get(ctx, pipelineSelectorKey, pipelineSelector); err != nil {
-			if !errors.IsNotFound(err) {
-				return nil, nil, err
-			}
-			// The config is not found, try the next one in the hierarchy
-		} else {
-			pipelineSelectors = append(pipelineSelectors, *pipelineSelector)
-		}
-	}
-
-	if len(pipelineSelectors) > 0 {
-		pipelineRef, pipelineParams, err := pipelineselector.SelectPipelineForComponent(component, pipelineSelectors)
-		if err != nil {
-			return nil, nil, err
-		}
-		if pipelineRef == nil {
-			return nil, nil, boerrors.NewBuildOpError(boerrors.ENoPipelineIsSelected, nil)
-		}
-		return pipelineRef, pipelineParams, nil
-	}
-
-	return nil, nil, boerrors.NewBuildOpError(boerrors.EBuildPipelineSelectorNotDefined, nil)
 }
 
 func (r *ComponentBuildReconciler) ensurePipelineServiceAccount(ctx context.Context, namespace string) (*corev1.ServiceAccount, error) {
