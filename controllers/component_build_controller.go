@@ -69,7 +69,6 @@ const (
 	ImageRepoGenerateAnnotationName = "image.redhat.com/generate"
 	buildPipelineServiceAccountName = "appstudio-pipeline"
 
-	buildPipelineSelectorResourceName  = "build-pipeline-selector"
 	defaultBuildPipelineAnnotation     = "build.appstudio.openshift.io/pipeline"
 	buildPipelineConfigMapResourceName = "build-pipeline-config"
 	buildPipelineConfigName            = "config.yaml"
@@ -154,7 +153,6 @@ func updateMetricsTimes(componentIdForMetrics string, requestedAction string, re
 
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=components,verbs=get;list;watch;update;patch
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=components/status,verbs=get;list;watch
-//+kubebuilder:rbac:groups=appstudio.redhat.com,resources=buildpipelineselectors,verbs=get;list;watch;create;update;patch
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=releaseplanadmissions,verbs=get;list;watch
 //+kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns,verbs=create
 //+kubebuilder:rbac:groups=pipelinesascode.tekton.dev,resources=repositories,verbs=get;list;watch;create;update;patch;delete
@@ -253,10 +251,8 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
-	pipelineRef, err := r.GetBuildPipelineFromComponentAnnotation(ctx, &component)
+	_, err = r.GetBuildPipelineFromComponentAnnotation(ctx, &component)
 	if err != nil {
-		log.Error(err, fmt.Sprintf("Failed to read %s annotation on component %s", defaultBuildPipelineAnnotation, component.Name), l.Action, l.ActionView)
-
 		buildStatus := readBuildStatus(&component)
 		// when reading pipeline annotation fails, we should end reconcile, unless transient error
 		if boErr, ok := err.(*boerrors.BuildOpError); ok && boErr.IsPersistent() {
@@ -265,6 +261,26 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			// transient error, retry
 			return ctrl.Result{}, err
 		}
+
+		// when pipeline annotation is missing, we will update component with default annotation
+		// so this reconcile will finish without error, and updated component will trigger new reconcile which already has pipeline annotation
+		// we don't want to update neither status or remove annotation, because that will be handled by next reconcile
+		missingPipelineAnnotationError := boerrors.NewBuildOpError(boerrors.EMissingPipelineAnnotation, nil)
+		if err.(*boerrors.BuildOpError).GetErrorId() == missingPipelineAnnotationError.GetErrorId() {
+			err = r.SetDefaultBuildPipelineComponentAnnotation(ctx, &component)
+			if err == nil {
+				return ctrl.Result{}, nil
+			}
+
+			if boErr, ok := err.(*boerrors.BuildOpError); ok && boErr.IsPersistent() {
+				buildStatus.Message = fmt.Sprintf("%d: %s", err.(*boerrors.BuildOpError).GetErrorId(), err.(*boerrors.BuildOpError).ShortError())
+			} else {
+				// transient error, retry
+				return ctrl.Result{}, err
+			}
+		}
+
+		log.Error(err, fmt.Sprintf("Failed to read %s annotation on component %s", defaultBuildPipelineAnnotation, component.Name), l.Action, l.ActionView)
 		writeBuildStatus(&component, buildStatus)
 		delete(component.Annotations, BuildRequestAnnotationName)
 
@@ -276,21 +292,6 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		r.WaitForCacheUpdate(ctx, req.NamespacedName, &component)
 
 		return ctrl.Result{}, nil
-	}
-
-	// when we are using already pipeline annotation we don't need anymore devfile
-	if pipelineRef == nil {
-		// Ensure devfile model is set
-		if component.Status.Devfile == "" {
-			// The Component has been just created.
-			// Component controller (from Application Service) must set devfile model, wait for it.
-			log.Info("Waiting for devfile model in component")
-			// Do not requeue as after model update a new update event will trigger a new reconcile
-			return ctrl.Result{}, nil
-		}
-	} else {
-		buildPipelineName, buildPipelineBundle, _ := getPipelineNameAndBundle(pipelineRef)
-		log.Info(fmt.Sprintf("Will use default pipeline from annotation %s : name: %s; bundle: %s", defaultBuildPipelineAnnotation, buildPipelineName, buildPipelineBundle))
 	}
 
 	// Ensure pipeline service account exists

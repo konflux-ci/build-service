@@ -37,15 +37,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/devfile/api/v2/pkg/apis/workspaces/v1alpha2"
-	buildappstudiov1alpha1 "github.com/konflux-ci/build-service/api/v1alpha1"
 	"github.com/konflux-ci/build-service/pkg/boerrors"
 	. "github.com/konflux-ci/build-service/pkg/common"
 	"github.com/konflux-ci/build-service/pkg/git/github"
 	gp "github.com/konflux-ci/build-service/pkg/git/gitprovider"
 	gpf "github.com/konflux-ci/build-service/pkg/git/gitproviderfactory"
 	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
-	devfile "github.com/redhat-appstudio/application-service/cdq-analysis/pkg"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	//+kubebuilder:scaffold:imports
 )
@@ -80,6 +77,11 @@ duAFIZgXeivAZQAqys4JanG81cg4/d4urI3Qk9stlhB5CNCJR4k=
 -----END RSA PRIVATE KEY-----`
 )
 
+var (
+	defaultPipelineAnnotationValue = fmt.Sprintf("{\"name\":\"%s\",\"bundle\":\"%s\"}", defaultPipelineName, defaultPipelineBundle)
+	defaultPipelineAnnotations     = map[string]string{defaultBuildPipelineAnnotation: defaultPipelineAnnotationValue}
+)
+
 var _ = Describe("Component initial build controller", func() {
 
 	const (
@@ -97,21 +99,15 @@ var _ = Describe("Component initial build controller", func() {
 
 	BeforeEach(func() {
 		createNamespace(BuildServiceNamespaceName)
-		createDefaultBuildPipelineRunSelector(defaultSelectorKey)
 		github.GetAllAppInstallations = func(githubAppIdStr string, appPrivateKeyPem []byte) ([]github.ApplicationInstallation, string, error) {
 			return nil, "slug", nil
 		}
 	})
 
-	AfterEach(func() {
-		deleteBuildPipelineRunSelector(defaultSelectorKey)
-	})
-
-	Context("Test Pipelines as Code build preparation without build pipeline selector", func() {
+	Context("Test Pipelines as Code build preparation", func() {
 		var resourcePacPrepKey = types.NamespacedName{Name: HASCompName + "-pacprepannotation", Namespace: HASAppNamespace}
 
 		_ = BeforeEach(func() {
-			deleteBuildPipelineRunSelector(defaultSelectorKey)
 			createNamespace(pipelinesAsCodeNamespace)
 			createRoute(pacRouteKey, "pac-host")
 			createNamespace(BuildServiceNamespaceName)
@@ -161,9 +157,58 @@ var _ = Describe("Component initial build controller", func() {
 				return nil
 			}
 
-			annotationValue := fmt.Sprintf("{\"name\":\"%s\",\"bundle\":\"%s\"}", defaultPipelineName, defaultPipelineBundle)
-			annotations := map[string]string{defaultBuildPipelineAnnotation: annotationValue}
-			createCustomComponentWithBuildRequestWithoutDevfile(componentConfig{
+			createCustomComponentWithBuildRequest(componentConfig{
+				componentKey: resourcePacPrepKey,
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
+
+			pacRepo := waitPaCRepositoryCreated(resourcePacPrepKey)
+			Expect(pacRepo.Spec.Params).ShouldNot(BeNil())
+			existingParams := map[string]string{}
+			for _, param := range *pacRepo.Spec.Params {
+				existingParams[param.Name] = param.Value
+			}
+			val, ok := existingParams[pacCustomParamAppstudioWorkspace]
+			Expect(ok).Should(BeTrue())
+			Expect(val).Should(Equal("build"))
+
+			waitPaCFinalizerOnComponent(resourcePacPrepKey)
+			Eventually(func() bool {
+				return isCreatePaCPullRequestInvoked
+			}, timeout, interval).Should(BeTrue())
+
+			expectPacBuildStatus(resourcePacPrepKey, "enabled", 0, "", mergeUrl)
+		})
+
+		It("should successfully submit PR with PaC definitions using GitHub application, even when pipeline annotation is missing, will add default one", func() {
+			mergeUrl := "merge-url"
+
+			isCreatePaCPullRequestInvoked := false
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				isCreatePaCPullRequestInvoked = true
+				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resourcePacPrepKey.Name))
+				Expect(len(d.Files)).To(Equal(2))
+				for _, file := range d.Files {
+					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
+				}
+				Expect(d.CommitMessage).ToNot(BeEmpty())
+				Expect(d.BranchName).ToNot(BeEmpty())
+				Expect(d.BaseBranchName).To(Equal("main"))
+				Expect(d.Title).ToNot(BeEmpty())
+				Expect(d.Text).ToNot(BeEmpty())
+				Expect(d.AuthorName).ToNot(BeEmpty())
+				Expect(d.AuthorEmail).ToNot(BeEmpty())
+				return mergeUrl, nil
+			}
+			SetupPaCWebhookFunc = func(string, string, string) error {
+				defer GinkgoRecover()
+				Fail("Should not create webhook if GitHub application is used")
+				return nil
+			}
+
+			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
+			annotations := map[string]string{}
+			createCustomComponentWithBuildRequest(componentConfig{
 				componentKey: resourcePacPrepKey,
 				annotations:  annotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
@@ -184,6 +229,7 @@ var _ = Describe("Component initial build controller", func() {
 			}, timeout, interval).Should(BeTrue())
 
 			expectPacBuildStatus(resourcePacPrepKey, "enabled", 0, "", mergeUrl)
+			deleteBuildPipelineConfigMap(defaultPipelineConfigMapKey)
 		})
 
 		It("should successfully submit PR with PaC definitions using GitHub application, using 'latest' bundle", func() {
@@ -215,7 +261,7 @@ var _ = Describe("Component initial build controller", func() {
 			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
 			annotationValue := fmt.Sprintf("{\"name\":\"%s\",\"bundle\":\"%s\"}", defaultPipelineName, "latest")
 			annotations := map[string]string{defaultBuildPipelineAnnotation: annotationValue}
-			createCustomComponentWithBuildRequestWithoutDevfile(componentConfig{
+			createCustomComponentWithBuildRequest(componentConfig{
 				componentKey: resourcePacPrepKey,
 				annotations:  annotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
@@ -241,7 +287,7 @@ var _ = Describe("Component initial build controller", func() {
 
 		It("should fail to submit PR if build pipeline annotation isn't valid json", func() {
 			annotations := map[string]string{defaultBuildPipelineAnnotation: "wrong"}
-			createCustomComponentWithBuildRequestWithoutDevfile(componentConfig{
+			createCustomComponentWithBuildRequest(componentConfig{
 				componentKey: resourcePacPrepKey,
 				annotations:  annotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
@@ -259,7 +305,7 @@ var _ = Describe("Component initial build controller", func() {
 			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
 			annotationValue := fmt.Sprintf("{\"name\":\"%s\",\"bundle\":\"%s\"}", "wrong-pipeline", "latest")
 			annotations := map[string]string{defaultBuildPipelineAnnotation: annotationValue}
-			createCustomComponentWithBuildRequestWithoutDevfile(componentConfig{
+			createCustomComponentWithBuildRequest(componentConfig{
 				componentKey: resourcePacPrepKey,
 				annotations:  annotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
@@ -278,7 +324,7 @@ var _ = Describe("Component initial build controller", func() {
 			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
 			annotationValue := "{\"some\":\"wrong\"}"
 			annotations := map[string]string{defaultBuildPipelineAnnotation: annotationValue}
-			createCustomComponentWithBuildRequestWithoutDevfile(componentConfig{
+			createCustomComponentWithBuildRequest(componentConfig{
 				componentKey: resourcePacPrepKey,
 				annotations:  annotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
@@ -292,111 +338,6 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(buildStatus.Message).To(ContainSubstring(errorMessage))
 			deleteBuildPipelineConfigMap(defaultPipelineConfigMapKey)
 		})
-	})
-
-	// when build pipeline selector will be removed
-	// move all tests to "Test Pipelines as Code build preparation without build pipeline selector" without using build selector and remove all build selector related tests
-	Context("Test Pipelines as Code build preparation", func() {
-		var resourcePacPrepKey = types.NamespacedName{Name: HASCompName + "-pacprep", Namespace: HASAppNamespace}
-
-		_ = BeforeEach(func() {
-			createNamespace(pipelinesAsCodeNamespace)
-			createRoute(pacRouteKey, "pac-host")
-			createNamespace(BuildServiceNamespaceName)
-			pacSecretData := map[string]string{
-				"github-application-id": "12345",
-				"github-private-key":    githubAppPrivateKey,
-			}
-			createSecret(pacSecretKey, pacSecretData)
-
-			ResetTestGitProviderClient()
-		})
-
-		_ = AfterEach(func() {
-			deleteComponent(resourcePacPrepKey)
-			deletePaCRepository(resourcePacPrepKey)
-
-			deleteSecret(webhookSecretKey)
-			deleteSecret(namespacePaCSecretKey)
-
-			deleteSecret(pacSecretKey)
-			deleteRoute(pacRouteKey)
-		})
-
-		It("should successfully submit PR with PaC definitions using GitHub application", func() {
-			mergeUrl := "merge-url"
-
-			isCreatePaCPullRequestInvoked := false
-			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
-				isCreatePaCPullRequestInvoked = true
-				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resourcePacPrepKey.Name))
-				Expect(len(d.Files)).To(Equal(2))
-				for _, file := range d.Files {
-					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
-				}
-				Expect(d.CommitMessage).ToNot(BeEmpty())
-				Expect(d.BranchName).ToNot(BeEmpty())
-				Expect(d.BaseBranchName).To(Equal("main"))
-				Expect(d.Title).ToNot(BeEmpty())
-				Expect(d.Text).ToNot(BeEmpty())
-				Expect(d.AuthorName).ToNot(BeEmpty())
-				Expect(d.AuthorEmail).ToNot(BeEmpty())
-				return mergeUrl, nil
-			}
-			SetupPaCWebhookFunc = func(string, string, string) error {
-				defer GinkgoRecover()
-				Fail("Should not create webhook if GitHub application is used")
-				return nil
-			}
-
-			createComponentAndProcessBuildRequest(resourcePacPrepKey, BuildRequestConfigurePaCAnnotationValue)
-
-			pacRepo := waitPaCRepositoryCreated(resourcePacPrepKey)
-			Expect(pacRepo.Spec.Params).ShouldNot(BeNil())
-			existingParams := map[string]string{}
-			for _, param := range *pacRepo.Spec.Params {
-				existingParams[param.Name] = param.Value
-			}
-			val, ok := existingParams[pacCustomParamAppstudioWorkspace]
-			Expect(ok).Should(BeTrue())
-			Expect(val).Should(Equal("build"))
-
-			waitPaCFinalizerOnComponent(resourcePacPrepKey)
-			Eventually(func() bool {
-				return isCreatePaCPullRequestInvoked
-			}, timeout, interval).Should(BeTrue())
-
-			expectPacBuildStatus(resourcePacPrepKey, "enabled", 0, "", mergeUrl)
-		})
-
-		It("should submit PR with PaC definitions converted to Tekton v1 from a v1beta1 Pipeline", func() {
-			deleteBuildPipelineRunSelector(defaultSelectorKey)
-			createBuildPipelineRunSelector(defaultSelectorKey, v1beta1PipelineBundle, defaultPipelineName)
-
-			mergeUrl := "merge-url"
-
-			isCreatePaCPullRequestInvoked := false
-			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
-				isCreatePaCPullRequestInvoked = true
-				defer GinkgoRecover()
-				Expect(len(d.Files)).To(Equal(2))
-				for _, file := range d.Files {
-					firstLine, _, _ := strings.Cut(string(file.Content), "\n")
-					Expect(firstLine).Should(MatchRegexp("^apiVersion: tekton.dev/v1$"))
-				}
-				return mergeUrl, nil
-			}
-
-			createComponentAndProcessBuildRequest(resourcePacPrepKey, BuildRequestConfigurePaCAnnotationValue)
-
-			waitPaCRepositoryCreated(resourcePacPrepKey)
-			waitPaCFinalizerOnComponent(resourcePacPrepKey)
-			Eventually(func() bool {
-				return isCreatePaCPullRequestInvoked
-			}, timeout, interval).Should(BeTrue())
-
-			expectPacBuildStatus(resourcePacPrepKey, "enabled", 0, "", mergeUrl)
-		})
 
 		It("should fail to submit PR if GitHub application is not installed into git repository", func() {
 			gpf.CreateGitClient = func(gpf.GitClientConfig) (gp.GitProviderClient, error) {
@@ -409,8 +350,10 @@ var _ = Describe("Component initial build controller", func() {
 				Fail("Should not invoke merge request creation if GitHub application is not installed into the repository")
 				return "url", nil
 			}
-
-			createComponentAndProcessBuildRequest(resourcePacPrepKey, BuildRequestConfigurePaCAnnotationValue)
+			createComponentAndProcessBuildRequest(componentConfig{
+				componentKey: resourcePacPrepKey,
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
 
 			expectError := boerrors.NewBuildOpError(boerrors.EGitHubAppNotInstalled, nil)
 			expectPacBuildStatus(resourcePacPrepKey, "error", expectError.GetErrorId(), expectError.ShortError(), "")
@@ -426,6 +369,7 @@ var _ = Describe("Component initial build controller", func() {
 			createCustomComponentWithBuildRequest(componentConfig{
 				componentKey: resourcePacPrepKey,
 				gitURL:       "https://my-git-instance.com/devfile-samples/devfile-sample-java-springboot-basic",
+				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
 			waitComponentAnnotationGone(resourcePacPrepKey, BuildRequestAnnotationName)
 
@@ -448,7 +392,10 @@ var _ = Describe("Component initial build controller", func() {
 			}
 			createSecret(pacSecretKey, pacSecretData)
 
-			createComponentAndProcessBuildRequest(resourcePacPrepKey, BuildRequestConfigurePaCAnnotationValue)
+			createComponentAndProcessBuildRequest(componentConfig{
+				componentKey: resourcePacPrepKey,
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
 
 			expectError := boerrors.NewBuildOpError(boerrors.EPaCSecretInvalid, nil)
 			expectPacBuildStatus(resourcePacPrepKey, "error", expectError.GetErrorId(), expectError.ShortError(), "")
@@ -464,7 +411,10 @@ var _ = Describe("Component initial build controller", func() {
 			deleteSecret(pacSecretKey)
 			deleteSecret(namespacePaCSecretKey)
 
-			createComponentAndProcessBuildRequest(resourcePacPrepKey, BuildRequestConfigurePaCAnnotationValue)
+			createComponentAndProcessBuildRequest(componentConfig{
+				componentKey: resourcePacPrepKey,
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
 
 			expectError := boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, nil)
 			expectPacBuildStatus(resourcePacPrepKey, "error", expectError.GetErrorId(), expectError.ShortError(), "")
@@ -483,7 +433,10 @@ var _ = Describe("Component initial build controller", func() {
 				return "", nil
 			}
 
-			createComponentAndProcessBuildRequest(resourcePacPrepKey, BuildRequestConfigurePaCAnnotationValue)
+			createComponentAndProcessBuildRequest(componentConfig{
+				componentKey: resourcePacPrepKey,
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
 
 			Eventually(func() bool {
 				return isCreateGithubClientInvoked
@@ -525,7 +478,10 @@ var _ = Describe("Component initial build controller", func() {
 		It("should not copy PaC secret into local namespace if GitHub application is used", func() {
 			deleteSecret(namespacePaCSecretKey)
 
-			createComponentAndProcessBuildRequest(resourcePacPrepKey, BuildRequestConfigurePaCAnnotationValue)
+			createComponentAndProcessBuildRequest(componentConfig{
+				componentKey: resourcePacPrepKey,
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCRepositoryCreated(resourcePacPrepKey)
 
 			ensureSecretNotCreated(namespacePaCSecretKey)
@@ -553,7 +509,10 @@ var _ = Describe("Component initial build controller", func() {
 			pacSecretData := map[string]string{"password": "ghp_token"}
 			createSCMSecret(namespacePaCSecretKey, pacSecretData, corev1.SecretTypeBasicAuth, map[string]string{})
 
-			createComponentAndProcessBuildRequest(resourcePacPrepKey, BuildRequestConfigurePaCAnnotationValue)
+			createComponentAndProcessBuildRequest(componentConfig{
+				componentKey: resourcePacPrepKey,
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
 
 			waitSecretCreated(namespacePaCSecretKey)
 			waitPaCRepositoryCreated(resourcePacPrepKey)
@@ -569,7 +528,10 @@ var _ = Describe("Component initial build controller", func() {
 				return "url", nil
 			}
 
-			createComponentAndProcessBuildRequest(resourcePacPrepKey, BuildRequestTriggerSimpleBuildAnnotationValue)
+			createComponentAndProcessBuildRequest(componentConfig{
+				componentKey: resourcePacPrepKey,
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestTriggerSimpleBuildAnnotationValue)
 
 			waitOneInitialPipelineRunCreated(resourcePacPrepKey)
 
@@ -670,8 +632,17 @@ var _ = Describe("Component initial build controller", func() {
 			component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
 			deleteAllPaCRepositories(component1Key.Namespace)
 
-			createComponentWithBuildRequest(component1Key, BuildRequestConfigurePaCAnnotationValue)
-			createComponentWithBuildRequestAndGit(component2Key, BuildRequestConfigurePaCAnnotationValue, SampleRepoLink+"-"+resourcePacPrepKey.Name, "main")
+			createCustomComponentWithBuildRequest(componentConfig{
+				componentKey: component1Key,
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
+			createCustomComponentWithBuildRequest(componentConfig{
+				componentKey: component2Key,
+				annotations:  defaultPipelineAnnotations,
+				gitURL:       SampleRepoLink + "-" + resourcePacPrepKey.Name,
+				gitRevision:  "main",
+			}, BuildRequestConfigurePaCAnnotationValue)
+
 			defer deletePaCRepository(component2Key)
 			defer deleteComponent(component2Key)
 
@@ -703,9 +674,13 @@ var _ = Describe("Component initial build controller", func() {
 			component1Key := resourcePacPrepKey
 			component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
 
-			createComponentWithBuildRequest(component1Key, BuildRequestConfigurePaCAnnotationValue)
+			createCustomComponentWithBuildRequest(componentConfig{
+				componentKey: component1Key,
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
 			createCustomComponentWithBuildRequest(componentConfig{
 				componentKey:   component2Key,
+				annotations:    defaultPipelineAnnotations,
 				containerImage: "registry.io/username/image2:tag2",
 				gitURL:         "https://github.com/devfile-samples/devfile-sample-go-basic",
 			}, BuildRequestConfigurePaCAnnotationValue)
@@ -728,25 +703,13 @@ var _ = Describe("Component initial build controller", func() {
 		It("should set error in status if invalid build action requested", func() {
 			createCustomComponentWithBuildRequest(componentConfig{
 				componentKey: resourcePacPrepKey,
+				annotations:  defaultPipelineAnnotations,
 			}, "non-existing-build-request")
 			waitComponentAnnotationGone(resourcePacPrepKey, BuildRequestAnnotationName)
 
 			buildStatus := readBuildStatus(getComponent(resourcePacPrepKey))
 			Expect(buildStatus).ToNot(BeNil())
 			Expect(buildStatus.Message).To(ContainSubstring("unexpected build request"))
-		})
-
-		It("should do nothing if the component devfile model is not set", func() {
-			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
-				defer GinkgoRecover()
-				Fail("PR creation should not be invoked")
-				return "", nil
-			}
-
-			createComponent(resourcePacPrepKey)
-			setComponentBuildRequest(resourcePacPrepKey, BuildRequestConfigurePaCAnnotationValue)
-
-			ensureComponentAnnotationValue(resourcePacPrepKey, BuildRequestAnnotationName, BuildRequestConfigurePaCAnnotationValue)
 		})
 
 		It("should do nothing if a gitsource is missing from component", func() {
@@ -762,8 +725,9 @@ var _ = Describe("Component initial build controller", func() {
 					Kind:       "Component",
 				},
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      resourcePacPrepKey.Name,
-					Namespace: HASAppNamespace,
+					Name:        resourcePacPrepKey.Name,
+					Namespace:   HASAppNamespace,
+					Annotations: defaultPipelineAnnotations,
 				},
 				Spec: appstudiov1alpha1.ComponentSpec{
 					ComponentName:  resourcePacPrepKey.Name,
@@ -804,8 +768,9 @@ var _ = Describe("Component initial build controller", func() {
 			// set in the remote component repository
 			component.Spec.Source.GitSource.Revision = ""
 			component.Annotations[BuildRequestAnnotationName] = BuildRequestConfigurePaCAnnotationValue
+			component.Annotations[defaultBuildPipelineAnnotation] = defaultPipelineAnnotationValue
+
 			createComponentCustom(component)
-			setComponentDevfileModel(resourcePacPrepKey)
 			waitComponentAnnotationGone(resourcePacPrepKey, BuildRequestAnnotationName)
 
 			Eventually(func() bool {
@@ -846,6 +811,7 @@ var _ = Describe("Component initial build controller", func() {
 			createCustomComponentWithBuildRequest(componentConfig{
 				componentKey:   resourcePacPrepKey,
 				containerImage: userImageRepo,
+				annotations:    defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
 
 			Eventually(func() bool {
@@ -992,7 +958,10 @@ var _ = Describe("Component initial build controller", func() {
 				"github-private-key":    githubAppPrivateKey,
 			}
 			createSecret(pacSecretKey, pacSecretData)
-			createComponentAndProcessBuildRequest(resourceCleanupKey, BuildRequestConfigurePaCAnnotationValue)
+			createComponentAndProcessBuildRequest(componentConfig{
+				componentKey: resourceCleanupKey,
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourceCleanupKey)
 
 			pacSecretData = map[string]string{}
@@ -1012,7 +981,10 @@ var _ = Describe("Component initial build controller", func() {
 				"github-private-key":    githubAppPrivateKey,
 			}
 			createSecret(pacSecretKey, pacSecretData)
-			createComponentAndProcessBuildRequest(resourceCleanupKey, BuildRequestConfigurePaCAnnotationValue)
+			createComponentAndProcessBuildRequest(componentConfig{
+				componentKey: resourceCleanupKey,
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourceCleanupKey)
 			UndoPaCMergeRequestFunc = func(repoUrl string, data *gp.MergeRequestData) (webUrl string, err error) {
 				return "", nil
@@ -1056,7 +1028,10 @@ var _ = Describe("Component initial build controller", func() {
 			createSecret(pacSecretKey, pacSecretData)
 
 			// provision component
-			createComponentAndProcessBuildRequest(resourceCleanupKey, BuildRequestConfigurePaCAnnotationValue)
+			createComponentAndProcessBuildRequest(componentConfig{
+				componentKey: resourceCleanupKey,
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourceCleanupKey)
 
 			repository := waitPaCRepositoryCreated(resourceCleanupKey)
@@ -1108,13 +1083,21 @@ var _ = Describe("Component initial build controller", func() {
 			createSecret(pacSecretKey, pacSecretData)
 
 			// provision 1st component
-			createComponentAndProcessBuildRequest(resourceCleanupKey, BuildRequestConfigurePaCAnnotationValue)
+			createComponentAndProcessBuildRequest(componentConfig{
+				componentKey: resourceCleanupKey,
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourceCleanupKey)
 			expectPacBuildStatus(resourceCleanupKey, "enabled", 0, "", mergeUrl)
 
 			// provision 2nd component
 			component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
-			createComponentWithBuildRequestAndGit(component2Key, BuildRequestConfigurePaCAnnotationValue, SampleRepoLink+"-"+resourceCleanupKey.Name, "another")
+			createComponentAndProcessBuildRequest(componentConfig{
+				componentKey: component2Key,
+				annotations:  defaultPipelineAnnotations,
+				gitURL:       SampleRepoLink + "-" + resourceCleanupKey.Name,
+				gitRevision:  "another",
+			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(component2Key)
 			expectPacBuildStatus(component2Key, "enabled", 0, "", mergeUrl)
 			defer deleteComponent(component2Key)
@@ -1185,7 +1168,10 @@ var _ = Describe("Component initial build controller", func() {
 			}
 			createSecret(pacSecretKey, pacSecretData)
 
-			createComponentAndProcessBuildRequest(resourceCleanupKey, BuildRequestConfigurePaCAnnotationValue)
+			createComponentAndProcessBuildRequest(componentConfig{
+				componentKey: resourceCleanupKey,
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourceCleanupKey)
 
 			deleteComponent(resourceCleanupKey)
@@ -1225,7 +1211,10 @@ var _ = Describe("Component initial build controller", func() {
 			pacSecretData := map[string]string{"password": "ghp_token"}
 			createSCMSecret(namespacePaCSecretKey, pacSecretData, corev1.SecretTypeBasicAuth, map[string]string{})
 
-			createComponentAndProcessBuildRequest(resourceCleanupKey, BuildRequestConfigurePaCAnnotationValue)
+			createComponentAndProcessBuildRequest(componentConfig{
+				componentKey: resourceCleanupKey,
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourceCleanupKey)
 
 			setComponentBuildRequest(resourceCleanupKey, BuildRequestUnconfigurePaCAnnotationValue)
@@ -1251,7 +1240,10 @@ var _ = Describe("Component initial build controller", func() {
 			pacSecretData := map[string]string{"password": "ghp_token"}
 			createSCMSecret(namespacePaCSecretKey, pacSecretData, corev1.SecretTypeBasicAuth, map[string]string{})
 
-			createComponentAndProcessBuildRequest(resourceCleanupKey, BuildRequestConfigurePaCAnnotationValue)
+			createComponentAndProcessBuildRequest(componentConfig{
+				componentKey: resourceCleanupKey,
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourceCleanupKey)
 
 			// deleteComponent waits until the component is gone
@@ -1272,6 +1264,7 @@ var _ = Describe("Component initial build controller", func() {
 				component.Spec.Source.GitSource.Revision = ""
 			}
 			component.Annotations[BuildRequestAnnotationName] = BuildRequestConfigurePaCAnnotationValue
+			component.Annotations[defaultBuildPipelineAnnotation] = defaultPipelineAnnotationValue
 
 			expectedSourceBranch := pacMergeRequestSourceBranchPrefix + component.Name
 
@@ -1301,7 +1294,6 @@ var _ = Describe("Component initial build controller", func() {
 			createSecret(pacSecretKey, pacSecretData)
 
 			createComponentCustom(component)
-			setComponentDevfileModel(resourceCleanupKey)
 			waitComponentAnnotationGone(resourceCleanupKey, BuildRequestAnnotationName)
 			waitPaCFinalizerOnComponent(resourceCleanupKey)
 
@@ -1340,7 +1332,10 @@ var _ = Describe("Component initial build controller", func() {
 			}
 			createSecret(pacSecretKey, pacSecretData)
 
-			createComponentAndProcessBuildRequest(resourceCleanupKey, BuildRequestConfigurePaCAnnotationValue)
+			createComponentAndProcessBuildRequest(componentConfig{
+				componentKey: resourceCleanupKey,
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourceCleanupKey)
 			deleteSecret(pacSecretKey)
 
@@ -1358,7 +1353,10 @@ var _ = Describe("Component initial build controller", func() {
 				"github-private-key":    githubAppPrivateKey,
 			}
 			createSecret(pacSecretKey, pacSecretData)
-			createComponentAndProcessBuildRequest(resourceCleanupKey, BuildRequestConfigurePaCAnnotationValue)
+			createComponentAndProcessBuildRequest(componentConfig{
+				componentKey: resourceCleanupKey,
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
 
 			component := getComponent(resourceCleanupKey)
 			component.Spec.Source.GitSource.URL = "wrong"
@@ -1375,7 +1373,6 @@ var _ = Describe("Component initial build controller", func() {
 	})
 
 	Context("Test Pipelines as Code multi component git repository", func() {
-
 		const (
 			multiComponentGitRepositoryUrl = "https://github.com/samples/multi-component-repository"
 		)
@@ -1395,7 +1392,10 @@ var _ = Describe("Component initial build controller", func() {
 			}
 			createSecret(pacSecretKey, pacSecretData)
 
-			createComponentWithBuildRequest(anotherComponentKey, BuildRequestConfigurePaCAnnotationValue)
+			createComponentAndProcessBuildRequest(componentConfig{
+				componentKey: anotherComponentKey,
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
 			waitComponentAnnotationGone(anotherComponentKey, BuildRequestAnnotationName)
 			waitPaCRepositoryCreated(anotherComponentKey)
 		})
@@ -1438,6 +1438,7 @@ var _ = Describe("Component initial build controller", func() {
 
 			createCustomComponentWithBuildRequest(componentConfig{
 				componentKey: component1Key,
+				annotations:  defaultPipelineAnnotations,
 				gitURL:       multiComponentGitRepositoryUrl,
 			}, BuildRequestConfigurePaCAnnotationValue)
 			defer deleteComponent(component1Key)
@@ -1456,6 +1457,7 @@ var _ = Describe("Component initial build controller", func() {
 
 			createCustomComponentWithBuildRequest(componentConfig{
 				componentKey: component2Key,
+				annotations:  defaultPipelineAnnotations,
 				gitURL:       multiComponentGitRepositoryUrl,
 			}, BuildRequestConfigurePaCAnnotationValue)
 			defer deleteComponent(component2Key)
@@ -1474,11 +1476,10 @@ var _ = Describe("Component initial build controller", func() {
 		})
 	})
 
-	Context("Test simple build flow without build pipeline selector", func() {
+	Context("Test simple build flow", func() {
 		var resouceSimpleBuildKey = types.NamespacedName{Name: HASCompName + "-simpleannotation", Namespace: HASAppNamespace}
 
 		_ = BeforeEach(func() {
-			deleteBuildPipelineRunSelector(defaultSelectorKey)
 			createNamespace(BuildServiceNamespaceName)
 			ResetTestGitProviderClient()
 
@@ -1491,8 +1492,6 @@ var _ = Describe("Component initial build controller", func() {
 
 		_ = AfterEach(func() {
 			deleteSecret(pacSecretKey)
-
-			deleteBuildPipelineRunSelector(defaultSelectorKey)
 			deleteComponentPipelineRuns(resouceSimpleBuildKey)
 			deleteComponent(resouceSimpleBuildKey)
 			// wait for pruner operator to finish, so it won't prune runs from new test
@@ -1513,11 +1512,9 @@ var _ = Describe("Component initial build controller", func() {
 				return "https://github.com/devfile-samples/devfile-sample-java-springboot-basic?rev=" + gitSourceSHA
 			}
 
-			annotationValue := fmt.Sprintf("{\"name\":\"%s\",\"bundle\":\"%s\"}", defaultPipelineName, defaultPipelineBundle)
-			annotations := map[string]string{defaultBuildPipelineAnnotation: annotationValue}
-			createCustomComponentWithoutBuildRequestWithoutDevfile(componentConfig{
+			createCustomComponentWithoutBuildRequest(componentConfig{
 				componentKey: resouceSimpleBuildKey,
-				annotations:  annotations})
+				annotations:  defaultPipelineAnnotations})
 
 			Eventually(func() bool {
 				return isGetBranchShaInvoked
@@ -1553,7 +1550,7 @@ var _ = Describe("Component initial build controller", func() {
 			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
 			annotationValue := fmt.Sprintf("{\"name\":\"%s\",\"bundle\":\"%s\"}", defaultPipelineName, "latest")
 			annotations := map[string]string{defaultBuildPipelineAnnotation: annotationValue}
-			createCustomComponentWithoutBuildRequestWithoutDevfile(componentConfig{
+			createCustomComponentWithoutBuildRequest(componentConfig{
 				componentKey: resouceSimpleBuildKey,
 				annotations:  annotations})
 
@@ -1575,39 +1572,9 @@ var _ = Describe("Component initial build controller", func() {
 
 			deleteBuildPipelineConfigMap(defaultPipelineConfigMapKey)
 		})
-	})
 
-	// when build pipeline selector will be removed
-	// move all tests to "Test simple build flow without build pipeline selector" without using build selector and remove all build selector related tests
-	Context("Test simple build flow", func() {
-		var resouceSimpleBuildKey = types.NamespacedName{Name: HASCompName + "-simple", Namespace: HASAppNamespace}
-
-		_ = BeforeEach(func() {
-			createNamespace(BuildServiceNamespaceName)
-			ResetTestGitProviderClient()
-
-			pacSecretData := map[string]string{
-				"github-application-id": "12345",
-				"github-private-key":    githubAppPrivateKey,
-			}
-			createSecret(pacSecretKey, pacSecretData)
-			createComponent(resouceSimpleBuildKey)
-		})
-
-		_ = AfterEach(func() {
-			deleteSecret(pacSecretKey)
-
-			deleteBuildPipelineRunSelector(defaultSelectorKey)
-			deleteComponentPipelineRuns(resouceSimpleBuildKey)
-			deleteComponent(resouceSimpleBuildKey)
-			// wait for pruner operator to finish, so it won't prune runs from new test
-			time.Sleep(time.Second)
-			DevfileSearchForDockerfile = devfile.SearchForDockerfile
-		})
-
-		It("should submit initial build on component creation", func() {
+		It("should submit initial build on component creation, even when pipeline annotation is missing, will add default one", func() {
 			gitSourceSHA := "d1a9e858489d1515621398fb02942da068f1c956"
-
 			isGetBranchShaInvoked := false
 			GetBranchShaFunc = func(repoUrl string, branchName string) (string, error) {
 				isGetBranchShaInvoked = true
@@ -1620,7 +1587,11 @@ var _ = Describe("Component initial build controller", func() {
 				return "https://github.com/devfile-samples/devfile-sample-java-springboot-basic?rev=" + gitSourceSHA
 			}
 
-			setComponentDevfileModel(resouceSimpleBuildKey)
+			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
+			annotations := map[string]string{}
+			createCustomComponentWithoutBuildRequest(componentConfig{
+				componentKey: resouceSimpleBuildKey,
+				annotations:  annotations})
 
 			Eventually(func() bool {
 				return isGetBranchShaInvoked
@@ -1635,16 +1606,18 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(pipelineRun.Annotations[gitCommitShaAnnotationName]).To(Equal(gitSourceSHA))
 			Expect(pipelineRun.Annotations[gitRepoAtShaAnnotationName]).To(
 				Equal("https://github.com/devfile-samples/devfile-sample-java-springboot-basic?rev=" + gitSourceSHA))
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/pipeline_name"]).To(Equal(defaultPipelineName))
+			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(defaultPipelineBundle))
+
+			deleteBuildPipelineConfigMap(defaultPipelineConfigMapKey)
 		})
 
 		It("should submit initial build on component creation with sha revision", func() {
-			deleteComponent(resouceSimpleBuildKey)
-
 			gitSourceSHA := "d1a9e858489d1515621398fb02942da068f1c956"
 			component := getSampleComponentData(resouceSimpleBuildKey)
 			component.Spec.Source.GitSource.Revision = gitSourceSHA
+			component.Annotations[defaultBuildPipelineAnnotation] = defaultPipelineAnnotationValue
 			createComponentCustom(component)
-			setComponentDevfileModel(resouceSimpleBuildKey)
 
 			waitOneInitialPipelineRunCreated(resouceSimpleBuildKey)
 			waitComponentAnnotationGone(resouceSimpleBuildKey, BuildRequestAnnotationName)
@@ -1657,10 +1630,11 @@ var _ = Describe("Component initial build controller", func() {
 		})
 
 		It("should be able to retrigger simple build", func() {
-			setComponentDevfileModel(resouceSimpleBuildKey)
+			createCustomComponentWithoutBuildRequest(componentConfig{
+				componentKey: resouceSimpleBuildKey,
+				annotations:  defaultPipelineAnnotations})
 
 			waitOneInitialPipelineRunCreated(resouceSimpleBuildKey)
-
 			deleteComponentPipelineRuns(resouceSimpleBuildKey)
 
 			setComponentBuildRequest(resouceSimpleBuildKey, BuildRequestTriggerSimpleBuildAnnotationValue)
@@ -1680,7 +1654,10 @@ var _ = Describe("Component initial build controller", func() {
 				return k8sErrors.IsNotFound(k8sClient.Get(ctx, serviceAccountName, serviceAccount))
 			}, timeout, interval).Should(BeTrue())
 
-			setComponentDevfileModel(resouceSimpleBuildKey)
+			createCustomComponentWithoutBuildRequest(componentConfig{
+				componentKey: resouceSimpleBuildKey,
+				annotations:  defaultPipelineAnnotations})
+
 			waitOneInitialPipelineRunCreated(resouceSimpleBuildKey)
 			waitComponentAnnotationGone(resouceSimpleBuildKey, BuildRequestAnnotationName)
 			waitDoneMessageOnComponent(resouceSimpleBuildKey)
@@ -1694,7 +1671,9 @@ var _ = Describe("Component initial build controller", func() {
 				return "", fmt.Errorf("failed to get git commit SHA")
 			}
 
-			setComponentDevfileModel(resouceSimpleBuildKey)
+			createCustomComponentWithoutBuildRequest(componentConfig{
+				componentKey: resouceSimpleBuildKey,
+				annotations:  defaultPipelineAnnotations})
 
 			Eventually(func() bool {
 				return isGetBranchShaInvoked
@@ -1723,11 +1702,10 @@ var _ = Describe("Component initial build controller", func() {
 			createSecret(gitSecretKey, map[string]string{})
 			defer deleteSecret(gitSecretKey)
 
-			component := getComponent(resouceSimpleBuildKey)
+			component := getSampleComponentData(resouceSimpleBuildKey)
 			component.Spec.Secret = gitSecretName
-			Expect(k8sClient.Update(ctx, component)).To(Succeed())
-
-			setComponentDevfileModel(resouceSimpleBuildKey)
+			component.Annotations[defaultBuildPipelineAnnotation] = defaultPipelineAnnotationValue
+			createComponentCustom(component)
 
 			Eventually(func() bool { return isRepositoryPublicInvoked }, timeout, interval).Should(BeTrue())
 			Eventually(func() bool { return isGetBranchShaInvoked }, timeout, interval).Should(BeTrue())
@@ -1787,10 +1765,9 @@ var _ = Describe("Component initial build controller", func() {
 		})
 
 		It("should submit initial simple build, even when containerimage is missing, but is found in image repo annotation", func() {
-			deleteComponent(resouceSimpleBuildKey)
-
 			component := getSampleComponentData(resouceSimpleBuildKey)
 			component.Spec.ContainerImage = ""
+			component.Annotations[defaultBuildPipelineAnnotation] = defaultPipelineAnnotationValue
 
 			type RepositoryInfo struct {
 				Image  string `json:"image"`
@@ -1801,7 +1778,6 @@ var _ = Describe("Component initial build controller", func() {
 			component.Annotations[ImageRepoAnnotationName] = string(repoInfoBytes)
 
 			createComponentCustom(component)
-			setComponentDevfileModel(resouceSimpleBuildKey)
 			waitOneInitialPipelineRunCreated(resouceSimpleBuildKey)
 			waitComponentAnnotationGone(resouceSimpleBuildKey, BuildRequestAnnotationName)
 			waitDoneMessageOnComponent(resouceSimpleBuildKey)
@@ -1814,8 +1790,9 @@ var _ = Describe("Component initial build controller", func() {
 				isRepositoryPublicInvoked = true
 				return false, nil
 			}
-
-			setComponentDevfileModel(resouceSimpleBuildKey)
+			createCustomComponentWithoutBuildRequest(componentConfig{
+				componentKey: resouceSimpleBuildKey,
+				annotations:  defaultPipelineAnnotations})
 
 			Eventually(func() bool { return isRepositoryPublicInvoked }, timeout, interval).Should(BeTrue())
 
@@ -1832,11 +1809,10 @@ var _ = Describe("Component initial build controller", func() {
 				return false, nil
 			}
 
-			component := getComponent(resouceSimpleBuildKey)
+			component := getSampleComponentData(resouceSimpleBuildKey)
 			component.Spec.Secret = "git-secret"
-			Expect(k8sClient.Update(ctx, component)).To(Succeed())
-
-			setComponentDevfileModel(resouceSimpleBuildKey)
+			component.Annotations[defaultBuildPipelineAnnotation] = defaultPipelineAnnotationValue
+			createComponentCustom(component)
 
 			Eventually(func() bool { return isRepositoryPublicInvoked }, timeout, interval).Should(BeTrue())
 
@@ -1846,13 +1822,11 @@ var _ = Describe("Component initial build controller", func() {
 			expectSimpleBuildStatus(resouceSimpleBuildKey, expectError.GetErrorId(), expectError.ShortError(), true)
 		})
 
-		It("should not submit initial build if the component devfile model is not set", func() {
-			ensureNoPipelineRunsCreated(resouceSimpleBuildKey)
-		})
-
 		It("should not submit initial build if pac secret is missing", func() {
 			deleteSecret(pacSecretKey)
-			setComponentDevfileModel(resouceSimpleBuildKey)
+			createCustomComponentWithoutBuildRequest(componentConfig{
+				componentKey: resouceSimpleBuildKey,
+				annotations:  defaultPipelineAnnotations})
 			waitDoneMessageOnComponent(resouceSimpleBuildKey)
 
 			expectError := boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, nil)
@@ -1860,8 +1834,6 @@ var _ = Describe("Component initial build controller", func() {
 		})
 
 		It("should do nothing if simple build already happened (and PaC is not used)", func() {
-			deleteComponent(resouceSimpleBuildKey)
-
 			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
 				defer GinkgoRecover()
 				Fail("PR creation should not be invoked")
@@ -1871,22 +1843,22 @@ var _ = Describe("Component initial build controller", func() {
 			component := getSampleComponentData(resouceSimpleBuildKey)
 			component.Annotations = make(map[string]string)
 			component.Annotations[BuildStatusAnnotationName] = "{simple:{\"build-start-time\": \"time\"}}"
+			component.Annotations[defaultBuildPipelineAnnotation] = defaultPipelineAnnotationValue
 			createComponentCustom(component)
 
 			ensureNoPipelineRunsCreated(resouceSimpleBuildKey)
 		})
 
 		It("should not submit initial build if a gitsource is missing from component", func() {
-			deleteComponent(resouceSimpleBuildKey)
-
 			component := &appstudiov1alpha1.Component{
 				TypeMeta: metav1.TypeMeta{
 					APIVersion: "appstudio.redhat.com/v1alpha1",
 					Kind:       "Component",
 				},
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      resouceSimpleBuildKey.Name,
-					Namespace: HASAppNamespace,
+					Name:        resouceSimpleBuildKey.Name,
+					Namespace:   HASAppNamespace,
+					Annotations: defaultPipelineAnnotations,
 				},
 				Spec: appstudiov1alpha1.ComponentSpec{
 					ComponentName:  resouceSimpleBuildKey.Name,
@@ -1895,29 +1867,15 @@ var _ = Describe("Component initial build controller", func() {
 				},
 			}
 			createComponentCustom(component)
-			setComponentDevfileModel(resouceSimpleBuildKey)
 
 			ensureNoPipelineRunsCreated(resouceSimpleBuildKey)
 		})
 
-		It("should not submit initial build if Dockerfile is wrong", func() {
-			DevfileSearchForDockerfile = func(devfileBytes []byte) (*v1alpha2.DockerfileImage, error) {
-				return nil, fmt.Errorf("wrong dockerfile")
-			}
-			setComponentDevfileModel(resouceSimpleBuildKey)
-			waitDoneMessageOnComponent(resouceSimpleBuildKey)
-
-			expectError := boerrors.NewBuildOpError(boerrors.EInvalidDevfile, nil)
-			expectSimpleBuildStatus(resouceSimpleBuildKey, expectError.GetErrorId(), expectError.ShortError(), true)
-		})
-
 		It("should not submit initial simple build if git provider can't be detected)", func() {
-			deleteComponent(resouceSimpleBuildKey)
-
 			component := getSampleComponentData(resouceSimpleBuildKey)
 			component.Spec.Source.GitSource.URL = "wrong"
+			component.Annotations[defaultBuildPipelineAnnotation] = defaultPipelineAnnotationValue
 			createComponentCustom(component)
-			setComponentDevfileModel(resouceSimpleBuildKey)
 			waitDoneMessageOnComponent(resouceSimpleBuildKey)
 
 			expectError := boerrors.NewBuildOpError(boerrors.EUnknownGitProvider, nil)
@@ -1931,411 +1889,31 @@ var _ = Describe("Component initial build controller", func() {
 				return false, fmt.Errorf("failed to check repository")
 			}
 
-			setComponentDevfileModel(resouceSimpleBuildKey)
+			createCustomComponentWithoutBuildRequest(componentConfig{
+				componentKey: resouceSimpleBuildKey,
+				annotations:  defaultPipelineAnnotations})
 			Eventually(func() bool { return isRepositoryPublicInvoked }, timeout, interval).Should(BeTrue())
 
 			ensureNoPipelineRunsCreated(resouceSimpleBuildKey)
 		})
 
 		It("should not submit initial build if ContainerImage is not set)", func() {
-			deleteComponent(resouceSimpleBuildKey)
-
 			component := getSampleComponentData(resouceSimpleBuildKey)
 			component.Spec.ContainerImage = ""
-
+			component.Annotations[defaultBuildPipelineAnnotation] = defaultPipelineAnnotationValue
 			createComponentCustom(component)
-			setComponentDevfileModel(resouceSimpleBuildKey)
 
 			ensureNoPipelineRunsCreated(resouceSimpleBuildKey)
 		})
 
 		It("should not submit initial build when request is empty)", func() {
-			deleteComponent(resouceSimpleBuildKey)
-
 			component := getSampleComponentData(resouceSimpleBuildKey)
 			component.Annotations[BuildRequestAnnotationName] = ""
-
+			component.Annotations[defaultBuildPipelineAnnotation] = defaultPipelineAnnotationValue
 			createComponentCustom(component)
-			setComponentDevfileModel(resouceSimpleBuildKey)
 
 			ensureNoPipelineRunsCreated(resouceSimpleBuildKey)
 		})
-	})
-
-	Context("Resolve the correct build bundle during the component creation", func() {
-		var resourceResBundleKey = types.NamespacedName{Name: HASCompName + "-resolvebundle", Namespace: HASAppNamespace}
-
-		BeforeEach(func() {
-			createNamespace(BuildServiceNamespaceName)
-			pacSecretData := map[string]string{
-				"github-application-id": "12345",
-				"github-private-key":    githubAppPrivateKey,
-			}
-			createSecret(pacSecretKey, pacSecretData)
-
-			createComponent(resourceResBundleKey)
-		})
-
-		AfterEach(func() {
-			deleteComponent(resourceResBundleKey)
-			deleteComponentPipelineRuns(resourceResBundleKey)
-			deleteSecret(pacSecretKey)
-			// wait for pruner operator to finish, so it won't prune runs from new test
-			time.Sleep(time.Second)
-		})
-
-		It("should use the build bundle specified for application", func() {
-			selectors := &buildappstudiov1alpha1.BuildPipelineSelector{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      HASAppName,
-					Namespace: HASAppNamespace,
-				},
-				Spec: buildappstudiov1alpha1.BuildPipelineSelectorSpec{
-					Selectors: []buildappstudiov1alpha1.PipelineSelector{
-						{
-							Name: "nodejs",
-							PipelineRef: newBundleResolverPipelineRef(
-								defaultPipelineBundle,
-								"nodejs-builder",
-							),
-							PipelineParams: []buildappstudiov1alpha1.PipelineParam{
-								{
-									Name:  "additional-param",
-									Value: "additional-param-value-application",
-								},
-							},
-							WhenConditions: buildappstudiov1alpha1.WhenCondition{
-								Language: "nodejs",
-							},
-						},
-						{
-							Name: "Fallback",
-							PipelineRef: newBundleResolverPipelineRef(
-								defaultPipelineBundle,
-								"noop",
-							),
-						},
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, selectors)).To(Succeed())
-			getComponent(resourceResBundleKey)
-
-			devfile := `
-                        schemaVersion: 2.2.0
-                        metadata:
-                            name: devfile-nodejs
-                            language: nodejs
-                    `
-			setComponentDevfile(resourceResBundleKey, devfile)
-
-			waitOneInitialPipelineRunCreated(resourceResBundleKey)
-			pipelineRun := listComponentPipelineRuns(resourceResBundleKey)[0]
-
-			Expect(pipelineRun.Labels[ApplicationNameLabelName]).To(Equal(HASAppName))
-			Expect(pipelineRun.Labels[ComponentNameLabelName]).To(Equal(resourceResBundleKey.Name))
-
-			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/pipeline_name"]).To(Equal("nodejs-builder"))
-			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(defaultPipelineBundle))
-
-			Expect(pipelineRun.Spec.PipelineSpec).To(BeNil())
-
-			Expect(pipelineRun.Spec.PipelineRef).ToNot(BeNil())
-			Expect(getPipelineName(pipelineRun.Spec.PipelineRef)).To(Equal("nodejs-builder"))
-			Expect(getPipelineBundle(pipelineRun.Spec.PipelineRef)).To(Equal(defaultPipelineBundle))
-
-			Expect(pipelineRun.Spec.Params).ToNot(BeNil())
-			additionalPipelineParameterFound := false
-			for _, param := range pipelineRun.Spec.Params {
-				if param.Name == "additional-param" {
-					Expect(param.Value.StringVal).To(Equal("additional-param-value-application"))
-					additionalPipelineParameterFound = true
-					break
-				}
-			}
-			Expect(additionalPipelineParameterFound).To(BeTrue(), "additional pipeline parameter not found")
-
-			Expect(k8sClient.Delete(ctx, selectors)).Should(Succeed())
-		})
-
-		It("should use the build bundle specified for the namespace", func() {
-			selectors := &buildappstudiov1alpha1.BuildPipelineSelector{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      buildPipelineSelectorResourceName,
-					Namespace: HASAppNamespace,
-				},
-				Spec: buildappstudiov1alpha1.BuildPipelineSelectorSpec{
-					Selectors: []buildappstudiov1alpha1.PipelineSelector{
-						{
-							Name: "nodejs",
-							PipelineRef: newBundleResolverPipelineRef(
-								defaultPipelineBundle,
-								"nodejs-builder",
-							),
-							PipelineParams: []buildappstudiov1alpha1.PipelineParam{
-								{
-									Name:  "additional-param",
-									Value: "additional-param-value-namespace",
-								},
-							},
-							WhenConditions: buildappstudiov1alpha1.WhenCondition{
-								Language: "nodejs",
-							},
-						},
-						{
-							Name: "Fallback",
-							PipelineRef: newBundleResolverPipelineRef(
-								defaultPipelineBundle,
-								"noop",
-							),
-						},
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, selectors)).To(Succeed())
-
-			devfile := `
-                        schemaVersion: 2.2.0
-                        metadata:
-                            name: devfile-nodejs
-                            language: nodejs
-                    `
-			setComponentDevfile(resourceResBundleKey, devfile)
-
-			waitOneInitialPipelineRunCreated(resourceResBundleKey)
-			pipelineRun := listComponentPipelineRuns(resourceResBundleKey)[0]
-
-			Expect(pipelineRun.Labels[ApplicationNameLabelName]).To(Equal(HASAppName))
-			Expect(pipelineRun.Labels[ComponentNameLabelName]).To(Equal(resourceResBundleKey.Name))
-
-			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/pipeline_name"]).To(Equal("nodejs-builder"))
-			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(defaultPipelineBundle))
-
-			Expect(pipelineRun.Spec.PipelineSpec).To(BeNil())
-
-			Expect(pipelineRun.Spec.PipelineRef).ToNot(BeNil())
-			Expect(getPipelineName(pipelineRun.Spec.PipelineRef)).To(Equal("nodejs-builder"))
-			Expect(getPipelineBundle(pipelineRun.Spec.PipelineRef)).To(Equal(defaultPipelineBundle))
-
-			Expect(pipelineRun.Spec.Params).ToNot(BeNil())
-			additionalPipelineParameterFound := false
-			for _, param := range pipelineRun.Spec.Params {
-				if param.Name == "additional-param" {
-					Expect(param.Value.StringVal).To(Equal("additional-param-value-namespace"))
-					additionalPipelineParameterFound = true
-					break
-				}
-			}
-			Expect(additionalPipelineParameterFound).To(BeTrue(), "additional pipeline parameter not found")
-
-			Expect(k8sClient.Delete(ctx, selectors)).Should(Succeed())
-		})
-
-		It("should use the global build bundle", func() {
-			deleteBuildPipelineRunSelector(defaultSelectorKey)
-			selectors := &buildappstudiov1alpha1.BuildPipelineSelector{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      buildPipelineSelectorResourceName,
-					Namespace: BuildServiceNamespaceName,
-				},
-				Spec: buildappstudiov1alpha1.BuildPipelineSelectorSpec{
-					Selectors: []buildappstudiov1alpha1.PipelineSelector{
-						{
-							Name: "java",
-							PipelineRef: newBundleResolverPipelineRef(
-								defaultPipelineBundle,
-								"java-builder",
-							),
-							PipelineParams: []buildappstudiov1alpha1.PipelineParam{
-								{
-									Name:  "additional-param",
-									Value: "additional-param-value-global",
-								},
-							},
-							WhenConditions: buildappstudiov1alpha1.WhenCondition{
-								Language: "java",
-							},
-						},
-						{
-							Name: "Fallback",
-							PipelineRef: newBundleResolverPipelineRef(
-								defaultPipelineBundle,
-								"noop",
-							),
-						},
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, selectors)).To(Succeed())
-			getComponent(resourceResBundleKey)
-
-			devfile := `
-                        schemaVersion: 2.2.0
-                        metadata:
-                            name: devfile-java
-                            language: java
-                    `
-			setComponentDevfile(resourceResBundleKey, devfile)
-
-			waitOneInitialPipelineRunCreated(resourceResBundleKey)
-			pipelineRun := listComponentPipelineRuns(resourceResBundleKey)[0]
-
-			Expect(pipelineRun.Labels[ApplicationNameLabelName]).To(Equal(HASAppName))
-			Expect(pipelineRun.Labels[ComponentNameLabelName]).To(Equal(resourceResBundleKey.Name))
-
-			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/pipeline_name"]).To(Equal("java-builder"))
-			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(defaultPipelineBundle))
-
-			Expect(pipelineRun.Spec.PipelineSpec).To(BeNil())
-
-			Expect(pipelineRun.Spec.PipelineRef).ToNot(BeNil())
-			Expect(getPipelineName(pipelineRun.Spec.PipelineRef)).To(Equal("java-builder"))
-			Expect(getPipelineBundle(pipelineRun.Spec.PipelineRef)).To(Equal(defaultPipelineBundle))
-
-			Expect(pipelineRun.Spec.Params).ToNot(BeNil())
-			additionalPipelineParameterFound := false
-			for _, param := range pipelineRun.Spec.Params {
-				if param.Name == "additional-param" {
-					Expect(param.Value.StringVal).To(Equal("additional-param-value-global"))
-					additionalPipelineParameterFound = true
-					break
-				}
-			}
-			Expect(additionalPipelineParameterFound).To(BeTrue(), "additional pipeline parameter not found")
-
-			Expect(k8sClient.Delete(ctx, selectors)).Should(Succeed())
-		})
-	})
-
-	Context("Test build pipeline failures related to BuildPipelineSelector", func() {
-		var resourceNoMatchPKey = types.NamespacedName{Name: HASCompName + "-nomatchpipeline", Namespace: HASAppNamespace}
-
-		BeforeEach(func() {
-			deleteBuildPipelineRunSelector(defaultSelectorKey)
-
-			pacSecretData := map[string]string{
-				"github-application-id": "12345",
-				"github-private-key":    githubAppPrivateKey,
-			}
-			createSecret(pacSecretKey, pacSecretData)
-			ResetTestGitProviderClient()
-		})
-
-		AfterEach(func() {
-			deleteComponent(resourceNoMatchPKey)
-			deleteSecret(pacSecretKey)
-		})
-
-		createBuildPipelineSelector := func(resolverRef tektonapi.ResolverRef, whenCondition buildappstudiov1alpha1.WhenCondition) {
-			selector := &buildappstudiov1alpha1.BuildPipelineSelector{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      defaultSelectorKey.Name,
-					Namespace: defaultSelectorKey.Namespace,
-				},
-				Spec: buildappstudiov1alpha1.BuildPipelineSelectorSpec{
-					Selectors: []buildappstudiov1alpha1.PipelineSelector{
-						{
-							Name:        "java",
-							PipelineRef: tektonapi.PipelineRef{ResolverRef: resolverRef},
-							PipelineParams: []buildappstudiov1alpha1.PipelineParam{
-								{
-									Name:  "additional-param",
-									Value: "additional-param-value-global",
-								},
-							},
-							WhenConditions: whenCondition,
-						},
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, selector)).To(Succeed())
-		}
-
-		defaultResolverRef := tektonapi.ResolverRef{
-			Resolver: "bundles",
-			Params: []tektonapi.Param{
-				{Name: "kind", Value: *tektonapi.NewStructuredValues("pipeline")},
-				{Name: "bundle", Value: *tektonapi.NewStructuredValues(defaultPipelineBundle)},
-				{Name: "name", Value: *tektonapi.NewStructuredValues("java-builder")},
-			},
-		}
-		nonMatchingConditions := buildappstudiov1alpha1.WhenCondition{Language: "java"}
-
-		assertBuildFail := func(doInitialBuild bool, expectedErrMsg string) {
-			component := getSampleComponentData(resourceNoMatchPKey)
-			if doInitialBuild {
-				component.Annotations[BuildRequestAnnotationName] = BuildRequestTriggerSimpleBuildAnnotationValue
-			} else {
-				component.Annotations[BuildRequestAnnotationName] = BuildRequestConfigurePaCAnnotationValue
-			}
-			createComponentCustom(component)
-			// devfile is about nodejs rather than Java, which causes failure of selecting a pipeline.
-			devfile := `
-                        schemaVersion: 2.2.0
-                        metadata:
-                            name: devfile-nodejs
-                            language: nodejs
-                    `
-			setComponentDevfile(resourceNoMatchPKey, devfile)
-
-			ensureNoPipelineRunsCreated(resourceNoMatchPKey)
-
-			component = getComponent(resourceNoMatchPKey)
-
-			// Check expected errors
-			statusAnnotation := component.Annotations[BuildStatusAnnotationName]
-			Expect(strings.Contains(statusAnnotation, expectedErrMsg)).To(BeTrue())
-		}
-
-		It("initial build should fail when Component CR does not match any predefined pipeline", func() {
-			createBuildPipelineSelector(defaultResolverRef, nonMatchingConditions)
-			assertBuildFail(true, "No pipeline is selected")
-		})
-
-		It("PaC provision should fail when Component CR does not match any predefined pipeline", func() {
-			createBuildPipelineSelector(defaultResolverRef, nonMatchingConditions)
-			assertBuildFail(false, "No pipeline is selected")
-		})
-
-		It("initial build should fail when no BuildPipelineSelector CR is defined", func() {
-			assertBuildFail(true, "Build pipeline selector is not defined")
-		})
-
-		It("PaC provision should fail when no BuildPipelineSelector CR is defined", func() {
-			assertBuildFail(false, "Build pipeline selector is not defined")
-		})
-
-		unsupportedResolverRef := tektonapi.ResolverRef{Resolver: "git"}
-		noConditions := buildappstudiov1alpha1.WhenCondition{}
-
-		It("Initial build should fail when the matched pipelineRef uses an unsupported resolver", func() {
-			createBuildPipelineSelector(unsupportedResolverRef, noConditions)
-			assertBuildFail(true, "The pipelineRef for this component (based on pipeline selectors) is not supported.")
-		})
-
-		It("PaC provision should fail when the matched pipelineRef uses an unsupported resolver", func() {
-			createBuildPipelineSelector(unsupportedResolverRef, noConditions)
-			assertBuildFail(false, "The pipelineRef for this component (based on pipeline selectors) is not supported.")
-		})
-
-		incompleteResolverRef := tektonapi.ResolverRef{
-			Resolver: "bundles",
-			Params: []tektonapi.Param{
-				{Name: "kind", Value: *tektonapi.NewStructuredValues("pipeline")},
-				{Name: "name", Value: *tektonapi.NewStructuredValues("java-builder")},
-			},
-		}
-
-		It("Initial build should fail when the matched pipelineRef is incomplete", func() {
-			createBuildPipelineSelector(incompleteResolverRef, noConditions)
-			assertBuildFail(true, `The pipelineRef for this component is missing required parameters ('name' and/or 'bundle').`)
-		})
-
-		It("PaC provision should fail when the matched pipelineRef is incomplete", func() {
-			createBuildPipelineSelector(incompleteResolverRef, noConditions)
-			assertBuildFail(false, `The pipelineRef for this component is missing required parameters ('name' and/or 'bundle').`)
-		})
-
 	})
 
 	Context("Test Pipelines as Code trigger build", func() {
@@ -2372,9 +1950,11 @@ var _ = Describe("Component initial build controller", func() {
 				return mergeUrl, nil
 			}
 
-			createComponentAndProcessBuildRequest(resourcePacTriggerKey, BuildRequestConfigurePaCAnnotationValue)
+			createComponentAndProcessBuildRequest(componentConfig{
+				componentKey: resourcePacTriggerKey,
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourcePacTriggerKey)
-			waitComponentAnnotationGone(resourcePacTriggerKey, BuildRequestAnnotationName)
 			expectPacBuildStatus(resourcePacTriggerKey, "enabled", 0, "", mergeUrl)
 
 			repository := waitPaCRepositoryCreated(resourcePacTriggerKey)
@@ -2434,17 +2014,23 @@ var _ = Describe("Component initial build controller", func() {
 			}
 
 			// provision 1st component
-			createComponentAndProcessBuildRequest(resourcePacTriggerKey, BuildRequestConfigurePaCAnnotationValue)
+			createComponentAndProcessBuildRequest(componentConfig{
+				componentKey: resourcePacTriggerKey,
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourcePacTriggerKey)
-			waitComponentAnnotationGone(resourcePacTriggerKey, BuildRequestAnnotationName)
 			expectPacBuildStatus(resourcePacTriggerKey, "enabled", 0, "", mergeUrl)
 			repository := waitPaCRepositoryCreated(resourcePacTriggerKey)
 
 			// provision 2nd component
 			component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
-			createComponentWithBuildRequestAndGit(component2Key, BuildRequestConfigurePaCAnnotationValue, SampleRepoLink+"-"+resourcePacTriggerKey.Name, "another")
+			createComponentAndProcessBuildRequest(componentConfig{
+				componentKey: component2Key,
+				annotations:  defaultPipelineAnnotations,
+				gitURL:       SampleRepoLink + "-" + resourcePacTriggerKey.Name,
+				gitRevision:  "another",
+			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(component2Key)
-			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
 			expectPacBuildStatus(component2Key, "enabled", 0, "", mergeUrl)
 			defer deleteComponent(component2Key)
 
@@ -2520,17 +2106,23 @@ var _ = Describe("Component initial build controller", func() {
 			}
 
 			// provision 1st component
-			createComponentAndProcessBuildRequest(resourcePacTriggerKey, BuildRequestConfigurePaCAnnotationValue)
+			createComponentAndProcessBuildRequest(componentConfig{
+				componentKey: resourcePacTriggerKey,
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourcePacTriggerKey)
-			waitComponentAnnotationGone(resourcePacTriggerKey, BuildRequestAnnotationName)
 			expectPacBuildStatus(resourcePacTriggerKey, "enabled", 0, "", mergeUrl)
 			repository := waitPaCRepositoryCreated(resourcePacTriggerKey)
 
 			// provision 2nd component
 			component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
-			createComponentWithBuildRequestAndGit(component2Key, BuildRequestConfigurePaCAnnotationValue, SampleRepoLink+"-"+resourcePacTriggerKey.Name, "main")
+			createComponentAndProcessBuildRequest(componentConfig{
+				componentKey: component2Key,
+				annotations:  defaultPipelineAnnotations,
+				gitURL:       SampleRepoLink + "-" + resourcePacTriggerKey.Name,
+				gitRevision:  "main",
+			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(component2Key)
-			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
 			expectPacBuildStatus(component2Key, "enabled", 0, "", mergeUrl)
 			defer deleteComponent(component2Key)
 
@@ -2607,9 +2199,11 @@ var _ = Describe("Component initial build controller", func() {
 			}
 
 			// provision 1st component
-			createComponentAndProcessBuildRequest(resourcePacTriggerKey, BuildRequestConfigurePaCAnnotationValue)
+			createComponentAndProcessBuildRequest(componentConfig{
+				componentKey: resourcePacTriggerKey,
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourcePacTriggerKey)
-			waitComponentAnnotationGone(resourcePacTriggerKey, BuildRequestAnnotationName)
 			expectPacBuildStatus(resourcePacTriggerKey, "enabled", 0, "", mergeUrl)
 
 			repository := waitPaCRepositoryCreated(resourcePacTriggerKey)
@@ -2628,9 +2222,13 @@ var _ = Describe("Component initial build controller", func() {
 
 			// provision 2nd component
 			component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
-			createComponentWithBuildRequestAndGit(component2Key, BuildRequestConfigurePaCAnnotationValue, SampleRepoLink+"-"+resourcePacTriggerKey.Name, "another")
+			createComponentAndProcessBuildRequest(componentConfig{
+				componentKey: component2Key,
+				annotations:  defaultPipelineAnnotations,
+				gitURL:       SampleRepoLink + "-" + resourcePacTriggerKey.Name,
+				gitRevision:  "another",
+			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(component2Key)
-			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
 			expectPacBuildStatus(component2Key, "enabled", 0, "", mergeUrl)
 			defer deleteComponent(component2Key)
 
@@ -2682,9 +2280,11 @@ var _ = Describe("Component initial build controller", func() {
 			}
 
 			// provision 1st component
-			createComponentAndProcessBuildRequest(resourcePacTriggerKey, BuildRequestConfigurePaCAnnotationValue)
+			createComponentAndProcessBuildRequest(componentConfig{
+				componentKey: resourcePacTriggerKey,
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourcePacTriggerKey)
-			waitComponentAnnotationGone(resourcePacTriggerKey, BuildRequestAnnotationName)
 			expectPacBuildStatus(resourcePacTriggerKey, "enabled", 0, "", mergeUrl)
 
 			repository := waitPaCRepositoryCreated(resourcePacTriggerKey)
@@ -2705,9 +2305,13 @@ var _ = Describe("Component initial build controller", func() {
 
 			// provision 2nd component
 			component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
-			createComponentWithBuildRequestAndGit(component2Key, BuildRequestConfigurePaCAnnotationValue, SampleRepoLink+"-"+resourcePacTriggerKey.Name, "another")
+			createComponentAndProcessBuildRequest(componentConfig{
+				componentKey: component2Key,
+				annotations:  defaultPipelineAnnotations,
+				gitURL:       SampleRepoLink + "-" + resourcePacTriggerKey.Name,
+				gitRevision:  "another",
+			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(component2Key)
-			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
 			expectPacBuildStatus(component2Key, "enabled", 0, "", mergeUrl)
 			defer deleteComponent(component2Key)
 
@@ -2759,9 +2363,11 @@ var _ = Describe("Component initial build controller", func() {
 			}
 
 			// provision 1st component
-			createComponentAndProcessBuildRequest(resourcePacTriggerKey, BuildRequestConfigurePaCAnnotationValue)
+			createComponentAndProcessBuildRequest(componentConfig{
+				componentKey: resourcePacTriggerKey,
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourcePacTriggerKey)
-			waitComponentAnnotationGone(resourcePacTriggerKey, BuildRequestAnnotationName)
 			expectPacBuildStatus(resourcePacTriggerKey, "enabled", 0, "", mergeUrl)
 
 			repository := waitPaCRepositoryCreated(resourcePacTriggerKey)
@@ -2776,9 +2382,13 @@ var _ = Describe("Component initial build controller", func() {
 
 			// provision 2nd component
 			component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
-			createComponentWithBuildRequestAndGit(component2Key, BuildRequestConfigurePaCAnnotationValue, SampleRepoLink+"-"+resourcePacTriggerKey.Name, "another")
+			createComponentAndProcessBuildRequest(componentConfig{
+				componentKey: component2Key,
+				annotations:  defaultPipelineAnnotations,
+				gitURL:       SampleRepoLink + "-" + resourcePacTriggerKey.Name,
+				gitRevision:  "another",
+			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(component2Key)
-			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
 			expectPacBuildStatus(component2Key, "enabled", 0, "", mergeUrl)
 			defer deleteComponent(component2Key)
 

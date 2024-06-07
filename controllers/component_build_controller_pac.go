@@ -895,21 +895,11 @@ func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigs(ctx context.Con
 
 	var pipelineName string
 	var pipelineBundle string
-	var additionalPipelineParams []tektonapi.Param
 	var pipelineRef *tektonapi.PipelineRef
 	var err error
 
 	// no need to check error because it would fail already in Reconcile
 	pipelineRef, _ = r.GetBuildPipelineFromComponentAnnotation(ctx, component)
-	pipelineAnnotationUsed := true
-	if pipelineRef == nil {
-		pipelineAnnotationUsed = false
-		pipelineRef, additionalPipelineParams, err = r.GetPipelineForComponent(ctx, component)
-		if err != nil {
-			return nil, nil, err
-		}
-	}
-
 	pipelineName, pipelineBundle, err = getPipelineNameAndBundle(pipelineRef)
 	if err != nil {
 		return nil, nil, err
@@ -925,8 +915,7 @@ func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigs(ctx context.Con
 		return nil, nil, err
 	}
 
-	pipelineRunOnPush, err := generatePaCPipelineRunForComponent(
-		component, pipelineSpec, additionalPipelineParams, false, pacTargetBranch, gitClient, pipelineAnnotationUsed)
+	pipelineRunOnPush, err := generatePaCPipelineRunForComponent(component, pipelineSpec, pacTargetBranch, gitClient, false)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -935,8 +924,7 @@ func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigs(ctx context.Con
 		return nil, nil, err
 	}
 
-	pipelineRunOnPR, err := generatePaCPipelineRunForComponent(
-		component, pipelineSpec, additionalPipelineParams, true, pacTargetBranch, gitClient, pipelineAnnotationUsed)
+	pipelineRunOnPR, err := generatePaCPipelineRunForComponent(component, pipelineSpec, pacTargetBranch, gitClient, true)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1134,11 +1122,9 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 func generatePaCPipelineRunForComponent(
 	component *appstudiov1alpha1.Component,
 	pipelineSpec *tektonapi.PipelineSpec,
-	additionalPipelineParams []tektonapi.Param,
-	onPull bool,
 	pacTargetBranch string,
 	gitClient gp.GitProviderClient,
-	pipelineAnnotationUsed bool) (*tektonapi.PipelineRun, error) {
+	onPull bool) (*tektonapi.PipelineRun, error) {
 
 	if pacTargetBranch == "" {
 		return nil, fmt.Errorf("target branch can't be empty for generating PaC PipelineRun for: %v", component)
@@ -1188,34 +1174,15 @@ func generatePaCPipelineRunForComponent(
 		params = append(params, tektonapi.Param{Name: "image-expires-after", Value: tektonapi.ParamValue{Type: "string", StringVal: prImageExpiration}})
 	}
 
-	// no need to check error because it would fail already in Reconcile
-	if !pipelineAnnotationUsed {
-		dockerFile, err := DevfileSearchForDockerfile([]byte(component.Status.Devfile))
-		if err != nil {
-			return nil, boerrors.NewBuildOpError(boerrors.EInvalidDevfile, err)
-		}
-		if dockerFile != nil {
-			if dockerFile.Uri != "" {
-				params = append(params, tektonapi.Param{Name: "dockerfile", Value: tektonapi.ParamValue{Type: "string", StringVal: dockerFile.Uri}})
-			}
-			pathContext := getPathContext(component.Spec.Source.GitSource.Context, dockerFile.BuildContext)
-			if pathContext != "" {
-				params = append(params, tektonapi.Param{Name: "path-context", Value: tektonapi.ParamValue{Type: "string", StringVal: pathContext}})
-			}
-		}
+	if component.Spec.Source.GitSource.DockerfileURL != "" {
+		params = append(params, tektonapi.Param{Name: "dockerfile", Value: tektonapi.ParamValue{Type: "string", StringVal: component.Spec.Source.GitSource.DockerfileURL}})
 	} else {
-		if component.Spec.Source.GitSource.DockerfileURL != "" {
-			params = append(params, tektonapi.Param{Name: "dockerfile", Value: tektonapi.ParamValue{Type: "string", StringVal: component.Spec.Source.GitSource.DockerfileURL}})
-		} else {
-			params = append(params, tektonapi.Param{Name: "dockerfile", Value: tektonapi.ParamValue{Type: "string", StringVal: "Dockerfile"}})
-		}
-		pathContext := getPathContext(component.Spec.Source.GitSource.Context, "")
-		if pathContext != "" {
-			params = append(params, tektonapi.Param{Name: "path-context", Value: tektonapi.ParamValue{Type: "string", StringVal: pathContext}})
-		}
+		params = append(params, tektonapi.Param{Name: "dockerfile", Value: tektonapi.ParamValue{Type: "string", StringVal: "Dockerfile"}})
 	}
-
-	params = mergeAndSortTektonParams(params, additionalPipelineParams)
+	pathContext := getPathContext(component.Spec.Source.GitSource.Context, "")
+	if pathContext != "" {
+		params = append(params, tektonapi.Param{Name: "path-context", Value: tektonapi.ParamValue{Type: "string", StringVal: pathContext}})
+	}
 
 	pipelineRunWorkspaces := createWorkspaceBinding(pipelineSpec.Workspaces)
 

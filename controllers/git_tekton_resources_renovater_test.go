@@ -39,6 +39,7 @@ var _ = Describe("Git tekton resources renovater", func() {
 	)
 
 	Context("Test Renovate jobs creation", Label("renovater"), func() {
+		var resourceTriggerKey = types.NamespacedName{Name: HASCompName + "-testtrigger", Namespace: HASAppNamespace}
 
 		_ = BeforeEach(func() {
 			createNamespace(BuildServiceNamespaceName)
@@ -65,10 +66,15 @@ var _ = Describe("Git tekton resources renovater", func() {
 				repositories := generateRepositories(installedRepositoryUrls)
 				return []github.ApplicationInstallation{generateInstallation(repositories)}, "slug", nil
 			}
-			componentNamespacedName := createComponentForPaCBuild(getComponentData(componentConfig{componentKey: types.NamespacedName{Name: "testtrigger"}, gitURL: "https://github/test/repo1"}))
+			createCustomComponentWithBuildRequest(componentConfig{
+				componentKey: resourceTriggerKey,
+				gitURL:       "https://github/test/repo1",
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
+
 			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
 			Eventually(listJobs).WithArguments(BuildServiceNamespaceName).WithTimeout(timeout).Should(HaveLen(1))
-			deleteComponent(componentNamespacedName)
+			deleteComponent(resourceTriggerKey)
 		})
 
 		It("It should trigger job, use default branch and default installation per job", func() {
@@ -80,13 +86,18 @@ var _ = Describe("Git tekton resources renovater", func() {
 				repositories := generateRepositories(installedRepositoryUrls)
 				return []github.ApplicationInstallation{generateInstallation(repositories)}, "slug", nil
 			}
-			componentsData := getComponentData(componentConfig{componentKey: types.NamespacedName{Name: "testdefault"}, gitURL: "https://github/test/repo1"})
-			componentsData.Spec.Source.GitSource.Revision = ""
-			componentNamespacedName := createComponentForPaCBuild(componentsData)
+
+			createCustomComponentWithBuildRequest(componentConfig{
+				componentKey: resourceTriggerKey,
+				gitURL:       "https://github/test/repo1",
+				gitRevision:  "",
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
+
 			os.Setenv(renovate.InstallationsPerJobEnvName, "0")
 			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
 			Eventually(listJobs).WithArguments(BuildServiceNamespaceName).WithTimeout(timeout).Should(HaveLen(1))
-			deleteComponent(componentNamespacedName)
+			deleteComponent(resourceTriggerKey)
 		})
 
 		It("It should trigger 2 jobs", func() {
@@ -109,9 +120,16 @@ var _ = Describe("Git tekton resources renovater", func() {
 			}
 
 			var componentsNs []types.NamespacedName
+			var resourceKey types.NamespacedName
 			for i, installedRepositoryUrls := range installedRepositories {
 				for j, installedRepositoryUrl := range installedRepositoryUrls {
-					componentsNs = append(componentsNs, createComponentForPaCBuild(getComponentData(componentConfig{componentKey: types.NamespacedName{Name: fmt.Sprintf("test%v-%v", i, j)}, gitURL: installedRepositoryUrl})))
+					resourceKey = types.NamespacedName{Name: HASCompName + "-testtrigger" + fmt.Sprintf("test%v-%v", i, j), Namespace: HASAppNamespace}
+					createCustomComponentWithBuildRequest(componentConfig{
+						componentKey: resourceKey,
+						gitURL:       installedRepositoryUrl,
+						annotations:  defaultPipelineAnnotations,
+					}, BuildRequestConfigurePaCAnnotationValue)
+					componentsNs = append(componentsNs, resourceKey)
 				}
 			}
 			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
@@ -131,14 +149,29 @@ var _ = Describe("Git tekton resources renovater", func() {
 				repositories := generateRepositories(installedRepositoryUrls)
 				return []github.ApplicationInstallation{generateInstallation(repositories)}, "slug", nil
 			}
-			componentNamespacedName := createComponentForPaCBuild(getComponentData(componentConfig{componentKey: types.NamespacedName{Name: "testpacmissing"}, gitURL: "https://github/test/repo1"}))
+
+			createCustomComponentWithBuildRequest(componentConfig{
+				componentKey: resourceTriggerKey,
+				gitURL:       "https://github/test/repo1",
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
 
 			deleteSecret(pacSecretKey)
 			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
 			Eventually(listEvents).WithArguments("default").WithTimeout(timeout).ShouldNot(BeEmpty())
 			allEvents := listEvents("default")
-			Expect(allEvents[0].Reason).To(Equal("ErrorReadingPaCSecret"))
-			deleteComponent(componentNamespacedName)
+			renovaterReason := ""
+			// find event only for renovater, because PaC will throw event as well which is PaCSecretNotFound
+			for _, event := range allEvents {
+				fmt.Println(event.Reason)
+				fmt.Println(event.ReportingController)
+				if event.ReportingController == "GitTektonResourcesRenovater" {
+					renovaterReason = event.Reason
+					break
+				}
+			}
+			Expect(renovaterReason).To(Equal("ErrorReadingPaCSecret"))
+			deleteComponent(resourceTriggerKey)
 		})
 
 		It("It should not trigger job", func() {
@@ -150,11 +183,16 @@ var _ = Describe("Git tekton resources renovater", func() {
 				repositories := generateRepositories(installedRepositoryUrls)
 				return []github.ApplicationInstallation{generateInstallation(repositories)}, "slug", nil
 			}
-			componentNamespacedName := createComponentForPaCBuild(getComponentData(componentConfig{componentKey: types.NamespacedName{Name: "testnottrigger"}, gitURL: "https://github/test/repo3"}))
+			createCustomComponentWithBuildRequest(componentConfig{
+				componentKey: resourceTriggerKey,
+				gitURL:       "https://github/test/repo3",
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
+
 			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
 			Consistently(listJobs).WithArguments(BuildServiceNamespaceName).WithTimeout(time.Second * 5).Should(BeEmpty())
 
-			deleteComponent(componentNamespacedName)
+			deleteComponent(resourceTriggerKey)
 		})
 	})
 })

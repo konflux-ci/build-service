@@ -13,7 +13,6 @@ namePrefix: build-service-
 #  someName: someValue
 
 bases:
-- ../crd
 - ../rbac
 - ../manager
 - ../monitoring/prometheus
