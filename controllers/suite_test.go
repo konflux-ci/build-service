@@ -25,12 +25,12 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	appstudiov1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
+	releaseapi "github.com/konflux-ci/release-service/api/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	routev1 "github.com/openshift/api/route/v1"
-	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
-	releaseapi "github.com/redhat-appstudio/release-service/api/v1alpha1"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -73,14 +73,14 @@ var _ = BeforeSuite(func() {
 
 	By("bootstrapping test environment")
 
-	applicationApiDepVersion := "v0.0.0-20231026192857-89515ad2504f"
+	applicationApiDepVersion := "v0.0.0-20240527211352-be061932d497"
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
 			filepath.Join("..", "hack", "routecrd", "route.yaml"),
-			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "redhat-appstudio", "application-api@"+applicationApiDepVersion, "config", "crd", "bases"),
-			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "tektoncd", "pipeline@v0.46.0", "config"),
+			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "konflux-ci", "application-api@"+applicationApiDepVersion, "config", "crd", "bases"),
+			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "tektoncd", "pipeline@v0.57.0", "config"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "openshift-pipelines", "pipelines-as-code@v0.18.0", "config"),
-			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "redhat-appstudio", "release-service@v0.0.0-20231213200646-9aea1dba75c0", "config", "crd", "bases"),
+			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "konflux-ci", "release-service@v0.0.0-20240610124538-758a1d48d002", "config", "crd", "bases"),
 		},
 		ErrorIfCRDPathMissing: true,
 	}

@@ -26,8 +26,8 @@ import (
 	"text/template"
 	"time"
 
-	applicationapi "github.com/redhat-appstudio/application-api/api/v1alpha1"
-	releaseapi "github.com/redhat-appstudio/release-service/api/v1alpha1"
+	applicationapi "github.com/konflux-ci/application-api/api/v1alpha1"
+	releaseapi "github.com/konflux-ci/release-service/api/v1alpha1"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	"golang.org/x/exp/slices"
 	corev1 "k8s.io/api/core/v1"

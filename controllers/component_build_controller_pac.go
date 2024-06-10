@@ -31,9 +31,9 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/google/go-containerregistry/pkg/authn"
+	appstudiov1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	routev1 "github.com/openshift/api/route/v1"
-	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	tektonapi_v1beta1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	oci "github.com/tektoncd/pipeline/pkg/remote/oci"
@@ -1300,7 +1300,7 @@ func retrievePipelineSpec(ctx context.Context, bundleUri, pipelineName string) (
 	if v1beta1Pipeline, ok := obj.(tektonapi_v1beta1.PipelineObject); ok {
 		v1beta1PipelineSpec := v1beta1Pipeline.PipelineSpec()
 		log.Info("Converting from v1beta1 to v1", "PipelineName", pipelineName, "Bundle", bundleUri)
-		err := v1beta1PipelineSpec.ConvertTo(ctx, &pipelineSpec)
+		err := v1beta1PipelineSpec.ConvertTo(ctx, &pipelineSpec, &metav1.ObjectMeta{})
 		if err != nil {
 			return nil, boerrors.NewBuildOpError(
 				boerrors.EPipelineConversionFailed,

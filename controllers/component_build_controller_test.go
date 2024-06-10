@@ -37,12 +37,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
+	appstudiov1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
 	"github.com/konflux-ci/build-service/pkg/boerrors"
 	. "github.com/konflux-ci/build-service/pkg/common"
 	"github.com/konflux-ci/build-service/pkg/git/github"
 	gp "github.com/konflux-ci/build-service/pkg/git/gitprovider"
 	gpf "github.com/konflux-ci/build-service/pkg/git/gitproviderfactory"
-	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	//+kubebuilder:scaffold:imports
 )
