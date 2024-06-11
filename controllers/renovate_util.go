@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/redhat-appstudio/application-api/api/v1alpha1"
+	"github.com/konflux-ci/application-api/api/v1alpha1"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"

@@ -25,10 +25,10 @@ import (
 	"sort"
 	"strings"
 
+	appstudiov1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
 	"github.com/konflux-ci/build-service/pkg/boerrors"
 	. "github.com/konflux-ci/build-service/pkg/common"
 	l "github.com/konflux-ci/build-service/pkg/logs"
-	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
@@ -390,7 +390,7 @@ func generateVolumeClaimTemplate() *corev1.PersistentVolumeClaim {
 			AccessModes: []corev1.PersistentVolumeAccessMode{
 				"ReadWriteOnce",
 			},
-			Resources: corev1.ResourceRequirements{
+			Resources: corev1.VolumeResourceRequirements{
 				Requests: corev1.ResourceList{
 					"storage": resource.MustParse("1Gi"),
 				},

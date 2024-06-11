@@ -31,7 +31,7 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
+	appstudiov1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
 
 	. "github.com/konflux-ci/build-service/pkg/common"
 	"github.com/konflux-ci/build-service/pkg/git"
