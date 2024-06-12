@@ -37,7 +37,7 @@ import (
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 
 	gh "github.com/google/go-github/v45/github"
-	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
+	appstudiov1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
 
 	. "github.com/konflux-ci/build-service/pkg/common"
 	"github.com/konflux-ci/build-service/pkg/git/github"

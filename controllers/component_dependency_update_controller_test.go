@@ -22,7 +22,6 @@ import (
 	"strings"
 	"time"
 
-	appstudiov1alpha1 "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -36,9 +35,9 @@ import (
 	l "github.com/konflux-ci/build-service/pkg/logs"
 	"github.com/konflux-ci/build-service/pkg/renovate"
 
+	applicationapi "github.com/konflux-ci/application-api/api/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	applicationapi "github.com/redhat-appstudio/application-api/api/v1alpha1"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	//+kubebuilder:scaffold:imports
@@ -77,7 +76,7 @@ func (t *TestComponentDependenciesUpdater) Update(ctx context.Context, component
 				"updatedcomponent", buildResult.UpdatedComponentName,
 				l.Action, l.ActionUpdate)
 			//TODO: do we want the event? It's just for unit testing at the moment
-			component := &appstudiov1alpha1.Component{
+			component := &applicationapi.Component{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      downstreamComponent.ComponentName(),
 					Namespace: downstreamComponent.NamespaceName(),
