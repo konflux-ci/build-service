@@ -300,7 +300,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 	retryTime := FailureRetryTime
 	immediateRetry := false
 
-	var toUpdate []*git.ScmComponent
+	var scmComponentsToUpdate []*git.ScmComponent
 
 	distibutionRepositories := []string{}
 	releasePlanAdmissions := releaseapi.ReleasePlanAdmissionList{}
@@ -352,11 +352,11 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 			if err != nil {
 				return ctrl.Result{}, err
 			}
-			toUpdate = append(toUpdate, scmComponent)
+			scmComponentsToUpdate = append(scmComponentsToUpdate, scmComponent)
 		}
 	}
 
-	nudgeErr := r.componentDependenciesUpdater.Update(ctx, toUpdate,
+	nudgeErr := r.componentDependenciesUpdater.Update(ctx, scmComponentsToUpdate,
 		&renovate.BuildResult{
 			BuiltImageRepository:      repo,
 			BuiltImageTag:             tag,
@@ -370,7 +370,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 
 		componentDesc := ""
 
-		for _, component := range toUpdate {
+		for _, component := range scmComponentsToUpdate {
 			if componentDesc != "" {
 				componentDesc += ", "
 			}

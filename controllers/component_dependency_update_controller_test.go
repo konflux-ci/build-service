@@ -52,8 +52,6 @@ const (
 	ImageDigest   = "IMAGE_DIGEST"
 )
 
-//var failures = 0
-
 type TestComponentDependenciesUpdater struct {
 	componentDependenciesUpdater renovate.ComponentDependenciesUpdater
 	eventRecorder                record.EventRecorder
