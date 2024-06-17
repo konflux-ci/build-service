@@ -136,8 +136,8 @@ const (
 	EGitLabTokenUnauthorized BOErrorId = 90
 	// EGitLabTokenInsufficientScope the access token does not have sufficient scope and 403 is responded.
 	EGitLabTokenInsufficientScope BOErrorId = 91
-	// EGitLabSecretInvalid the secret with GitLab credentials is invalid.
-	EGitLabSecretInvalid BOErrorId = 92
+	// EGitLabTokenBlockedAccount  access token has blocked account
+	EGitLabTokenBlockedAccount BOErrorId = 92
 	// EGitLabSecretTypeNotSupported the secret type with GitLab credentials is not supported.
 	EGitLabSecretTypeNotSupported BOErrorId = 93
 
@@ -203,6 +203,8 @@ var boErrorMessages = map[BOErrorId]string{
 
 	EGitLabTokenInsufficientScope: "GitLab access token does not have enough scope",
 	EGitLabTokenUnauthorized:      "Access token is unrecognizable by remote GitLab service",
+	EGitLabTokenBlockedAccount:    "Access token has blocked account",
+	EGitLabSecretTypeNotSupported: "The secret type with GitLab credentials is not supported",
 
 	EFailedToParseImageAnnotation:        "Failed to parse image.redhat.com/image annotation value",
 	EComponentGitSecretMissing:           "Secret with git credential not found",
