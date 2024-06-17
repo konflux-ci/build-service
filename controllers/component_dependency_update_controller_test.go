@@ -73,7 +73,6 @@ func (t *TestComponentDependenciesUpdater) Update(ctx context.Context, component
 				"component", downstreamComponent.ComponentName(),
 				"updatedcomponent", buildResult.UpdatedComponentName,
 				l.Action, l.ActionUpdate)
-			//TODO: do we want the event? It's just for unit testing at the moment
 			component := &applicationapi.Component{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      downstreamComponent.ComponentName(),

@@ -156,8 +156,10 @@ var _ = BeforeSuite(func() {
 
 	err = (NewDefaultGitTektonResourcesRenovater(k8sManager.GetClient(), k8sManager.GetScheme(), k8sManager.GetEventRecorderFor("GitTektonResourcesRenovater"))).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
+
 	componentDependencyUpdateReconcilerEventRecorder := k8sManager.GetEventRecorderFor("ComponentDependencyUpdateReconciler")
 	dependenciesUpdater = NewTestComponentDependenciesUpdater(k8sManager.GetClient(), k8sManager.GetScheme(), componentDependencyUpdateReconcilerEventRecorder)
+
 	err = NewComponentDependencyUpdateReconciler(k8sManager.GetClient(), k8sManager.GetAPIReader(), componentDependencyUpdateReconcilerEventRecorder, dependenciesUpdater).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
