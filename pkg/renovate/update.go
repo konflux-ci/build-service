@@ -192,7 +192,6 @@ func (j *UpdateCoordinator) ExecuteUpdate(ctx context.Context, updates []*Authen
 }
 
 func (j *UpdateCoordinator) ExecuteUpdateWithLimits(ctx context.Context, updates []*AuthenticatedUpdateConfig) error {
-
 	for i := 0; i < len(updates); i += j.tasksPerJob {
 		end := i + j.tasksPerJob
 
@@ -205,7 +204,6 @@ func (j *UpdateCoordinator) ExecuteUpdateWithLimits(ctx context.Context, updates
 		}
 	}
 	return nil
-
 }
 
 // ExecutePipelineRun will create a renovate pipeline in the user namespace, to update component dependencies.

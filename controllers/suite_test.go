@@ -44,6 +44,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/konflux-ci/build-service/pkg/k8s"
+	"github.com/konflux-ci/build-service/pkg/renovate"
 	"github.com/konflux-ci/build-service/pkg/webhook"
 	//+kubebuilder:scaffold:imports
 )
@@ -160,7 +161,12 @@ var _ = BeforeSuite(func() {
 	componentDependencyUpdateReconcilerEventRecorder := k8sManager.GetEventRecorderFor("ComponentDependencyUpdateReconciler")
 	dependenciesUpdater = NewTestComponentDependenciesUpdater(k8sManager.GetClient(), k8sManager.GetScheme(), componentDependencyUpdateReconcilerEventRecorder)
 
-	err = NewComponentDependencyUpdateReconciler(k8sManager.GetClient(), k8sManager.GetAPIReader(), componentDependencyUpdateReconcilerEventRecorder, dependenciesUpdater).SetupWithManager(k8sManager)
+	err = (&ComponentDependencyUpdateReconciler{
+		Client:                       k8sManager.GetClient(),
+		ApiReader:                    k8sManager.GetAPIReader(),
+		EventRecorder:                componentDependencyUpdateReconcilerEventRecorder,
+		ComponentDependenciesUpdater: renovate.NewDefaultComponentDependenciesUpdater(k8sManager.GetClient(), k8sManager.GetScheme(), componentDependencyUpdateReconcilerEventRecorder),
+	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
 	go func() {

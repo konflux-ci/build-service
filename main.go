@@ -59,6 +59,7 @@ import (
 	"github.com/konflux-ci/build-service/pkg/bometrics"
 	"github.com/konflux-ci/build-service/pkg/k8s"
 	l "github.com/konflux-ci/build-service/pkg/logs"
+	"github.com/konflux-ci/build-service/pkg/renovate"
 	"github.com/konflux-ci/build-service/pkg/webhook"
 	//+kubebuilder:scaffold:imports
 )
@@ -184,8 +185,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (controllers.NewDefaultComponentDependencyUpdateReconciler(mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme(), mgr.GetEventRecorderFor("ComponentDependencyUpdateReconciler"))).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ComponentDependencyUpdateReconciler")
+	if err = (&controllers.ComponentDependencyUpdateReconciler{
+		Client:                       mgr.GetClient(),
+		ApiReader:                    mgr.GetAPIReader(),
+		EventRecorder:                mgr.GetEventRecorderFor("ComponentDependencyUpdateReconciler"),
+		ComponentDependenciesUpdater: renovate.NewDefaultComponentDependenciesUpdater(mgr.GetClient(), mgr.GetScheme(), mgr.GetEventRecorderFor("ComponentDependencyUpdateReconciler")),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "PaCPipelineRunPruner")
 		os.Exit(1)
 	}
 

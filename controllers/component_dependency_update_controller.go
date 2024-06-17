@@ -35,7 +35,6 @@ import (
 	"golang.org/x/exp/slices"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"knative.dev/pkg/apis"
@@ -80,23 +79,10 @@ var delayTime = time.Second * 10
 
 // ComponentDependencyUpdateReconciler reconciles a PipelineRun object
 type ComponentDependencyUpdateReconciler struct {
-	apiReader                    client.Reader
-	client                       client.Client
-	eventRecorder                record.EventRecorder
-	componentDependenciesUpdater renovate.ComponentDependenciesUpdater
-}
-
-func NewDefaultComponentDependencyUpdateReconciler(client client.Client, apiReader client.Reader, scheme *runtime.Scheme, eventRecorder record.EventRecorder) *ComponentDependencyUpdateReconciler {
-	return NewComponentDependencyUpdateReconciler(client, apiReader, eventRecorder, renovate.NewDefaultComponentDependenciesUpdater(client, scheme, eventRecorder))
-}
-
-func NewComponentDependencyUpdateReconciler(client client.Client, apiReader client.Reader, eventRecorder record.EventRecorder, componentDependenciesUpdater renovate.ComponentDependenciesUpdater) *ComponentDependencyUpdateReconciler {
-	return &ComponentDependencyUpdateReconciler{
-		apiReader:                    apiReader,
-		client:                       client,
-		eventRecorder:                eventRecorder,
-		componentDependenciesUpdater: componentDependenciesUpdater,
-	}
+	ApiReader                    client.Reader
+	Client                       client.Client
+	EventRecorder                record.EventRecorder
+	ComponentDependenciesUpdater renovate.ComponentDependenciesUpdater
 }
 
 // SetupController creates a new Integration reconciler and adds it to the Manager.
@@ -155,7 +141,7 @@ func (r *ComponentDependencyUpdateReconciler) Reconcile(ctx context.Context, req
 	ctx = ctrllog.IntoContext(ctx, log)
 
 	pipelineRun := &tektonapi.PipelineRun{}
-	err := r.client.Get(ctx, req.NamespacedName, pipelineRun)
+	err := r.Client.Get(ctx, req.NamespacedName, pipelineRun)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return ctrl.Result{}, nil
@@ -168,7 +154,7 @@ func (r *ComponentDependencyUpdateReconciler) Reconcile(ctx context.Context, req
 		return ctrl.Result{RequeueAfter: delayTime}, nil
 	}
 
-	component, err := GetComponentFromPipelineRun(r.client, ctx, pipelineRun)
+	component, err := GetComponentFromPipelineRun(r.Client, ctx, pipelineRun)
 	if err != nil || component == nil {
 		log.Error(err, "failed to get component")
 		// In case the component was deleted while running the pipeline
@@ -215,7 +201,7 @@ func (r *ComponentDependencyUpdateReconciler) Reconcile(ctx context.Context, req
 		// As tekton results should aggressivly delete when pruning is enabled
 		patch := client.MergeFrom(pipelineRun.DeepCopy())
 		controllerutil.AddFinalizer(pipelineRun, NudgeFinalizer)
-		err = r.client.Patch(ctx, pipelineRun, patch)
+		err = r.Client.Patch(ctx, pipelineRun, patch)
 		if err == nil {
 			return reconcile.Result{}, nil
 		} else if errors.IsConflict(err) {
@@ -233,7 +219,7 @@ func (r *ComponentDependencyUpdateReconciler) verifyUpToDate(ctx context.Context
 	// These objects are so heavily contented that we always grab the latest copy from the
 	// API server and verify we are up-to-date
 	currentPipelineRun := &tektonapi.PipelineRun{}
-	err := r.apiReader.Get(ctx, types.NamespacedName{Namespace: pipelineRun.Namespace, Name: pipelineRun.Name}, currentPipelineRun)
+	err := r.ApiReader.Get(ctx, types.NamespacedName{Namespace: pipelineRun.Namespace, Name: pipelineRun.Name}, currentPipelineRun)
 	if err != nil {
 		return nil, err
 	}
@@ -289,7 +275,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 	}
 
 	components := applicationapi.ComponentList{}
-	err := r.client.List(ctx, &components, client.InNamespace(pipelineRun.Namespace))
+	err := r.Client.List(ctx, &components, client.InNamespace(pipelineRun.Namespace))
 	if err != nil {
 		log.Error(err, "failed to list components in namespace")
 		return ctrl.Result{}, err
@@ -304,7 +290,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 
 	distibutionRepositories := []string{}
 	releasePlanAdmissions := releaseapi.ReleasePlanAdmissionList{}
-	err = r.client.List(ctx, &releasePlanAdmissions)
+	err = r.Client.List(ctx, &releasePlanAdmissions)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -345,7 +331,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 			if err != nil {
 				// component misconfiguration shouldn't prevent other components from being updated
 				// deepcopy the component to avoid implicit memory aliasing in for loop
-				r.eventRecorder.Event(component.DeepCopy(), "Warning", "ErrorComponentProviderInfo", err.Error())
+				r.EventRecorder.Event(component.DeepCopy(), "Warning", "ErrorComponentProviderInfo", err.Error())
 				continue
 			}
 			scmComponent, err := git.NewScmComponent(gitProvider, component.Spec.Source.GitSource.URL, component.Spec.Source.GitSource.Revision, component.Name, component.Namespace)
@@ -356,7 +342,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 		}
 	}
 
-	nudgeErr := r.componentDependenciesUpdater.Update(ctx, scmComponentsToUpdate,
+	nudgeErr := r.ComponentDependenciesUpdater.Update(ctx, scmComponentsToUpdate,
 		&renovate.BuildResult{
 			BuiltImageRepository:      repo,
 			BuiltImageTag:             tag,
@@ -394,7 +380,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 
 		pipelineRun.Annotations[FailureCountAnnotationName] = strconv.Itoa(failureCount)
 
-		r.eventRecorder.Event(updatedComponent, corev1.EventTypeWarning, ComponentNudgeFailedEventType, fmt.Sprintf("component update failed as a result of a build for %s, retry %d/%d", updatedComponent.Name, failureCount, MaxAttempts))
+		r.EventRecorder.Event(updatedComponent, corev1.EventTypeWarning, ComponentNudgeFailedEventType, fmt.Sprintf("component update failed as a result of a build for %s, retry %d/%d", updatedComponent.Name, failureCount, MaxAttempts))
 
 		if failureCount >= MaxAttempts {
 			// We are at the failure limit, nothing much we can do
@@ -402,7 +388,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 			return r.removePipelineFinalizer(ctx, pipelineRun, patch)
 		}
 		log.Info(fmt.Sprintf("failed to update component dependencies, retry %d/%d", failureCount, MaxAttempts))
-		err = r.client.Patch(ctx, pipelineRun, patch)
+		err = r.Client.Patch(ctx, pipelineRun, patch)
 		if err != nil {
 			// If we fail to update just return and let requeue handle it
 			// We can't really do anything else
@@ -428,7 +414,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 	// the finalizer.
 
 	pipelines := tektonapi.PipelineRunList{}
-	err = r.client.List(ctx, &pipelines, client.InNamespace(pipelineRun.Namespace), client.MatchingLabels{PipelineRunTypeLabelName: PipelineRunBuildType, ComponentNameLabelName: updatedComponent.Name})
+	err = r.Client.List(ctx, &pipelines, client.InNamespace(pipelineRun.Namespace), client.MatchingLabels{PipelineRunTypeLabelName: PipelineRunBuildType, ComponentNameLabelName: updatedComponent.Name})
 	if err != nil {
 		// I don't think we want to retry this, it should be really rare anyway
 		// and would require an even more complex label based state machine.
@@ -467,14 +453,14 @@ func (r *ComponentDependencyUpdateReconciler) removePipelineFinalizer(ctx contex
 	}
 	pipelineRun.Annotations[NudgeProcessedAnnotationName] = "true"
 	controllerutil.RemoveFinalizer(pipelineRun, NudgeFinalizer)
-	err := r.client.Patch(ctx, pipelineRun, patch)
+	err := r.Client.Patch(ctx, pipelineRun, patch)
 	if err != nil {
 		if !errors.IsConflict(err) {
 			log := ctrllog.FromContext(ctx)
 			// We don't log/fire events on conflicts, they are part of normal operation,
 			// especially as these are highly contended objects
 			log.Error(err, "unable to remove pipeline run finalizer")
-			r.eventRecorder.Event(pipelineRun, corev1.EventTypeWarning, ComponentNudgedEventType, fmt.Sprintf("failed to remove finalizer from %s", pipelineRun.Name))
+			r.EventRecorder.Event(pipelineRun, corev1.EventTypeWarning, ComponentNudgedEventType, fmt.Sprintf("failed to remove finalizer from %s", pipelineRun.Name))
 		}
 		return ctrl.Result{}, err
 	}
