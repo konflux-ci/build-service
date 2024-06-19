@@ -91,6 +91,16 @@ func GetBaseUrl(repoUrl string) (string, error) {
 func refineGitHostingServiceError(response *http.Response, originErr error) error {
 	// go-gitlab APIs do not return a http.Response object if the error is not related to an HTTP request.
 	if response == nil {
+		if strings.Contains(originErr.Error(), "The provided authorization grant is invalid") || strings.Contains(originErr.Error(), "401 Unauthorized") {
+			return boerrors.NewBuildOpError(boerrors.EGitLabTokenUnauthorized, originErr)
+		}
+		if strings.Contains(originErr.Error(), "403 Forbidden - Your account has been blocked") {
+			return boerrors.NewBuildOpError(boerrors.EGitLabTokenBlockedAccount, originErr)
+
+		}
+		if strings.Contains(originErr.Error(), "403 Forbidden") {
+			return boerrors.NewBuildOpError(boerrors.EGitLabTokenInsufficientScope, originErr)
+		}
 		return originErr
 	}
 	switch response.StatusCode {
@@ -154,7 +164,7 @@ func (g *GitlabClient) deleteBranch(projectPath, branch string) (bool, error) {
 func (g *GitlabClient) getDefaultBranch(projectPath string) (string, error) {
 	projectInfo, _, err := g.client.Projects.GetProject(projectPath, nil)
 	if err != nil {
-		return "", err
+		return "", refineGitHostingServiceError(nil, err)
 	}
 	if projectInfo == nil {
 		return "", fmt.Errorf("project info is empty in GitLab API response")

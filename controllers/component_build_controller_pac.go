@@ -274,13 +274,16 @@ func (r *ComponentBuildReconciler) TriggerPaCBuild(ctx context.Context, componen
 		return false, err
 	}
 
+	// getting branch in advance just to test credentials
+	defaultBranch, err := gitClient.GetDefaultBranch(repoUrl)
+	if err != nil {
+		return false, err
+	}
+
 	// get target branch for incoming hook
 	targetBranch := component.Spec.Source.GitSource.Revision
 	if targetBranch == "" {
-		targetBranch, err = gitClient.GetDefaultBranch(repoUrl)
-		if err != nil {
-			return false, err
-		}
+		targetBranch = defaultBranch
 	}
 
 	incomingUpdated := updateIncoming(repository, incomingSecret.Name, pacIncomingSecretKey, targetBranch)
@@ -959,12 +962,15 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 		return "", err
 	}
 
+	// getting branch in advance just to test credentials
+	defaultBranch, err := gitClient.GetDefaultBranch(repoUrl)
+	if err != nil {
+		return "", err
+	}
+
 	baseBranch := component.Spec.Source.GitSource.Revision
 	if baseBranch == "" {
-		baseBranch, err = gitClient.GetDefaultBranch(repoUrl)
-		if err != nil {
-			return "", err
-		}
+		baseBranch = defaultBranch
 	}
 
 	pipelineRunOnPushYaml, pipelineRunOnPRYaml, err := r.generatePaCPipelineRunConfigs(ctx, component, gitClient, baseBranch)
@@ -1034,6 +1040,12 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 		return "", "", "", err
 	}
 
+	// getting branch in advance just to test credentials
+	defaultBranch, err := gitClient.GetDefaultBranch(repoUrl)
+	if err != nil {
+		return "", "", "", err
+	}
+
 	isAppUsed := IsPaCApplicationConfigured(gitProvider, pacConfig)
 	if !isAppUsed {
 		if webhookTargetUrl != "" {
@@ -1052,10 +1064,7 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 	sourceBranch := generateMergeRequestSourceBranch(component)
 	baseBranch = component.Spec.Source.GitSource.Revision
 	if baseBranch == "" {
-		baseBranch, err = gitClient.GetDefaultBranch(repoUrl)
-		if err != nil {
-			return "", "", "", nil
-		}
+		baseBranch = defaultBranch
 	}
 
 	mrData := &gp.MergeRequestData{
