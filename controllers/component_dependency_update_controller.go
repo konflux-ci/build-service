@@ -141,6 +141,8 @@ type UpdateComponentDependenciesFunction = func(ctx context.Context, client clie
 
 var DefaultUpdateFunction = DefaultDependenciesUpdate
 
+// The following line for configmaps is informational, the actual permissions are defined in component_build_controller.
+// +kubebuilder:rbac:groups=core,resources=configmaps,verbs=create;get;list;watch;update;patch;delete
 // +kubebuilder:rbac:groups=appstudio.redhat.com,resources=components,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=appstudio.redhat.com,resources=components/status,verbs=get;list;watch
 // +kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns,verbs=get;list;watch;create;update;patch;delete;deletecollection

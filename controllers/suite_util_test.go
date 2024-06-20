@@ -18,15 +18,12 @@ package controllers
 
 import (
 	"fmt"
-	"math/rand"
-	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	routev1 "github.com/openshift/api/route/v1"
-	batch "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -36,11 +33,9 @@ import (
 
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 
-	gh "github.com/google/go-github/v45/github"
 	appstudiov1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
 
 	. "github.com/konflux-ci/build-service/pkg/common"
-	"github.com/konflux-ci/build-service/pkg/git/github"
 	"gopkg.in/yaml.v2"
 )
 
@@ -646,54 +641,6 @@ func deleteBuildPipelineConfigMap(configMapKey types.NamespacedName) {
 	if err := k8sClient.Delete(ctx, &buildPipelineConfigMap); err != nil && !k8sErrors.IsNotFound(err) {
 		Fail(err.Error())
 	}
-}
-
-func listEvents(namespace string) []corev1.Event {
-	events := &corev1.EventList{}
-
-	err := k8sClient.List(ctx, events, client.InNamespace(namespace))
-	Expect(err).ToNot(HaveOccurred())
-	return events.Items
-}
-
-func listJobs(namespace string) []batch.Job {
-	jobs := &batch.JobList{}
-
-	err := k8sClient.List(ctx, jobs, client.InNamespace(namespace))
-	Expect(err).ToNot(HaveOccurred())
-	return jobs.Items
-}
-
-func deleteJobs(namespace string) {
-	err := k8sClient.DeleteAllOf(ctx, &batch.Job{}, client.InNamespace(namespace), client.PropagationPolicy(metav1.DeletePropagationBackground))
-	Expect(err).ToNot(HaveOccurred())
-	Eventually(func() bool {
-		return len(listJobs(namespace)) == 0
-	}, 10*time.Second, 100*time.Millisecond).Should(BeTrue())
-}
-
-func generateInstallation(repositories []*gh.Repository) github.ApplicationInstallation {
-	return github.ApplicationInstallation{
-		ID:           int64(rand.Intn(100)),
-		Token:        RandomString(30),
-		Repositories: repositories,
-	}
-}
-
-func generateRepository(repoURL string) *gh.Repository {
-	repoURLParts := strings.Split(repoURL, "/")
-	return &gh.Repository{
-		HTMLURL:  &repoURL,
-		FullName: gh.String(fmt.Sprintf("%s/%s", repoURLParts[3], repoURLParts[4])),
-	}
-}
-
-func generateRepositories(repoURL []string) []*gh.Repository {
-	repositories := []*gh.Repository{}
-	for _, repo := range repoURL {
-		repositories = append(repositories, generateRepository(repo))
-	}
-	return repositories
 }
 
 func getPipelineName(pipelineRef *tektonapi.PipelineRef) string {
