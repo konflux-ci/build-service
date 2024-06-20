@@ -153,8 +153,6 @@ var _ = BeforeSuite(func() {
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
-	err = (NewDefaultGitTektonResourcesRenovater(k8sManager.GetClient(), k8sManager.GetScheme(), k8sManager.GetEventRecorderFor("GitTektonResourcesRenovater"))).SetupWithManager(k8sManager)
-	Expect(err).ToNot(HaveOccurred())
 	err = (&ComponentDependencyUpdateReconciler{
 		Client:         k8sManager.GetClient(),
 		ApiReader:      k8sManager.GetAPIReader(),

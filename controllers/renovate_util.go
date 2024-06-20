@@ -23,7 +23,11 @@ import (
 	"github.com/konflux-ci/build-service/pkg/git"
 	"github.com/konflux-ci/build-service/pkg/git/github"
 	"github.com/konflux-ci/build-service/pkg/logs"
-	"github.com/konflux-ci/build-service/pkg/renovate"
+)
+
+const (
+	RenovateImageEnvName    = "RENOVATE_IMAGE"
+	DefaultRenovateImageUrl = "quay.io/redhat-appstudio/renovate:v37.74.1"
 )
 
 type installationStruct struct {
@@ -165,9 +169,9 @@ func CreateRenovaterPipeline(ctx context.Context, client client.Client, scheme *
 	}
 	trueBool := true
 	falseBool := false
-	renovateImageUrl := os.Getenv(renovate.RenovateImageEnvName)
+	renovateImageUrl := os.Getenv(RenovateImageEnvName)
 	if renovateImageUrl == "" {
-		renovateImageUrl = renovate.DefaultRenovateImageUrl
+		renovateImageUrl = DefaultRenovateImageUrl
 	}
 	pipelineRun := &tektonapi.PipelineRun{
 		ObjectMeta: metav1.ObjectMeta{

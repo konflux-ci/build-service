@@ -179,11 +179,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (controllers.NewDefaultGitTektonResourcesRenovater(mgr.GetClient(), mgr.GetScheme(), mgr.GetEventRecorderFor("GitTektonResourcesRenovater"))).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "GitTektonResourcesRenovater")
-		os.Exit(1)
-	}
-
 	if err = (&controllers.ComponentDependencyUpdateReconciler{
 		Client:         mgr.GetClient(),
 		ApiReader:      mgr.GetAPIReader(),
