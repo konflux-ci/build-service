@@ -131,12 +131,6 @@ func (r *ComponentBuildReconciler) getBuildGitInfo(ctx context.Context, componen
 		return nil, err
 	}
 
-	// getting branch just to test credentials
-	_, err = gitClient.GetDefaultBranch(repoUrl)
-	if err != nil {
-		return nil, err
-	}
-
 	var gitSecretName string
 	isPublic, err := gitClient.IsRepositoryPublic(repoUrl)
 	if err != nil {
