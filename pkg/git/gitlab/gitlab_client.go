@@ -74,7 +74,7 @@ func (g *GitlabClient) EnsurePaCMergeRequest(repoUrl string, d *gp.MergeRequestD
 			return "", err
 		}
 		if !mrBranchUpToDate {
-			err := g.commitFilesIntoBranch(projectPath, d.BranchName, d.CommitMessage, d.AuthorName, d.AuthorEmail, d.Files)
+			err := g.commitFilesIntoBranch(projectPath, d.BranchName, d.CommitMessage, d.AuthorName, d.AuthorEmail, d.SignedOff, d.Files)
 			if err != nil {
 				return "", err
 			}
@@ -111,7 +111,7 @@ func (g *GitlabClient) EnsurePaCMergeRequest(repoUrl string, d *gp.MergeRequestD
 			return "", err
 		}
 
-		err = g.commitFilesIntoBranch(projectPath, d.BranchName, d.CommitMessage, d.AuthorName, d.AuthorEmail, d.Files)
+		err = g.commitFilesIntoBranch(projectPath, d.BranchName, d.CommitMessage, d.AuthorName, d.AuthorEmail, d.SignedOff, d.Files)
 		if err != nil {
 			return "", err
 		}
@@ -159,7 +159,7 @@ func (g *GitlabClient) UndoPaCMergeRequest(repoUrl string, d *gp.MergeRequestDat
 		return "", err
 	}
 
-	err = g.addDeleteCommitToBranch(projectPath, d.BranchName, d.AuthorName, d.AuthorEmail, d.CommitMessage, files)
+	err = g.addDeleteCommitToBranch(projectPath, d.BranchName, d.AuthorName, d.AuthorEmail, d.CommitMessage, d.SignedOff, files)
 	if err != nil {
 		return "", err
 	}

@@ -224,7 +224,7 @@ func (g *GitlabClient) filesExistInDirectory(projectPath, branchName, directoryP
 	return existingFiles, nil
 }
 
-func (g *GitlabClient) commitFilesIntoBranch(projectPath, branchName, commitMessage, authorName, authorEmail string, files []gp.RepositoryFile) error {
+func (g *GitlabClient) commitFilesIntoBranch(projectPath, branchName, commitMessage, authorName, authorEmail string, signedOff bool, files []gp.RepositoryFile) error {
 	var actions []*gitlab.CommitActionOptions
 	for _, file := range files {
 		filePath := file.FullPath
@@ -251,6 +251,9 @@ func (g *GitlabClient) commitFilesIntoBranch(projectPath, branchName, commitMess
 
 		actions = append(actions, action)
 	}
+	if signedOff {
+		commitMessage = fmt.Sprintf("%s\nSigned-off-by: %s <%s>", commitMessage, authorName, authorEmail)
+	}
 
 	opts := &gitlab.CreateCommitOptions{
 		Branch:        &branchName,
@@ -264,7 +267,7 @@ func (g *GitlabClient) commitFilesIntoBranch(projectPath, branchName, commitMess
 }
 
 // Creates commit into specified branch that deletes given files.
-func (g *GitlabClient) addDeleteCommitToBranch(projectPath, branchName, authorName, authorEmail, commitMessage string, files []gp.RepositoryFile) error {
+func (g *GitlabClient) addDeleteCommitToBranch(projectPath, branchName, authorName, authorEmail, commitMessage string, signedOff bool, files []gp.RepositoryFile) error {
 	actions := []*gitlab.CommitActionOptions{}
 	fileActionType := gitlab.FileDelete
 	for _, file := range files {
@@ -273,6 +276,9 @@ func (g *GitlabClient) addDeleteCommitToBranch(projectPath, branchName, authorNa
 			Action:   &fileActionType,
 			FilePath: &filePath,
 		})
+	}
+	if signedOff {
+		commitMessage = fmt.Sprintf("%s\nSigned-off-by: %s <%s>", commitMessage, authorName, authorEmail)
 	}
 
 	opts := &gitlab.CreateCommitOptions{

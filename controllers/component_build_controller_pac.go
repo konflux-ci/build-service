@@ -980,6 +980,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 
 	mrData := &gp.MergeRequestData{
 		CommitMessage:  "Konflux update " + component.Name,
+		SignedOff:      true,
 		BranchName:     generateMergeRequestSourceBranch(component),
 		BaseBranchName: baseBranch,
 		Title:          "Konflux update " + component.Name,
@@ -1093,6 +1094,7 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 		// Create new PaC configuration clean up merge request
 		mrData = &gp.MergeRequestData{
 			CommitMessage:  "Konflux purge " + component.Name,
+			SignedOff:      true,
 			BranchName:     "konflux-purge-" + component.Name,
 			BaseBranchName: baseBranch,
 			Title:          "Konflux purge " + component.Name,
