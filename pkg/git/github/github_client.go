@@ -92,7 +92,7 @@ func (g *GithubClient) EnsurePaCMergeRequest(repoUrl string, d *gp.MergeRequestD
 				return "", err
 			}
 
-			err = g.addCommitToBranch(owner, repository, d.AuthorName, d.AuthorEmail, d.CommitMessage, d.Files, branchRef)
+			err = g.addCommitToBranch(owner, repository, d.AuthorName, d.AuthorEmail, d.CommitMessage, d.SignedOff, d.Files, branchRef)
 			if err != nil {
 				return "", err
 			}
@@ -127,7 +127,7 @@ func (g *GithubClient) EnsurePaCMergeRequest(repoUrl string, d *gp.MergeRequestD
 			return "", err
 		}
 
-		err = g.addCommitToBranch(owner, repository, d.AuthorName, d.AuthorEmail, d.CommitMessage, d.Files, branchRef)
+		err = g.addCommitToBranch(owner, repository, d.AuthorName, d.AuthorEmail, d.CommitMessage, d.SignedOff, d.Files, branchRef)
 		if err != nil {
 			return "", err
 		}
@@ -171,7 +171,7 @@ func (g *GithubClient) UndoPaCMergeRequest(repoUrl string, d *gp.MergeRequestDat
 		return "", err
 	}
 
-	err = g.addDeleteCommitToBranch(owner, repository, d.AuthorName, d.AuthorEmail, d.CommitMessage, d.Files, branchRef)
+	err = g.addDeleteCommitToBranch(owner, repository, d.AuthorName, d.AuthorEmail, d.CommitMessage, d.SignedOff, d.Files, branchRef)
 	if err != nil {
 		return "", err
 	}

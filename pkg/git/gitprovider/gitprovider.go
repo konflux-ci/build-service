@@ -64,6 +64,7 @@ type GitProviderClient interface {
 
 type MergeRequestData struct {
 	CommitMessage  string
+	SignedOff      bool
 	BranchName     string
 	BaseBranchName string
 	Title          string

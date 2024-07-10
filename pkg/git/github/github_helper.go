@@ -211,7 +211,7 @@ func (g *GithubClient) deleteFromTree(owner, repository string, baseRef *github.
 	return tree, refineGitHostingServiceError(resp.Response, err)
 }
 
-func (g *GithubClient) addCommitToBranch(owner, repository, authorName, authorEmail, commitMessage string, files []gp.RepositoryFile, ref *github.Reference) error {
+func (g *GithubClient) addCommitToBranch(owner, repository, authorName, authorEmail, commitMessage string, signedOff bool, files []gp.RepositoryFile, ref *github.Reference) error {
 	// Get the parent commit to attach the commit to.
 	parent, resp, err := g.client.Repositories.GetCommit(g.ctx, owner, repository, *ref.Object.SHA, nil)
 	if err != nil {
@@ -223,6 +223,9 @@ func (g *GithubClient) addCommitToBranch(owner, repository, authorName, authorEm
 	tree, err := g.createTree(owner, repository, ref, files)
 	if err != nil {
 		return err
+	}
+	if signedOff {
+		commitMessage = fmt.Sprintf("%s\nSigned-off-by: %s <%s>", commitMessage, authorName, authorEmail)
 	}
 
 	// Create the commit using the tree.
@@ -241,7 +244,7 @@ func (g *GithubClient) addCommitToBranch(owner, repository, authorName, authorEm
 }
 
 // Creates commit into specified branch that deletes given files.
-func (g *GithubClient) addDeleteCommitToBranch(owner, repository, authorName, authorEmail, commitMessage string, files []gp.RepositoryFile, ref *github.Reference) error {
+func (g *GithubClient) addDeleteCommitToBranch(owner, repository, authorName, authorEmail, commitMessage string, signedOff bool, files []gp.RepositoryFile, ref *github.Reference) error {
 	// Get the parent commit to attach the commit to.
 	parent, resp, err := g.client.Repositories.GetCommit(g.ctx, owner, repository, *ref.Object.SHA, nil)
 	if err != nil {
@@ -253,6 +256,9 @@ func (g *GithubClient) addDeleteCommitToBranch(owner, repository, authorName, au
 	tree, err := g.deleteFromTree(owner, repository, ref, files)
 	if err != nil {
 		return err
+	}
+	if signedOff {
+		commitMessage = fmt.Sprintf("%s\nSigned-off-by: %s <%s>", commitMessage, authorName, authorEmail)
 	}
 
 	// Create the commit using the tree.
