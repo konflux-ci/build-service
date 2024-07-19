@@ -44,11 +44,10 @@ import (
 )
 
 const (
-	BuildRequestAnnotationName                    = "build.appstudio.openshift.io/request"
-	BuildRequestTriggerSimpleBuildAnnotationValue = "trigger-simple-build"
-	BuildRequestTriggerPaCBuildAnnotationValue    = "trigger-pac-build"
-	BuildRequestConfigurePaCAnnotationValue       = "configure-pac"
-	BuildRequestUnconfigurePaCAnnotationValue     = "unconfigure-pac"
+	BuildRequestAnnotationName                 = "build.appstudio.openshift.io/request"
+	BuildRequestTriggerPaCBuildAnnotationValue = "trigger-pac-build"
+	BuildRequestConfigurePaCAnnotationValue    = "configure-pac"
+	BuildRequestUnconfigurePaCAnnotationValue  = "unconfigure-pac"
 
 	BuildStatusAnnotationName = "build.appstudio.openshift.io/status"
 
@@ -295,50 +294,11 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return ctrl.Result{}, nil
 		}
 		// Automatically build component after creation
-		log.Info("automatically requesting initial build for the new component")
-		requestedAction = BuildRequestTriggerSimpleBuildAnnotationValue
+		log.Info("automatically requesting pac provision for the new component")
+		requestedAction = BuildRequestConfigurePaCAnnotationValue
 	}
 
 	switch requestedAction {
-	case BuildRequestTriggerSimpleBuildAnnotationValue:
-		updateMetricsTimes(componentIdForMetrics, requestedAction, reconcileStartTime)
-		// initial build upon component creation (doesn't have either build status)
-		initialBuild := func() bool {
-			initialBuildStatus := readBuildStatus(&component)
-			return initialBuildStatus.PaC == nil && initialBuildStatus.Simple == nil
-		}()
-
-		simpleBuildStatus := &SimpleBuildStatus{}
-		if err := r.SubmitNewBuild(ctx, &component); err != nil {
-			if boErr, ok := err.(*boerrors.BuildOpError); ok && boErr.IsPersistent() {
-				log.Error(err, "simple build submition for the Component failed")
-				simpleBuildStatus.ErrId = boErr.GetErrorId()
-				simpleBuildStatus.ErrMessage = boErr.ShortError()
-			} else {
-				// transient error, retry
-				log.Error(err, "simple build submition transient error")
-				return ctrl.Result{}, err
-			}
-		} else {
-			simpleBuildStatus.BuildStartTime = time.Now().Format(time.RFC1123)
-			if initialBuild {
-				bometrics.ComponentOnboardingTimeMetric.Observe(time.Since(bometrics.ComponentTimesForMetrics[componentIdForMetrics].StartTimestamp).Seconds())
-			} else {
-				bometrics.SimpleBuildPipelineCreationTimeMetric.Observe(time.Since(bometrics.ComponentTimesForMetrics[componentIdForMetrics].StartTimestamp).Seconds())
-			}
-		}
-
-		if err := r.Client.Get(ctx, req.NamespacedName, &component); err != nil {
-			log.Error(err, "failed to get Component", l.Action, l.ActionView)
-			return ctrl.Result{}, err
-		}
-
-		// Update build status annotation
-		buildStatus := readBuildStatus(&component)
-		buildStatus.Simple = simpleBuildStatus
-		buildStatus.Message = "done"
-		writeBuildStatus(&component, buildStatus)
-
 	case BuildRequestTriggerPaCBuildAnnotationValue:
 		updateMetricsTimes(componentIdForMetrics, requestedAction, reconcileStartTime)
 

@@ -17,7 +17,6 @@ limitations under the License.
 package controllers
 
 import (
-	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -73,18 +72,6 @@ type componentConfig struct {
 	gitSourceContext string
 	application      string
 	annotations      map[string]string
-}
-
-func isOwnedBy(resource []metav1.OwnerReference, component appstudiov1alpha1.Component) bool {
-	if len(resource) == 0 {
-		return false
-	}
-	if resource[0].Kind == "Component" &&
-		resource[0].APIVersion == "appstudio.redhat.com/v1alpha1" &&
-		resource[0].Name == component.Name {
-		return true
-	}
-	return false
 }
 
 func getComponentData(config componentConfig) *appstudiov1alpha1.Component {
@@ -299,19 +286,6 @@ func expectPacBuildStatus(componentKey types.NamespacedName, state string, errID
 	}
 }
 
-func expectSimpleBuildStatus(componentKey types.NamespacedName, errID int, errMessage string, startTimeEmpty bool) {
-	buildStatus := readBuildStatus(getComponent(componentKey))
-	Expect(buildStatus).ToNot(BeNil())
-	Expect(buildStatus.Simple).ToNot(BeNil())
-	Expect(buildStatus.Simple.ErrId).To(Equal(errID))
-	Expect(buildStatus.Simple.ErrMessage).To(Equal(errMessage))
-	if startTimeEmpty {
-		Expect(buildStatus.Simple.BuildStartTime).To(Equal(""))
-	} else {
-		Expect(buildStatus.Simple.BuildStartTime).ToNot(BeEmpty())
-	}
-}
-
 func listComponentPipelineRuns(componentKey types.NamespacedName) []tektonapi.PipelineRun {
 	pipelineRuns := &tektonapi.PipelineRunList{}
 	labelSelectors := client.ListOptions{
@@ -350,19 +324,6 @@ func createPaCPipelineRunWithName(resourceKey types.NamespacedName, pipelineRunN
 		err := k8sClient.Get(ctx, pipelineRunKey, pipelineRun)
 		return err == nil
 	}, timeout, interval).Should(BeTrue())
-}
-
-func waitOneInitialPipelineRunCreated(componentKey types.NamespacedName) {
-	component := getComponent(componentKey)
-	Eventually(func() bool {
-		pipelineRuns := listComponentPipelineRuns(componentKey)
-		if len(pipelineRuns) != 1 {
-			return false
-		}
-		pipelineRun := pipelineRuns[0]
-		return isOwnedBy(pipelineRun.OwnerReferences, *component)
-	}, timeout, interval).Should(BeTrue(),
-		fmt.Sprintf("No pipelinerun is created for component: %v", component))
 }
 
 func ensureNoPipelineRunsCreated(componentLookupKey types.NamespacedName) {
@@ -637,14 +598,4 @@ func deleteBuildPipelineConfigMap(configMapKey types.NamespacedName) {
 	if err := k8sClient.Delete(ctx, &buildPipelineConfigMap); err != nil && !k8sErrors.IsNotFound(err) {
 		Fail(err.Error())
 	}
-}
-
-func getPipelineName(pipelineRef *tektonapi.PipelineRef) string {
-	name, _, _ := getPipelineNameAndBundle(pipelineRef)
-	return name
-}
-
-func getPipelineBundle(pipelineRef *tektonapi.PipelineRef) string {
-	_, bundle, _ := getPipelineNameAndBundle(pipelineRef)
-	return bundle
 }
