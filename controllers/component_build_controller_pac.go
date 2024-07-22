@@ -322,6 +322,7 @@ func (r *ComponentBuildReconciler) TriggerPaCBuild(ctx context.Context, componen
 
 	if resp.StatusCode != 200 && resp.StatusCode != 202 {
 		// ignore 503 for now, until PAC fixes issue https://issues.redhat.com/browse/SRVKP-4352
+		log.Info(fmt.Sprintf("PaC incoming endpoint %s returned HTTP %d", triggerURL, resp.StatusCode))
 		if resp.StatusCode == 503 {
 			return false, nil
 		}
