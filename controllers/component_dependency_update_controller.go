@@ -182,7 +182,6 @@ func (r *ComponentDependencyUpdateReconciler) Reconcile(ctx context.Context, req
 	}
 
 	if len(component.Spec.BuildNudgesRef) == 0 {
-		log.Info(fmt.Sprintf("component %s has no BuildNudgesRef set", component.Name))
 		// In case the nudge was removed while running the pipeline
 		if controllerutil.ContainsFinalizer(pipelineRun, NudgeFinalizer) {
 			patch := client.MergeFrom(pipelineRun.DeepCopy())
@@ -190,7 +189,7 @@ func (r *ComponentDependencyUpdateReconciler) Reconcile(ctx context.Context, req
 		}
 		return ctrl.Result{}, nil
 	}
-	log.Info("reconciling PipelineRun")
+	log.Info("component has BuildNudgesRef set", "ComponentName", component.Name, "BuildNudgesRef", component.Spec.BuildNudgesRef)
 
 	if pipelineRun.IsDone() || pipelineRun.Status.CompletionTime != nil || pipelineRun.DeletionTimestamp != nil {
 		result, err := r.verifyUpToDate(ctx, pipelineRun)
@@ -201,7 +200,7 @@ func (r *ComponentDependencyUpdateReconciler) Reconcile(ctx context.Context, req
 		}
 		log.Info("PipelineRun complete")
 		if controllerutil.ContainsFinalizer(pipelineRun, NudgeFinalizer) || pipelineRun.Annotations == nil || pipelineRun.Annotations[NudgeProcessedAnnotationName] == "" {
-			log.Info("running renovate job")
+			log.Info("will run renovate job")
 			// Pipeline run is done and we have not cleared the finalizer yet
 			// We need to perform our nudge
 			patch := client.MergeFrom(pipelineRun.DeepCopy())
@@ -274,6 +273,8 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 		log.Error(fmt.Errorf("unable to find %s param on PipelineRun, not performing nudge", ImageDigestParamName), "no image digest result")
 		return r.removePipelineFinalizer(ctx, pipelineRun, patch)
 	}
+	log.Info("image used for nudging", "ImageName", image, "Digest", digest)
+
 	tag := ""
 	repo := image
 	index := strings.LastIndex(image, ":")
@@ -288,6 +289,8 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 	nudgeFiles := pipelineRun.Annotations[NudgeFilesAnnotationName]
 	if nudgeFiles == "" {
 		nudgeFiles = ".*Dockerfile.*, .*.yaml, .*Containerfile.*"
+	} else {
+		log.Info("custom nudging files specified in the annotation", "AnnotationName", NudgeFilesAnnotationName, "NudgeFiles", nudgeFiles)
 	}
 
 	components := applicationapi.ComponentList{}
@@ -310,10 +313,10 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	log.Info("searching for releasePlanAdmissions for component to find distribution repos", "ComponentName", updatedComponent.Name)
 	for _, admission := range releasePlanAdmissions.Items {
-		log.Info("found ReleaseAdmissionPlan", "plan", admission.Name, "origin", admission.Spec.Origin)
 		if admission.Spec.Origin == pipelineRun.Namespace && admission.Spec.Data != nil {
-			log.Info("considering ReleaseAdmissionPlan", "plan", admission.Name, "origin", admission.Spec.Origin)
+			log.Info("considering ReleaseAdmissionPlan", "plan", admission.Name, "origin", admission.Spec.Origin, "namespace", admission.Namespace)
 			data := struct {
 				Mapping struct {
 					Components []struct {
@@ -327,9 +330,8 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 				log.Error(err, fmt.Sprintf("unable to parse ReleasePlanAdmission %s/%s", admission.Namespace, admission.Name))
 			}
 			for _, compMapping := range data.Mapping.Components {
-				log.Info("considering Component", "plan", admission.Name, "origin", admission.Spec.Origin)
 				if compMapping.Name == updatedComponent.Name {
-					log.Info("added distribution repo", "repo", compMapping.Repository)
+					log.Info("added distribution repo for component", "repo", compMapping.Repository)
 					distibutionRepositories = append(distibutionRepositories, compMapping.Repository)
 					registryRedhatMapping := mapToRegistryRedhatIo(compMapping.Repository)
 					if registryRedhatMapping != "" {

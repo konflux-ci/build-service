@@ -32,6 +32,7 @@ const (
 
 type installationStruct struct {
 	id           int
+	component    string
 	token        string
 	repositories []renovateRepository
 }
@@ -77,12 +78,13 @@ func GetGithubInstallationsForComponents(ctx context.Context, client client.Clie
 		gitSource := component.Spec.Source.GitSource
 
 		url := strings.TrimSuffix(strings.TrimSuffix(gitSource.URL, ".git"), "/")
+		log.Info("getting app installation for component repository", "ComponentName", component.Name, "RepositoryUrl", url)
 		githubAppInstallation, slugTmp, err := github.GetAppInstallationsForRepository(githubAppIdStr, privateKey, url)
 		if slug == "" {
 			slug = slugTmp
 		}
 		if err != nil {
-			log.Error(err, fmt.Sprintf("Failed to get GitHub app installation for component %s/%s", component.Namespace, component.Name))
+			log.Error(err, "Failed to get GitHub app installation for component", "ComponentName", component.Name, "ComponentNamespace", component.Namespace)
 			continue
 		}
 
@@ -104,14 +106,17 @@ func GetGithubInstallationsForComponents(ctx context.Context, client client.Clie
 		}
 		// Do not add intatallation which has no matching repositories
 		if len(repositories) == 0 {
+			log.Info("no repositories found in the installation")
 			continue
 		}
 		installationsToUpdate = append(installationsToUpdate,
 			installationStruct{
 				id:           int(githubAppInstallation.ID),
+				component:    component.Name,
 				token:        githubAppInstallation.Token,
 				repositories: repositories,
 			})
+		log.Info("installation to update", "installID", int(githubAppInstallation.ID), "component", component.Name, "repositories", repositories)
 	}
 
 	return slug, installationsToUpdate, nil
@@ -143,11 +148,11 @@ func CreateRenovaterPipeline(ctx context.Context, client client.Client, scheme *
 		if err != nil {
 			return err
 		}
-		configmaps[fmt.Sprintf("%d.js", installation.id)] = config
+		configmaps[fmt.Sprintf("%d-%s.js", installation.id, installation.component)] = config
 
-		log.Info(fmt.Sprintf("Creating renovate config map entry for %d installation with length %d and value %s", installation.id, len(config), config))
+		log.Info(fmt.Sprintf("Creating renovate config map entry for %d-%s installation with length %d and value %s", installation.id, installation.component, len(config), config))
 		renovateCmds = append(renovateCmds,
-			fmt.Sprintf("RENOVATE_TOKEN=$TOKEN_%d RENOVATE_CONFIG_FILE=/configs/%d.js renovate", installation.id, installation.id),
+			fmt.Sprintf("RENOVATE_TOKEN=$TOKEN_%d RENOVATE_CONFIG_FILE=/configs/%d-%s.js renovate", installation.id, installation.id, installation.component),
 		)
 	}
 	if len(renovateCmds) == 0 {
@@ -249,7 +254,7 @@ func CreateRenovaterPipeline(ctx context.Context, client client.Client, scheme *
 	if err := client.Create(ctx, configMap); err != nil {
 		return err
 	}
-	log.Info(fmt.Sprintf("Pipeline %s triggered", pipelineRun.Name), logs.Action, logs.ActionAdd)
+	log.Info(fmt.Sprintf("Renovate pipeline %s triggered", pipelineRun.Name), logs.Action, logs.ActionAdd)
 
 	return nil
 }
