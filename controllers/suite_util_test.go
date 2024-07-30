@@ -35,7 +35,7 @@ import (
 	appstudiov1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
 
 	. "github.com/konflux-ci/build-service/pkg/common"
-	"gopkg.in/yaml.v2"
+	"sigs.k8s.io/yaml"
 )
 
 const (
