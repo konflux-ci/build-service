@@ -22,13 +22,6 @@ var (
 		Name:      "component_onboarding_time",
 		Help:      "The time in seconds spent from the moment of Component creation till simple build pipeline submission, or PaC provision.",
 	})
-	SimpleBuildPipelineCreationTimeMetric = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Namespace: MetricsNamespace,
-		Subsystem: MetricsSubsystem,
-		Buckets:   HistogramBuckets,
-		Name:      "simple_build_pipeline_creation_time",
-		Help:      "The time in seconds spent from the moment of requesting simple build for Component till build pipeline submission.",
-	})
 	PipelinesAsCodeComponentProvisionTimeMetric = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Namespace: MetricsNamespace,
 		Subsystem: MetricsSubsystem,
@@ -69,7 +62,7 @@ func NewBuildMetrics(probes []AvailabilityProbe) *BuildMetrics {
 }
 
 func (m *BuildMetrics) InitMetrics(registerer prometheus.Registerer) error {
-	registerer.MustRegister(ComponentOnboardingTimeMetric, SimpleBuildPipelineCreationTimeMetric, PipelinesAsCodeComponentProvisionTimeMetric, PipelinesAsCodeComponentUnconfigureTimeMetric, PushPipelineRebuildTriggerTimeMetric)
+	registerer.MustRegister(ComponentOnboardingTimeMetric, PipelinesAsCodeComponentProvisionTimeMetric, PipelinesAsCodeComponentUnconfigureTimeMetric, PushPipelineRebuildTriggerTimeMetric)
 	for _, probe := range m.probes {
 		if err := registerer.Register(probe.AvailabilityGauge()); err != nil {
 			return fmt.Errorf("failed to register the availability metric: %w", err)

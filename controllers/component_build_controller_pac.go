@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -39,6 +40,7 @@ import (
 	oci "github.com/tektoncd/pipeline/pkg/remote/oci"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -1394,4 +1396,108 @@ func updateIncoming(repository *pacv1alpha1.Repository, incomingSecretName strin
 	}
 
 	return multiple_incomings || !(foundSecretName && foundTarget)
+}
+
+// getGitProvider returns git provider name based on the repository url, e.g. github, gitlab, etc or git-privider annotation
+func getGitProvider(component appstudiov1alpha1.Component) (string, error) {
+	allowedGitProviders := map[string]bool{"github": true, "gitlab": true, "bitbucket": true}
+	gitProvider := ""
+
+	if component.Spec.Source.GitSource == nil {
+		err := fmt.Errorf("git source URL is not set for %s Component in %s namespace", component.Name, component.Namespace)
+		return "", err
+	}
+	sourceUrl := component.Spec.Source.GitSource.URL
+
+	if strings.HasPrefix(sourceUrl, "git@") {
+		// git@github.com:redhat-appstudio/application-service.git
+		sourceUrl = strings.TrimPrefix(sourceUrl, "git@")
+		host := strings.Split(sourceUrl, ":")[0]
+		gitProvider = strings.Split(host, ".")[0]
+	} else {
+		// https://github.com/redhat-appstudio/application-service
+		u, err := url.Parse(sourceUrl)
+		if err != nil {
+			return "", err
+		}
+		uParts := strings.Split(u.Hostname(), ".")
+		if len(uParts) == 1 {
+			gitProvider = uParts[0]
+		} else {
+			gitProvider = uParts[len(uParts)-2]
+		}
+	}
+
+	var err error
+	if !allowedGitProviders[gitProvider] {
+		// Self-hosted git provider, check for git-provider annotation on the component
+		gitProviderAnnotationValue := component.GetAnnotations()[GitProviderAnnotationName]
+		if gitProviderAnnotationValue != "" {
+			if allowedGitProviders[gitProviderAnnotationValue] {
+				gitProvider = gitProviderAnnotationValue
+			} else {
+				err = fmt.Errorf("unsupported \"%s\" annotation value: %s", GitProviderAnnotationName, gitProviderAnnotationValue)
+			}
+		} else {
+			err = fmt.Errorf("self-hosted git provider is not specified via \"%s\" annotation in the component", GitProviderAnnotationName)
+		}
+	}
+
+	return gitProvider, err
+}
+
+func generateVolumeClaimTemplate() *corev1.PersistentVolumeClaim {
+	return &corev1.PersistentVolumeClaim{
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{
+				"ReadWriteOnce",
+			},
+			Resources: corev1.VolumeResourceRequirements{
+				Requests: corev1.ResourceList{
+					"storage": resource.MustParse("1Gi"),
+				},
+			},
+		},
+	}
+}
+
+func getPathContext(gitContext, dockerfileContext string) string {
+	if gitContext == "" && dockerfileContext == "" {
+		return ""
+	}
+	separator := string(filepath.Separator)
+	path := filepath.Join(gitContext, dockerfileContext)
+	path = filepath.Clean(path)
+	path = strings.TrimPrefix(path, separator)
+	return path
+}
+
+func getPipelineNameAndBundle(pipelineRef *tektonapi.PipelineRef) (string, string, error) {
+	if pipelineRef.Resolver != "" && pipelineRef.Resolver != "bundles" {
+		return "", "", boerrors.NewBuildOpError(
+			boerrors.EUnsupportedPipelineRef,
+			fmt.Errorf("unsupported Tekton resolver %q", pipelineRef.Resolver),
+		)
+	}
+
+	name := pipelineRef.Name
+	var bundle string
+
+	for _, param := range pipelineRef.Params {
+		switch param.Name {
+		case "name":
+			name = param.Value.StringVal
+		case "bundle":
+			bundle = param.Value.StringVal
+		}
+	}
+
+	if name == "" || bundle == "" {
+		return "", "", boerrors.NewBuildOpError(
+			boerrors.EMissingParamsForBundleResolver,
+			fmt.Errorf("missing name or bundle in pipelineRef: name=%s bundle=%s", name, bundle),
+		)
+	}
+
+	return name, bundle, nil
 }

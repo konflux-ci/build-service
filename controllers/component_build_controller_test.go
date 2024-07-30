@@ -18,11 +18,9 @@ package controllers
 
 import (
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
@@ -129,6 +127,55 @@ var _ = Describe("Component initial build controller", func() {
 
 			deleteSecret(pacSecretKey)
 			deleteRoute(pacRouteKey)
+		})
+
+		It("should successfully submit PR with PaC definitions using GitHub application, without any request (defaults to pac provision)", func() {
+			mergeUrl := "merge-url"
+
+			isCreatePaCPullRequestInvoked := false
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				isCreatePaCPullRequestInvoked = true
+				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resourcePacPrepKey.Name))
+				Expect(len(d.Files)).To(Equal(2))
+				for _, file := range d.Files {
+					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
+				}
+				Expect(d.CommitMessage).ToNot(BeEmpty())
+				Expect(d.BranchName).ToNot(BeEmpty())
+				Expect(d.BaseBranchName).To(Equal("main"))
+				Expect(d.Title).ToNot(BeEmpty())
+				Expect(d.Text).ToNot(BeEmpty())
+				Expect(d.AuthorName).ToNot(BeEmpty())
+				Expect(d.AuthorEmail).ToNot(BeEmpty())
+				return mergeUrl, nil
+			}
+			SetupPaCWebhookFunc = func(string, string, string) error {
+				defer GinkgoRecover()
+				Fail("Should not create webhook if GitHub application is used")
+				return nil
+			}
+
+			createCustomComponentWithoutBuildRequest(componentConfig{
+				componentKey: resourcePacPrepKey,
+				annotations:  defaultPipelineAnnotations,
+			})
+
+			pacRepo := waitPaCRepositoryCreated(resourcePacPrepKey)
+			Expect(pacRepo.Spec.Params).ShouldNot(BeNil())
+			existingParams := map[string]string{}
+			for _, param := range *pacRepo.Spec.Params {
+				existingParams[param.Name] = param.Value
+			}
+			val, ok := existingParams[pacCustomParamAppstudioWorkspace]
+			Expect(ok).Should(BeTrue())
+			Expect(val).Should(Equal("build"))
+
+			waitPaCFinalizerOnComponent(resourcePacPrepKey)
+			Eventually(func() bool {
+				return isCreatePaCPullRequestInvoked
+			}, timeout, interval).Should(BeTrue())
+
+			expectPacBuildStatus(resourcePacPrepKey, "enabled", 0, "", mergeUrl)
 		})
 
 		It("should successfully submit PR with PaC definitions using GitHub application", func() {
@@ -519,103 +566,6 @@ var _ = Describe("Component initial build controller", func() {
 			Eventually(func() bool {
 				return isCreatePaCPullRequestInvoked
 			}, timeout, interval).Should(BeTrue())
-		})
-
-		It("should provision PaC definitions after initial build, use simple build while PaC enabled, and be able to switch back to simple build only", func() {
-			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
-				defer GinkgoRecover()
-				Fail("Should not create PaC configuration PR when using simple build")
-				return "url", nil
-			}
-
-			createComponentAndProcessBuildRequest(componentConfig{
-				componentKey: resourcePacPrepKey,
-				annotations:  defaultPipelineAnnotations,
-			}, BuildRequestTriggerSimpleBuildAnnotationValue)
-
-			waitOneInitialPipelineRunCreated(resourcePacPrepKey)
-
-			expectSimpleBuildStatus(resourcePacPrepKey, 0, "", false)
-
-			// Do PaC provision
-			ResetTestGitProviderClient()
-
-			isCreatePaCPullRequestInvoked := false
-			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
-				isCreatePaCPullRequestInvoked = true
-				return "configure-merge-url", nil
-			}
-			UndoPaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
-				defer GinkgoRecover()
-				Fail("Should not create undo PaC configuration PR when switching to PaC build")
-				return "url", nil
-			}
-			SetupPaCWebhookFunc = func(repoUrl string, webhookUrl string, webhookSecret string) error {
-				defer GinkgoRecover()
-				Fail("Should not create webhook if GitHub application is used")
-				return nil
-			}
-
-			setComponentBuildRequest(resourcePacPrepKey, BuildRequestConfigurePaCAnnotationValue)
-			waitComponentAnnotationGone(resourcePacPrepKey, BuildRequestAnnotationName)
-
-			waitPaCRepositoryCreated(resourcePacPrepKey)
-			waitPaCFinalizerOnComponent(resourcePacPrepKey)
-			Eventually(func() bool {
-				return isCreatePaCPullRequestInvoked
-			}, timeout, interval).Should(BeTrue())
-
-			expectPacBuildStatus(resourcePacPrepKey, "enabled", 0, "", "configure-merge-url")
-
-			// Request simple build while PaC is enabled
-			deleteComponentPipelineRuns(resourcePacPrepKey)
-
-			setComponentBuildRequest(resourcePacPrepKey, BuildRequestTriggerSimpleBuildAnnotationValue)
-			waitComponentAnnotationGone(resourcePacPrepKey, BuildRequestAnnotationName)
-
-			waitOneInitialPipelineRunCreated(resourcePacPrepKey)
-
-			expectSimpleBuildStatus(resourcePacPrepKey, 0, "", false)
-
-			// Do PaC unprovision
-			ResetTestGitProviderClient()
-
-			isRemovePaCPullRequestInvoked := false
-			UndoPaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
-				isRemovePaCPullRequestInvoked = true
-				return "unconfigure-merge-url", nil
-			}
-			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
-				defer GinkgoRecover()
-				Fail("Should not create PaC configuration PR when switching to simple build")
-				return "url", nil
-			}
-			DeletePaCWebhookFunc = func(repoUrl string, webhookUrl string) error {
-				defer GinkgoRecover()
-				Fail("Should not delete webhook if GitHub application is used")
-				return nil
-			}
-
-			// Request PaC unprovision
-			setComponentBuildRequest(resourcePacPrepKey, BuildRequestUnconfigurePaCAnnotationValue)
-			waitComponentAnnotationGone(resourcePacPrepKey, BuildRequestAnnotationName)
-
-			waitPaCFinalizerOnComponentGone(resourcePacPrepKey)
-			Eventually(func() bool {
-				return isRemovePaCPullRequestInvoked
-			}, timeout, interval).Should(BeTrue())
-
-			expectPacBuildStatus(resourcePacPrepKey, "disabled", 0, "", "unconfigure-merge-url")
-
-			// Request simple build
-			deleteComponentPipelineRuns(resourcePacPrepKey)
-
-			setComponentBuildRequest(resourcePacPrepKey, BuildRequestTriggerSimpleBuildAnnotationValue)
-			waitComponentAnnotationGone(resourcePacPrepKey, BuildRequestAnnotationName)
-
-			waitOneInitialPipelineRunCreated(resourcePacPrepKey)
-
-			expectSimpleBuildStatus(resourcePacPrepKey, 0, "", false)
 		})
 
 		It("should reuse the same webhook secret for multi component repository", func() {
@@ -1320,446 +1270,6 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(k8sErrors.IsNotFound(err)).To(BeTrue())
 			Expect(k8sClient.List(ctx, pacRepositoriesList, &client.ListOptions{Namespace: component1Key.Namespace})).To(Succeed())
 			Expect(pacRepositoriesList.Items).To(HaveLen(2)) // 2-nd repository for the anotherComponentKey component
-		})
-	})
-
-	Context("Test simple build flow", func() {
-		var resouceSimpleBuildKey = types.NamespacedName{Name: HASCompName + "-simpleannotation", Namespace: HASAppNamespace}
-
-		_ = BeforeEach(func() {
-			createNamespace(BuildServiceNamespaceName)
-			ResetTestGitProviderClient()
-
-			pacSecretData := map[string]string{
-				"github-application-id": "12345",
-				"github-private-key":    githubAppPrivateKey,
-			}
-			createSecret(pacSecretKey, pacSecretData)
-		})
-
-		_ = AfterEach(func() {
-			deleteSecret(pacSecretKey)
-			deleteComponentPipelineRuns(resouceSimpleBuildKey)
-			deleteComponent(resouceSimpleBuildKey)
-			// wait for pruner operator to finish, so it won't prune runs from new test
-			time.Sleep(time.Second)
-		})
-
-		It("should submit initial build on component creation", func() {
-			gitSourceSHA := "d1a9e858489d1515621398fb02942da068f1c956"
-			isGetBranchShaInvoked := false
-			GetBranchShaFunc = func(repoUrl string, branchName string) (string, error) {
-				isGetBranchShaInvoked = true
-				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resouceSimpleBuildKey.Name))
-				return gitSourceSHA, nil
-			}
-			GetBrowseRepositoryAtShaLinkFunc = func(repoUrl, sha string) string {
-				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resouceSimpleBuildKey.Name))
-				Expect(sha).To(Equal(gitSourceSHA))
-				return "https://github.com/devfile-samples/devfile-sample-java-springboot-basic?rev=" + gitSourceSHA
-			}
-
-			createCustomComponentWithoutBuildRequest(componentConfig{
-				componentKey: resouceSimpleBuildKey,
-				annotations:  defaultPipelineAnnotations})
-
-			Eventually(func() bool {
-				return isGetBranchShaInvoked
-			}, timeout, interval).Should(BeTrue())
-
-			waitOneInitialPipelineRunCreated(resouceSimpleBuildKey)
-			waitComponentAnnotationGone(resouceSimpleBuildKey, BuildRequestAnnotationName)
-			expectSimpleBuildStatus(resouceSimpleBuildKey, 0, "", false)
-
-			// Check pipeline run labels and annotations
-			pipelineRun := listComponentPipelineRuns(resouceSimpleBuildKey)[0]
-			Expect(pipelineRun.Annotations[gitCommitShaAnnotationName]).To(Equal(gitSourceSHA))
-			Expect(pipelineRun.Annotations[gitRepoAtShaAnnotationName]).To(
-				Equal("https://github.com/devfile-samples/devfile-sample-java-springboot-basic?rev=" + gitSourceSHA))
-			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/pipeline_name"]).To(Equal(defaultPipelineName))
-			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(defaultPipelineBundle))
-		})
-
-		It("should submit initial build on component creation, using 'latest' bundle", func() {
-			gitSourceSHA := "d1a9e858489d1515621398fb02942da068f1c956"
-			isGetBranchShaInvoked := false
-			GetBranchShaFunc = func(repoUrl string, branchName string) (string, error) {
-				isGetBranchShaInvoked = true
-				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resouceSimpleBuildKey.Name))
-				return gitSourceSHA, nil
-			}
-			GetBrowseRepositoryAtShaLinkFunc = func(repoUrl, sha string) string {
-				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resouceSimpleBuildKey.Name))
-				Expect(sha).To(Equal(gitSourceSHA))
-				return "https://github.com/devfile-samples/devfile-sample-java-springboot-basic?rev=" + gitSourceSHA
-			}
-
-			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
-			annotationValue := fmt.Sprintf("{\"name\":\"%s\",\"bundle\":\"%s\"}", defaultPipelineName, "latest")
-			annotations := map[string]string{defaultBuildPipelineAnnotation: annotationValue}
-			createCustomComponentWithoutBuildRequest(componentConfig{
-				componentKey: resouceSimpleBuildKey,
-				annotations:  annotations})
-
-			Eventually(func() bool {
-				return isGetBranchShaInvoked
-			}, timeout, interval).Should(BeTrue())
-
-			waitOneInitialPipelineRunCreated(resouceSimpleBuildKey)
-			waitComponentAnnotationGone(resouceSimpleBuildKey, BuildRequestAnnotationName)
-			expectSimpleBuildStatus(resouceSimpleBuildKey, 0, "", false)
-
-			// Check pipeline run labels and annotations
-			pipelineRun := listComponentPipelineRuns(resouceSimpleBuildKey)[0]
-			Expect(pipelineRun.Annotations[gitCommitShaAnnotationName]).To(Equal(gitSourceSHA))
-			Expect(pipelineRun.Annotations[gitRepoAtShaAnnotationName]).To(
-				Equal("https://github.com/devfile-samples/devfile-sample-java-springboot-basic?rev=" + gitSourceSHA))
-			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/pipeline_name"]).To(Equal(defaultPipelineName))
-			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(defaultPipelineBundle))
-
-			deleteBuildPipelineConfigMap(defaultPipelineConfigMapKey)
-		})
-
-		It("should submit initial build on component creation, even when pipeline annotation is missing, will add default one", func() {
-			gitSourceSHA := "d1a9e858489d1515621398fb02942da068f1c956"
-			isGetBranchShaInvoked := false
-			GetBranchShaFunc = func(repoUrl string, branchName string) (string, error) {
-				isGetBranchShaInvoked = true
-				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resouceSimpleBuildKey.Name))
-				return gitSourceSHA, nil
-			}
-			GetBrowseRepositoryAtShaLinkFunc = func(repoUrl, sha string) string {
-				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resouceSimpleBuildKey.Name))
-				Expect(sha).To(Equal(gitSourceSHA))
-				return "https://github.com/devfile-samples/devfile-sample-java-springboot-basic?rev=" + gitSourceSHA
-			}
-
-			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
-			annotations := map[string]string{}
-			createCustomComponentWithoutBuildRequest(componentConfig{
-				componentKey: resouceSimpleBuildKey,
-				annotations:  annotations})
-
-			Eventually(func() bool {
-				return isGetBranchShaInvoked
-			}, timeout, interval).Should(BeTrue())
-
-			waitOneInitialPipelineRunCreated(resouceSimpleBuildKey)
-			waitComponentAnnotationGone(resouceSimpleBuildKey, BuildRequestAnnotationName)
-			expectSimpleBuildStatus(resouceSimpleBuildKey, 0, "", false)
-
-			// Check pipeline run labels and annotations
-			pipelineRun := listComponentPipelineRuns(resouceSimpleBuildKey)[0]
-			Expect(pipelineRun.Annotations[gitCommitShaAnnotationName]).To(Equal(gitSourceSHA))
-			Expect(pipelineRun.Annotations[gitRepoAtShaAnnotationName]).To(
-				Equal("https://github.com/devfile-samples/devfile-sample-java-springboot-basic?rev=" + gitSourceSHA))
-			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/pipeline_name"]).To(Equal(defaultPipelineName))
-			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(defaultPipelineBundle))
-
-			deleteBuildPipelineConfigMap(defaultPipelineConfigMapKey)
-		})
-
-		It("should submit initial build on component creation with sha revision", func() {
-			gitSourceSHA := "d1a9e858489d1515621398fb02942da068f1c956"
-			component := getSampleComponentData(resouceSimpleBuildKey)
-			component.Spec.Source.GitSource.Revision = gitSourceSHA
-			component.Annotations[defaultBuildPipelineAnnotation] = defaultPipelineAnnotationValue
-			createComponentCustom(component)
-
-			waitOneInitialPipelineRunCreated(resouceSimpleBuildKey)
-			waitComponentAnnotationGone(resouceSimpleBuildKey, BuildRequestAnnotationName)
-			expectSimpleBuildStatus(resouceSimpleBuildKey, 0, "", false)
-
-			// Check pipeline run labels and annotations
-			pipelineRun := listComponentPipelineRuns(resouceSimpleBuildKey)[0]
-			Expect(pipelineRun.Annotations[gitCommitShaAnnotationName]).To(Equal(gitSourceSHA))
-			Expect(pipelineRun.Annotations[gitRepoAtShaAnnotationName]).To(Equal(DefaultBrowseRepository + gitSourceSHA))
-		})
-
-		It("should be able to retrigger simple build", func() {
-			createCustomComponentWithoutBuildRequest(componentConfig{
-				componentKey: resouceSimpleBuildKey,
-				annotations:  defaultPipelineAnnotations})
-
-			waitOneInitialPipelineRunCreated(resouceSimpleBuildKey)
-			deleteComponentPipelineRuns(resouceSimpleBuildKey)
-
-			setComponentBuildRequest(resouceSimpleBuildKey, BuildRequestTriggerSimpleBuildAnnotationValue)
-			waitComponentAnnotationGone(resouceSimpleBuildKey, BuildRequestAnnotationName)
-			waitOneInitialPipelineRunCreated(resouceSimpleBuildKey)
-			expectSimpleBuildStatus(resouceSimpleBuildKey, 0, "", false)
-		})
-
-		It("should run simple build and create pipeline service account when it doesn't exist", func() {
-			serviceAccountName := types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: "default"}
-			serviceAccount := &corev1.ServiceAccount{}
-			Expect(k8sClient.Get(ctx, serviceAccountName, serviceAccount)).To(Succeed())
-
-			// remove pipeline service account so it can be re-created
-			Expect(k8sClient.Delete(ctx, serviceAccount)).Should(Succeed())
-			Eventually(func() bool {
-				return k8sErrors.IsNotFound(k8sClient.Get(ctx, serviceAccountName, serviceAccount))
-			}, timeout, interval).Should(BeTrue())
-
-			createCustomComponentWithoutBuildRequest(componentConfig{
-				componentKey: resouceSimpleBuildKey,
-				annotations:  defaultPipelineAnnotations})
-
-			waitOneInitialPipelineRunCreated(resouceSimpleBuildKey)
-			waitComponentAnnotationGone(resouceSimpleBuildKey, BuildRequestAnnotationName)
-			waitDoneMessageOnComponent(resouceSimpleBuildKey)
-			expectSimpleBuildStatus(resouceSimpleBuildKey, 0, "", false)
-		})
-
-		It("should submit initial build if retrieving of git commit SHA failed", func() {
-			isGetBranchShaInvoked := false
-			GetBranchShaFunc = func(repoUrl string, branchName string) (string, error) {
-				isGetBranchShaInvoked = true
-				return "", fmt.Errorf("failed to get git commit SHA")
-			}
-
-			createCustomComponentWithoutBuildRequest(componentConfig{
-				componentKey: resouceSimpleBuildKey,
-				annotations:  defaultPipelineAnnotations})
-
-			Eventually(func() bool {
-				return isGetBranchShaInvoked
-			}, timeout, interval).Should(BeTrue())
-
-			waitOneInitialPipelineRunCreated(resouceSimpleBuildKey)
-			waitComponentAnnotationGone(resouceSimpleBuildKey, BuildRequestAnnotationName)
-			expectSimpleBuildStatus(resouceSimpleBuildKey, 0, "", false)
-		})
-
-		It("should submit initial build for private git repository", func() {
-			gitSecretName := "git-secret"
-
-			isRepositoryPublicInvoked := false
-			IsRepositoryPublicFunc = func(repoUrl string) (bool, error) {
-				isRepositoryPublicInvoked = true
-				return false, nil
-			}
-			isGetBranchShaInvoked := false
-			GetBranchShaFunc = func(repoUrl string, branchName string) (string, error) {
-				isGetBranchShaInvoked = true
-				return "", fmt.Errorf("failed to get git commit SHA")
-			}
-
-			gitSecretKey := types.NamespacedName{Name: gitSecretName, Namespace: resouceSimpleBuildKey.Namespace}
-			createSecret(gitSecretKey, map[string]string{})
-			defer deleteSecret(gitSecretKey)
-
-			component := getSampleComponentData(resouceSimpleBuildKey)
-			component.Spec.Secret = gitSecretName
-			component.Annotations[defaultBuildPipelineAnnotation] = defaultPipelineAnnotationValue
-			createComponentCustom(component)
-
-			Eventually(func() bool { return isRepositoryPublicInvoked }, timeout, interval).Should(BeTrue())
-			Eventually(func() bool { return isGetBranchShaInvoked }, timeout, interval).Should(BeTrue())
-
-			// Wait until all resources created
-			waitOneInitialPipelineRunCreated(resouceSimpleBuildKey)
-			waitComponentAnnotationGone(resouceSimpleBuildKey, BuildRequestAnnotationName)
-
-			// Check the pipeline run and its resources
-			pipelineRuns := listComponentPipelineRuns(resouceSimpleBuildKey)
-			Expect(len(pipelineRuns)).To(Equal(1))
-			pipelineRun := pipelineRuns[0]
-
-			Expect(pipelineRun.Labels[ApplicationNameLabelName]).To(Equal(HASAppName))
-			Expect(pipelineRun.Labels[ComponentNameLabelName]).To(Equal(resouceSimpleBuildKey.Name))
-
-			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/pipeline_name"]).To(Equal(defaultPipelineName))
-			Expect(pipelineRun.Annotations["build.appstudio.redhat.com/bundle"]).To(Equal(defaultPipelineBundle))
-
-			Expect(pipelineRun.Spec.PipelineSpec).To(BeNil())
-
-			Expect(pipelineRun.Spec.PipelineRef).ToNot(BeNil())
-			Expect(getPipelineName(pipelineRun.Spec.PipelineRef)).To(Equal(defaultPipelineName))
-			Expect(getPipelineBundle(pipelineRun.Spec.PipelineRef)).To(Equal(defaultPipelineBundle))
-
-			Expect(pipelineRun.Spec.Params).ToNot(BeEmpty())
-			for _, p := range pipelineRun.Spec.Params {
-				switch p.Name {
-				case "output-image":
-					Expect(p.Value.StringVal).ToNot(BeEmpty())
-					Expect(strings.HasPrefix(p.Value.StringVal, "docker.io/foo/customized:"+resouceSimpleBuildKey.Name+"-build-"))
-				case "git-url":
-					Expect(p.Value.StringVal).To(Equal(SampleRepoLink + "-" + resouceSimpleBuildKey.Name))
-				case "revision":
-					Expect(p.Value.StringVal).To(Equal("main"))
-				}
-			}
-
-			Expect(pipelineRun.Spec.Workspaces).To(Not(BeEmpty()))
-			isWorkspaceWorkspaceExist := false
-			isWorkspaceGitAuthExist := false
-			for _, w := range pipelineRun.Spec.Workspaces {
-				if w.Name == "workspace" {
-					isWorkspaceWorkspaceExist = true
-					Expect(w.VolumeClaimTemplate).NotTo(
-						Equal(nil), "PipelineRun should have its own volumeClaimTemplate.")
-				}
-				if w.Name == "git-auth" {
-					isWorkspaceGitAuthExist = true
-					Expect(w.Secret.SecretName).To(Equal(gitSecretName))
-				}
-			}
-			Expect(isWorkspaceWorkspaceExist).To(BeTrue())
-			Expect(isWorkspaceGitAuthExist).To(BeTrue())
-
-			expectSimpleBuildStatus(resouceSimpleBuildKey, 0, "", false)
-		})
-
-		It("should submit initial simple build, even when containerimage is missing, but is found in image repo annotation", func() {
-			component := getSampleComponentData(resouceSimpleBuildKey)
-			component.Spec.ContainerImage = ""
-			component.Annotations[defaultBuildPipelineAnnotation] = defaultPipelineAnnotationValue
-
-			type RepositoryInfo struct {
-				Image  string `json:"image"`
-				Secret string `json:"secret"`
-			}
-			repoInfo := RepositoryInfo{Image: ComponentContainerImage, Secret: ""}
-			repoInfoBytes, _ := json.Marshal(repoInfo)
-			component.Annotations[ImageRepoAnnotationName] = string(repoInfoBytes)
-
-			createComponentCustom(component)
-			waitOneInitialPipelineRunCreated(resouceSimpleBuildKey)
-			waitComponentAnnotationGone(resouceSimpleBuildKey, BuildRequestAnnotationName)
-			waitDoneMessageOnComponent(resouceSimpleBuildKey)
-			expectSimpleBuildStatus(resouceSimpleBuildKey, 0, "", false)
-		})
-
-		It("should fail to submit initial build for private git repository if git secret is not given", func() {
-			isRepositoryPublicInvoked := false
-			IsRepositoryPublicFunc = func(repoUrl string) (bool, error) {
-				isRepositoryPublicInvoked = true
-				return false, nil
-			}
-			createCustomComponentWithoutBuildRequest(componentConfig{
-				componentKey: resouceSimpleBuildKey,
-				annotations:  defaultPipelineAnnotations})
-
-			Eventually(func() bool { return isRepositoryPublicInvoked }, timeout, interval).Should(BeTrue())
-
-			waitDoneMessageOnComponent(resouceSimpleBuildKey)
-
-			expectError := boerrors.NewBuildOpError(boerrors.EComponentGitSecretNotSpecified, nil)
-			expectSimpleBuildStatus(resouceSimpleBuildKey, expectError.GetErrorId(), expectError.ShortError(), true)
-		})
-
-		It("should fail to submit initial build for private git repository if git secret is missing", func() {
-			isRepositoryPublicInvoked := false
-			IsRepositoryPublicFunc = func(repoUrl string) (bool, error) {
-				isRepositoryPublicInvoked = true
-				return false, nil
-			}
-
-			component := getSampleComponentData(resouceSimpleBuildKey)
-			component.Spec.Secret = "git-secret"
-			component.Annotations[defaultBuildPipelineAnnotation] = defaultPipelineAnnotationValue
-			createComponentCustom(component)
-
-			Eventually(func() bool { return isRepositoryPublicInvoked }, timeout, interval).Should(BeTrue())
-
-			waitDoneMessageOnComponent(resouceSimpleBuildKey)
-
-			expectError := boerrors.NewBuildOpError(boerrors.EComponentGitSecretMissing, nil)
-			expectSimpleBuildStatus(resouceSimpleBuildKey, expectError.GetErrorId(), expectError.ShortError(), true)
-		})
-
-		It("should not submit initial build if pac secret is missing", func() {
-			deleteSecret(pacSecretKey)
-			createCustomComponentWithoutBuildRequest(componentConfig{
-				componentKey: resouceSimpleBuildKey,
-				annotations:  defaultPipelineAnnotations})
-			waitDoneMessageOnComponent(resouceSimpleBuildKey)
-
-			expectError := boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, nil)
-			expectSimpleBuildStatus(resouceSimpleBuildKey, expectError.GetErrorId(), expectError.ShortError(), true)
-		})
-
-		It("should do nothing if simple build already happened (and PaC is not used)", func() {
-			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
-				defer GinkgoRecover()
-				Fail("PR creation should not be invoked")
-				return "", nil
-			}
-
-			component := getSampleComponentData(resouceSimpleBuildKey)
-			component.Annotations = make(map[string]string)
-			component.Annotations[BuildStatusAnnotationName] = "{simple:{\"build-start-time\": \"time\"}}"
-			component.Annotations[defaultBuildPipelineAnnotation] = defaultPipelineAnnotationValue
-			createComponentCustom(component)
-
-			ensureNoPipelineRunsCreated(resouceSimpleBuildKey)
-		})
-
-		It("should not submit initial build if a gitsource is missing from component", func() {
-			component := &appstudiov1alpha1.Component{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "appstudio.redhat.com/v1alpha1",
-					Kind:       "Component",
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        resouceSimpleBuildKey.Name,
-					Namespace:   HASAppNamespace,
-					Annotations: defaultPipelineAnnotations,
-				},
-				Spec: appstudiov1alpha1.ComponentSpec{
-					ComponentName:  resouceSimpleBuildKey.Name,
-					Application:    HASAppName,
-					ContainerImage: "quay.io/test/image:latest",
-				},
-			}
-			createComponentCustom(component)
-
-			ensureNoPipelineRunsCreated(resouceSimpleBuildKey)
-		})
-
-		It("should not submit initial simple build if git provider can't be detected)", func() {
-			component := getSampleComponentData(resouceSimpleBuildKey)
-			component.Spec.Source.GitSource.URL = "wrong"
-			component.Annotations[defaultBuildPipelineAnnotation] = defaultPipelineAnnotationValue
-			createComponentCustom(component)
-			waitDoneMessageOnComponent(resouceSimpleBuildKey)
-
-			expectError := boerrors.NewBuildOpError(boerrors.EUnknownGitProvider, nil)
-			expectSimpleBuildStatus(resouceSimpleBuildKey, expectError.GetErrorId(), expectError.ShortError(), true)
-		})
-
-		It("should not submit initial simple build if public repository check fails", func() {
-			isRepositoryPublicInvoked := false
-			IsRepositoryPublicFunc = func(repoUrl string) (bool, error) {
-				isRepositoryPublicInvoked = true
-				return false, fmt.Errorf("failed to check repository")
-			}
-
-			createCustomComponentWithoutBuildRequest(componentConfig{
-				componentKey: resouceSimpleBuildKey,
-				annotations:  defaultPipelineAnnotations})
-			Eventually(func() bool { return isRepositoryPublicInvoked }, timeout, interval).Should(BeTrue())
-
-			ensureNoPipelineRunsCreated(resouceSimpleBuildKey)
-		})
-
-		It("should not submit initial build if ContainerImage is not set)", func() {
-			component := getSampleComponentData(resouceSimpleBuildKey)
-			component.Spec.ContainerImage = ""
-			component.Annotations[defaultBuildPipelineAnnotation] = defaultPipelineAnnotationValue
-			createComponentCustom(component)
-
-			ensureNoPipelineRunsCreated(resouceSimpleBuildKey)
-		})
-
-		It("should not submit initial build when request is empty)", func() {
-			component := getSampleComponentData(resouceSimpleBuildKey)
-			component.Annotations[BuildRequestAnnotationName] = ""
-			component.Annotations[defaultBuildPipelineAnnotation] = defaultPipelineAnnotationValue
-			createComponentCustom(component)
-
-			ensureNoPipelineRunsCreated(resouceSimpleBuildKey)
 		})
 	})
 
