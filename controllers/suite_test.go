@@ -79,7 +79,7 @@ var _ = BeforeSuite(func() {
 			filepath.Join("..", "hack", "routecrd", "route.yaml"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "konflux-ci", "application-api@"+applicationApiDepVersion, "config", "crd", "bases"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "tektoncd", "pipeline@v0.57.0", "config"),
-			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "openshift-pipelines", "pipelines-as-code@v0.18.0", "config"),
+			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "openshift-pipelines", "pipelines-as-code@v0.21.0", "config"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "konflux-ci", "release-service@v0.0.0-20240610124538-758a1d48d002", "config", "crd", "bases"),
 		},
 		ErrorIfCRDPathMissing: true,
