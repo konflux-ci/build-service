@@ -17,6 +17,7 @@ limitations under the License.
 package controllers
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -292,7 +293,10 @@ func (r *ComponentBuildReconciler) TriggerPaCBuild(ctx context.Context, componen
 	triggerURL := fmt.Sprintf("%s/incoming?secret=%s&repository=%s&branch=%s&pipelinerun=%s", webhookTargetUrl, secretValue, repository.Name, targetBranch, pipelineRunName)
 	HttpClient := GetHttpClientFunction()
 
-	resp, err := HttpClient.Post(triggerURL, "application/json", nil)
+	// we have to supply source_url as additional param, because PaC isn't able to resolve it for trigger
+	bytesParam := []byte(fmt.Sprintf("{\"params\": {\"source_url\": \"%s\"}}", repoUrl))
+	resp, err := HttpClient.Post(triggerURL, "application/json", bytes.NewBuffer(bytesParam))
+
 	if err != nil {
 		return false, err
 	}

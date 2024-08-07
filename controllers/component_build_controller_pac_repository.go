@@ -352,6 +352,7 @@ func updateIncoming(repository *pacv1alpha1.Repository, incomingSecretName strin
 	foundTarget := false
 	multiple_incomings := false
 	all_targets := []string{}
+	foundParam := false
 
 	if repository.Spec.Incomings != nil {
 		if len(*repository.Spec.Incomings) > 1 {
@@ -373,6 +374,18 @@ func updateIncoming(repository *pacv1alpha1.Repository, incomingSecretName strin
 						break
 					}
 				}
+
+				for _, param := range key.Params {
+					if param == "source_url" {
+						foundParam = true
+						break
+					}
+				}
+
+				if !foundParam {
+					(*repository.Spec.Incomings)[idx].Params = append((*repository.Spec.Incomings)[idx].Params, "source_url")
+				}
+
 				// add missing target branch
 				if !foundTarget {
 					(*repository.Spec.Incomings)[idx].Targets = append((*repository.Spec.Incomings)[idx].Targets, targetBranch)
@@ -391,14 +404,20 @@ func updateIncoming(repository *pacv1alpha1.Repository, incomingSecretName strin
 			if !foundTarget {
 				all_targets = append(all_targets, targetBranch)
 			}
-			incoming := []pacv1alpha1.Incoming{{Type: "webhook-url", Secret: pacv1alpha1.Secret{Name: incomingSecretName, Key: pacIncomingSecretKey}, Targets: all_targets}}
+			incoming := []pacv1alpha1.Incoming{{Type: "webhook-url",
+				Secret:  pacv1alpha1.Secret{Name: incomingSecretName, Key: pacIncomingSecretKey},
+				Targets: all_targets,
+				Params:  []string{"source_url"}}}
 			repository.Spec.Incomings = &incoming
 		}
 	} else {
 		// create incomings when missing
-		incoming := []pacv1alpha1.Incoming{{Type: "webhook-url", Secret: pacv1alpha1.Secret{Name: incomingSecretName, Key: pacIncomingSecretKey}, Targets: []string{targetBranch}}}
+		incoming := []pacv1alpha1.Incoming{{Type: "webhook-url",
+			Secret:  pacv1alpha1.Secret{Name: incomingSecretName, Key: pacIncomingSecretKey},
+			Targets: []string{targetBranch},
+			Params:  []string{"source_url"}}}
 		repository.Spec.Incomings = &incoming
 	}
 
-	return multiple_incomings || !(foundSecretName && foundTarget)
+	return multiple_incomings || !(foundSecretName && foundTarget) || !foundParam
 }

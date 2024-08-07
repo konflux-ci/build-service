@@ -1361,6 +1361,8 @@ var _ = Describe("Component initial build controller", func() {
 			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
 			Expect((*repository.Spec.Incomings)[0].Secret.Key).To(Equal(pacIncomingSecretKey))
 			Expect((*repository.Spec.Incomings)[0].Targets).To(Equal([]string{"main"}))
+			Expect(len((*repository.Spec.Incomings)[0].Params)).To(Equal(1))
+			Expect((*repository.Spec.Incomings)[0].Params).To(Equal([]string{"source_url"}))
 		})
 
 		It("should successfully trigger builds for 2 components with different branches in the same repo", func() {
@@ -1453,6 +1455,8 @@ var _ = Describe("Component initial build controller", func() {
 			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
 			Expect((*repository.Spec.Incomings)[0].Secret.Key).To(Equal(pacIncomingSecretKey))
 			Expect((*repository.Spec.Incomings)[0].Targets).To(Equal([]string{"main", "another"}))
+			Expect(len((*repository.Spec.Incomings)[0].Params)).To(Equal(1))
+			Expect((*repository.Spec.Incomings)[0].Params).To(Equal([]string{"source_url"}))
 		})
 
 		It("should successfully trigger builds for 2 components with the same branches in the same repo", func() {
@@ -1545,7 +1549,8 @@ var _ = Describe("Component initial build controller", func() {
 			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
 			Expect((*repository.Spec.Incomings)[0].Secret.Key).To(Equal(pacIncomingSecretKey))
 			Expect((*repository.Spec.Incomings)[0].Targets).To(Equal([]string{"main"}))
-
+			Expect(len((*repository.Spec.Incomings)[0].Params)).To(Equal(1))
+			Expect((*repository.Spec.Incomings)[0].Params).To(Equal([]string{"source_url"}))
 		})
 
 		It("should successfully trigger PaC build, multiple incomings exist, even with wrong secret", func() {
@@ -1627,6 +1632,8 @@ var _ = Describe("Component initial build controller", func() {
 			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
 			Expect((*repository.Spec.Incomings)[0].Secret.Key).To(Equal(pacIncomingSecretKey))
 			Expect((*repository.Spec.Incomings)[0].Targets).To(Equal([]string{"main", "first", "second", "another"}))
+			Expect(len((*repository.Spec.Incomings)[0].Params)).To(Equal(1))
+			Expect((*repository.Spec.Incomings)[0].Params).To(Equal([]string{"source_url"}))
 		})
 
 		It("should successfully trigger PaC build, multiple incomings exist, even with wrong secret, branch found but without secret", func() {
@@ -1710,6 +1717,8 @@ var _ = Describe("Component initial build controller", func() {
 			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
 			Expect((*repository.Spec.Incomings)[0].Secret.Key).To(Equal(pacIncomingSecretKey))
 			Expect((*repository.Spec.Incomings)[0].Targets).To(Equal([]string{"main", "another", "first", "second"}))
+			Expect(len((*repository.Spec.Incomings)[0].Params)).To(Equal(1))
+			Expect((*repository.Spec.Incomings)[0].Params).To(Equal([]string{"source_url"}))
 		})
 
 		It("should successfully trigger PaC build, one incomings exist, but without secret", func() {
@@ -1787,6 +1796,8 @@ var _ = Describe("Component initial build controller", func() {
 			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
 			Expect((*repository.Spec.Incomings)[0].Secret.Key).To(Equal(pacIncomingSecretKey))
 			Expect((*repository.Spec.Incomings)[0].Targets).To(Equal([]string{"main", "another"}))
+			Expect(len((*repository.Spec.Incomings)[0].Params)).To(Equal(1))
+			Expect((*repository.Spec.Incomings)[0].Params).To(Equal([]string{"source_url"}))
 		})
 	})
 })

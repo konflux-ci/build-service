@@ -13,7 +13,7 @@ require (
 	github.com/onsi/gomega v1.33.0
 	github.com/openshift/api v0.0.0-20221013123534-96eec44e1979
 	github.com/prometheus/client_golang v1.19.0
-	github.com/xanzy/go-gitlab v0.88.0
+	github.com/xanzy/go-gitlab v0.90.0
 	go.uber.org/zap v1.27.0
 	golang.org/x/exp v0.0.0-20240213143201-ec583247a57a
 	golang.org/x/oauth2 v0.18.0
@@ -35,7 +35,7 @@ replace k8s.io/client-go => k8s.io/client-go v0.29.4
 require (
 	github.com/konflux-ci/application-api v0.0.0-20240527211352-be061932d497
 	github.com/konflux-ci/release-service v0.0.0-20240610124538-758a1d48d002
-	github.com/openshift-pipelines/pipelines-as-code v0.18.0
+	github.com/openshift-pipelines/pipelines-as-code v0.21.0
 	github.com/tektoncd/pipeline v0.57.0
 )
 
@@ -103,11 +103,10 @@ require (
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/common v0.48.0 // indirect
 	github.com/prometheus/procfs v0.12.0 // indirect
-	github.com/prometheus/statsd_exporter v0.23.1 // indirect
+	github.com/prometheus/statsd_exporter v0.24.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/spf13/pflag v1.0.6-0.20210604193023-d5e0c0615ace // indirect
-	github.com/stoewer/go-strcase v1.2.1 // indirect
-	github.com/stretchr/testify v1.8.4
+	github.com/stoewer/go-strcase v1.3.0 // indirect
 	github.com/vbatts/tar-split v0.11.3 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
@@ -127,7 +126,7 @@ require (
 	google.golang.org/grpc v1.62.1 // indirect
 	google.golang.org/protobuf v1.33.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
-	gopkg.in/yaml.v2 v2.4.0
+	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/component-base v0.29.3 // indirect
 	k8s.io/kube-openapi v0.0.0-20240221221325-2ac9dc51f3f1 // indirect
