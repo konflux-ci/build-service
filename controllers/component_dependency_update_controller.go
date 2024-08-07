@@ -178,6 +178,12 @@ func (r *ComponentDependencyUpdateReconciler) Reconcile(ctx context.Context, req
 			patch := client.MergeFrom(pipelineRun.DeepCopy())
 			return r.removePipelineFinalizer(ctx, pipelineRun, patch)
 		}
+
+		// When component doesn't exist handle it as permanent error
+		if errors.IsNotFound(err) {
+			log.Error(err, "component doesn't exist")
+			return ctrl.Result{}, nil
+		}
 		return ctrl.Result{}, err
 	}
 
