@@ -51,8 +51,8 @@ type BuildPipeline struct {
 }
 
 type pipelineConfig struct {
-	DefaultPipelineName string          `yaml:"default-pipeline-name"`
-	Pipelines           []BuildPipeline `yaml:"pipelines"`
+	DefaultPipelineName string          `json:"default-pipeline-name"`
+	Pipelines           []BuildPipeline `json:"pipelines"`
 }
 
 func (r *ComponentBuildReconciler) ensurePipelineServiceAccount(ctx context.Context, namespace string) (*corev1.ServiceAccount, error) {
