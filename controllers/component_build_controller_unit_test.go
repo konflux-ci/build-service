@@ -1267,6 +1267,16 @@ func TestGetGitProvider(t *testing.T) {
 			want:             "github",
 		},
 		{
+			name:             "should detect non-standard github provider via http url",
+			componentRepoUrl: "https://cooler.github.my-company.com/user/test-component-repository",
+			want:             "github",
+		},
+		{
+			name:             "should detect non-standard github provider via git url",
+			componentRepoUrl: "git@cooler.github.my-company.com:user/test-component-repository",
+			want:             "github",
+		},
+		{
 			name:             "should detect gitlab provider via http url",
 			componentRepoUrl: "https://gitlab.com/user/test-component-repository",
 			want:             "gitlab",
@@ -1277,6 +1287,16 @@ func TestGetGitProvider(t *testing.T) {
 			want:             "gitlab",
 		},
 		{
+			name:             "should detect non-standard gitlab provider via http url",
+			componentRepoUrl: "https://cooler.gitlab.my-company.com/user/test-component-repository",
+			want:             "gitlab",
+		},
+		{
+			name:             "should detect non-standard gitlab provider via git url",
+			componentRepoUrl: "git@cooler.gitlab.my-company.com:user/test-component-repository",
+			want:             "gitlab",
+		},
+		{
 			name:             "should detect bitbucket provider via http url",
 			componentRepoUrl: "https://bitbucket.org/user/test-component-repository",
 			want:             "bitbucket",
@@ -1284,6 +1304,16 @@ func TestGetGitProvider(t *testing.T) {
 		{
 			name:             "should detect bitbucket provider via git url",
 			componentRepoUrl: "git@bitbucket.org:user/test-component-repository",
+			want:             "bitbucket",
+		},
+		{
+			name:             "should detect non-standard bitbucket provider via http url",
+			componentRepoUrl: "https://cooler.bitbucket.my-company.com/user/test-component-repository",
+			want:             "bitbucket",
+		},
+		{
+			name:             "should detect non-standard bitbucket provider via git url",
+			componentRepoUrl: "git@cooler.bitbucket.my-company.com:user/test-component-repository",
 			want:             "bitbucket",
 		},
 		{

@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -603,50 +604,49 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 	return baseBranch, prUrl, action_done, err
 }
 
-// getGitProvider returns git provider name based on the repository url, e.g. github, gitlab, etc or git-privider annotation
+// getGitProvider returns git provider name based on the repository url or the git-provider annotation
 func getGitProvider(component appstudiov1alpha1.Component) (string, error) {
-	allowedGitProviders := map[string]bool{"github": true, "gitlab": true, "bitbucket": true}
+	allowedGitProviders := []string{"github", "gitlab", "bitbucket"}
 	gitProvider := ""
 
 	if component.Spec.Source.GitSource == nil {
 		err := fmt.Errorf("git source URL is not set for %s Component in %s namespace", component.Name, component.Namespace)
 		return "", err
 	}
+
 	sourceUrl := component.Spec.Source.GitSource.URL
+	var host string
 
 	if strings.HasPrefix(sourceUrl, "git@") {
 		// git@github.com:redhat-appstudio/application-service.git
 		sourceUrl = strings.TrimPrefix(sourceUrl, "git@")
-		host := strings.Split(sourceUrl, ":")[0]
-		gitProvider = strings.Split(host, ".")[0]
+		host = strings.Split(sourceUrl, ":")[0]
 	} else {
 		// https://github.com/redhat-appstudio/application-service
 		u, err := url.Parse(sourceUrl)
 		if err != nil {
 			return "", err
 		}
-		uParts := strings.Split(u.Hostname(), ".")
-		if len(uParts) == 1 {
-			gitProvider = uParts[0]
-		} else {
-			gitProvider = uParts[len(uParts)-2]
+		host = u.Hostname()
+	}
+
+	for _, provider := range allowedGitProviders {
+		if strings.Contains(host, provider) {
+			gitProvider = provider
+			break
 		}
 	}
 
-	var err error
-	if !allowedGitProviders[gitProvider] {
-		// Self-hosted git provider, check for git-provider annotation on the component
-		gitProviderAnnotationValue := component.GetAnnotations()[GitProviderAnnotationName]
-		if gitProviderAnnotationValue != "" {
-			if allowedGitProviders[gitProviderAnnotationValue] {
-				gitProvider = gitProviderAnnotationValue
-			} else {
-				err = fmt.Errorf("unsupported \"%s\" annotation value: %s", GitProviderAnnotationName, gitProviderAnnotationValue)
-			}
-		} else {
-			err = fmt.Errorf("self-hosted git provider is not specified via \"%s\" annotation in the component", GitProviderAnnotationName)
+	if gitProvider == "" {
+		gitProvider = component.GetAnnotations()[GitProviderAnnotationName]
+		if gitProvider != "" && !slices.Contains(allowedGitProviders, gitProvider) {
+			return "", fmt.Errorf(`unsupported "%s" annotation value: %s`, GitProviderAnnotationName, gitProvider)
 		}
 	}
 
-	return gitProvider, err
+	if gitProvider == "" {
+		return "", fmt.Errorf(`failed to determine git provider, please set the "%s" annotation on the component`, GitProviderAnnotationName)
+	}
+
+	return gitProvider, nil
 }
