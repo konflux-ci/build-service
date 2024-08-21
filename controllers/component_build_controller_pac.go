@@ -607,40 +607,39 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 // getGitProvider returns git provider name based on the repository url or the git-provider annotation
 func getGitProvider(component appstudiov1alpha1.Component) (string, error) {
 	allowedGitProviders := []string{"github", "gitlab", "bitbucket"}
-	gitProvider := ""
 
-	if component.Spec.Source.GitSource == nil {
-		err := fmt.Errorf("git source URL is not set for %s Component in %s namespace", component.Name, component.Namespace)
-		return "", err
-	}
-
-	sourceUrl := component.Spec.Source.GitSource.URL
-	var host string
-
-	if strings.HasPrefix(sourceUrl, "git@") {
-		// git@github.com:redhat-appstudio/application-service.git
-		sourceUrl = strings.TrimPrefix(sourceUrl, "git@")
-		host = strings.Split(sourceUrl, ":")[0]
-	} else {
-		// https://github.com/redhat-appstudio/application-service
-		u, err := url.Parse(sourceUrl)
-		if err != nil {
-			return "", err
-		}
-		host = u.Hostname()
-	}
-
-	for _, provider := range allowedGitProviders {
-		if strings.Contains(host, provider) {
-			gitProvider = provider
-			break
-		}
+	gitProvider := component.GetAnnotations()[GitProviderAnnotationName]
+	if gitProvider != "" && !slices.Contains(allowedGitProviders, gitProvider) {
+		return "", fmt.Errorf(`unsupported "%s" annotation value: %s`, GitProviderAnnotationName, gitProvider)
 	}
 
 	if gitProvider == "" {
-		gitProvider = component.GetAnnotations()[GitProviderAnnotationName]
-		if gitProvider != "" && !slices.Contains(allowedGitProviders, gitProvider) {
-			return "", fmt.Errorf(`unsupported "%s" annotation value: %s`, GitProviderAnnotationName, gitProvider)
+		if component.Spec.Source.GitSource == nil {
+			err := fmt.Errorf("git source URL is not set for %s Component in %s namespace", component.Name, component.Namespace)
+			return "", err
+		}
+
+		sourceUrl := component.Spec.Source.GitSource.URL
+		var host string
+
+		if strings.HasPrefix(sourceUrl, "git@") {
+			// git@github.com:redhat-appstudio/application-service.git
+			sourceUrl = strings.TrimPrefix(sourceUrl, "git@")
+			host = strings.Split(sourceUrl, ":")[0]
+		} else {
+			// https://github.com/redhat-appstudio/application-service
+			u, err := url.Parse(sourceUrl)
+			if err != nil {
+				return "", err
+			}
+			host = u.Hostname()
+		}
+
+		for _, provider := range allowedGitProviders {
+			if strings.Contains(host, provider) {
+				gitProvider = provider
+				break
+			}
 		}
 	}
 

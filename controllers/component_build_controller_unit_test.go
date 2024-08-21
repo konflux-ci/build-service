@@ -1335,6 +1335,12 @@ func TestGetGitProvider(t *testing.T) {
 			want:                           "bitbucket",
 		},
 		{
+			name:                           "should prefer the annotation over the url",
+			componentRepoUrl:               "https://not.github.my-company.com/user/test-component-repository",
+			componentGitProviderAnnotation: "gitlab",
+			want:                           "gitlab",
+		},
+		{
 			name:             "should fail to detect git provider for self-hosted instance if annotation is not set",
 			componentRepoUrl: "https://mydomain.com/user/test-component-repository",
 			expectError:      true,
