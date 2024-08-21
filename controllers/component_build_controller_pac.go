@@ -189,7 +189,7 @@ func validatePaCConfiguration(gitProvider string, pacSecret corev1.Secret) error
 			}
 			return nil
 		}
-		return fmt.Errorf(fmt.Sprintf("There is no applications for %s", gitProvider))
+		return fmt.Errorf("There is no applications for %s", gitProvider)
 	}
 
 	switch pacSecret.Type {
