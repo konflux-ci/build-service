@@ -1008,6 +1008,7 @@ func TestGeneratePACRepository(t *testing.T) {
 					Name: pipelinesAsCodeWebhooksSecretName,
 					Key:  getWebhookSecretKeyForComponent(getComponent("https://github.com/user/test-component-repository", nil)),
 				},
+				Type: "github",
 			},
 		},
 		{
@@ -1025,7 +1026,8 @@ func TestGeneratePACRepository(t *testing.T) {
 					Name: pipelinesAsCodeWebhooksSecretName,
 					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.com/user/test-component-repository/", nil)),
 				},
-				URL: "https://gitlab.com",
+				URL:  "https://gitlab.com",
+				Type: "gitlab",
 			},
 		},
 		{
@@ -1045,7 +1047,8 @@ func TestGeneratePACRepository(t *testing.T) {
 					Name: pipelinesAsCodeWebhooksSecretName,
 					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.com/user/test-component-repository", nil)),
 				},
-				URL: "https://gitlab.com",
+				URL:  "https://gitlab.com",
+				Type: "gitlab",
 			},
 		},
 		{
@@ -1066,7 +1069,8 @@ func TestGeneratePACRepository(t *testing.T) {
 					Name: pipelinesAsCodeWebhooksSecretName,
 					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.self-hosted.com/user/test-component-repository/", nil)),
 				},
-				URL: "https://gitlab.self-hosted.com",
+				URL:  "https://gitlab.self-hosted.com",
+				Type: "gitlab",
 			},
 		},
 		{
@@ -1088,7 +1092,8 @@ func TestGeneratePACRepository(t *testing.T) {
 					Name: pipelinesAsCodeWebhooksSecretName,
 					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.self-hosted.com/user/test-component-repository/", nil)),
 				},
-				URL: "https://gitlab.self-hosted-proxy.com",
+				URL:  "https://gitlab.self-hosted-proxy.com",
+				Type: "gitlab",
 			},
 		},
 		{
@@ -1103,7 +1108,8 @@ func TestGeneratePACRepository(t *testing.T) {
 				PipelinesAsCodeGithubPrivateKey: []byte("private-key"),
 			},
 			expectedGitProviderConfig: &pacv1alpha1.GitProvider{
-				URL: "https://github.self-hosted.com",
+				URL:  "https://github.self-hosted.com",
+				Type: "github",
 			},
 		},
 	}

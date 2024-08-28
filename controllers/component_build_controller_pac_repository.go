@@ -225,6 +225,15 @@ func generatePACRepository(component appstudiov1alpha1.Component, config *corev1
 		gitProviderConfig.URL = url
 	}
 
+	if gitProviderConfig != nil {
+		repositoryGitProvider := gitProvider
+		// https://pipelinesascode.com/docs/guide/incoming_webhook/#incoming-webhook-url
+		if repositoryGitProvider == "bitbucket" {
+			repositoryGitProvider = "bitbucket-cloud"
+		}
+		gitProviderConfig.Type = repositoryGitProvider
+	}
+
 	repository := &pacv1alpha1.Repository{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Repository",
