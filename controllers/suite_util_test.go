@@ -599,3 +599,45 @@ func deleteBuildPipelineConfigMap(configMapKey types.NamespacedName) {
 		Fail(err.Error())
 	}
 }
+
+func waitServiceAccount(serviceAccountKey types.NamespacedName) {
+	serviceAccount := &corev1.ServiceAccount{}
+	Eventually(func() bool {
+		if err := k8sClient.Get(ctx, serviceAccountKey, serviceAccount); err != nil {
+			return false
+		}
+		return serviceAccount.ResourceVersion != ""
+	}, timeout, interval).Should(BeTrue())
+}
+
+func deleteServiceAccount(serviceAccountKey types.NamespacedName) {
+	serviceAccount := &corev1.ServiceAccount{}
+
+	// Check if the SA exists
+	if err := k8sClient.Get(ctx, serviceAccountKey, serviceAccount); k8sErrors.IsNotFound(err) {
+		return
+	}
+
+	// Delete
+	Eventually(func() error {
+		if err := k8sClient.Get(ctx, serviceAccountKey, serviceAccount); err != nil {
+			return err
+		}
+		return k8sClient.Delete(ctx, serviceAccount)
+	}, timeout, interval).Should(Succeed())
+
+	// Wait for the deletion to finish
+	Eventually(func() bool {
+		return k8sErrors.IsNotFound(k8sClient.Get(ctx, serviceAccountKey, serviceAccount))
+	}, timeout, interval).Should(BeTrue())
+}
+
+func waitPipelineServiceAccount(namespace string) {
+	pipelineServiceAccountKey := types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: namespace}
+	waitServiceAccount(pipelineServiceAccountKey)
+}
+
+func deletePipelineServiceAccount(namespace string) {
+	pipelineServiceAccountkey := types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: namespace}
+	deleteServiceAccount((pipelineServiceAccountkey))
+}

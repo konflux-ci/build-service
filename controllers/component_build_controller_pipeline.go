@@ -467,10 +467,6 @@ func getContainerImageRepositoryForComponent(component *appstudiov1alpha1.Compon
 	if component.Spec.ContainerImage != "" {
 		return getContainerImageRepository(component.Spec.ContainerImage)
 	}
-	imageRepo, _, err := getComponentImageRepoAndSecretNameFromImageAnnotation(component)
-	if err == nil && imageRepo != "" {
-		return imageRepo
-	}
 	return ""
 }
 
@@ -482,25 +478,6 @@ func getContainerImageRepository(image string) string {
 	}
 	// registry.io/user/image:tag
 	return strings.Split(image, ":")[0]
-}
-
-// getComponentImageRepoAndSecretNameFromImageAnnotation parses image.redhat.com/image annotation
-// for image repository and secret name to access it.
-// If image.redhat.com/image is not set, the procedure returns empty values.
-func getComponentImageRepoAndSecretNameFromImageAnnotation(component *appstudiov1alpha1.Component) (string, string, error) {
-	type RepositoryInfo struct {
-		Image  string `json:"image"`
-		Secret string `json:"secret"`
-	}
-
-	var repoInfo RepositoryInfo
-	if imageRepoDataJson, exists := component.Annotations[ImageRepoAnnotationName]; exists {
-		if err := json.Unmarshal([]byte(imageRepoDataJson), &repoInfo); err != nil {
-			return "", "", boerrors.NewBuildOpError(boerrors.EFailedToParseImageAnnotation, err)
-		}
-		return repoInfo.Image, repoInfo.Secret, nil
-	}
-	return "", "", nil
 }
 
 func getPipelineNameAndBundle(pipelineRef *tektonapi.PipelineRef) (string, string, error) {
