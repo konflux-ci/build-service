@@ -438,14 +438,6 @@ func waitSecretCreated(resourceKey types.NamespacedName) {
 	}, timeout, interval).Should(BeTrue())
 }
 
-func ensureSecretNotCreated(resourceKey types.NamespacedName) {
-	secret := &corev1.Secret{}
-	Consistently(func() bool {
-		err := k8sClient.Get(ctx, resourceKey, secret)
-		return k8sErrors.IsNotFound(err)
-	}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
-}
-
 func waitSecretGone(resourceKey types.NamespacedName) {
 	secret := &corev1.Secret{}
 	Eventually(func() bool {
