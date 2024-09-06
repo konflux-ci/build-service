@@ -1190,7 +1190,7 @@ func TestPaCRepoAddParamWorkspace(t *testing.T) {
 
 	t.Run("add to Spec.Params", func(t *testing.T) {
 		repository, _ := generatePACRepository(*component, secret)
-		pacRepoAddParamWorkspaceName(log, repository, workspaceName)
+		pacRepoAddParamWorkspaceName(repository, workspaceName)
 
 		params := convertCustomParamsToMap(repository)
 		param, ok := params[pacCustomParamAppstudioWorkspace]
@@ -1210,7 +1210,7 @@ func TestPaCRepoAddParamWorkspace(t *testing.T) {
 		}
 		repository.Spec.Params = &params
 
-		pacRepoAddParamWorkspaceName(log, repository, workspaceName)
+		pacRepoAddParamWorkspaceName(repository, workspaceName)
 
 		existingParams := convertCustomParamsToMap(repository)
 		param, ok := existingParams[pacCustomParamAppstudioWorkspace]

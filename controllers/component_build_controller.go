@@ -182,12 +182,6 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	// Ensure pipeline service account exists
-	_, err = r.ensurePipelineServiceAccount(ctx, component.Namespace)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-
 	if getContainerImageRepositoryForComponent(&component) == "" {
 		// Container image must be set. It's not possible to proceed without it.
 		log.Info("Waiting for ContainerImage to be set")
@@ -242,6 +236,12 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 
 		return ctrl.Result{}, nil
+	}
+
+	// Ensure pipeline service account exists
+	_, err = r.ensurePipelineServiceAccount(ctx, component.Namespace)
+	if err != nil {
+		return ctrl.Result{}, err
 	}
 
 	_, err = r.GetBuildPipelineFromComponentAnnotation(ctx, &component)

@@ -22,7 +22,6 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/go-logr/logr"
 	appstudiov1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -103,7 +102,7 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 		return err
 	}
 	if val, ok := ns.Labels[appstudioWorkspaceNameLabel]; ok {
-		pacRepoAddParamWorkspaceName(log, repository, val)
+		pacRepoAddParamWorkspaceName(repository, val)
 	}
 
 	existingRepository := &pacv1alpha1.Repository{}
@@ -153,7 +152,7 @@ func (r *ComponentBuildReconciler) getNamespace(ctx context.Context, name string
 
 // pacRepoAddParamWorkspaceName adds custom parameter workspace name to a PaC repository.
 // Existing parameter will be overridden.
-func pacRepoAddParamWorkspaceName(log logr.Logger, repository *pacv1alpha1.Repository, workspaceName string) {
+func pacRepoAddParamWorkspaceName(repository *pacv1alpha1.Repository, workspaceName string) {
 	var params []pacv1alpha1.Params
 	// Before pipelines-as-code gets upgraded for application-service to the
 	// version supporting custom parameters, this check must be taken.

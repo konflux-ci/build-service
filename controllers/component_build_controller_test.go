@@ -522,18 +522,6 @@ var _ = Describe("Component initial build controller", func() {
 			expectPacBuildStatus(resourcePacPrepKey, "enabled", 0, "", mergeUrl)
 		})
 
-		It("should not copy PaC secret into local namespace if GitHub application is used", func() {
-			deleteSecret(namespacePaCSecretKey)
-
-			createComponentAndProcessBuildRequest(componentConfig{
-				componentKey: resourcePacPrepKey,
-				annotations:  defaultPipelineAnnotations,
-			}, BuildRequestConfigurePaCAnnotationValue)
-			waitPaCRepositoryCreated(resourcePacPrepKey)
-
-			ensureSecretNotCreated(namespacePaCSecretKey)
-		})
-
 		It("should successfully submit PR with PaC definitions using token", func() {
 			isCreatePaCPullRequestInvoked := false
 			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
@@ -1166,6 +1154,40 @@ var _ = Describe("Component initial build controller", func() {
 
 			expectError := boerrors.NewBuildOpError(boerrors.EUnknownGitProvider, nil)
 			expectPacBuildStatus(resourceCleanupKey, "error", expectError.GetErrorId(), expectError.ShortError(), "")
+		})
+
+		It("should not attempt to create service account on component deletion", func() {
+			pacSecretData := map[string]string{
+				"github-application-id": "12345",
+				"github-private-key":    githubAppPrivateKey,
+			}
+			createSecret(pacSecretKey, pacSecretData)
+			createComponentAndProcessBuildRequest(componentConfig{
+				componentKey: resourceCleanupKey,
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
+			waitPaCFinalizerOnComponent(resourceCleanupKey)
+
+			waitPipelineServiceAccount(resourceCleanupKey.Namespace)
+
+			// Make sure that proper cleanup was invoked
+			isRemovePaCPullRequestInvoked := false
+			UndoPaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (webUrl string, err error) {
+				isRemovePaCPullRequestInvoked = true
+				return "merge-url", nil
+			}
+
+			deletePipelineServiceAccount(resourceCleanupKey.Namespace)
+
+			Expect(isRemovePaCPullRequestInvoked).To(BeFalse())
+			// Clean up for the component should not recreate pipeline service account
+			deleteComponent(resourceCleanupKey)
+			Expect(isRemovePaCPullRequestInvoked).To(BeTrue())
+
+			pipelineServiceAccountKey := types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: resourceCleanupKey.Namespace}
+			pipelineServiceAccount := &corev1.ServiceAccount{}
+			err := k8sClient.Get(ctx, pipelineServiceAccountKey, pipelineServiceAccount)
+			Expect(k8sErrors.IsNotFound(err)).To(BeTrue())
 		})
 	})
 
