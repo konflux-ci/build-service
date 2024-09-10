@@ -154,11 +154,11 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	err = (&ComponentDependencyUpdateReconciler{
-		Client:         k8sManager.GetClient(),
-		ApiReader:      k8sManager.GetAPIReader(),
-		Scheme:         k8sManager.GetScheme(),
-		EventRecorder:  k8sManager.GetEventRecorderFor("ComponentDependencyUpdateReconciler"),
-		UpdateFunction: failingDependencyUpdate,
+		Client:                       k8sManager.GetClient(),
+		ApiReader:                    k8sManager.GetAPIReader(),
+		Scheme:                       k8sManager.GetScheme(),
+		EventRecorder:                k8sManager.GetEventRecorderFor("ComponentDependencyUpdateReconciler"),
+		ComponentDependenciesUpdater: *NewComponentDependenciesUpdater(k8sManager.GetClient(), k8sManager.GetScheme(), k8sManager.GetEventRecorderFor("ComponentDependencyUpdateReconciler")),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 

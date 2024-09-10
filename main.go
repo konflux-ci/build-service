@@ -180,11 +180,11 @@ func main() {
 	}
 
 	if err = (&controllers.ComponentDependencyUpdateReconciler{
-		Client:         mgr.GetClient(),
-		ApiReader:      mgr.GetAPIReader(),
-		Scheme:         mgr.GetScheme(),
-		EventRecorder:  mgr.GetEventRecorderFor("ComponentDependencyUpdateReconciler"),
-		UpdateFunction: controllers.DefaultDependenciesUpdate,
+		Client:                       mgr.GetClient(),
+		ApiReader:                    mgr.GetAPIReader(),
+		Scheme:                       mgr.GetScheme(),
+		EventRecorder:                mgr.GetEventRecorderFor("ComponentDependencyUpdateReconciler"),
+		ComponentDependenciesUpdater: *controllers.NewComponentDependenciesUpdater(mgr.GetClient(), mgr.GetScheme(), mgr.GetEventRecorderFor("ComponentDependencyUpdateReconciler")),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ComponentDependencyUpdateReconciler")
 		os.Exit(1)
