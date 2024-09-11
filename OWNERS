@@ -3,12 +3,12 @@
 approvers:
 - mmorhun
 - psturc
-- Michkov
+- tisutisu
 
 reviewers:
 - mmorhun
 - psturc
-- Michkov
+- tisutisu
 
 # 'Build team' members that are not members of openshift github org (could be added in a future):
 # - brunoapimentel
