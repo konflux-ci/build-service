@@ -35,6 +35,11 @@ spec:
     value: gomod
   - name: build-source-image
     value: 'true'
+  - name: build-args
+    value:
+    - BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:9.4
+  - name: build-args-file
+    value: argfile.conf
   pipelineSpec:
     finally:
     - name: show-sbom
@@ -73,6 +78,9 @@ spec:
       - name: workspace
         workspace: workspace
     params:
+    - name: build-args
+      type: array
+      default: []
     - description: Source Repository URL
       name: git-url
       type: string
@@ -226,6 +234,9 @@ spec:
         value: $(tasks.clone-repository.results.commit)
       - name: BUILD_ARGS_FILE
         value: $(params.build-args-file)
+      - name: BUILD_ARGS
+        value:
+          - $(params.build-args[*])
       runAfter:
       - prefetch-dependencies
       taskRef:
@@ -233,7 +244,7 @@ spec:
         - name: name
           value: buildah
         - name: bundle
-          value: quay.io/redhat-appstudio-tekton-catalog/task-buildah:0.2@sha256:60cd734b48cf6c62cc5931fd4dfd159cc7aeba2d89c8f7f0352341480ccc8f2c
+          value: quay.io/acmiel-test/tekton-catalog/task-buildah:resolve-base-image-args
         - name: kind
           value: task
         resolver: bundles

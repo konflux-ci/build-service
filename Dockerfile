@@ -1,7 +1,10 @@
 # Build the manager binary
 # For more details and updates, refer to
 # https://catalog.redhat.com/software/containers/ubi9/go-toolset/61e5c00b4ec9945c18787690
-FROM registry.access.redhat.com/ubi9/go-toolset:1.21.10 AS builder
+ARG BUILDER_IMAGE
+ARG BASE_IMAGE
+
+FROM $BUILDER_IMAGE AS builder
 
 # Copy the Go Modules manifests
 COPY go.mod go.mod
@@ -21,7 +24,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o manager main.go
 # Use ubi-minimal as minimal base image to package the manager binary
 # For more details and updates, refer to
 # https://catalog.redhat.com/software/containers/ubi9/ubi-minimal/615bd9b4075b022acc111bf5
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.4
+FROM $BASE_IMAGE
 COPY --from=builder /opt/app-root/src/manager /
 USER 65532:65532
 
