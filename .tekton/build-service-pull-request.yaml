@@ -38,6 +38,7 @@ spec:
   - name: build-args
     value:
     - BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:9.4
+    - FOO=foo-from-build-args
   - name: build-args-file
     value: argfile.conf
   pipelineSpec:

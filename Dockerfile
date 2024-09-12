@@ -28,6 +28,12 @@ FROM $BASE_IMAGE
 COPY --from=builder /opt/app-root/src/manager /
 USER 65532:65532
 
+ARG FOO
+ARG BAR
+
+RUN echo $FOO
+RUN echo $BAR
+
 # Required for ecosystem-cert-preflight-checks
 # https://access.redhat.com/documentation/en-us/red_hat_software_certification/2024/html-single/red_hat_openshift_software_certification_policy_guide/index#assembly-requirements-for-container-images_openshift-sw-cert-policy-introduction
 COPY LICENSE /licenses/LICENSE
