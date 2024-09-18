@@ -618,14 +618,25 @@ func generateRenovateConfigForNudge(slug string, repositories []renovateReposito
 // See https://issues.redhat.com/browse/KFLUXBUGS-1233
 // This will map repsitories of the form 'quay.io/redhat-prod/foo----bar' to 'registry.redhat.io/foo/bar'
 func mapToRegistryRedhatIo(repo string) string {
-
-	regex, err := regexp.Compile(`^quay.io/redhat-prod/(.*)----(.*)$`)
+	prodRegex, err := regexp.Compile(`^quay.io/redhat-prod/(.*)----(.*)$`)
 	if err != nil {
 		return ""
 	}
-	results := regex.FindStringSubmatch(repo)
-	if results == nil {
+
+	results := prodRegex.FindStringSubmatch(repo)
+	if results != nil {
+		return "registry.redhat.io/" + results[1] + "/" + results[2]
+	}
+
+	// try handling the stage registry
+	stageRegex, err := regexp.Compile(`^quay.io/redhat-pending/(.*)----(.*)$`)
+	if err != nil {
 		return ""
 	}
-	return "registry.redhat.io/" + results[1] + "/" + results[2]
+	results = stageRegex.FindStringSubmatch(repo)
+	if results != nil {
+		return "registry.stage.redhat.io/" + results[1] + "/" + results[2]
+	}
+
+	return ""
 }
