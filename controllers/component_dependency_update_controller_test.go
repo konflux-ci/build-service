@@ -376,6 +376,7 @@ var _ = Describe("Component nudge controller", func() {
 	Context("Test mapping quay.io to registry.redhat.io", func() {
 		It("test regex match", func() {
 			Expect(mapToRegistryRedhatIo("quay.io/redhat-prod/multiarch-tuning----multiarch-tuning-rhel9-operator")).To(Equal("registry.redhat.io/multiarch-tuning/multiarch-tuning-rhel9-operator"))
+			Expect(mapToRegistryRedhatIo("quay.io/redhat-pending/multiarch-tuning----multiarch-tuning-rhel9-operator")).To(Equal("registry.stage.redhat.io/multiarch-tuning/multiarch-tuning-rhel9-operator"))
 		})
 	})
 })
