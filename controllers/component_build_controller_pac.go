@@ -132,7 +132,7 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context,
 		}
 
 		// Obtain Pipelines as Code callback URL
-		webhookTargetUrl, err = r.getPaCWebhookTargetUrl(ctx, component.Spec.Source.GitSource.URL)
+		webhookTargetUrl, err = r.getPaCWebhookTargetUrl(ctx, component.Spec.Source.GitSource.URL, true)
 		if err != nil {
 			return "", err
 		}
@@ -282,7 +282,7 @@ func (r *ComponentBuildReconciler) TriggerPaCBuild(ctx context.Context, componen
 		return true, nil
 	}
 
-	webhookTargetUrl, err := r.getPaCWebhookTargetUrl(ctx, component.Spec.Source.GitSource.URL)
+	webhookTargetUrl, err := r.getPaCWebhookTargetUrl(ctx, component.Spec.Source.GitSource.URL, false)
 	if err != nil {
 		return false, err
 	}
@@ -340,7 +340,7 @@ func (r *ComponentBuildReconciler) UndoPaCProvisionForComponent(ctx context.Cont
 
 	webhookTargetUrl := ""
 	if !IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
-		webhookTargetUrl, err = r.getPaCWebhookTargetUrl(ctx, component.Spec.Source.GitSource.URL)
+		webhookTargetUrl, err = r.getPaCWebhookTargetUrl(ctx, component.Spec.Source.GitSource.URL, true)
 		if err != nil {
 			// Just log the error and continue with pruning merge request creation
 			log.Error(err, "failed to get Pipelines as Code webhook target URL. Webhook will not be deleted.", l.Action, l.ActionView, l.Audit, "true")
@@ -373,10 +373,13 @@ func (r *ComponentBuildReconciler) UndoPaCProvisionForComponent(ctx context.Cont
 }
 
 // getPaCWebhookTargetUrl returns URL to which events from git repository should be sent.
-func (r *ComponentBuildReconciler) getPaCWebhookTargetUrl(ctx context.Context, repositoryURL string) (string, error) {
+// it will first try to get url from env variable
+// then when useWebhookUrlConfig is true it will try to get it from webhook config
+// and lastly it will try to get it from PaC route url
+func (r *ComponentBuildReconciler) getPaCWebhookTargetUrl(ctx context.Context, repositoryURL string, useWebhookUrlConfig bool) (string, error) {
 	webhookTargetUrl := os.Getenv(pipelinesAsCodeRouteEnvVar)
 
-	if webhookTargetUrl == "" {
+	if webhookTargetUrl == "" && useWebhookUrlConfig {
 		webhookTargetUrl = r.WebhookURLLoader.Load(repositoryURL)
 	}
 
