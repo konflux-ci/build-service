@@ -2,9 +2,11 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
+	"text/template"
 	"time"
 
 	"github.com/konflux-ci/application-api/api/v1alpha1"
@@ -22,45 +24,140 @@ import (
 	. "github.com/konflux-ci/build-service/pkg/common"
 	"github.com/konflux-ci/build-service/pkg/git"
 	"github.com/konflux-ci/build-service/pkg/git/github"
+	"github.com/konflux-ci/build-service/pkg/git/gitproviderfactory"
+	"github.com/konflux-ci/build-service/pkg/k8s"
 	"github.com/konflux-ci/build-service/pkg/logs"
 )
 
 const (
 	RenovateImageEnvName    = "RENOVATE_IMAGE"
 	DefaultRenovateImageUrl = "quay.io/redhat-appstudio/renovate:v37.74.1"
+	DefaultRenovateUser     = "red-hat-konflux"
 )
-
-type installationStruct struct {
-	id           int
-	component    string
-	token        string
-	repositories []renovateRepository
-}
 
 type renovateRepository struct {
 	Repository   string   `json:"repository"`
 	BaseBranches []string `json:"baseBranches,omitempty"`
 }
 
-// GetGithubInstallationsForComponents This method avoids iterating over all installations, it is intended to be called when the component list is small
-func GetGithubInstallationsForComponents(ctx context.Context, client client.Client, eventRecorder record.EventRecorder, componentList []v1alpha1.Component) (string, []installationStruct, error) {
+// UpdateTarget represents a target source code repository to be executed by Renovate with credentials and repositories
+type updateTarget struct {
+	ComponentName string
+	GitProvider   string
+	Username      string
+	GitAuthor     string
+	Token         string
+	Endpoint      string
+	Repositories  []renovateRepository
+}
+
+type ComponentDependenciesUpdater struct {
+	Client             client.Client
+	Scheme             *runtime.Scheme
+	EventRecorder      record.EventRecorder
+	CredentialProvider *k8s.GitCredentialProvider
+}
+
+var GenerateRenovateConfigForNudge func(target updateTarget, buildResult *BuildResult) (string, error) = generateRenovateConfigForNudge
+
+func NewComponentDependenciesUpdater(client client.Client, scheme *runtime.Scheme, eventRecorder record.EventRecorder) *ComponentDependenciesUpdater {
+	return &ComponentDependenciesUpdater{Client: client, Scheme: scheme, EventRecorder: eventRecorder, CredentialProvider: k8s.NewGitCredentialProvider(client)}
+}
+
+// GetUpdateTargetsBasicAuth This method returns targets for components based on basic auth
+func (u ComponentDependenciesUpdater) GetUpdateTargetsBasicAuth(ctx context.Context, componentList []v1alpha1.Component) []updateTarget {
+	log := logger.FromContext(ctx)
+	targetsToUpdate := []updateTarget{}
+
+	for _, component := range componentList {
+		gitProvider, err := getGitProvider(component)
+		if err != nil {
+			log.Error(err, "error detecting git provider", "ComponentName", component.Name, "ComponentNamespace", component.Namespace)
+			continue
+		}
+
+		scmComponent, err := git.NewScmComponent(gitProvider, component.Spec.Source.GitSource.URL, component.Spec.Source.GitSource.Revision, component.Name, component.Namespace)
+		if err != nil {
+			log.Error(err, "error parsing component", "ComponentName", component.Name, "ComponentNamespace", component.Namespace)
+			continue
+		}
+
+		creds, err := u.CredentialProvider.GetBasicAuthCredentials(ctx, scmComponent)
+		if err != nil {
+			log.Error(err, "error getting basic auth credentials for component", "ComponentName", component.Name, "ComponentNamespace", component.Namespace)
+			log.Info(fmt.Sprintf("for repository %s", component.Spec.Source.GitSource.URL))
+			continue
+		}
+
+		branch := scmComponent.Branch()
+		if branch == git.InternalDefaultBranch {
+			pacConfig := map[string][]byte{"password": []byte(creds.Password)}
+			if creds.Username != "" {
+				pacConfig["username"] = []byte(creds.Username)
+			}
+
+			gitClient, err := gitproviderfactory.CreateGitClient(gitproviderfactory.GitClientConfig{
+				PacSecretData:             pacConfig,
+				GitProvider:               gitProvider,
+				RepoUrl:                   component.Spec.Source.GitSource.URL,
+				IsAppInstallationExpected: true,
+			})
+			if err != nil {
+				log.Error(err, "error create git client for component", "ComponentName", component.Name, "RepoUrl", component.Spec.Source.GitSource.URL)
+				continue
+			}
+			defaultBranch, err := gitClient.GetDefaultBranch(component.Spec.Source.GitSource.URL)
+			if err != nil {
+				log.Error(err, "error get git default branch for component", "ComponentName", component.Name, "RepoUrl", component.Spec.Source.GitSource.URL)
+				continue
+			}
+			branch = defaultBranch
+		}
+		repositories := []renovateRepository{}
+		repositories = append(repositories, renovateRepository{
+			Repository:   scmComponent.Repository(),
+			BaseBranches: []string{branch},
+		})
+
+		username := creds.Username
+		if username == "" {
+			username = DefaultRenovateUser
+		}
+
+		targetsToUpdate = append(targetsToUpdate, updateTarget{
+			ComponentName: component.Name,
+			GitProvider:   gitProvider,
+			Username:      username,
+			GitAuthor:     fmt.Sprintf("%s <123456+%s[bot]@users.noreply.%s>", username, username, scmComponent.RepositoryHost()),
+			Token:         creds.Password,
+			Endpoint:      git.BuildAPIEndpoint(gitProvider).APIEndpoint(scmComponent.RepositoryHost()),
+			Repositories:  repositories,
+		})
+		log.Info("component to update for basic auth", "component", component.Name, "repositories", repositories)
+	}
+
+	return targetsToUpdate
+}
+
+// GetUpdateTargetsGithubApp This method returns targets for components based on github app
+func (u ComponentDependenciesUpdater) GetUpdateTargetsGithubApp(ctx context.Context, componentList []v1alpha1.Component) []updateTarget {
 	log := logger.FromContext(ctx)
 	// Check if GitHub Application is used, if not then skip
 	pacSecret := corev1.Secret{}
 	globalPaCSecretKey := types.NamespacedName{Namespace: BuildServiceNamespaceName, Name: PipelinesAsCodeGitHubAppSecretName}
-	if err := client.Get(ctx, globalPaCSecretKey, &pacSecret); err != nil {
-		eventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
+	if err := u.Client.Get(ctx, globalPaCSecretKey, &pacSecret); err != nil {
+		u.EventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
 		if errors.IsNotFound(err) {
 			log.Error(err, "not found Pipelines as Code secret in %s namespace: %w", globalPaCSecretKey.Namespace, err, logs.Action, logs.ActionView)
 		} else {
 			log.Error(err, "failed to get Pipelines as Code secret in %s namespace: %w", globalPaCSecretKey.Namespace, err, logs.Action, logs.ActionView)
 		}
-		return "", nil, nil
+		return nil
 	}
 	isApp := IsPaCApplicationConfigured("github", pacSecret.Data)
 	if !isApp {
 		log.Info("GitHub App is not set")
-		return "", nil, nil
+		return nil
 	}
 
 	// Load GitHub App and get GitHub Installations
@@ -68,17 +165,26 @@ func GetGithubInstallationsForComponents(ctx context.Context, client client.Clie
 	privateKey := pacSecret.Data[PipelinesAsCodeGithubPrivateKey]
 
 	// Match installed repositories with Components and get custom branch if defined
-	installationsToUpdate := []installationStruct{}
+	targetsToUpdate := []updateTarget{}
 	var slug string
 	for _, component := range componentList {
 		if component.Spec.Source.GitSource == nil {
 			continue
 		}
 
+		gitProvider, err := getGitProvider(component)
+		if err != nil {
+			log.Error(err, "error detecting git provider", "ComponentName", component.Name, "ComponentNamespace", component.Namespace)
+			continue
+		}
+		if gitProvider != "github" {
+			continue
+		}
+
 		gitSource := component.Spec.Source.GitSource
 
 		url := strings.TrimSuffix(strings.TrimSuffix(gitSource.URL, ".git"), "/")
-		log.Info("getting app installation for component repository", "ComponentName", component.Name, "RepositoryUrl", url)
+		log.Info("getting app installation for component repository", "ComponentName", component.Name, "ComponentNamespace", component.Namespace, "RepositoryUrl", url)
 		githubAppInstallation, slugTmp, err := github.GetAppInstallationsForRepository(githubAppIdStr, privateKey, url)
 		if slug == "" {
 			slug = slugTmp
@@ -104,22 +210,125 @@ func GetGithubInstallationsForComponents(ctx context.Context, client client.Clie
 				Repository:   repository.GetFullName(),
 			})
 		}
-		// Do not add intatallation which has no matching repositories
+		// Do not add target which has no matching repositories
 		if len(repositories) == 0 {
-			log.Info("no repositories found in the installation")
+			log.Info("no repositories found in the installation", "ComponentName", component.Name, "ComponentNamespace", component.Namespace)
 			continue
 		}
-		installationsToUpdate = append(installationsToUpdate,
-			installationStruct{
-				id:           int(githubAppInstallation.ID),
-				component:    component.Name,
-				token:        githubAppInstallation.Token,
-				repositories: repositories,
-			})
-		log.Info("installation to update", "installID", int(githubAppInstallation.ID), "component", component.Name, "repositories", repositories)
+		targetsToUpdate = append(targetsToUpdate, updateTarget{
+			ComponentName: component.Name,
+			GitProvider:   gitProvider,
+			Username:      fmt.Sprintf("%s[bot]", slug),
+			GitAuthor:     fmt.Sprintf("%s <123456+%s[bot]@users.noreply.github.com>", slug, slug),
+			Token:         githubAppInstallation.Token,
+			Endpoint:      git.BuildAPIEndpoint("github").APIEndpoint("github.com"),
+			Repositories:  repositories,
+		})
+		log.Info("component to update for installations", "component", component.Name, "repositories", repositories)
 	}
 
-	return slug, installationsToUpdate, nil
+	return targetsToUpdate
+}
+
+// generateRenovateConfigForNudge This method returns renovate config for target
+func generateRenovateConfigForNudge(target updateTarget, buildResult *BuildResult) (string, error) {
+	repositoriesData, _ := json.Marshal(target.Repositories)
+	fileMatchParts := strings.Split(buildResult.FileMatches, ",")
+	for i := range fileMatchParts {
+		fileMatchParts[i] = strings.TrimSpace(fileMatchParts[i])
+	}
+	fileMatch, err := json.Marshal(fileMatchParts)
+	if err != nil {
+		return "", err
+	}
+
+	body := `
+	{{with $root := .}}
+	module.exports = {
+		platform: "{{.GitProvider}}",
+		username: "{{.Username}}",
+		gitAuthor: "{{.GitAuthor}}",
+		onboarding: false,
+		requireConfig: "ignored",
+		repositories: {{.Repositories}},
+		enabledManagers: "regex",
+		endpoint: "{{.Endpoint}}",
+		customManagers: [
+			{
+				"fileMatch": {{.FileMatches}},
+				"customType": "regex",
+				"datasourceTemplate": "docker",
+				"matchStrings": [
+					"{{.BuiltImageRepository}}(:.*)?@(?<currentDigest>sha256:[a-f0-9]+)"
+					{{range .DistributionRepositories}},"{{.}}(:.*)?@(?<currentDigest>sha256:[a-f0-9]+)"{{end}}
+				],
+				"currentValueTemplate": "{{.BuiltImageTag}}",
+				"depNameTemplate": "{{.BuiltImageRepository}}",
+			}
+		],
+		registryAliases: {
+			{{range $index, $repo := .DistributionRepositories}}{{if $index}},{{end}}
+				"{{$repo}}": "{{$.BuiltImageRepository}}"{{end}}
+		},
+		packageRules: [
+		  {
+			matchPackagePatterns: ["*"],
+			enabled: false
+		  },
+		  {
+			"matchPackageNames": ["{{.BuiltImageRepository}}"{{range .DistributionRepositories}},"{{.}}"{{end}}],
+			groupName: "Component Update {{.ComponentName}}",
+			branchName: "konflux/component-updates/{{.ComponentName}}",
+			commitMessageTopic: "{{.ComponentName}}",
+			prFooter: "To execute skipped test pipelines write comment ` + "`/ok-to-test`" + `",
+			recreateWhen: "always",
+			rebaseWhen: "behind-base-branch",
+			enabled: true,
+			followTag: "{{.BuiltImageTag}}"
+		  }
+		],
+		forkProcessing: "enabled",
+		extends: [":gitSignOff"],
+		dependencyDashboard: false
+	}
+	{{end}}
+	`
+	data := struct {
+		GitProvider              string
+		Username                 string
+		GitAuthor                string
+		Endpoint                 string
+		ComponentName            string
+		Repositories             string
+		BuiltImageRepository     string
+		BuiltImageTag            string
+		Digest                   string
+		DistributionRepositories []string
+		FileMatches              string
+	}{
+		GitProvider:              target.GitProvider,
+		Username:                 target.Username,
+		GitAuthor:                target.GitAuthor,
+		Endpoint:                 target.Endpoint,
+		ComponentName:            buildResult.Component.Name,
+		Repositories:             string(repositoriesData),
+		BuiltImageRepository:     buildResult.BuiltImageRepository,
+		BuiltImageTag:            buildResult.BuiltImageTag,
+		Digest:                   buildResult.Digest,
+		DistributionRepositories: buildResult.DistributionRepositories,
+		FileMatches:              string(fileMatch),
+	}
+
+	configTemplate, err := template.New("renovate").Parse(body)
+	if err != nil {
+		return "", err
+	}
+	build := strings.Builder{}
+	err = configTemplate.Execute(&build, data)
+	if err != nil {
+		return "", err
+	}
+	return build.String(), nil
 }
 
 // CreateRenovaterPipeline will create a renovate pipeline in the user namespace, to update component dependencies.
@@ -130,11 +339,11 @@ func GetGithubInstallationsForComponents(ctx context.Context, client client.Clie
 // - Tekton automatically provides docker config from linked service accounts for private images, with a job I would need to implement this manually
 //
 // Warning: the installation token used here should only be scoped to the individual repositories being updated
-func CreateRenovaterPipeline(ctx context.Context, client client.Client, scheme *runtime.Scheme, namespace string, installations []installationStruct, slug string, debug bool, js func(slug string, repositories []renovateRepository, info interface{}) (string, error), info interface{}) error {
+func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Context, namespace string, targets []updateTarget, debug bool, buildResult *BuildResult) error {
 	log := logger.FromContext(ctx)
-	log.Info(fmt.Sprintf("Creating renovate pipeline for %d installations", len(installations)))
+	log.Info(fmt.Sprintf("Creating renovate pipeline for %d components", len(targets)))
 
-	if len(installations) == 0 {
+	if len(targets) == 0 {
 		return nil
 	}
 	timestamp := time.Now().Unix()
@@ -142,17 +351,19 @@ func CreateRenovaterPipeline(ctx context.Context, client client.Client, scheme *
 	secretTokens := map[string]string{}
 	configmaps := map[string]string{}
 	renovateCmds := []string{}
-	for _, installation := range installations {
-		secretTokens[fmt.Sprint(installation.id)] = installation.token
-		config, err := js(slug, installation.repositories, info)
+	for _, target := range targets {
+		randomStr1 := RandomString(5)
+		randomStr2 := RandomString(10)
+		secretTokens[randomStr2] = target.Token
+		config, err := GenerateRenovateConfigForNudge(target, buildResult)
 		if err != nil {
 			return err
 		}
-		configmaps[fmt.Sprintf("%d-%s.js", installation.id, installation.component)] = config
+		configmaps[fmt.Sprintf("%s-%s.js", target.ComponentName, randomStr1)] = config
 
-		log.Info(fmt.Sprintf("Creating renovate config map entry for %d-%s installation with length %d and value %s", installation.id, installation.component, len(config), config))
+		log.Info(fmt.Sprintf("Creating renovate config map entry for %s component with length %d and value %s", target.ComponentName, len(config), config))
 		renovateCmds = append(renovateCmds,
-			fmt.Sprintf("RENOVATE_TOKEN=$TOKEN_%d RENOVATE_CONFIG_FILE=/configs/%d-%s.js renovate", installation.id, installation.id, installation.component),
+			fmt.Sprintf("RENOVATE_TOKEN=$TOKEN_%s RENOVATE_CONFIG_FILE=/configs/%s-%s.js renovate", randomStr2, target.ComponentName, randomStr1),
 		)
 	}
 	if len(renovateCmds) == 0 {
@@ -238,20 +449,20 @@ func CreateRenovaterPipeline(ctx context.Context, client client.Client, scheme *
 		pipelineRun.Spec.PipelineSpec.Tasks[0].TaskSpec.Steps[0].Env = append(pipelineRun.Spec.PipelineSpec.Tasks[0].TaskSpec.Steps[0].Env, corev1.EnvVar{Name: "LOG_LEVEL", Value: "debug"})
 	}
 
-	if err := client.Create(ctx, pipelineRun); err != nil {
+	if err := u.Client.Create(ctx, pipelineRun); err != nil {
 		return err
 	}
 	// We create the PipelineRun first, and it will wait for the secret and configmap to be created
-	if err := controllerutil.SetOwnerReference(pipelineRun, configMap, scheme); err != nil {
+	if err := controllerutil.SetOwnerReference(pipelineRun, configMap, u.Scheme); err != nil {
 		return err
 	}
-	if err := controllerutil.SetOwnerReference(pipelineRun, secret, scheme); err != nil {
+	if err := controllerutil.SetOwnerReference(pipelineRun, secret, u.Scheme); err != nil {
 		return err
 	}
-	if err := client.Create(ctx, secret); err != nil {
+	if err := u.Client.Create(ctx, secret); err != nil {
 		return err
 	}
-	if err := client.Create(ctx, configMap); err != nil {
+	if err := u.Client.Create(ctx, configMap); err != nil {
 		return err
 	}
 	log.Info(fmt.Sprintf("Renovate pipeline %s triggered", pipelineRun.Name), logs.Action, logs.ActionAdd)

@@ -23,7 +23,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"text/template"
 	"time"
 
 	applicationapi "github.com/konflux-ci/application-api/api/v1alpha1"
@@ -70,7 +69,8 @@ const (
 	MaxAttempts                   = 3
 	KubeApiUpdateMaxAttempts      = 5
 
-	FailureRetryTime = time.Minute * 5 // We retry after 5 minutes on failure
+	FailureRetryTime  = time.Minute * 5 // We retry after 5 minutes on failure
+	DefaultNudgeFiles = ".*Dockerfile.*, .*.yaml, .*Containerfile.*"
 )
 
 // The amount of time we wait before attempting to update the component, to try and avoid contention issues
@@ -79,11 +79,11 @@ var delayTime = time.Second * 10
 
 // ComponentDependencyUpdateReconciler reconciles a PipelineRun object
 type ComponentDependencyUpdateReconciler struct {
-	client.Client
-	ApiReader      client.Reader
-	Scheme         *runtime.Scheme
-	EventRecorder  record.EventRecorder
-	UpdateFunction UpdateComponentDependenciesFunction
+	Client                       client.Client
+	ApiReader                    client.Reader
+	Scheme                       *runtime.Scheme
+	EventRecorder                record.EventRecorder
+	ComponentDependenciesUpdater ComponentDependenciesUpdater
 }
 
 type BuildResult struct {
@@ -137,10 +137,6 @@ func setupControllerWithManager(manager ctrl.Manager, reconciler *ComponentDepen
 		Complete(reconciler)
 }
 
-type UpdateComponentDependenciesFunction = func(ctx context.Context, client client.Client, scheme *runtime.Scheme, eventRecorder record.EventRecorder, downstreamComponents []applicationapi.Component, result *BuildResult) (immediateRetry bool, err error)
-
-var DefaultUpdateFunction = DefaultDependenciesUpdate
-
 // The following line for configmaps is informational, the actual permissions are defined in component_build_controller.
 // +kubebuilder:rbac:groups=core,resources=configmaps,verbs=create;get;list;watch;update;patch;delete
 // +kubebuilder:rbac:groups=appstudio.redhat.com,resources=components,verbs=get;list;watch;update;patch
@@ -157,7 +153,7 @@ func (r *ComponentDependencyUpdateReconciler) Reconcile(ctx context.Context, req
 	ctx = ctrllog.IntoContext(ctx, log)
 
 	pipelineRun := &tektonapi.PipelineRun{}
-	err := r.Get(ctx, req.NamespacedName, pipelineRun)
+	err := r.Client.Get(ctx, req.NamespacedName, pipelineRun)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return ctrl.Result{}, nil
@@ -294,7 +290,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 	}
 	nudgeFiles := pipelineRun.Annotations[NudgeFilesAnnotationName]
 	if nudgeFiles == "" {
-		nudgeFiles = ".*Dockerfile.*, .*.yaml, .*Containerfile.*"
+		nudgeFiles = DefaultNudgeFiles
 	} else {
 		log.Info("custom nudging files specified in the annotation", "AnnotationName", NudgeFilesAnnotationName, "NudgeFiles", nudgeFiles)
 	}
@@ -311,7 +307,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 	retryTime := FailureRetryTime
 	immediateRetry := false
 
-	toUpdate := []applicationapi.Component{}
+	componentsToUpdate := []applicationapi.Component{}
 
 	distibutionRepositories := []string{}
 	releasePlanAdmissions := releaseapi.ReleasePlanAdmissionList{}
@@ -351,17 +347,36 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 	for i := range components.Items {
 		comp := components.Items[i]
 		if slices.Contains(updatedComponent.Spec.BuildNudgesRef, comp.Name) {
-			toUpdate = append(toUpdate, comp)
+			componentsToUpdate = append(componentsToUpdate, comp)
 		}
 	}
 	var nudgeErr error
-	immediateRetry, nudgeErr = r.UpdateFunction(ctx, r.Client, r.Scheme, r.EventRecorder, toUpdate, &BuildResult{BuiltImageRepository: repo, BuiltImageTag: tag, Digest: digest, Component: updatedComponent, DistributionRepositories: distibutionRepositories, FileMatches: nudgeFiles})
+
+	var targets []updateTarget
+	newTargets := r.ComponentDependenciesUpdater.GetUpdateTargetsGithubApp(ctx, componentsToUpdate)
+	log.Info("found new targets for GitHub app", "targets", len(newTargets))
+	if len(newTargets) > 0 {
+		targets = append(targets, newTargets...)
+	}
+
+	newTargets = r.ComponentDependenciesUpdater.GetUpdateTargetsBasicAuth(ctx, componentsToUpdate)
+	log.Info("found new targets for basic auth", "targets", len(newTargets))
+	if len(newTargets) > 0 {
+		targets = append(targets, newTargets...)
+	}
+
+	if len(targets) > 0 {
+		log.Info("will create renovate job")
+		buildResult := BuildResult{BuiltImageRepository: repo, BuiltImageTag: tag, Digest: digest, Component: updatedComponent, DistributionRepositories: distibutionRepositories, FileMatches: nudgeFiles}
+		nudgeErr = r.ComponentDependenciesUpdater.CreateRenovaterPipeline(ctx, pipelineRun.Namespace, targets, true, &buildResult)
+	} else {
+		log.Info("no targets found to update")
+	}
 
 	if nudgeErr != nil {
-
 		componentDesc := ""
 
-		for _, comp := range toUpdate {
+		for _, comp := range componentsToUpdate {
 			if componentDesc != "" {
 				componentDesc += ", "
 			}
@@ -507,112 +522,6 @@ func GetComponentFromPipelineRun(c client.Client, ctx context.Context, pipelineR
 	}
 
 	return nil, nil
-}
-func DefaultDependenciesUpdate(ctx context.Context, client client.Client, scheme *runtime.Scheme, eventRecorder record.EventRecorder, downstreamComponents []applicationapi.Component, result *BuildResult) (immediateRetry bool, err error) {
-	log := ctrllog.FromContext(ctx)
-	log.Info(fmt.Sprintf("reading github installations for %d components", len(downstreamComponents)))
-	slug, installationsToUpdate, err := GetGithubInstallationsForComponents(ctx, client, eventRecorder, downstreamComponents)
-	if err != nil || slug == "" {
-		return false, err
-	}
-	log.Info("creating renovate job")
-	err = CreateRenovaterPipeline(ctx, client, scheme, result.Component.Namespace, installationsToUpdate, slug, true, generateRenovateConfigForNudge, result)
-
-	return false, err
-}
-
-func generateRenovateConfigForNudge(slug string, repositories []renovateRepository, context interface{}) (string, error) {
-	buildResult := context.(*BuildResult)
-
-	repositoriesData, _ := json.Marshal(repositories)
-	fileMatchParts := strings.Split(buildResult.FileMatches, ",")
-	for i := range fileMatchParts {
-		fileMatchParts[i] = strings.TrimSpace(fileMatchParts[i])
-	}
-	fileMatch, err := json.Marshal(fileMatchParts)
-	if err != nil {
-		return "", err
-	}
-	body := `
-	{{with $root := .}}
-	module.exports = {
-		platform: "github",
-		username: "{{.Slug}}[bot]",
-		gitAuthor:"{{.Slug}} <123456+{{.Slug}}[bot]@users.noreply.github.com>",
-		onboarding: false,
-		requireConfig: "ignored",
-		repositories: {{.Repositories}},
-    	enabledManagers: "regex",
-		customManagers: [
-			{
-            	"fileMatch": {{.FileMatches}},
-				"customType": "regex",
-				"datasourceTemplate": "docker",
-				"matchStrings": [
-					"{{.BuiltImageRepository}}(:.*)?@(?<currentDigest>sha256:[a-f0-9]+)"
-					{{range .DistributionRepositories}},"{{.}}(:.*)?@(?<currentDigest>sha256:[a-f0-9]+)"{{end}}
-				],
-				"currentValueTemplate": "{{.BuiltImageTag}}",
-				"depNameTemplate": "{{.BuiltImageRepository}}",
-			}
-		],
-		registryAliases: {
-			{{range $index, $repo := .DistributionRepositories}}{{if $index}},{{end}}
-				"{{$repo}}": "{{$.BuiltImageRepository}}"{{end}}
-		},
-		packageRules: [
-		  {
-			matchPackagePatterns: ["*"],
-			enabled: false
-		  },
-		  {
-		  	"matchPackageNames": ["{{.BuiltImageRepository}}", {{range .DistributionRepositories}},"{{.}}"{{end}}],
-			groupName: "Component Update {{.ComponentName}}",
-			branchName: "konflux/component-updates/{{.ComponentName}}",
-			commitMessageTopic: "{{.ComponentName}}",
-			prFooter: "To execute skipped test pipelines write comment ` + "`/ok-to-test`" + `",
-			recreateWhen: "always",
-			rebaseWhen: "behind-base-branch",
-			enabled: true,
-            followTag: "{{.BuiltImageTag}}"
-		  }
-		],
-		forkProcessing: "enabled",
-		dependencyDashboard: false
-	}
-	{{end}}
-	`
-	data := struct {
-		Slug                     string
-		ComponentName            string
-		Repositories             string
-		BuiltImageRepository     string
-		BuiltImageTag            string
-		Digest                   string
-		DistributionRepositories []string
-		FileMatches              string
-	}{
-
-		Slug:                     slug,
-		ComponentName:            buildResult.Component.Name,
-		Repositories:             string(repositoriesData),
-		BuiltImageRepository:     buildResult.BuiltImageRepository,
-		BuiltImageTag:            buildResult.BuiltImageTag,
-		Digest:                   buildResult.Digest,
-		DistributionRepositories: buildResult.DistributionRepositories,
-		FileMatches:              string(fileMatch),
-	}
-
-	tmpl, err := template.New("renovate").Parse(body)
-	if err != nil {
-		return "", err
-	}
-	build := strings.Builder{}
-	err = tmpl.Execute(&build, data)
-	if err != nil {
-		return "", err
-	}
-	return build.String(), nil
 }
 
 // See https://issues.redhat.com/browse/KFLUXBUGS-1233
