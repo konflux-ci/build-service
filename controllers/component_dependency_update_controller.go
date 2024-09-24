@@ -56,6 +56,7 @@ const (
 	// PacEventTypeAnnotationName represents the current event type
 	PacEventTypeAnnotationName = "pipelinesascode.tekton.dev/event-type"
 	PacEventPushType           = "push"
+	PacEventIncomingType       = "incoming"
 	ImageUrlParamName          = "IMAGE_URL"
 	ImageDigestParamName       = "IMAGE_DIGEST"
 
@@ -444,7 +445,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 	var finalizerError error
 	for i := range pipelines.Items {
 		possiblyStalePr := pipelines.Items[i]
-		if possiblyStalePr.Annotations == nil || !strings.EqualFold(possiblyStalePr.Annotations[PacEventTypeAnnotationName], PacEventPushType) || possiblyStalePr.Name == pipelineRun.Name {
+		if possiblyStalePr.Annotations == nil || (!strings.EqualFold(possiblyStalePr.Annotations[PacEventTypeAnnotationName], PacEventPushType) && !strings.EqualFold(possiblyStalePr.Annotations[PacEventTypeAnnotationName], PacEventIncomingType)) || possiblyStalePr.Name == pipelineRun.Name {
 			continue
 		}
 		if possiblyStalePr.Status.CompletionTime == nil && possiblyStalePr.CreationTimestamp.Before(&pipelineRun.CreationTimestamp) {
@@ -496,7 +497,7 @@ func IsBuildPushPipelineRun(object client.Object) bool {
 			return false
 		}
 		if pipelineRun.Labels != nil && pipelineRun.Annotations != nil {
-			if pipelineRun.Labels[PipelineRunTypeLabelName] == PipelineRunBuildType && strings.EqualFold(pipelineRun.Annotations[PacEventTypeAnnotationName], PacEventPushType) {
+			if pipelineRun.Labels[PipelineRunTypeLabelName] == PipelineRunBuildType && (strings.EqualFold(pipelineRun.Annotations[PacEventTypeAnnotationName], PacEventPushType) || strings.EqualFold(pipelineRun.Annotations[PacEventTypeAnnotationName], PacEventIncomingType)) {
 				return true
 			}
 		}
