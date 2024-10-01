@@ -42,13 +42,16 @@ type renovateRepository struct {
 
 // UpdateTarget represents a target source code repository to be executed by Renovate with credentials and repositories
 type updateTarget struct {
-	ComponentName string
-	GitProvider   string
-	Username      string
-	GitAuthor     string
-	Token         string
-	Endpoint      string
-	Repositories  []renovateRepository
+	ComponentName           string
+	GitProvider             string
+	Username                string
+	GitAuthor               string
+	Token                   string
+	Endpoint                string
+	Repositories            []renovateRepository
+	ImageRepositoryHost     string
+	ImageRepositoryUsername string
+	ImageRepositoryPassword string
 }
 
 type ComponentDependenciesUpdater struct {
@@ -65,7 +68,7 @@ func NewComponentDependenciesUpdater(client client.Client, scheme *runtime.Schem
 }
 
 // GetUpdateTargetsBasicAuth This method returns targets for components based on basic auth
-func (u ComponentDependenciesUpdater) GetUpdateTargetsBasicAuth(ctx context.Context, componentList []v1alpha1.Component) []updateTarget {
+func (u ComponentDependenciesUpdater) GetUpdateTargetsBasicAuth(ctx context.Context, componentList []v1alpha1.Component, imageRepositoryHost, imageRepositoryUsername, imageRepositoryPassword string) []updateTarget {
 	log := logger.FromContext(ctx)
 	targetsToUpdate := []updateTarget{}
 
@@ -125,13 +128,16 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsBasicAuth(ctx context.Cont
 		}
 
 		targetsToUpdate = append(targetsToUpdate, updateTarget{
-			ComponentName: component.Name,
-			GitProvider:   gitProvider,
-			Username:      username,
-			GitAuthor:     fmt.Sprintf("%s <123456+%s[bot]@users.noreply.%s>", username, username, scmComponent.RepositoryHost()),
-			Token:         creds.Password,
-			Endpoint:      git.BuildAPIEndpoint(gitProvider).APIEndpoint(scmComponent.RepositoryHost()),
-			Repositories:  repositories,
+			ComponentName:           component.Name,
+			GitProvider:             gitProvider,
+			Username:                username,
+			GitAuthor:               fmt.Sprintf("%s <123456+%s[bot]@users.noreply.%s>", username, username, scmComponent.RepositoryHost()),
+			Token:                   creds.Password,
+			Endpoint:                git.BuildAPIEndpoint(gitProvider).APIEndpoint(scmComponent.RepositoryHost()),
+			Repositories:            repositories,
+			ImageRepositoryHost:     imageRepositoryHost,
+			ImageRepositoryUsername: imageRepositoryUsername,
+			ImageRepositoryPassword: imageRepositoryPassword,
 		})
 		log.Info("component to update for basic auth", "component", component.Name, "repositories", repositories)
 	}
@@ -140,7 +146,7 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsBasicAuth(ctx context.Cont
 }
 
 // GetUpdateTargetsGithubApp This method returns targets for components based on github app
-func (u ComponentDependenciesUpdater) GetUpdateTargetsGithubApp(ctx context.Context, componentList []v1alpha1.Component) []updateTarget {
+func (u ComponentDependenciesUpdater) GetUpdateTargetsGithubApp(ctx context.Context, componentList []v1alpha1.Component, imageRepositoryHost, imageRepositoryUsername, imageRepositoryPassword string) []updateTarget {
 	log := logger.FromContext(ctx)
 	// Check if GitHub Application is used, if not then skip
 	pacSecret := corev1.Secret{}
@@ -215,14 +221,18 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsGithubApp(ctx context.Cont
 			log.Info("no repositories found in the installation", "ComponentName", component.Name, "ComponentNamespace", component.Namespace)
 			continue
 		}
+
 		targetsToUpdate = append(targetsToUpdate, updateTarget{
-			ComponentName: component.Name,
-			GitProvider:   gitProvider,
-			Username:      fmt.Sprintf("%s[bot]", slug),
-			GitAuthor:     fmt.Sprintf("%s <123456+%s[bot]@users.noreply.github.com>", slug, slug),
-			Token:         githubAppInstallation.Token,
-			Endpoint:      git.BuildAPIEndpoint("github").APIEndpoint("github.com"),
-			Repositories:  repositories,
+			ComponentName:           component.Name,
+			GitProvider:             gitProvider,
+			Username:                fmt.Sprintf("%s[bot]", slug),
+			GitAuthor:               fmt.Sprintf("%s <123456+%s[bot]@users.noreply.github.com>", slug, slug),
+			Token:                   githubAppInstallation.Token,
+			Endpoint:                git.BuildAPIEndpoint("github").APIEndpoint("github.com"),
+			Repositories:            repositories,
+			ImageRepositoryHost:     imageRepositoryHost,
+			ImageRepositoryUsername: imageRepositoryUsername,
+			ImageRepositoryPassword: imageRepositoryPassword,
 		})
 		log.Info("component to update for installations", "component", component.Name, "repositories", repositories)
 	}
@@ -287,12 +297,20 @@ func generateRenovateConfigForNudge(target updateTarget, buildResult *BuildResul
 			followTag: "{{.BuiltImageTag}}"
 		  }
 		],
+		hostRules: [
+		  {
+			"matchHost": "{{.ImageRepositoryHost}}",
+			"username": "{{.ImageRepositoryUsername}}",
+			"password": process.env.RENOVATE_REPO_PASS,
+		  }
+		],
 		forkProcessing: "enabled",
 		extends: [":gitSignOff"],
 		dependencyDashboard: false
 	}
 	{{end}}
 	`
+
 	data := struct {
 		GitProvider              string
 		Username                 string
@@ -305,6 +323,8 @@ func generateRenovateConfigForNudge(target updateTarget, buildResult *BuildResul
 		Digest                   string
 		DistributionRepositories []string
 		FileMatches              string
+		ImageRepositoryHost      string
+		ImageRepositoryUsername  string
 	}{
 		GitProvider:              target.GitProvider,
 		Username:                 target.Username,
@@ -317,6 +337,8 @@ func generateRenovateConfigForNudge(target updateTarget, buildResult *BuildResul
 		Digest:                   buildResult.Digest,
 		DistributionRepositories: buildResult.DistributionRepositories,
 		FileMatches:              string(fileMatch),
+		ImageRepositoryHost:      target.ImageRepositoryHost,
+		ImageRepositoryUsername:  target.ImageRepositoryUsername,
 	}
 
 	configTemplate, err := template.New("renovate").Parse(body)
@@ -354,7 +376,9 @@ func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Contex
 	for _, target := range targets {
 		randomStr1 := RandomString(5)
 		randomStr2 := RandomString(10)
+		randomStr3 := RandomString(10)
 		secretTokens[randomStr2] = target.Token
+		secretTokens[randomStr3] = target.ImageRepositoryPassword
 		config, err := GenerateRenovateConfigForNudge(target, buildResult)
 		if err != nil {
 			return err
@@ -363,7 +387,7 @@ func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Contex
 
 		log.Info(fmt.Sprintf("Creating renovate config map entry for %s component with length %d and value %s", target.ComponentName, len(config), config))
 		renovateCmds = append(renovateCmds,
-			fmt.Sprintf("RENOVATE_PR_HOURLY_LIMIT=0 RENOVATE_PR_CONCURRENT_LIMIT=0 RENOVATE_TOKEN=$TOKEN_%s RENOVATE_CONFIG_FILE=/configs/%s-%s.js renovate", randomStr2, target.ComponentName, randomStr1),
+			fmt.Sprintf("RENOVATE_PR_HOURLY_LIMIT=0 RENOVATE_PR_CONCURRENT_LIMIT=0 RENOVATE_TOKEN=$TOKEN_%s RENOVATE_REPO_PASS=$TOKEN_%s RENOVATE_CONFIG_FILE=/configs/%s-%s.js renovate", randomStr2, randomStr3, target.ComponentName, randomStr1),
 		)
 	}
 	if len(renovateCmds) == 0 {

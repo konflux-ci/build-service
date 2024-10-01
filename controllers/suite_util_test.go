@@ -592,14 +592,16 @@ func deleteBuildPipelineConfigMap(configMapKey types.NamespacedName) {
 	}
 }
 
-func waitServiceAccount(serviceAccountKey types.NamespacedName) {
-	serviceAccount := &corev1.ServiceAccount{}
+func waitServiceAccount(serviceAccountKey types.NamespacedName) corev1.ServiceAccount {
+	serviceAccount := corev1.ServiceAccount{}
 	Eventually(func() bool {
-		if err := k8sClient.Get(ctx, serviceAccountKey, serviceAccount); err != nil {
+		if err := k8sClient.Get(ctx, serviceAccountKey, &serviceAccount); err != nil {
 			return false
 		}
 		return serviceAccount.ResourceVersion != ""
 	}, timeout, interval).Should(BeTrue())
+
+	return serviceAccount
 }
 
 func deleteServiceAccount(serviceAccountKey types.NamespacedName) {
@@ -626,7 +628,7 @@ func deleteServiceAccount(serviceAccountKey types.NamespacedName) {
 
 func waitPipelineServiceAccount(namespace string) {
 	pipelineServiceAccountKey := types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: namespace}
-	waitServiceAccount(pipelineServiceAccountKey)
+	_ = waitServiceAccount(pipelineServiceAccountKey)
 }
 
 func deletePipelineServiceAccount(namespace string) {
