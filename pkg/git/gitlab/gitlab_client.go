@@ -318,13 +318,7 @@ func (g *GitlabClient) IsRepositoryPublic(repoUrl string) (bool, error) {
 // GetBrowseRepositoryAtShaLink returns web URL of repository state at given SHA
 func (g *GitlabClient) GetBrowseRepositoryAtShaLink(repoUrl, sha string) string {
 	repoUrl = strings.TrimSuffix(repoUrl, ".git")
-	gitSourceUrlParts := strings.Split(repoUrl, "/")
-	gitProviderHost := "https://" + gitSourceUrlParts[2]
-	gitlabNamespace := gitSourceUrlParts[3]
-	gitlabProjectName := gitSourceUrlParts[4]
-	projectPath := gitlabNamespace + "/" + gitlabProjectName
-
-	return fmt.Sprintf("%s/%s/-/tree/%s", gitProviderHost, projectPath, sha)
+	return fmt.Sprintf("%s/-/tree/%s", repoUrl, sha)
 }
 
 func (g *GitlabClient) GetConfiguredGitAppName() (string, string, error) {
