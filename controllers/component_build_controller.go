@@ -73,8 +73,7 @@ const (
 )
 
 type BuildStatus struct {
-	Simple *SimpleBuildStatus `json:"simple,omitempty"`
-	PaC    *PaCBuildStatus    `json:"pac,omitempty"`
+	PaC *PaCBuildStatus `json:"pac,omitempty"`
 	// Shows build methods agnostic messages, e.g. invalid build request.
 	Message string `json:"message,omitempty"`
 }
@@ -83,13 +82,6 @@ type BuildStatus struct {
 type ErrorInfo struct {
 	ErrId      int    `json:"error-id,omitempty"`
 	ErrMessage string `json:"error-message,omitempty"`
-}
-
-type SimpleBuildStatus struct {
-	// BuildStartTime shows the time when last simple build was submited.
-	BuildStartTime string `json:"build-start-time,omitempty"`
-
-	ErrorInfo
 }
 
 type PaCBuildStatus struct {
@@ -334,7 +326,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		// initial build upon component creation (doesn't have either build status)
 		initialBuild := func() bool {
 			initialBuildStatus := readBuildStatus(&component)
-			return initialBuildStatus.PaC == nil && initialBuildStatus.Simple == nil
+			return initialBuildStatus.PaC == nil
 		}()
 
 		pacBuildStatus := &PaCBuildStatus{}

@@ -60,15 +60,8 @@ func TestReadBuildStatus(t *testing.T) {
 	}{
 		{
 			name:                       "should be able to read build status with all fields",
-			buildStatusAnnotationValue: "{\"simple\":{\"build-start-time\":\"time\",\"error-id\":1,\"error-message\":\"simple-build-error\"},\"pac\":{\"state\":\"enabled\",\"configuration-time\":\"time\",\"error-id\":5,\"error-message\":\"pac-error\"},\"message\":\"done\"}",
+			buildStatusAnnotationValue: "{\"pac\":{\"state\":\"enabled\",\"configuration-time\":\"time\",\"error-id\":5,\"error-message\":\"pac-error\"},\"message\":\"done\"}",
 			want: &BuildStatus{
-				Simple: &SimpleBuildStatus{
-					BuildStartTime: "time",
-					ErrorInfo: ErrorInfo{
-						ErrId:      1,
-						ErrMessage: "simple-build-error",
-					},
-				},
 				PaC: &PaCBuildStatus{
 					State:             "enabled",
 					ConfigurationTime: "time",
@@ -87,7 +80,7 @@ func TestReadBuildStatus(t *testing.T) {
 		},
 		{
 			name:                       "should return empty build status if curent one is not valid JSON",
-			buildStatusAnnotationValue: "{\"simple\":{\"build-start-time\":\"time\"}",
+			buildStatusAnnotationValue: "{\"pac\":{\"build-start-time\":\"time\"}",
 			want:                       &BuildStatus{},
 		},
 	}
@@ -127,13 +120,6 @@ func TestWriteBuildStatus(t *testing.T) {
 				},
 			},
 			buildStatus: &BuildStatus{
-				Simple: &SimpleBuildStatus{
-					BuildStartTime: "time",
-					ErrorInfo: ErrorInfo{
-						ErrId:      1,
-						ErrMessage: "simple-build-error",
-					},
-				},
 				PaC: &PaCBuildStatus{
 					State: "enabled",
 					ErrorInfo: ErrorInfo{
@@ -144,7 +130,7 @@ func TestWriteBuildStatus(t *testing.T) {
 				},
 				Message: "done",
 			},
-			want: "{\"simple\":{\"build-start-time\":\"time\",\"error-id\":1,\"error-message\":\"simple-build-error\"},\"pac\":{\"state\":\"enabled\",\"configuration-time\":\"time\",\"error-id\":5,\"error-message\":\"pac-error\"},\"message\":\"done\"}",
+			want: "{\"pac\":{\"state\":\"enabled\",\"configuration-time\":\"time\",\"error-id\":5,\"error-message\":\"pac-error\"},\"message\":\"done\"}",
 		},
 		{
 			name: "should be able to write build status when annotations is nil",
@@ -155,12 +141,17 @@ func TestWriteBuildStatus(t *testing.T) {
 				},
 			},
 			buildStatus: &BuildStatus{
-				Simple: &SimpleBuildStatus{
-					BuildStartTime: "time",
+				PaC: &PaCBuildStatus{
+					State: "enabled",
+					ErrorInfo: ErrorInfo{
+						ErrId:      5,
+						ErrMessage: "pac-error",
+					},
+					ConfigurationTime: "time",
 				},
 				Message: "done",
 			},
-			want: "{\"simple\":{\"build-start-time\":\"time\"},\"message\":\"done\"}",
+			want: "{\"pac\":{\"state\":\"enabled\",\"configuration-time\":\"time\",\"error-id\":5,\"error-message\":\"pac-error\"},\"message\":\"done\"}",
 		},
 		{
 			name: "should be able to overwrite build status",
@@ -169,7 +160,7 @@ func TestWriteBuildStatus(t *testing.T) {
 					Name:      "my-component",
 					Namespace: "my-namespace",
 					Annotations: map[string]string{
-						BuildStatusAnnotationName: "{\"simple\":{\"build-start-time\":\"time\"},\"message\":\"done\"}",
+						BuildStatusAnnotationName: "{\"pac\":{\"state\":\"error\"},\"message\":\"done\"}",
 					},
 				},
 			},

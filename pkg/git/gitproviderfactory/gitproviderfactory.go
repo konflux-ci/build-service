@@ -42,7 +42,6 @@ type GitClientConfig struct {
 	RepoUrl string
 	// IsAppInstallationExpected shows whether to expect application installation into the target repository URL.
 	// Ignored for clients created directly via a token.
-	// Only for simple builds must be set to false.
 	IsAppInstallationExpected bool
 }
 
@@ -102,7 +101,7 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 			}
 			return githubClient, nil
 		} else {
-			// For simple builds we need to query repositories where configured Pipelines as Code application is not installed.
+			// We need to query repositories where configured Pipelines as Code application is not installed.
 			githubClient, err := github.NewGithubClientForSimpleBuildByApp(githubAppId, privateKey)
 			if err != nil {
 				return nil, err

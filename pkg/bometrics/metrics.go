@@ -3,9 +3,10 @@ package bometrics
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
-	"time"
 )
 
 const (
@@ -20,7 +21,7 @@ var (
 		Subsystem: MetricsSubsystem,
 		Buckets:   HistogramBuckets,
 		Name:      "component_onboarding_time",
-		Help:      "The time in seconds spent from the moment of Component creation till simple build pipeline submission, or PaC provision.",
+		Help:      "The time in seconds spent from the moment of Component creation PaC provision.",
 	})
 	PipelinesAsCodeComponentProvisionTimeMetric = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Namespace: MetricsNamespace,
