@@ -363,7 +363,7 @@ func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Contex
 
 		log.Info(fmt.Sprintf("Creating renovate config map entry for %s component with length %d and value %s", target.ComponentName, len(config), config))
 		renovateCmds = append(renovateCmds,
-			fmt.Sprintf("RENOVATE_TOKEN=$TOKEN_%s RENOVATE_CONFIG_FILE=/configs/%s-%s.js renovate", randomStr2, target.ComponentName, randomStr1),
+			fmt.Sprintf("RENOVATE_PR_HOURLY_LIMIT=0 RENOVATE_PR_CONCURRENT_LIMIT=0 RENOVATE_TOKEN=$TOKEN_%s RENOVATE_CONFIG_FILE=/configs/%s-%s.js renovate", randomStr2, target.ComponentName, randomStr1),
 		)
 	}
 	if len(renovateCmds) == 0 {
