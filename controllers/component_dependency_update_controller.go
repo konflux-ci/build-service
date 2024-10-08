@@ -194,6 +194,27 @@ func (r *ComponentDependencyUpdateReconciler) Reconcile(ctx context.Context, req
 	}
 	log.Info("component has BuildNudgesRef set", "ComponentName", component.Name, "BuildNudgesRef", component.Spec.BuildNudgesRef)
 
+	// verify that there exist even some components to be nudged
+	allComponents := applicationapi.ComponentList{}
+	err = r.Client.List(ctx, &allComponents, client.InNamespace(pipelineRun.Namespace))
+	if err != nil {
+		log.Error(err, "failed to list components in namespace")
+		return ctrl.Result{}, err
+	}
+
+	nudgedComponentsCount := 0
+	for i := range allComponents.Items {
+		comp := allComponents.Items[i]
+		if slices.Contains(component.Spec.BuildNudgesRef, comp.Name) {
+			nudgedComponentsCount++
+			log.Info("component in BuildNudgesRef exist", "ComponentName", comp.Name)
+		}
+	}
+	if nudgedComponentsCount == 0 {
+		log.Info("no components in BuildNudgesRef exist", "BuildNudgesRef", component.Spec.BuildNudgesRef)
+		return ctrl.Result{}, nil
+	}
+
 	if pipelineRun.IsDone() || pipelineRun.Status.CompletionTime != nil || pipelineRun.DeletionTimestamp != nil {
 		result, err := r.verifyUpToDate(ctx, pipelineRun)
 		if err != nil {
