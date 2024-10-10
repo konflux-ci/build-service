@@ -215,6 +215,8 @@ func TestGeneratePaCPipelineRunForComponent(t *testing.T) {
 		},
 		Status: appstudiov1alpha1.ComponentStatus{},
 	}
+	param1_value := "param1_value"
+	param2_value := []string{"param2_value1", "param2_value2"}
 	pipelineSpec := &tektonapi.PipelineSpec{
 		Workspaces: []tektonapi.PipelineWorkspaceDeclaration{
 			{
@@ -224,11 +226,15 @@ func TestGeneratePaCPipelineRunForComponent(t *testing.T) {
 				Name: "workspace",
 			},
 		},
+		Params: tektonapi.ParamSpecs{
+			{Name: "add-param1", Type: "string", Default: &tektonapi.ParamValue{Type: "string", StringVal: param1_value}},
+			{Name: "add-param2", Type: "array", Default: &tektonapi.ParamValue{Type: "array", ArrayVal: param2_value}},
+		},
 	}
 	branchName := "custom-branch"
 	ResetTestGitProviderClient()
 
-	pipelineRun, err := generatePaCPipelineRunForComponent(component, pipelineSpec, branchName, testGitProviderClient, true)
+	pipelineRun, err := generatePaCPipelineRunForComponent(component, pipelineSpec, []string{"add-param1", "add-param2", "non-existing"}, branchName, testGitProviderClient, true)
 	if err != nil {
 		t.Error("generatePaCPipelineRunForComponent(): Failed to genertate pipeline run")
 	}
@@ -270,7 +276,7 @@ func TestGeneratePaCPipelineRunForComponent(t *testing.T) {
 		t.Errorf("generatePaCPipelineRunForComponent(): wrong build.appstudio.redhat.com/pull_request_number annotation value")
 	}
 
-	if len(pipelineRun.Spec.Params) != 6 {
+	if len(pipelineRun.Spec.Params) != 8 {
 		t.Error("generatePaCPipelineRunForComponent(): wrong number of pipeline params")
 	}
 	for _, param := range pipelineRun.Spec.Params {
@@ -299,6 +305,20 @@ func TestGeneratePaCPipelineRunForComponent(t *testing.T) {
 			if param.Value.StringVal != "base_context" {
 				t.Errorf("generatePaCPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
 			}
+		case "add-param1":
+			if param.Value.StringVal != param1_value {
+				t.Errorf("generatePaCPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
+			}
+		case "add-param2":
+			if len(param.Value.ArrayVal) != len(param2_value) {
+				t.Errorf("generatePaCPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
+			}
+			for idx := range param2_value {
+				if param2_value[idx] != param.Value.ArrayVal[idx] {
+					t.Errorf("generatePaCPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
+
+				}
+			}
 		default:
 			t.Errorf("generatePaCPipelineRunForComponent(): unexpected pipeline parameter %v", param)
 		}
@@ -319,7 +339,7 @@ func TestGeneratePaCPipelineRunForComponent(t *testing.T) {
 }
 
 func TestGeneratePaCPipelineRunForComponent_ShouldStopIfTargetBranchIsNotSet(t *testing.T) {
-	_, err := generatePaCPipelineRunForComponent(nil, nil, "", nil, true)
+	_, err := generatePaCPipelineRunForComponent(nil, nil, nil, "", nil, true)
 	if err == nil {
 		t.Errorf("generatePaCPipelineRunForComponent(): expected error")
 	}
