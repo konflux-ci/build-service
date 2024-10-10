@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -94,6 +95,20 @@ type BuildResult struct {
 	DistributionRepositories []string
 	FileMatches              string
 	Component                *applicationapi.Component
+}
+
+type RepositoryCredentials struct {
+	SecretName string
+	RepoName   string
+	UserName   string
+	Password   string
+}
+
+type RepositoryConfigAuth struct {
+	Username string `json:"username,omitempty"`
+	Password string `json:"password,omitempty"`
+	Email    string `json:"email,omitempty"`
+	Auth     string `json:"auth,omitempty"`
 }
 
 // SetupController creates a new Integration reconciler and adds it to the Manager.
@@ -193,6 +208,27 @@ func (r *ComponentDependencyUpdateReconciler) Reconcile(ctx context.Context, req
 		return ctrl.Result{}, nil
 	}
 	log.Info("component has BuildNudgesRef set", "ComponentName", component.Name, "BuildNudgesRef", component.Spec.BuildNudgesRef)
+
+	// verify that there exist some components to be nudged
+	allComponents := applicationapi.ComponentList{}
+	err = r.Client.List(ctx, &allComponents, client.InNamespace(pipelineRun.Namespace))
+	if err != nil {
+		log.Error(err, "failed to list components in namespace")
+		return ctrl.Result{}, err
+	}
+
+	nudgedComponentsCount := 0
+	for i := range allComponents.Items {
+		comp := allComponents.Items[i]
+		if slices.Contains(component.Spec.BuildNudgesRef, comp.Name) {
+			nudgedComponentsCount++
+			log.Info("component in BuildNudgesRef exist", "ComponentName", comp.Name)
+		}
+	}
+	if nudgedComponentsCount == 0 {
+		log.Info("no components in BuildNudgesRef exist", "BuildNudgesRef", component.Spec.BuildNudgesRef)
+		return ctrl.Result{}, nil
+	}
 
 	if pipelineRun.IsDone() || pipelineRun.Status.CompletionTime != nil || pipelineRun.DeletionTimestamp != nil {
 		result, err := r.verifyUpToDate(ctx, pipelineRun)
@@ -351,16 +387,31 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 			componentsToUpdate = append(componentsToUpdate, comp)
 		}
 	}
-	var nudgeErr error
 
+	updatedOutputImage := updatedComponent.Spec.ContainerImage
+	imageRepositoryHost := strings.Split(updatedOutputImage, "/")[0]
+
+	imageRepositoryUsername, imageRepositoryPassword, err := r.getImageRepositoryCredentials(ctx, pipelineRun.Namespace, updatedOutputImage)
+	if err != nil {
+		// when we can't find credential for repository, remove pipeline finalizer and return error
+		_, errRemoveFinalizer := r.removePipelineFinalizer(ctx, pipelineRun, patch)
+		if errRemoveFinalizer != nil {
+			return ctrl.Result{}, errRemoveFinalizer
+		}
+
+		return ctrl.Result{}, err
+	}
+
+	var nudgeErr error
 	var targets []updateTarget
-	newTargets := r.ComponentDependenciesUpdater.GetUpdateTargetsGithubApp(ctx, componentsToUpdate)
+
+	newTargets := r.ComponentDependenciesUpdater.GetUpdateTargetsGithubApp(ctx, componentsToUpdate, imageRepositoryHost, imageRepositoryUsername, imageRepositoryPassword)
 	log.Info("found new targets for GitHub app", "targets", len(newTargets))
 	if len(newTargets) > 0 {
 		targets = append(targets, newTargets...)
 	}
 
-	newTargets = r.ComponentDependenciesUpdater.GetUpdateTargetsBasicAuth(ctx, componentsToUpdate)
+	newTargets = r.ComponentDependenciesUpdater.GetUpdateTargetsBasicAuth(ctx, componentsToUpdate, imageRepositoryHost, imageRepositoryUsername, imageRepositoryPassword)
 	log.Info("found new targets for basic auth", "targets", len(newTargets))
 	if len(newTargets) > 0 {
 		targets = append(targets, newTargets...)
@@ -486,6 +537,154 @@ func (r *ComponentDependencyUpdateReconciler) removePipelineFinalizer(ctx contex
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil
+}
+
+// getImageRepositoryCredentials returns username and password for image repository
+// it is searching all dockerconfigjson type secrets which are linked to the service account
+func (r *ComponentDependencyUpdateReconciler) getImageRepositoryCredentials(ctx context.Context, namespace, updatedOutputImage string) (string, string, error) {
+	log := ctrllog.FromContext(ctx)
+
+	// get service account and gather linked secrets
+	pipelinesServiceAccount := &corev1.ServiceAccount{}
+	err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: namespace}, pipelinesServiceAccount)
+	if err != nil {
+		log.Error(err, fmt.Sprintf("Failed to read service account %s in namespace %s", buildPipelineServiceAccountName, namespace), l.Action, l.ActionView)
+		return "", "", err
+	}
+
+	linkedSecretNames := []string{}
+	for _, secret := range pipelinesServiceAccount.Secrets {
+		linkedSecretNames = append(linkedSecretNames, secret.Name)
+	}
+
+	if len(linkedSecretNames) == 0 {
+		err = fmt.Errorf("No secrets linked to service account %s in namespace %s", buildPipelineServiceAccountName, namespace)
+		log.Error(err, "no linked secrets")
+		return "", "", err
+	}
+	log.Info("secrets linked to service account", "count", len(linkedSecretNames))
+
+	// get all docker config json secrets
+	allImageRepoSecrets := &corev1.SecretList{}
+	opts := client.ListOption(&client.MatchingFields{"type": string(corev1.SecretTypeDockerConfigJson)})
+
+	if err := r.Client.List(ctx, allImageRepoSecrets, client.InNamespace(namespace), opts); err != nil {
+		return "", "", fmt.Errorf("failed to list secrets of type %s in %s namespace: %w", corev1.SecretTypeDockerConfigJson, namespace, err)
+	}
+	log.Info("found docker config secrets secrets", "count", len(allImageRepoSecrets.Items))
+
+	type DockerConfigJson struct {
+		ConfigAuths map[string]RepositoryConfigAuth `json:"auths"`
+	}
+
+	filteredSecretsData := []RepositoryCredentials{}
+	for _, secret := range allImageRepoSecrets.Items {
+		isSecretLinked := false
+
+		for _, linkedSecret := range linkedSecretNames {
+			if secret.Name == linkedSecret {
+				isSecretLinked = true
+				break
+			}
+		}
+		if !isSecretLinked {
+			continue
+		}
+
+		dockerConfigObject := &DockerConfigJson{}
+		if err = json.Unmarshal(secret.Data[corev1.DockerConfigJsonKey], dockerConfigObject); err != nil {
+			log.Error(err, fmt.Sprintf("unable to parse docker json config in the secret %s", secret.Name))
+			continue
+		}
+
+		for repoName, repoAuth := range dockerConfigObject.ConfigAuths {
+			if repoAuth.Username != "" && repoAuth.Password != "" {
+				filteredSecretsData = append(filteredSecretsData, RepositoryCredentials{SecretName: secret.Name, RepoName: repoName, UserName: repoAuth.Username, Password: repoAuth.Password})
+			} else {
+				if repoAuth.Auth == "" {
+					log.Error(fmt.Errorf("password and username and auth are empty in auth config for repository %s", repoName), "no valid auth")
+					continue
+				} else {
+					decodedAuth, err := base64.StdEncoding.DecodeString(repoAuth.Auth)
+					if err != nil {
+						log.Error(err, fmt.Sprintf("unable to decode docker config json auth for repository %s in the secret %s", repoName, secret.Name))
+						continue
+					}
+					authParts := strings.Split(string(decodedAuth), ":")
+					filteredSecretsData = append(filteredSecretsData, RepositoryCredentials{SecretName: secret.Name, RepoName: repoName, UserName: authParts[0], Password: authParts[1]})
+				}
+			}
+		}
+	}
+
+	imageRepositoryUsername, imageRepositoryPassword, err := GetMatchedCredentialForImageRepository(ctx, updatedOutputImage, filteredSecretsData)
+	if err != nil {
+		log.Error(err, fmt.Sprintf("unable to find credential for repository %s", updatedOutputImage))
+		return "", "", err
+	}
+	return imageRepositoryUsername, imageRepositoryPassword, nil
+}
+
+// GetMatchedCredentialForImageRepository returns credentials for image repository
+// it is trying to search for credential for the given image repository from all provided credentials
+// first it tries to find exact repo match
+// then it tries to find the best (the longest) partial match
+func GetMatchedCredentialForImageRepository(ctx context.Context, outputImage string, imageRepoSecrets []RepositoryCredentials) (string, string, error) {
+	log := ctrllog.FromContext(ctx)
+
+	repoPath := outputImage
+	if strings.Contains(outputImage, "@") {
+		repoPath = strings.Split(outputImage, "@")[0]
+	} else {
+		if strings.Contains(outputImage, ":") {
+			repoPath = strings.Split(outputImage, ":")[0]
+		}
+	}
+	repoPath = strings.TrimSuffix(repoPath, "/")
+
+	username := ""
+	password := ""
+	// first check for credential which matches full repository path
+	for _, credential := range imageRepoSecrets {
+		credentialRepo := strings.TrimSuffix(credential.RepoName, "/")
+		if repoPath == credentialRepo {
+			log.Info("found full match of repository in auth", "repo", repoPath, "secretName", credential.SecretName)
+			username = credential.UserName
+			password = credential.Password
+			break
+		}
+	}
+	if username != "" && password != "" {
+		return username, password, nil
+
+	}
+
+	// check for partial match, get the most complete match
+	// if there is multiple secrets for registry and some partial match, upload sbom would fail anyway, because it chooses them randomly (until cosign fixes it)
+	repoParts := strings.Split(repoPath, "/")
+	for {
+		repoParts = repoParts[:len(repoParts)-1]
+		if len(repoParts) == 0 {
+			break
+		}
+		partialRepo := strings.Join(repoParts, "/")
+
+		for _, credential := range imageRepoSecrets {
+			credentialRepo := strings.TrimSuffix(credential.RepoName, "/")
+			if partialRepo == credentialRepo {
+				log.Info("partial match found of repository in auth", "repo", partialRepo, "secretName", credential.SecretName)
+				if credential.UserName != "" && credential.Password != "" {
+					username = credential.UserName
+					password = credential.Password
+					return username, password, nil
+				}
+				log.Info("credential in the auth for repository is missing password or username", "repo", partialRepo, "secretName", credential.SecretName)
+			}
+		}
+	}
+
+	log.Info("no credentials found for repo", "repo", repoPath)
+	return "", "", fmt.Errorf("No credentials found for repository %s ", repoPath)
 }
 
 func IsBuildPushPipelineRun(object client.Object) bool {

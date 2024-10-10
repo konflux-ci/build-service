@@ -65,6 +65,13 @@ func TestAPIs(t *testing.T) {
 	RunSpecs(t, "Controller Suite")
 }
 
+func getCacheExcludedObjectsTypes() []client.Object {
+	return []client.Object{
+		&corev1.Secret{},
+		&corev1.ConfigMap{},
+	}
+}
+
 var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
@@ -129,8 +136,15 @@ var _ = BeforeSuite(func() {
 
 	Expect(patchPipelineRunCRD()).Should(Succeed())
 
+	clientOpts := client.Options{
+		Cache: &client.CacheOptions{
+			DisableFor: getCacheExcludedObjectsTypes(),
+		},
+	}
+
 	k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme: scheme.Scheme,
+		Client: clientOpts,
 	})
 	Expect(err).ToNot(HaveOccurred())
 

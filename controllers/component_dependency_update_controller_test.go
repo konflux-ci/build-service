@@ -17,6 +17,7 @@ package controllers
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -57,7 +58,10 @@ var _ = Describe("Component nudge controller", func() {
 	BeforeEach(func() {
 		createNamespace(UserNamespace)
 		baseComponentName := types.NamespacedName{Namespace: UserNamespace, Name: BaseComponent}
-		createComponent(baseComponentName)
+		createCustomComponentWithoutBuildRequest(componentConfig{
+			componentKey:   baseComponentName,
+			containerImage: "quay.io/organization/repo:tag",
+		})
 		createComponent(types.NamespacedName{Namespace: UserNamespace, Name: Operator1})
 		createComponent(types.NamespacedName{Namespace: UserNamespace, Name: Operator2})
 		baseComponent := applicationapi.Component{}
@@ -80,6 +84,18 @@ var _ = Describe("Component nudge controller", func() {
 			"password": "12345",
 		}
 		createSCMSecret(basicSecretKey, basicSecretData, v1.SecretTypeBasicAuth, map[string]string{})
+
+		imageRepoSecretKey := types.NamespacedName{Name: "dockerconfigjsonsecret", Namespace: UserNamespace}
+		dockerConfigJson := fmt.Sprintf(`{"auths":{"quay.io/organization/repo":{"auth":"%s"}}}`, base64.StdEncoding.EncodeToString([]byte("image_repo_username:image_repo_password")))
+		imageRepoSecretData := map[string]string{
+			".dockerconfigjson": dockerConfigJson,
+		}
+		createSCMSecret(imageRepoSecretKey, imageRepoSecretData, v1.SecretTypeDockerConfigJson, map[string]string{})
+
+		serviceAccountKey := types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: UserNamespace}
+		sa := waitServiceAccount(serviceAccountKey)
+		sa.Secrets = []v1.ObjectReference{{Name: "dockerconfigjsonsecret"}}
+		Expect(k8sClient.Update(ctx, &sa)).To(Succeed())
 
 		github.GetAppInstallationsForRepository = func(githubAppIdStr string, appPrivateKeyPem []byte, repoUrl string) (*github.ApplicationInstallation, string, error) {
 			repo_name := "repo_name"
@@ -198,12 +214,139 @@ var _ = Describe("Component nudge controller", func() {
 				// check that no nudgeerror event was reported
 				failureCount := getRenovateFailedEventCount()
 				// check that renovate config was created
-				renovateConfigsCreated := getRenovateConfigMapCount()
+				renovateConfigsCreated := len(getRenovateConfigMapList())
 				// check that renovate pipeline run was created
 				renovatePipelinesCreated := getRenovatePipelineRunCount()
-
 				return renovatePipelinesCreated == 1 && renovateConfigsCreated == 1 && failureCount == 0
 			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
+
+			renovateConfigMaps := getRenovateConfigMapList()
+			Expect(len(renovateConfigMaps)).Should(Equal(1))
+			for _, renovateConfig := range renovateConfigMaps {
+				for _, renovateConfigData := range renovateConfig.Data {
+					Expect(strings.Contains(renovateConfigData, `"username": "image_repo_username"`)).Should(BeTrue())
+				}
+			}
+		})
+
+		It("Test build performs nudge on success, image repository partial auth", func() {
+			imageRepoSecretKey := types.NamespacedName{Name: "dockerconfigjsonsecret", Namespace: UserNamespace}
+			// create secret with only partial repository match
+			dockerConfigJson := fmt.Sprintf(`{"auths":{"quay.io":{"auth":"%s"}}}`, base64.StdEncoding.EncodeToString([]byte("image_repo_username_partial:image_repo_password")))
+			imageRepoSecretData := map[string]string{
+				".dockerconfigjson": dockerConfigJson,
+			}
+			deleteSecret(imageRepoSecretKey)
+			createSCMSecret(imageRepoSecretKey, imageRepoSecretData, v1.SecretTypeDockerConfigJson, map[string]string{})
+
+			serviceAccountKey := types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: UserNamespace}
+			sa := waitServiceAccount(serviceAccountKey)
+			sa.Secrets = []v1.ObjectReference{{Name: "dockerconfigjsonsecret"}}
+			Expect(k8sClient.Update(ctx, &sa)).To(Succeed())
+
+			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent)
+			Eventually(func() bool {
+				pr := getPipelineRun("test-pipeline-1", UserNamespace)
+				return controllerutil.ContainsFinalizer(pr, NudgeFinalizer)
+			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
+			pr := getPipelineRun("test-pipeline-1", UserNamespace)
+			pr.Status.SetCondition(&apis.Condition{
+				Type:               apis.ConditionSucceeded,
+				Status:             "True",
+				LastTransitionTime: apis.VolatileTime{Inner: metav1.Time{Time: time.Now()}},
+			})
+			pr.Status.Results = []tektonapi.PipelineRunResult{
+				{Name: ImageDigestParamName, Value: tektonapi.ResultValue{Type: tektonapi.ParamTypeString, StringVal: "sha256:12345"}},
+				{Name: ImageUrl, Value: tektonapi.ResultValue{Type: tektonapi.ParamTypeString, StringVal: "quay.io.foo/bar:latest"}},
+			}
+			pr.Status.CompletionTime = &metav1.Time{Time: time.Now()}
+			Expect(k8sClient.Status().Update(ctx, pr)).Should(BeNil())
+
+			Eventually(func() bool {
+				// check that no nudgeerror event was reported
+				failureCount := getRenovateFailedEventCount()
+				// check that renovate config was created
+				renovateConfigsCreated := len(getRenovateConfigMapList())
+				// check that renovate pipeline run was created
+				renovatePipelinesCreated := getRenovatePipelineRunCount()
+				return renovatePipelinesCreated == 1 && renovateConfigsCreated == 1 && failureCount == 0
+			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
+
+			renovateConfigMaps := getRenovateConfigMapList()
+			Expect(len(renovateConfigMaps)).Should(Equal(1))
+			for _, renovateConfig := range renovateConfigMaps {
+				for _, renovateConfigData := range renovateConfig.Data {
+					Expect(strings.Contains(renovateConfigData, `"username": "image_repo_username_partial"`)).Should(BeTrue())
+				}
+			}
+		})
+
+		It("Test build performs nudge on success, image repository partial auth from multiple secrets", func() {
+			// create secret with one partial repository match
+			dockerConfigJson := fmt.Sprintf(`{"auths":{"quay.io":{"auth":"%s"}}}`, base64.StdEncoding.EncodeToString([]byte("image_repo_username_1:image_repo_password")))
+			imageRepoSecretData := map[string]string{
+				".dockerconfigjson": dockerConfigJson,
+			}
+			imageRepoSecretKey := types.NamespacedName{Name: "dockerconfigjsonsecret", Namespace: UserNamespace}
+			deleteSecret(imageRepoSecretKey)
+			createSCMSecret(imageRepoSecretKey, imageRepoSecretData, v1.SecretTypeDockerConfigJson, map[string]string{})
+
+			// create secret with another partial repository match, this one will be used (because has more complete path)
+			dockerConfigJson = fmt.Sprintf(`{"auths":{"quay.io/organization":{"auth":"%s"}}}`, base64.StdEncoding.EncodeToString([]byte("image_repo_username_2:image_repo_password")))
+			imageRepoSecretData = map[string]string{
+				".dockerconfigjson": dockerConfigJson,
+			}
+			imageRepoSecretKey = types.NamespacedName{Name: "dockerconfigjsonsecret2", Namespace: UserNamespace}
+			createSCMSecret(imageRepoSecretKey, imageRepoSecretData, v1.SecretTypeDockerConfigJson, map[string]string{})
+
+			// create secret with path which doesn't match at all
+			dockerConfigJson = fmt.Sprintf(`{"auths":{"registry.io":{"auth":"%s"}}}`, base64.StdEncoding.EncodeToString([]byte("image_repo_username_3:image_repo_password")))
+			imageRepoSecretData = map[string]string{
+				".dockerconfigjson": dockerConfigJson,
+			}
+			imageRepoSecretKey = types.NamespacedName{Name: "dockerconfigjsonsecret3", Namespace: UserNamespace}
+			createSCMSecret(imageRepoSecretKey, imageRepoSecretData, v1.SecretTypeDockerConfigJson, map[string]string{})
+
+			serviceAccountKey := types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: UserNamespace}
+			sa := waitServiceAccount(serviceAccountKey)
+			sa.Secrets = []v1.ObjectReference{{Name: "dockerconfigjsonsecret"}, {Name: "dockerconfigjsonsecret2"}}
+			Expect(k8sClient.Update(ctx, &sa)).To(Succeed())
+
+			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent)
+			Eventually(func() bool {
+				pr := getPipelineRun("test-pipeline-1", UserNamespace)
+				return controllerutil.ContainsFinalizer(pr, NudgeFinalizer)
+			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
+			pr := getPipelineRun("test-pipeline-1", UserNamespace)
+			pr.Status.SetCondition(&apis.Condition{
+				Type:               apis.ConditionSucceeded,
+				Status:             "True",
+				LastTransitionTime: apis.VolatileTime{Inner: metav1.Time{Time: time.Now()}},
+			})
+			pr.Status.Results = []tektonapi.PipelineRunResult{
+				{Name: ImageDigestParamName, Value: tektonapi.ResultValue{Type: tektonapi.ParamTypeString, StringVal: "sha256:12345"}},
+				{Name: ImageUrl, Value: tektonapi.ResultValue{Type: tektonapi.ParamTypeString, StringVal: "quay.io.foo/bar:latest"}},
+			}
+			pr.Status.CompletionTime = &metav1.Time{Time: time.Now()}
+			Expect(k8sClient.Status().Update(ctx, pr)).Should(BeNil())
+
+			Eventually(func() bool {
+				// check that no nudgeerror event was reported
+				failureCount := getRenovateFailedEventCount()
+				// check that renovate config was created
+				renovateConfigsCreated := len(getRenovateConfigMapList())
+				// check that renovate pipeline run was created
+				renovatePipelinesCreated := getRenovatePipelineRunCount()
+				return renovatePipelinesCreated == 1 && renovateConfigsCreated == 1 && failureCount == 0
+			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
+
+			renovateConfigMaps := getRenovateConfigMapList()
+			Expect(len(renovateConfigMaps)).Should(Equal(1))
+			for _, renovateConfig := range renovateConfigMaps {
+				for _, renovateConfigData := range renovateConfig.Data {
+					Expect(strings.Contains(renovateConfigData, `"username": "image_repo_username_2"`)).Should(BeTrue())
+				}
+			}
 		})
 
 		It("Test stale pipeline not nudged", func() {
@@ -235,13 +378,14 @@ var _ = Describe("Component nudge controller", func() {
 				}
 				failureCount := getRenovateFailedEventCount()
 				// check that renovate config was created
-				renovateConfigsCreated := getRenovateConfigMapCount()
+				renovateConfigsCreated := len(getRenovateConfigMapList())
 				// check that renovate pipeline run was created
 				renovatePipelinesCreated := getRenovatePipelineRunCount()
 
 				return renovatePipelinesCreated == 1 && renovateConfigsCreated == 1 && failureCount == 0
 			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 		})
+
 	})
 
 	Context("Test nudge failure handling", func() {
@@ -284,7 +428,7 @@ var _ = Describe("Component nudge controller", func() {
 			// after one error it will retry and create pipeline
 			Eventually(func() bool {
 				// check that renovate config was created
-				renovateConfigsCreated := getRenovateConfigMapCount()
+				renovateConfigsCreated := len(getRenovateConfigMapList())
 				// check that renovate pipeline run was created
 				renovatePipelinesCreated := getRenovatePipelineRunCount()
 
@@ -344,6 +488,8 @@ var _ = Describe("Component nudge controller", func() {
 			gitAuthor := "renovate-gitauthor"
 			gitToken := "renovate-token"
 			gitEndpoint := "https://api.github.com/"
+			imageRepositoryHost := "quay.io"
+			imageRepositoryUsername := "repository_username"
 			fileMatches := "file1, file2, file3"
 			fileMatchesList := `["file1","file2","file3"]`
 			repositories := []renovateRepository{{BaseBranches: []string{"base_branch"}, Repository: "some_repository/something"}}
@@ -362,21 +508,26 @@ var _ = Describe("Component nudge controller", func() {
 				FileMatches:              fileMatches,
 			}
 			renovateTarget := updateTarget{
-				ComponentName: "nudged component",
-				GitProvider:   gitProvider,
-				Username:      gitUsername,
-				GitAuthor:     gitAuthor,
-				Token:         gitToken,
-				Endpoint:      gitEndpoint,
-				Repositories:  repositories,
+				ComponentName:           "nudged component",
+				GitProvider:             gitProvider,
+				Username:                gitUsername,
+				GitAuthor:               gitAuthor,
+				Token:                   gitToken,
+				Endpoint:                gitEndpoint,
+				Repositories:            repositories,
+				ImageRepositoryHost:     imageRepositoryHost,
+				ImageRepositoryUsername: imageRepositoryUsername,
 			}
 
 			result, err := generateRenovateConfigForNudge(renovateTarget, &buildResult)
 			Expect(err).Should(Succeed())
+
 			Expect(strings.Contains(result, fmt.Sprintf(`platform: "%s"`, gitProvider))).Should(BeTrue())
 			Expect(strings.Contains(result, fmt.Sprintf(`username: "%s"`, gitUsername))).Should(BeTrue())
 			Expect(strings.Contains(result, fmt.Sprintf(`gitAuthor: "%s"`, gitAuthor))).Should(BeTrue())
 			Expect(strings.Contains(result, fmt.Sprintf(`repositories: %s`, repositoriesData))).Should(BeTrue())
+			Expect(strings.Contains(result, fmt.Sprintf(`"username": "%s"`, imageRepositoryUsername))).Should(BeTrue())
+			Expect(strings.Contains(result, fmt.Sprintf(`"matchHost": "%s"`, imageRepositoryHost))).Should(BeTrue())
 			Expect(strings.Contains(result, fmt.Sprintf(`endpoint: "%s"`, gitEndpoint))).Should(BeTrue())
 			Expect(strings.Contains(result, fmt.Sprintf(`"fileMatch": %s`, fileMatchesList))).Should(BeTrue())
 			Expect(strings.Contains(result, fmt.Sprintf(`"currentValueTemplate": "%s"`, buildResult.BuiltImageTag))).Should(BeTrue())
@@ -446,18 +597,18 @@ func createBuildPipelineRun(name string, namespace string, component string) *te
 	return &run
 }
 
-func getRenovateConfigMapCount() int {
-	renovateConfigsCreated := 0
+func getRenovateConfigMapList() []v1.ConfigMap {
 	configMapList := &v1.ConfigMapList{}
+	renovateConfigMapList := []v1.ConfigMap{}
 	err := k8sClient.List(context.TODO(), configMapList, &client.ListOptions{Namespace: UserNamespace})
 	Expect(err).ToNot(HaveOccurred())
 	for _, configMap := range configMapList.Items {
 		if strings.HasPrefix(configMap.ObjectMeta.Name, "renovate-pipeline") {
 			log.Info(configMap.ObjectMeta.Name)
-			renovateConfigsCreated += 1
+			renovateConfigMapList = append(renovateConfigMapList, configMap)
 		}
 	}
-	return renovateConfigsCreated
+	return renovateConfigMapList
 }
 
 func getRenovatePipelineRunCount() int {
