@@ -239,7 +239,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
-	_, err = r.GetBuildPipelineFromComponentAnnotation(ctx, &component)
+	_, _, err = r.GetBuildPipelineFromComponentAnnotation(ctx, &component)
 	if err != nil {
 		buildStatus := readBuildStatus(&component)
 		// when reading pipeline annotation fails, we should end reconcile, unless transient error
