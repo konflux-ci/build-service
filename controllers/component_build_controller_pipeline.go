@@ -46,8 +46,9 @@ import (
 )
 
 type BuildPipeline struct {
-	Name   string `json:"name,omitempty"`
-	Bundle string `json:"bundle,omitempty"`
+	Name             string   `json:"name,omitempty"`
+	Bundle           string   `json:"bundle,omitempty"`
+	AdditionalParams []string `json:"additional-params,omitempty"`
 }
 
 type pipelineConfig struct {
@@ -89,10 +90,11 @@ func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigs(ctx context.Con
 	var pipelineName string
 	var pipelineBundle string
 	var pipelineRef *tektonapi.PipelineRef
+	var additionalParams []string
 	var err error
 
 	// no need to check error because it would fail already in Reconcile
-	pipelineRef, _ = r.GetBuildPipelineFromComponentAnnotation(ctx, component)
+	pipelineRef, additionalParams, _ = r.GetBuildPipelineFromComponentAnnotation(ctx, component)
 	pipelineName, pipelineBundle, err = getPipelineNameAndBundle(pipelineRef)
 	if err != nil {
 		return nil, nil, err
@@ -108,7 +110,7 @@ func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigs(ctx context.Con
 		return nil, nil, err
 	}
 
-	pipelineRunOnPush, err := generatePaCPipelineRunForComponent(component, pipelineSpec, pacTargetBranch, gitClient, false)
+	pipelineRunOnPush, err := generatePaCPipelineRunForComponent(component, pipelineSpec, additionalParams, pacTargetBranch, gitClient, false)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -117,7 +119,7 @@ func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigs(ctx context.Con
 		return nil, nil, err
 	}
 
-	pipelineRunOnPR, err := generatePaCPipelineRunForComponent(component, pipelineSpec, pacTargetBranch, gitClient, true)
+	pipelineRunOnPR, err := generatePaCPipelineRunForComponent(component, pipelineSpec, additionalParams, pacTargetBranch, gitClient, true)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -166,47 +168,49 @@ func retrievePipelineSpec(ctx context.Context, bundleUri, pipelineName string) (
 }
 
 // GetBuildPipelineFromComponentAnnotation parses pipeline annotation on component and returns build pipeline
-func (r *ComponentBuildReconciler) GetBuildPipelineFromComponentAnnotation(ctx context.Context, component *appstudiov1alpha1.Component) (*tektonapi.PipelineRef, error) {
+func (r *ComponentBuildReconciler) GetBuildPipelineFromComponentAnnotation(ctx context.Context, component *appstudiov1alpha1.Component) (*tektonapi.PipelineRef, []string, error) {
 	buildPipeline, err := readBuildPipelineAnnotation(component)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if buildPipeline == nil {
 		err := fmt.Errorf("missing or empty pipeline annotation: %s, will add default one to the component", component.Annotations[defaultBuildPipelineAnnotation])
-		return nil, boerrors.NewBuildOpError(boerrors.EMissingPipelineAnnotation, err)
+		return nil, nil, boerrors.NewBuildOpError(boerrors.EMissingPipelineAnnotation, err)
 	}
 	if buildPipeline.Bundle == "" || buildPipeline.Name == "" {
 		err = fmt.Errorf("missing name or bundle in pipeline annotation: name=%s bundle=%s", buildPipeline.Name, buildPipeline.Bundle)
-		return nil, boerrors.NewBuildOpError(boerrors.EWrongPipelineAnnotation, err)
+		return nil, nil, boerrors.NewBuildOpError(boerrors.EWrongPipelineAnnotation, err)
 	}
 	finalBundle := buildPipeline.Bundle
+	additionalParams := []string{}
 
-	if buildPipeline.Bundle == "latest" {
-		pipelinesConfigMap := &corev1.ConfigMap{}
-		if err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineConfigMapResourceName, Namespace: BuildServiceNamespaceName}, pipelinesConfigMap); err != nil {
-			if errors.IsNotFound(err) {
-				return nil, boerrors.NewBuildOpError(boerrors.EBuildPipelineConfigNotDefined, err)
-			}
-			return nil, err
+	pipelinesConfigMap := &corev1.ConfigMap{}
+	if err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineConfigMapResourceName, Namespace: BuildServiceNamespaceName}, pipelinesConfigMap); err != nil {
+		if errors.IsNotFound(err) {
+			return nil, nil, boerrors.NewBuildOpError(boerrors.EBuildPipelineConfigNotDefined, err)
 		}
+		return nil, nil, err
+	}
 
-		buildPipelineData := &pipelineConfig{}
-		if err := yaml.Unmarshal([]byte(pipelinesConfigMap.Data[buildPipelineConfigName]), buildPipelineData); err != nil {
-			return nil, boerrors.NewBuildOpError(boerrors.EBuildPipelineConfigNotValid, err)
-		}
+	buildPipelineData := &pipelineConfig{}
+	if err := yaml.Unmarshal([]byte(pipelinesConfigMap.Data[buildPipelineConfigName]), buildPipelineData); err != nil {
+		return nil, nil, boerrors.NewBuildOpError(boerrors.EBuildPipelineConfigNotValid, err)
+	}
 
-		for _, pipeline := range buildPipelineData.Pipelines {
-			if pipeline.Name == buildPipeline.Name {
+	for _, pipeline := range buildPipelineData.Pipelines {
+		if pipeline.Name == buildPipeline.Name {
+			if buildPipeline.Bundle == "latest" {
 				finalBundle = pipeline.Bundle
-				break
 			}
+			additionalParams = pipeline.AdditionalParams
+			break
 		}
+	}
 
-		// requested pipeline was not found in configMap
-		if finalBundle == "latest" {
-			err = fmt.Errorf("invalid pipeline name in pipeline annotation: name=%s", buildPipeline.Name)
-			return nil, boerrors.NewBuildOpError(boerrors.EBuildPipelineInvalid, err)
-		}
+	// requested pipeline was not found in configMap
+	if finalBundle == "latest" {
+		err = fmt.Errorf("invalid pipeline name in pipeline annotation: name=%s", buildPipeline.Name)
+		return nil, nil, boerrors.NewBuildOpError(boerrors.EBuildPipelineInvalid, err)
 	}
 
 	pipelineRef := &tektonapi.PipelineRef{
@@ -219,7 +223,7 @@ func (r *ComponentBuildReconciler) GetBuildPipelineFromComponentAnnotation(ctx c
 			},
 		},
 	}
-	return pipelineRef, nil
+	return pipelineRef, additionalParams, nil
 }
 
 func readBuildPipelineAnnotation(component *appstudiov1alpha1.Component) (*BuildPipeline, error) {
@@ -276,6 +280,7 @@ func (r *ComponentBuildReconciler) SetDefaultBuildPipelineComponentAnnotation(ct
 func generatePaCPipelineRunForComponent(
 	component *appstudiov1alpha1.Component,
 	pipelineSpec *tektonapi.PipelineSpec,
+	additionalParams []string,
 	pacTargetBranch string,
 	gitClient gp.GitProviderClient,
 	onPull bool) (*tektonapi.PipelineRun, error) {
@@ -326,6 +331,25 @@ func generatePaCPipelineRunForComponent(
 			prImageExpiration = PipelineRunOnPRExpirationDefault
 		}
 		params = append(params, tektonapi.Param{Name: "image-expires-after", Value: tektonapi.ParamValue{Type: "string", StringVal: prImageExpiration}})
+	}
+
+	for _, additionalParam := range additionalParams {
+		for _, pipelineParam := range pipelineSpec.Params {
+			if additionalParam == pipelineParam.Name {
+				if pipelineParam.Type == "string" {
+					params = append(params, tektonapi.Param{Name: additionalParam, Value: tektonapi.ParamValue{Type: "string", StringVal: pipelineParam.Default.StringVal}})
+					break
+				}
+				if pipelineParam.Type == "array" {
+					params = append(params, tektonapi.Param{Name: additionalParam, Value: tektonapi.ParamValue{Type: "array", ArrayVal: pipelineParam.Default.ArrayVal}})
+					break
+				}
+				if pipelineParam.Type == "object" {
+					params = append(params, tektonapi.Param{Name: additionalParam, Value: tektonapi.ParamValue{Type: "object", ObjectVal: pipelineParam.Default.ObjectVal}})
+					break
+				}
+			}
+		}
 	}
 
 	if component.Spec.Source.GitSource.DockerfileURL != "" {

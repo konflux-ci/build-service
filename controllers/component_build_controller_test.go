@@ -109,6 +109,7 @@ var _ = Describe("Component initial build controller", func() {
 			createNamespace(pipelinesAsCodeNamespace)
 			createRoute(pacRouteKey, "pac-host")
 			createNamespace(BuildServiceNamespaceName)
+			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",
 				"github-private-key":    githubAppPrivateKey,
@@ -253,7 +254,6 @@ var _ = Describe("Component initial build controller", func() {
 				return nil
 			}
 
-			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
 			annotations := map[string]string{}
 			createCustomComponentWithBuildRequest(componentConfig{
 				componentKey: resourcePacPrepKey,
@@ -276,7 +276,6 @@ var _ = Describe("Component initial build controller", func() {
 			}, timeout, interval).Should(BeTrue())
 
 			expectPacBuildStatus(resourcePacPrepKey, "enabled", 0, "", mergeUrl)
-			deleteBuildPipelineConfigMap(defaultPipelineConfigMapKey)
 		})
 
 		It("should successfully submit PR with PaC definitions using GitHub application, using 'latest' bundle", func() {
@@ -305,7 +304,6 @@ var _ = Describe("Component initial build controller", func() {
 				return nil
 			}
 
-			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
 			annotationValue := fmt.Sprintf("{\"name\":\"%s\",\"bundle\":\"%s\"}", defaultPipelineName, "latest")
 			annotations := map[string]string{defaultBuildPipelineAnnotation: annotationValue}
 			createCustomComponentWithBuildRequest(componentConfig{
@@ -329,7 +327,6 @@ var _ = Describe("Component initial build controller", func() {
 			}, timeout, interval).Should(BeTrue())
 
 			expectPacBuildStatus(resourcePacPrepKey, "enabled", 0, "", mergeUrl)
-			deleteBuildPipelineConfigMap(defaultPipelineConfigMapKey)
 		})
 
 		It("should fail to submit PR if build pipeline annotation isn't valid json", func() {
@@ -349,7 +346,6 @@ var _ = Describe("Component initial build controller", func() {
 		})
 
 		It("should fail to submit PR if build pipeline annotation has non existing pipeline", func() {
-			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
 			annotationValue := fmt.Sprintf("{\"name\":\"%s\",\"bundle\":\"%s\"}", "wrong-pipeline", "latest")
 			annotations := map[string]string{defaultBuildPipelineAnnotation: annotationValue}
 			createCustomComponentWithBuildRequest(componentConfig{
@@ -364,11 +360,9 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(buildStatus).ToNot(BeNil())
 			errorMessage := fmt.Sprintf("%d: %s", expectError.GetErrorId(), expectError.ShortError())
 			Expect(buildStatus.Message).To(ContainSubstring(errorMessage))
-			deleteBuildPipelineConfigMap(defaultPipelineConfigMapKey)
 		})
 
 		It("should fail to submit PR if build pipeline annotation is missing bundle and name", func() {
-			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
 			annotationValue := "{\"some\":\"wrong\"}"
 			annotations := map[string]string{defaultBuildPipelineAnnotation: annotationValue}
 			createCustomComponentWithBuildRequest(componentConfig{
@@ -383,7 +377,6 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(buildStatus).ToNot(BeNil())
 			errorMessage := fmt.Sprintf("%d: %s", expectError.GetErrorId(), expectError.ShortError())
 			Expect(buildStatus.Message).To(ContainSubstring(errorMessage))
-			deleteBuildPipelineConfigMap(defaultPipelineConfigMapKey)
 		})
 
 		It("should fail to submit PR if GitHub application is not installed into git repository", func() {
@@ -724,6 +717,7 @@ var _ = Describe("Component initial build controller", func() {
 			createNamespace(pipelinesAsCodeNamespace)
 			createRoute(pacRouteKey, "pac-host")
 			createNamespace(BuildServiceNamespaceName)
+			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
 
 			ResetTestGitProviderClient()
 		})
@@ -1203,6 +1197,7 @@ var _ = Describe("Component initial build controller", func() {
 			createNamespace(pipelinesAsCodeNamespace)
 			createRoute(pacRouteKey, "pac-host")
 			createNamespace(BuildServiceNamespaceName)
+			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
 			ResetTestGitProviderClient()
 
 			pacSecretData := map[string]string{
@@ -1302,6 +1297,7 @@ var _ = Describe("Component initial build controller", func() {
 			createNamespace(pipelinesAsCodeNamespace)
 			createRoute(pacRouteKey, "pac-host")
 			createNamespace(BuildServiceNamespaceName)
+			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",
 				"github-private-key":    githubAppPrivateKey,

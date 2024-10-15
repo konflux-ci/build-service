@@ -564,7 +564,7 @@ func createBuildPipelineConfigMap(configMapKey types.NamespacedName, pipelineBun
 	configMapData := map[string]string{}
 	buildPipelineData := pipelineConfig{
 		DefaultPipelineName: pipelineName,
-		Pipelines:           []BuildPipeline{{Name: pipelineName, Bundle: pipelineBundle}},
+		Pipelines:           []BuildPipeline{{Name: pipelineName, Bundle: pipelineBundle, AdditionalParams: []string{"additional_param1"}}},
 	}
 	yamlData, _ := yaml.Marshal(&buildPipelineData)
 	configMapData[buildPipelineConfigName] = string(yamlData)
@@ -575,19 +575,6 @@ func createBuildPipelineConfigMap(configMapKey types.NamespacedName, pipelineBun
 	}
 
 	if err := k8sClient.Create(ctx, &buildPipelineConfigMap); err != nil && !k8sErrors.IsAlreadyExists(err) {
-		Fail(err.Error())
-	}
-}
-
-func deleteBuildPipelineConfigMap(configMapKey types.NamespacedName) {
-	buildPipelineConfigMap := corev1.ConfigMap{}
-	if err := k8sClient.Get(ctx, configMapKey, &buildPipelineConfigMap); err != nil {
-		if k8sErrors.IsNotFound(err) {
-			return
-		}
-		Fail(err.Error())
-	}
-	if err := k8sClient.Delete(ctx, &buildPipelineConfigMap); err != nil && !k8sErrors.IsNotFound(err) {
 		Fail(err.Error())
 	}
 }
