@@ -31,7 +31,7 @@ import (
 
 const (
 	RenovateImageEnvName    = "RENOVATE_IMAGE"
-	DefaultRenovateImageUrl = "quay.io/redhat-appstudio/renovate:v37.74.1"
+	DefaultRenovateImageUrl = "quay.io/konflux-ci/mintmaker-renovate-image:latest"
 	DefaultRenovateUser     = "red-hat-konflux"
 )
 
