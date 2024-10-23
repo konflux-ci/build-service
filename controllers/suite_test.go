@@ -80,7 +80,7 @@ var _ = BeforeSuite(func() {
 
 	By("bootstrapping test environment")
 
-	applicationApiDepVersion := "v0.0.0-20240527211352-be061932d497"
+	applicationApiDepVersion := "v0.0.0-20240812090716-e7eb2ecfb409"
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
 			filepath.Join("..", "hack", "routecrd", "route.yaml"),
