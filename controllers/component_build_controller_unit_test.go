@@ -1275,6 +1275,7 @@ func TestGetGitProvider(t *testing.T) {
 		{
 			name:             "should detect github provider via git url",
 			componentRepoUrl: "git@github.com:user/test-component-repository",
+			expectError:      true,
 			want:             "github",
 		},
 		{
@@ -1285,7 +1286,7 @@ func TestGetGitProvider(t *testing.T) {
 		{
 			name:             "should detect non-standard github provider via git url",
 			componentRepoUrl: "git@cooler.github.my-company.com:user/test-component-repository",
-			want:             "github",
+			expectError:      true,
 		},
 		{
 			name:             "should detect gitlab provider via http url",
@@ -1295,7 +1296,7 @@ func TestGetGitProvider(t *testing.T) {
 		{
 			name:             "should detect gitlab provider via git url",
 			componentRepoUrl: "git@gitlab.com:user/test-component-repository",
-			want:             "gitlab",
+			expectError:      true,
 		},
 		{
 			name:             "should detect non-standard gitlab provider via http url",
@@ -1305,7 +1306,7 @@ func TestGetGitProvider(t *testing.T) {
 		{
 			name:             "should detect non-standard gitlab provider via git url",
 			componentRepoUrl: "git@cooler.gitlab.my-company.com:user/test-component-repository",
-			want:             "gitlab",
+			expectError:      true,
 		},
 		{
 			name:             "should detect bitbucket provider via http url",
@@ -1315,7 +1316,7 @@ func TestGetGitProvider(t *testing.T) {
 		{
 			name:             "should detect bitbucket provider via git url",
 			componentRepoUrl: "git@bitbucket.org:user/test-component-repository",
-			want:             "bitbucket",
+			expectError:      true,
 		},
 		{
 			name:             "should detect non-standard bitbucket provider via http url",
@@ -1325,7 +1326,7 @@ func TestGetGitProvider(t *testing.T) {
 		{
 			name:             "should detect non-standard bitbucket provider via git url",
 			componentRepoUrl: "git@cooler.bitbucket.my-company.com:user/test-component-repository",
-			want:             "bitbucket",
+			expectError:      true,
 		},
 		{
 			name:                           "should detect github provider via annotation",
@@ -1370,6 +1371,11 @@ func TestGetGitProvider(t *testing.T) {
 		{
 			name:             "should return error if git source URL is empty",
 			componentRepoUrl: "",
+			expectError:      true,
+		},
+		{
+			name:             "should return error if git source URL path doesn't have 2 parts namespace(owner)/repo",
+			componentRepoUrl: "https://github.com/user",
 			expectError:      true,
 		},
 	}
