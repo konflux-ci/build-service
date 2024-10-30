@@ -33,6 +33,11 @@ const (
 	RenovateImageEnvName    = "RENOVATE_IMAGE"
 	DefaultRenovateImageUrl = "quay.io/redhat-appstudio/renovate:v37.74.1"
 	DefaultRenovateUser     = "red-hat-konflux"
+	CaConfigMapLabel        = "config.openshift.io/inject-trusted-cabundle"
+	CaConfigMapKey          = "ca-bundle.crt"
+	CaFilePath              = "tls-ca-bundle.pem"
+	CaMountPath             = "/etc/pki/ca-trust/extracted/pem"
+	CaVolumeMountName       = "trusted-ca"
 )
 
 type renovateRepository struct {
@@ -369,7 +374,9 @@ func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Contex
 		return nil
 	}
 	timestamp := time.Now().Unix()
-	name := fmt.Sprintf("renovate-pipeline-%d-%s", timestamp, RandomString(5))
+	nameSuffix := fmt.Sprintf("%d-%s", timestamp, RandomString(5))
+	name := fmt.Sprintf("renovate-pipeline-%s", nameSuffix)
+	caConfigMapName := fmt.Sprintf("renovate-ca-%s", nameSuffix)
 	secretTokens := map[string]string{}
 	configmaps := map[string]string{}
 	renovateCmds := []string{}
@@ -393,6 +400,21 @@ func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Contex
 	if len(renovateCmds) == 0 {
 		return nil
 	}
+
+	allCaConfigMaps := &corev1.ConfigMapList{}
+	opts := client.ListOption(&client.MatchingLabels{
+		CaConfigMapLabel: "true",
+	})
+
+	if err := u.Client.List(ctx, allCaConfigMaps, client.InNamespace(BuildServiceNamespaceName), opts); err != nil {
+		return fmt.Errorf("failed to list config maps with label %s in %s namespace: %w", CaConfigMapLabel, BuildServiceNamespaceName, err)
+	}
+	caConfigData := ""
+	if len(allCaConfigMaps.Items) > 0 {
+		log.Info("will use CA config map", "name", allCaConfigMaps.Items[0].ObjectMeta.Name)
+		caConfigData = allCaConfigMaps.Items[0].Data[CaConfigMapKey]
+	}
+
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -407,6 +429,19 @@ func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Contex
 		},
 		Data: configmaps,
 	}
+
+	var caConfigMap *corev1.ConfigMap
+	if caConfigData != "" {
+		configMapData := map[string]string{CaConfigMapKey: caConfigData}
+		caConfigMap = &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      caConfigMapName,
+				Namespace: namespace,
+			},
+			Data: configMapData,
+		}
+	}
+
 	trueBool := true
 	falseBool := false
 	renovateImageUrl := os.Getenv(RenovateImageEnvName)
@@ -469,6 +504,31 @@ func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Contex
 			},
 		},
 	}
+
+	if caConfigData != "" {
+		caVolume := corev1.Volume{
+			Name: CaVolumeMountName,
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: caConfigMapName},
+					Items: []corev1.KeyToPath{
+						{
+							Key:  CaConfigMapKey,
+							Path: CaFilePath,
+						},
+					},
+				},
+			},
+		}
+		caVolumeMount := corev1.VolumeMount{
+			Name:      CaVolumeMountName,
+			MountPath: CaMountPath,
+			ReadOnly:  true,
+		}
+		pipelineRun.Spec.PipelineSpec.Tasks[0].TaskSpec.TaskSpec.Volumes = append(pipelineRun.Spec.PipelineSpec.Tasks[0].TaskSpec.TaskSpec.Volumes, caVolume)
+		pipelineRun.Spec.PipelineSpec.Tasks[0].TaskSpec.TaskSpec.Steps[0].VolumeMounts = append(pipelineRun.Spec.PipelineSpec.Tasks[0].TaskSpec.TaskSpec.Steps[0].VolumeMounts, caVolumeMount)
+	}
+
 	if debug {
 		pipelineRun.Spec.PipelineSpec.Tasks[0].TaskSpec.Steps[0].Env = append(pipelineRun.Spec.PipelineSpec.Tasks[0].TaskSpec.Steps[0].Env, corev1.EnvVar{Name: "LOG_LEVEL", Value: "debug"})
 	}
@@ -483,6 +543,16 @@ func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Contex
 	if err := controllerutil.SetOwnerReference(pipelineRun, secret, u.Scheme); err != nil {
 		return err
 	}
+
+	if caConfigData != "" {
+		if err := controllerutil.SetOwnerReference(pipelineRun, caConfigMap, u.Scheme); err != nil {
+			return err
+		}
+		if err := u.Client.Create(ctx, caConfigMap); err != nil {
+			return err
+		}
+	}
+
 	if err := u.Client.Create(ctx, secret); err != nil {
 		return err
 	}

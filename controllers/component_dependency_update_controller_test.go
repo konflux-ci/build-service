@@ -92,6 +92,9 @@ var _ = Describe("Component nudge controller", func() {
 		}
 		createSCMSecret(imageRepoSecretKey, imageRepoSecretData, v1.SecretTypeDockerConfigJson, map[string]string{})
 
+		caConfigMapKey := types.NamespacedName{Name: "trusted-ca", Namespace: BuildServiceNamespaceName}
+		createCAConfigMap(caConfigMapKey)
+
 		serviceAccountKey := types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: UserNamespace}
 		sa := waitServiceAccount(serviceAccountKey)
 		sa.Secrets = []v1.ObjectReference{{Name: "dockerconfigjsonsecret"}}
@@ -216,17 +219,40 @@ var _ = Describe("Component nudge controller", func() {
 				// check that renovate config was created
 				renovateConfigsCreated := len(getRenovateConfigMapList())
 				// check that renovate pipeline run was created
-				renovatePipelinesCreated := getRenovatePipelineRunCount()
-				return renovatePipelinesCreated == 1 && renovateConfigsCreated == 1 && failureCount == 0
+				renovatePipelinesCreated := len(getRenovatePipelineRunList())
+				return renovatePipelinesCreated == 1 && renovateConfigsCreated == 2 && failureCount == 0
 			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 
 			renovateConfigMaps := getRenovateConfigMapList()
-			Expect(len(renovateConfigMaps)).Should(Equal(1))
+			Expect(len(renovateConfigMaps)).Should(Equal(2))
+			renovateConfigMapFound := false
+			renovateCaConfigMapFound := false
+
 			for _, renovateConfig := range renovateConfigMaps {
-				for _, renovateConfigData := range renovateConfig.Data {
-					Expect(strings.Contains(renovateConfigData, `"username": "image_repo_username"`)).Should(BeTrue())
+				if strings.HasPrefix(renovateConfig.ObjectMeta.Name, "renovate-pipeline") {
+					renovateConfigMapFound = true
+
+					for _, renovateConfigData := range renovateConfig.Data {
+						Expect(strings.Contains(renovateConfigData, `"username": "image_repo_username"`)).Should(BeTrue())
+					}
+				}
+				if strings.HasPrefix(renovateConfig.ObjectMeta.Name, "renovate-ca") {
+					renovateCaConfigMapFound = true
+					Expect(renovateConfig.Data).Should(Equal(map[string]string{CaConfigMapKey: "someCAcertdata"}))
 				}
 			}
+			Expect(renovateCaConfigMapFound && renovateConfigMapFound).Should(BeTrue())
+
+			renovatePipelines := getRenovatePipelineRunList()
+			Expect(len(renovatePipelines)).Should(Equal(1))
+			caMounted := false
+			for _, volumeMount := range renovatePipelines[0].Spec.PipelineSpec.Tasks[0].TaskSpec.TaskSpec.Steps[0].VolumeMounts {
+				if volumeMount.Name == CaVolumeMountName {
+					caMounted = true
+					break
+				}
+			}
+			Expect(caMounted).Should(BeTrue())
 		})
 
 		It("Test build performs nudge on success, image repository partial auth", func() {
@@ -268,15 +294,17 @@ var _ = Describe("Component nudge controller", func() {
 				// check that renovate config was created
 				renovateConfigsCreated := len(getRenovateConfigMapList())
 				// check that renovate pipeline run was created
-				renovatePipelinesCreated := getRenovatePipelineRunCount()
-				return renovatePipelinesCreated == 1 && renovateConfigsCreated == 1 && failureCount == 0
+				renovatePipelinesCreated := len(getRenovatePipelineRunList())
+				return renovatePipelinesCreated == 1 && renovateConfigsCreated == 2 && failureCount == 0
 			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 
 			renovateConfigMaps := getRenovateConfigMapList()
-			Expect(len(renovateConfigMaps)).Should(Equal(1))
+			Expect(len(renovateConfigMaps)).Should(Equal(2))
 			for _, renovateConfig := range renovateConfigMaps {
-				for _, renovateConfigData := range renovateConfig.Data {
-					Expect(strings.Contains(renovateConfigData, `"username": "image_repo_username_partial"`)).Should(BeTrue())
+				if strings.HasPrefix(renovateConfig.ObjectMeta.Name, "renovate-pipeline") {
+					for _, renovateConfigData := range renovateConfig.Data {
+						Expect(strings.Contains(renovateConfigData, `"username": "image_repo_username_partial"`)).Should(BeTrue())
+					}
 				}
 			}
 		})
@@ -336,15 +364,17 @@ var _ = Describe("Component nudge controller", func() {
 				// check that renovate config was created
 				renovateConfigsCreated := len(getRenovateConfigMapList())
 				// check that renovate pipeline run was created
-				renovatePipelinesCreated := getRenovatePipelineRunCount()
-				return renovatePipelinesCreated == 1 && renovateConfigsCreated == 1 && failureCount == 0
+				renovatePipelinesCreated := len(getRenovatePipelineRunList())
+				return renovatePipelinesCreated == 1 && renovateConfigsCreated == 2 && failureCount == 0
 			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 
 			renovateConfigMaps := getRenovateConfigMapList()
-			Expect(len(renovateConfigMaps)).Should(Equal(1))
+			Expect(len(renovateConfigMaps)).Should(Equal(2))
 			for _, renovateConfig := range renovateConfigMaps {
-				for _, renovateConfigData := range renovateConfig.Data {
-					Expect(strings.Contains(renovateConfigData, `"username": "image_repo_username_2"`)).Should(BeTrue())
+				if strings.HasPrefix(renovateConfig.ObjectMeta.Name, "renovate-pipeline") {
+					for _, renovateConfigData := range renovateConfig.Data {
+						Expect(strings.Contains(renovateConfigData, `"username": "image_repo_username_2"`)).Should(BeTrue())
+					}
 				}
 			}
 		})
@@ -380,9 +410,9 @@ var _ = Describe("Component nudge controller", func() {
 				// check that renovate config was created
 				renovateConfigsCreated := len(getRenovateConfigMapList())
 				// check that renovate pipeline run was created
-				renovatePipelinesCreated := getRenovatePipelineRunCount()
+				renovatePipelinesCreated := len(getRenovatePipelineRunList())
 
-				return renovatePipelinesCreated == 1 && renovateConfigsCreated == 1 && failureCount == 0
+				return renovatePipelinesCreated == 1 && renovateConfigsCreated == 2 && failureCount == 0
 			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 		})
 
@@ -430,9 +460,9 @@ var _ = Describe("Component nudge controller", func() {
 				// check that renovate config was created
 				renovateConfigsCreated := len(getRenovateConfigMapList())
 				// check that renovate pipeline run was created
-				renovatePipelinesCreated := getRenovatePipelineRunCount()
+				renovatePipelinesCreated := len(getRenovatePipelineRunList())
 
-				return renovatePipelinesCreated == 1 && renovateConfigsCreated == 1
+				return renovatePipelinesCreated == 1 && renovateConfigsCreated == 2
 			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 		})
 
@@ -470,7 +500,7 @@ var _ = Describe("Component nudge controller", func() {
 				// check that multiple nudgeerror event were reported
 				failureCount := getRenovateFailedEventCount()
 				// check that no renovate pipeline run was created
-				renovatePipelinesCreated := getRenovatePipelineRunCount()
+				renovatePipelinesCreated := len(getRenovatePipelineRunList())
 
 				return renovatePipelinesCreated == 0 && failureCount == 3
 			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
@@ -603,7 +633,7 @@ func getRenovateConfigMapList() []v1.ConfigMap {
 	err := k8sClient.List(context.TODO(), configMapList, &client.ListOptions{Namespace: UserNamespace})
 	Expect(err).ToNot(HaveOccurred())
 	for _, configMap := range configMapList.Items {
-		if strings.HasPrefix(configMap.ObjectMeta.Name, "renovate-pipeline") {
+		if strings.HasPrefix(configMap.ObjectMeta.Name, "renovate-") {
 			log.Info(configMap.ObjectMeta.Name)
 			renovateConfigMapList = append(renovateConfigMapList, configMap)
 		}
@@ -611,18 +641,18 @@ func getRenovateConfigMapList() []v1.ConfigMap {
 	return renovateConfigMapList
 }
 
-func getRenovatePipelineRunCount() int {
-	renovatePipelinesCreated := 0
+func getRenovatePipelineRunList() []tektonapi.PipelineRun {
 	prList := &tektonapi.PipelineRunList{}
+	renovatePipelinesList := []tektonapi.PipelineRun{}
 	err := k8sClient.List(context.TODO(), prList, &client.ListOptions{Namespace: UserNamespace})
 	Expect(err).ToNot(HaveOccurred())
 	for _, pipelineRun := range prList.Items {
 		if strings.HasPrefix(pipelineRun.ObjectMeta.Name, "renovate-pipeline") {
 			log.Info(pipelineRun.ObjectMeta.Name)
-			renovatePipelinesCreated += 1
+			renovatePipelinesList = append(renovatePipelinesList, pipelineRun)
 		}
 	}
-	return renovatePipelinesCreated
+	return renovatePipelinesList
 }
 
 func getRenovateFailedEventCount() int {
