@@ -579,6 +579,19 @@ func createBuildPipelineConfigMap(configMapKey types.NamespacedName, pipelineBun
 	}
 }
 
+func createCAConfigMap(configMapKey types.NamespacedName) {
+	configMapData := map[string]string{CaConfigMapKey: "someCAcertdata"}
+
+	caConfigMap := corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: configMapKey.Name, Namespace: configMapKey.Namespace, Labels: map[string]string{CaConfigMapLabel: "true"}},
+		Data:       configMapData,
+	}
+
+	if err := k8sClient.Create(ctx, &caConfigMap); err != nil && !k8sErrors.IsAlreadyExists(err) {
+		Fail(err.Error())
+	}
+}
+
 func waitServiceAccount(serviceAccountKey types.NamespacedName) corev1.ServiceAccount {
 	serviceAccount := corev1.ServiceAccount{}
 	Eventually(func() bool {
