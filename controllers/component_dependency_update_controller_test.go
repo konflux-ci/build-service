@@ -18,7 +18,6 @@ package controllers
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -231,10 +230,6 @@ var _ = Describe("Component nudge controller", func() {
 			for _, renovateConfig := range renovateConfigMaps {
 				if strings.HasPrefix(renovateConfig.ObjectMeta.Name, "renovate-pipeline") {
 					renovateConfigMapFound = true
-
-					for _, renovateConfigData := range renovateConfig.Data {
-						Expect(strings.Contains(renovateConfigData, `"username": "image_repo_username"`)).Should(BeTrue())
-					}
 				}
 				if strings.HasPrefix(renovateConfig.ObjectMeta.Name, "renovate-ca") {
 					renovateCaConfigMapFound = true
@@ -245,6 +240,8 @@ var _ = Describe("Component nudge controller", func() {
 
 			renovatePipelines := getRenovatePipelineRunList()
 			Expect(len(renovatePipelines)).Should(Equal(1))
+			renovateCommand := strings.Join(renovatePipelines[0].Spec.PipelineSpec.Tasks[0].TaskSpec.Steps[0].Command, ";")
+			Expect(strings.Contains(renovateCommand, `'username':'image_repo_username'`)).Should(BeTrue())
 			caMounted := false
 			for _, volumeMount := range renovatePipelines[0].Spec.PipelineSpec.Tasks[0].TaskSpec.TaskSpec.Steps[0].VolumeMounts {
 				if volumeMount.Name == CaVolumeMountName {
@@ -298,15 +295,10 @@ var _ = Describe("Component nudge controller", func() {
 				return renovatePipelinesCreated == 1 && renovateConfigsCreated == 2 && failureCount == 0
 			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 
-			renovateConfigMaps := getRenovateConfigMapList()
-			Expect(len(renovateConfigMaps)).Should(Equal(2))
-			for _, renovateConfig := range renovateConfigMaps {
-				if strings.HasPrefix(renovateConfig.ObjectMeta.Name, "renovate-pipeline") {
-					for _, renovateConfigData := range renovateConfig.Data {
-						Expect(strings.Contains(renovateConfigData, `"username": "image_repo_username_partial"`)).Should(BeTrue())
-					}
-				}
-			}
+			renovatePipelines := getRenovatePipelineRunList()
+			Expect(len(renovatePipelines)).Should(Equal(1))
+			renovateCommand := strings.Join(renovatePipelines[0].Spec.PipelineSpec.Tasks[0].TaskSpec.Steps[0].Command, ";")
+			Expect(strings.Contains(renovateCommand, `'username':'image_repo_username_partial'`)).Should(BeTrue())
 		})
 
 		It("Test build performs nudge on success, image repository partial auth from multiple secrets", func() {
@@ -368,15 +360,10 @@ var _ = Describe("Component nudge controller", func() {
 				return renovatePipelinesCreated == 1 && renovateConfigsCreated == 2 && failureCount == 0
 			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 
-			renovateConfigMaps := getRenovateConfigMapList()
-			Expect(len(renovateConfigMaps)).Should(Equal(2))
-			for _, renovateConfig := range renovateConfigMaps {
-				if strings.HasPrefix(renovateConfig.ObjectMeta.Name, "renovate-pipeline") {
-					for _, renovateConfigData := range renovateConfig.Data {
-						Expect(strings.Contains(renovateConfigData, `"username": "image_repo_username_2"`)).Should(BeTrue())
-					}
-				}
-			}
+			renovatePipelines := getRenovatePipelineRunList()
+			Expect(len(renovatePipelines)).Should(Equal(1))
+			renovateCommand := strings.Join(renovatePipelines[0].Spec.PipelineSpec.Tasks[0].TaskSpec.Steps[0].Command, ";")
+			Expect(strings.Contains(renovateCommand, `'username':'image_repo_username_2'`)).Should(BeTrue())
 		})
 
 		It("Test stale pipeline not nudged", func() {
@@ -416,19 +403,188 @@ var _ = Describe("Component nudge controller", func() {
 			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 		})
 
+		It("Test build performs nudge on success, only namespace wide renovate config provided", func() {
+			customConfigMapName := types.NamespacedName{Namespace: UserNamespace, Name: NamespaceWideRenovateConfigName}
+			customConfigString := `{"username":"namespacewideconfiguserjson"}`
+			customConfigMapData := map[string]string{ConfigKeyJson: customConfigString}
+			createCustomRenovateConfigMap(customConfigMapName, customConfigMapData)
+			customConfigType := "json"
+
+			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent)
+			Eventually(func() bool {
+				pr := getPipelineRun("test-pipeline-1", UserNamespace)
+				return controllerutil.ContainsFinalizer(pr, NudgeFinalizer)
+			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
+			pr := getPipelineRun("test-pipeline-1", UserNamespace)
+			pr.Status.SetCondition(&apis.Condition{
+				Type:               apis.ConditionSucceeded,
+				Status:             "True",
+				LastTransitionTime: apis.VolatileTime{Inner: metav1.Time{Time: time.Now()}},
+			})
+			pr.Status.Results = []tektonapi.PipelineRunResult{
+				{Name: ImageDigestParamName, Value: tektonapi.ResultValue{Type: tektonapi.ParamTypeString, StringVal: "sha256:12345"}},
+				{Name: ImageUrl, Value: tektonapi.ResultValue{Type: tektonapi.ParamTypeString, StringVal: "quay.io.foo/bar:latest"}},
+			}
+			pr.Status.CompletionTime = &metav1.Time{Time: time.Now()}
+			Expect(k8sClient.Status().Update(ctx, pr)).Should(BeNil())
+
+			Eventually(func() bool {
+				// check that no nudgeerror event was reported
+				failureCount := getRenovateFailedEventCount()
+				// check that renovate config was created
+				renovateConfigsCreated := len(getRenovateConfigMapList())
+				// check that renovate pipeline run was created
+				renovatePipelinesCreated := len(getRenovatePipelineRunList())
+				return renovatePipelinesCreated == 1 && renovateConfigsCreated == 2 && failureCount == 0
+			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
+
+			renovateConfigMaps := getRenovateConfigMapList()
+			Expect(len(renovateConfigMaps)).Should(Equal(2))
+
+			for _, renovateConfig := range renovateConfigMaps {
+				if strings.HasPrefix(renovateConfig.ObjectMeta.Name, "renovate-pipeline") {
+					for key, val := range renovateConfig.Data {
+						Expect(val).Should(Equal(customConfigString))
+						Expect(strings.HasSuffix(key, customConfigType))
+					}
+					break
+				}
+			}
+			deleteConfigMap(customConfigMapName)
+		})
+
+		It("Test build performs nudge on success, only component renovate config provided", func() {
+			customConfigName := fmt.Sprintf("nudging-renovate-config-%s", Operator1)
+			customConfigMapName1 := types.NamespacedName{Namespace: UserNamespace, Name: customConfigName}
+			customConfigString := `{"username":"componentconfiguserjs"}`
+			customConfigMapData := map[string]string{ConfigKeyJs: customConfigString}
+			createCustomRenovateConfigMap(customConfigMapName1, customConfigMapData)
+
+			customConfigName = fmt.Sprintf("nudging-renovate-config-%s", Operator2)
+			customConfigMapName2 := types.NamespacedName{Namespace: UserNamespace, Name: customConfigName}
+			createCustomRenovateConfigMap(customConfigMapName2, customConfigMapData)
+			customConfigType := "js"
+
+			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent)
+			Eventually(func() bool {
+				pr := getPipelineRun("test-pipeline-1", UserNamespace)
+				return controllerutil.ContainsFinalizer(pr, NudgeFinalizer)
+			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
+			pr := getPipelineRun("test-pipeline-1", UserNamespace)
+			pr.Status.SetCondition(&apis.Condition{
+				Type:               apis.ConditionSucceeded,
+				Status:             "True",
+				LastTransitionTime: apis.VolatileTime{Inner: metav1.Time{Time: time.Now()}},
+			})
+			pr.Status.Results = []tektonapi.PipelineRunResult{
+				{Name: ImageDigestParamName, Value: tektonapi.ResultValue{Type: tektonapi.ParamTypeString, StringVal: "sha256:12345"}},
+				{Name: ImageUrl, Value: tektonapi.ResultValue{Type: tektonapi.ParamTypeString, StringVal: "quay.io.foo/bar:latest"}},
+			}
+			pr.Status.CompletionTime = &metav1.Time{Time: time.Now()}
+			Expect(k8sClient.Status().Update(ctx, pr)).Should(BeNil())
+
+			Eventually(func() bool {
+				// check that no nudgeerror event was reported
+				failureCount := getRenovateFailedEventCount()
+				// check that renovate config was created
+				renovateConfigsCreated := len(getRenovateConfigMapList())
+				// check that renovate pipeline run was created
+				renovatePipelinesCreated := len(getRenovatePipelineRunList())
+				return renovatePipelinesCreated == 1 && renovateConfigsCreated == 2 && failureCount == 0
+			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
+
+			renovateConfigMaps := getRenovateConfigMapList()
+			Expect(len(renovateConfigMaps)).Should(Equal(2))
+
+			for _, renovateConfig := range renovateConfigMaps {
+				if strings.HasPrefix(renovateConfig.ObjectMeta.Name, "renovate-pipeline") {
+					for key, val := range renovateConfig.Data {
+						Expect(val).Should(Equal(customConfigString))
+						Expect(strings.HasSuffix(key, customConfigType))
+					}
+					break
+				}
+			}
+			deleteConfigMap(customConfigMapName1)
+			deleteConfigMap(customConfigMapName2)
+		})
+
+		It("Test build performs nudge on success, namespace wide and component renovate config provided", func() {
+			customConfigMapName := types.NamespacedName{Namespace: UserNamespace, Name: NamespaceWideRenovateConfigName}
+			customConfigString := `{"username":"namespacewideconfiguserjson"}`
+			customConfigMapData := map[string]string{ConfigKeyJson: customConfigString}
+			createCustomRenovateConfigMap(customConfigMapName, customConfigMapData)
+
+			customConfigName := fmt.Sprintf("nudging-renovate-config-%s", Operator1)
+			customConfigMapName1 := types.NamespacedName{Namespace: UserNamespace, Name: customConfigName}
+			customConfigString1 := `{"username":"componentconfiguserjs"}`
+			customConfigString2 := `{"username":"componentconfiguserjson"}`
+			customConfigMapData = map[string]string{ConfigKeyJs: customConfigString1, ConfigKeyJson: customConfigString2}
+			createCustomRenovateConfigMap(customConfigMapName1, customConfigMapData)
+
+			customConfigName = fmt.Sprintf("nudging-renovate-config-%s", Operator2)
+			customConfigMapName2 := types.NamespacedName{Namespace: UserNamespace, Name: customConfigName}
+			createCustomRenovateConfigMap(customConfigMapName2, customConfigMapData)
+			customConfigType := "json"
+
+			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent)
+			Eventually(func() bool {
+				pr := getPipelineRun("test-pipeline-1", UserNamespace)
+				return controllerutil.ContainsFinalizer(pr, NudgeFinalizer)
+			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
+			pr := getPipelineRun("test-pipeline-1", UserNamespace)
+			pr.Status.SetCondition(&apis.Condition{
+				Type:               apis.ConditionSucceeded,
+				Status:             "True",
+				LastTransitionTime: apis.VolatileTime{Inner: metav1.Time{Time: time.Now()}},
+			})
+			pr.Status.Results = []tektonapi.PipelineRunResult{
+				{Name: ImageDigestParamName, Value: tektonapi.ResultValue{Type: tektonapi.ParamTypeString, StringVal: "sha256:12345"}},
+				{Name: ImageUrl, Value: tektonapi.ResultValue{Type: tektonapi.ParamTypeString, StringVal: "quay.io.foo/bar:latest"}},
+			}
+			pr.Status.CompletionTime = &metav1.Time{Time: time.Now()}
+			Expect(k8sClient.Status().Update(ctx, pr)).Should(BeNil())
+
+			Eventually(func() bool {
+				// check that no nudgeerror event was reported
+				failureCount := getRenovateFailedEventCount()
+				// check that renovate config was created
+				renovateConfigsCreated := len(getRenovateConfigMapList())
+				// check that renovate pipeline run was created
+				renovatePipelinesCreated := len(getRenovatePipelineRunList())
+				return renovatePipelinesCreated == 1 && renovateConfigsCreated == 2 && failureCount == 0
+			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
+
+			renovateConfigMaps := getRenovateConfigMapList()
+			Expect(len(renovateConfigMaps)).Should(Equal(2))
+
+			for _, renovateConfig := range renovateConfigMaps {
+				if strings.HasPrefix(renovateConfig.ObjectMeta.Name, "renovate-pipeline") {
+					for key, val := range renovateConfig.Data {
+						Expect(val).Should(Equal(customConfigString2))
+						Expect(strings.HasSuffix(key, customConfigType))
+					}
+					break
+				}
+			}
+			deleteConfigMap(customConfigMapName)
+			deleteConfigMap(customConfigMapName1)
+			deleteConfigMap(customConfigMapName2)
+		})
 	})
 
 	Context("Test nudge failure handling", func() {
 		It("Test single failure results in retry", func() {
 			failures = 1
 			// mock function to produce error
-			GenerateRenovateConfigForNudge = func(target updateTarget, buildResult *BuildResult) (string, error) {
+
+			GenerateRenovateConfigForNudge = func(target updateTarget, buildResult *BuildResult) (RenovateConfig, error) {
 				if failures == 0 {
 					log.Info("components nudged")
-					return "\nrenovate_config\nrenovate_line1\nrenovate_line2\n", nil
+					return RenovateConfig{}, nil
 				}
 				failures = failures - 1
-				return "", fmt.Errorf("failure")
+				return RenovateConfig{}, fmt.Errorf("failure")
 			}
 
 			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent)
@@ -469,13 +625,13 @@ var _ = Describe("Component nudge controller", func() {
 		It("Test retries exceeded", func() {
 			failures = 10
 			// mock function to produce error
-			GenerateRenovateConfigForNudge = func(target updateTarget, buildResult *BuildResult) (string, error) {
+			GenerateRenovateConfigForNudge = func(target updateTarget, buildResult *BuildResult) (RenovateConfig, error) {
 				if failures == 0 {
 					log.Info("components nudged")
-					return "\nrenovate_config\nrenovate_line1\nrenovate_line2\n", nil
+					return RenovateConfig{}, nil
 				}
 				failures = failures - 1
-				return "", fmt.Errorf("failure")
+				return RenovateConfig{}, fmt.Errorf("failure")
 			}
 
 			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent)
@@ -521,13 +677,14 @@ var _ = Describe("Component nudge controller", func() {
 			imageRepositoryHost := "quay.io"
 			imageRepositoryUsername := "repository_username"
 			fileMatches := "file1, file2, file3"
-			fileMatchesList := `["file1","file2","file3"]`
+			fileMatchesList := []string{"file1", "file2", "file3"}
 			repositories := []renovateRepository{{BaseBranches: []string{"base_branch"}, Repository: "some_repository/something"}}
-			repositoriesData, _ := json.Marshal(repositories)
 			buildImageRepository := "quay.io/testorg/testimage"
 			builtImageTag := "a8dce08dbdf290e5d616a83672ad3afcb4b455ef"
 			digest := "sha256:716be32f12f0dd31adbab1f57e9d0b87066e03de51c89dce8ffb397fbac92314"
 			distributionRepositories := []string{"registry.redhat.com/some-product", "registry.redhat.com/other-product"}
+			matchPackageNames := []string{buildImageRepository, distributionRepositories[0], distributionRepositories[1]}
+			registryAliases := map[string]string{distributionRepositories[0]: buildImageRepository, distributionRepositories[1]: buildImageRepository}
 
 			buildResult := BuildResult{
 				BuiltImageRepository:     buildImageRepository,
@@ -549,28 +706,22 @@ var _ = Describe("Component nudge controller", func() {
 				ImageRepositoryUsername: imageRepositoryUsername,
 			}
 
-			result, err := generateRenovateConfigForNudge(renovateTarget, &buildResult)
+			resultConfig, err := generateRenovateConfigForNudge(renovateTarget, &buildResult)
 			Expect(err).Should(Succeed())
-
-			Expect(strings.Contains(result, fmt.Sprintf(`platform: "%s"`, gitProvider))).Should(BeTrue())
-			Expect(strings.Contains(result, fmt.Sprintf(`username: "%s"`, gitUsername))).Should(BeTrue())
-			Expect(strings.Contains(result, fmt.Sprintf(`gitAuthor: "%s"`, gitAuthor))).Should(BeTrue())
-			Expect(strings.Contains(result, fmt.Sprintf(`repositories: %s`, repositoriesData))).Should(BeTrue())
-			Expect(strings.Contains(result, fmt.Sprintf(`"username": "%s"`, imageRepositoryUsername))).Should(BeTrue())
-			Expect(strings.Contains(result, fmt.Sprintf(`"matchHost": "%s"`, imageRepositoryHost))).Should(BeTrue())
-			Expect(strings.Contains(result, fmt.Sprintf(`endpoint: "%s"`, gitEndpoint))).Should(BeTrue())
-			Expect(strings.Contains(result, fmt.Sprintf(`"fileMatch": %s`, fileMatchesList))).Should(BeTrue())
-			Expect(strings.Contains(result, fmt.Sprintf(`"currentValueTemplate": "%s"`, buildResult.BuiltImageTag))).Should(BeTrue())
-			Expect(strings.Contains(result, fmt.Sprintf(`"depNameTemplate": "%s"`, buildImageRepository))).Should(BeTrue())
-			Expect(strings.Contains(result, fmt.Sprintf(`groupName: "Component Update %s"`, componentName))).Should(BeTrue())
-			Expect(strings.Contains(result, fmt.Sprintf(`branchName: "konflux/component-updates/%s"`, componentName))).Should(BeTrue())
-			Expect(strings.Contains(result, fmt.Sprintf(`commitMessageTopic: "%s"`, componentName))).Should(BeTrue())
-			Expect(strings.Contains(result, fmt.Sprintf(`followTag: "%s"`, builtImageTag))).Should(BeTrue())
-			Expect(strings.Contains(result, fmt.Sprintf(`"matchPackageNames": ["%s","%s","%s"]`, buildImageRepository, distributionRepositories[0], distributionRepositories[1]))).Should(BeTrue())
-			registryAlias1 := fmt.Sprintf(`"%s": "%s",`, distributionRepositories[0], buildImageRepository)
-			registryAlias2 := fmt.Sprintf(`"%s": "%s"`, distributionRepositories[1], buildImageRepository)
-			Expect(strings.Contains(result, registryAlias1)).Should(BeTrue())
-			Expect(strings.Contains(result, registryAlias2)).Should(BeTrue())
+			Expect(resultConfig.GitProvider).Should(Equal(gitProvider))
+			Expect(resultConfig.Username).Should(Equal(gitUsername))
+			Expect(resultConfig.GitAuthor).Should(Equal(gitAuthor))
+			Expect(resultConfig.Repositories).Should(Equal(repositories))
+			Expect(resultConfig.Endpoint).Should(Equal(gitEndpoint))
+			Expect(resultConfig.CustomManagers[0].FileMatch).Should(Equal(fileMatchesList))
+			Expect(resultConfig.CustomManagers[0].CurrentValueTemplate).Should(Equal(buildResult.BuiltImageTag))
+			Expect(resultConfig.CustomManagers[0].DepNameTemplate).Should(Equal(buildImageRepository))
+			Expect(resultConfig.PackageRules[1].GroupName).Should(Equal(fmt.Sprintf("Component Update %s", componentName)))
+			Expect(resultConfig.PackageRules[1].BranchName).Should(Equal(fmt.Sprintf("konflux/component-updates/%s", componentName)))
+			Expect(resultConfig.PackageRules[1].CommitMessageTopic).Should(Equal(componentName))
+			Expect(resultConfig.PackageRules[1].FollowTag).Should(Equal(builtImageTag))
+			Expect(resultConfig.PackageRules[1].MatchPackageNames).Should(Equal(matchPackageNames))
+			Expect(resultConfig.RegistryAliases).Should(Equal(registryAliases))
 		})
 	})
 
