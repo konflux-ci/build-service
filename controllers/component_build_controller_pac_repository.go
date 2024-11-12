@@ -112,15 +112,14 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 				return err
 			}
 			if err := r.Client.Create(ctx, repository); err != nil {
-				if strings.Contains(err.Error(), "repository already exist with url") {
+				if strings.Contains(err.Error(), "repository already exist") {
 					// PaC admission webhook denied creation of the PaC repository,
 					// because PaC repository object that references the same git repository already exists.
 					log.Info("An attempt to create second PaC Repository for the same git repository", "GitRepository", repository.Spec.URL, l.Action, l.ActionAdd, l.Audit, "true")
 					return boerrors.NewBuildOpError(boerrors.EPaCDuplicateRepository, err)
 				}
 
-				if strings.Contains(err.Error(), "denied the request: failed to validate url error") ||
-					strings.Contains(err.Error(), "denied the request: repository already exists with URL") {
+				if strings.Contains(err.Error(), "denied the request: failed to validate") {
 					// PaC admission webhook denied creation of the PaC repository,
 					// because PaC repository object references not allowed git repository url.
 
