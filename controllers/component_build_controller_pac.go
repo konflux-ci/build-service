@@ -299,7 +299,8 @@ func (r *ComponentBuildReconciler) TriggerPaCBuild(ctx context.Context, componen
 	resp, err := HttpClient.Post(triggerURL, "application/json", bytes.NewBuffer(bytesParam))
 
 	if err != nil {
-		return false, err
+		log.Error(err, "error from incoming webhook trigger POST")
+		return false, nil
 	}
 
 	if resp.StatusCode != 200 && resp.StatusCode != 202 {
