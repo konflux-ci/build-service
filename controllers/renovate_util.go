@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"text/template"
 	"time"
 
 	"github.com/konflux-ci/application-api/api/v1alpha1"
@@ -30,14 +29,18 @@ import (
 )
 
 const (
-	RenovateImageEnvName    = "RENOVATE_IMAGE"
-	DefaultRenovateImageUrl = "quay.io/redhat-appstudio/renovate:v37.74.1"
-	DefaultRenovateUser     = "red-hat-konflux"
-	CaConfigMapLabel        = "config.openshift.io/inject-trusted-cabundle"
-	CaConfigMapKey          = "ca-bundle.crt"
-	CaFilePath              = "tls-ca-bundle.pem"
-	CaMountPath             = "/etc/pki/ca-trust/extracted/pem"
-	CaVolumeMountName       = "trusted-ca"
+	RenovateImageEnvName              = "RENOVATE_IMAGE"
+	DefaultRenovateImageUrl           = "quay.io/konflux-ci/mintmaker-renovate-image:cdbc220"
+	DefaultRenovateUser               = "red-hat-konflux"
+	CaConfigMapLabel                  = "config.openshift.io/inject-trusted-cabundle"
+	CaConfigMapKey                    = "ca-bundle.crt"
+	CaFilePath                        = "tls-ca-bundle.pem"
+	CaMountPath                       = "/etc/pki/ca-trust/extracted/pem"
+	CaVolumeMountName                 = "trusted-ca"
+	NamespaceWideRenovateConfigName   = "namespace-wide-nudging-renovate-config"
+	ComponentRenovateConfigNamePrefix = "nudging-renovate-config-"
+	ConfigKeyJson                     = "config.json"
+	ConfigKeyJs                       = "config.js"
 )
 
 type renovateRepository struct {
@@ -66,7 +69,48 @@ type ComponentDependenciesUpdater struct {
 	CredentialProvider *k8s.GitCredentialProvider
 }
 
-var GenerateRenovateConfigForNudge func(target updateTarget, buildResult *BuildResult) (string, error) = generateRenovateConfigForNudge
+type CustomManager struct {
+	FileMatch            []string `json:"fileMatch,omitempty"`
+	CustomType           string   `json:"customType"`
+	DatasourceTemplate   string   `json:"datasourceTemplate"`
+	MatchStrings         []string `json:"matchStrings"`
+	CurrentValueTemplate string   `json:"currentValueTemplate"`
+	DepNameTemplate      string   `json:"depNameTemplate"`
+}
+
+type PackageRule struct {
+	MatchPackagePatterns []string `json:"matchPackagePatterns,omitempty"`
+	MatchPackageNames    []string `json:"matchPackageNames,omitempty"`
+	GroupName            string   `json:"groupName,omitempty"`
+	BranchName           string   `json:"branchName,omitempty"`
+	CommitMessageTopic   string   `json:"commitMessageTopic,omitempty"`
+	PRFooter             string   `json:"prFooter,omitempty"`
+	RecreateWhen         string   `json:"recreateWhen,omitempty"`
+	RebaseWhen           string   `json:"rebaseWhen,omitempty"`
+	Enabled              bool     `json:"enabled"`
+	FollowTag            string   `json:"followTag,omitempty"`
+}
+
+type RenovateConfig struct {
+	GitProvider         string               `json:"platform"`
+	Username            string               `json:"username"`
+	GitAuthor           string               `json:"gitAuthor"`
+	Onboarding          bool                 `json:"onboarding"`
+	RequireConfig       string               `json:"requireConfig"`
+	Repositories        []renovateRepository `json:"repositories"`
+	EnabledManagers     []string             `json:"enabledManagers"`
+	Endpoint            string               `json:"endpoint"`
+	CustomManagers      []CustomManager      `json:"customManagers,omitempty"`
+	RegistryAliases     map[string]string    `json:"registryAliases,omitempty"`
+	PackageRules        []PackageRule        `json:"packageRules,omitempty"`
+	ForkProcessing      string               `json:"forkProcessing"`
+	Extends             []string             `json:"extends"`
+	DependencyDashboard bool                 `json:"dependencyDashboard"`
+}
+
+var DisableAllPackageRules = PackageRule{MatchPackagePatterns: []string{"*"}, Enabled: false}
+
+var GenerateRenovateConfigForNudge func(target updateTarget, buildResult *BuildResult) (RenovateConfig, error) = generateRenovateConfigForNudge
 
 func NewComponentDependenciesUpdater(client client.Client, scheme *runtime.Scheme, eventRecorder record.EventRecorder) *ComponentDependenciesUpdater {
 	return &ComponentDependenciesUpdater{Client: client, Scheme: scheme, EventRecorder: eventRecorder, CredentialProvider: k8s.NewGitCredentialProvider(client)}
@@ -246,116 +290,68 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsGithubApp(ctx context.Cont
 }
 
 // generateRenovateConfigForNudge This method returns renovate config for target
-func generateRenovateConfigForNudge(target updateTarget, buildResult *BuildResult) (string, error) {
-	repositoriesData, _ := json.Marshal(target.Repositories)
+func generateRenovateConfigForNudge(target updateTarget, buildResult *BuildResult) (RenovateConfig, error) {
 	fileMatchParts := strings.Split(buildResult.FileMatches, ",")
 	for i := range fileMatchParts {
 		fileMatchParts[i] = strings.TrimSpace(fileMatchParts[i])
 	}
-	fileMatch, err := json.Marshal(fileMatchParts)
-	if err != nil {
-		return "", err
+
+	var matchStrings []string
+	var registryAliases = make(map[string]string)
+	var customManagers []CustomManager
+	var packageRules []PackageRule
+	var matchPackageNames []string
+	matchStrings = append(matchStrings, buildResult.BuiltImageRepository+"(:.*)?@(?<currentDigest>sha256:[a-f0-9]+)")
+	matchPackageNames = append(matchPackageNames, buildResult.BuiltImageRepository)
+
+	for _, drepository := range buildResult.DistributionRepositories {
+		matchStrings = append(matchStrings, drepository+"(:.*)?@(?<currentDigest>sha256:[a-f0-9]+)")
+		matchPackageNames = append(matchPackageNames, drepository)
+		registryAliases[drepository] = buildResult.BuiltImageRepository
+
 	}
 
-	body := `
-	{{with $root := .}}
-	module.exports = {
-		platform: "{{.GitProvider}}",
-		username: "{{.Username}}",
-		gitAuthor: "{{.GitAuthor}}",
-		onboarding: false,
-		requireConfig: "ignored",
-		repositories: {{.Repositories}},
-		enabledManagers: "regex",
-		endpoint: "{{.Endpoint}}",
-		customManagers: [
-			{
-				"fileMatch": {{.FileMatches}},
-				"customType": "regex",
-				"datasourceTemplate": "docker",
-				"matchStrings": [
-					"{{.BuiltImageRepository}}(:.*)?@(?<currentDigest>sha256:[a-f0-9]+)"
-					{{range .DistributionRepositories}},"{{.}}(:.*)?@(?<currentDigest>sha256:[a-f0-9]+)"{{end}}
-				],
-				"currentValueTemplate": "{{.BuiltImageTag}}",
-				"depNameTemplate": "{{.BuiltImageRepository}}",
-			}
-		],
-		registryAliases: {
-			{{range $index, $repo := .DistributionRepositories}}{{if $index}},{{end}}
-				"{{$repo}}": "{{$.BuiltImageRepository}}"{{end}}
-		},
-		packageRules: [
-		  {
-			matchPackagePatterns: ["*"],
-			enabled: false
-		  },
-		  {
-			"matchPackageNames": ["{{.BuiltImageRepository}}"{{range .DistributionRepositories}},"{{.}}"{{end}}],
-			groupName: "Component Update {{.ComponentName}}",
-			branchName: "konflux/component-updates/{{.ComponentName}}",
-			commitMessageTopic: "{{.ComponentName}}",
-			prFooter: "To execute skipped test pipelines write comment ` + "`/ok-to-test`" + `",
-			recreateWhen: "always",
-			rebaseWhen: "behind-base-branch",
-			enabled: true,
-			followTag: "{{.BuiltImageTag}}"
-		  }
-		],
-		hostRules: [
-		  {
-			"matchHost": "{{.ImageRepositoryHost}}",
-			"username": "{{.ImageRepositoryUsername}}",
-			"password": process.env.RENOVATE_REPO_PASS,
-		  }
-		],
-		forkProcessing: "enabled",
-		extends: [":gitSignOff"],
-		dependencyDashboard: false
-	}
-	{{end}}
-	`
+	customManagers = append(customManagers, CustomManager{
+		FileMatch:            fileMatchParts,
+		CustomType:           "regex",
+		DatasourceTemplate:   "docker",
+		MatchStrings:         matchStrings,
+		CurrentValueTemplate: buildResult.BuiltImageTag,
+		DepNameTemplate:      buildResult.BuiltImageRepository,
+	})
 
-	data := struct {
-		GitProvider              string
-		Username                 string
-		GitAuthor                string
-		Endpoint                 string
-		ComponentName            string
-		Repositories             string
-		BuiltImageRepository     string
-		BuiltImageTag            string
-		Digest                   string
-		DistributionRepositories []string
-		FileMatches              string
-		ImageRepositoryHost      string
-		ImageRepositoryUsername  string
-	}{
-		GitProvider:              target.GitProvider,
-		Username:                 target.Username,
-		GitAuthor:                target.GitAuthor,
-		Endpoint:                 target.Endpoint,
-		ComponentName:            buildResult.Component.Name,
-		Repositories:             string(repositoriesData),
-		BuiltImageRepository:     buildResult.BuiltImageRepository,
-		BuiltImageTag:            buildResult.BuiltImageTag,
-		Digest:                   buildResult.Digest,
-		DistributionRepositories: buildResult.DistributionRepositories,
-		FileMatches:              string(fileMatch),
-		ImageRepositoryHost:      target.ImageRepositoryHost,
-		ImageRepositoryUsername:  target.ImageRepositoryUsername,
+	packageRules = append(packageRules, DisableAllPackageRules)
+	packageRules = append(packageRules, PackageRule{
+		MatchPackageNames:  matchPackageNames,
+		GroupName:          fmt.Sprintf("Component Update %s", buildResult.Component.Name),
+		BranchName:         fmt.Sprintf("konflux/component-updates/%s", buildResult.Component.Name),
+		CommitMessageTopic: buildResult.Component.Name,
+		PRFooter:           "To execute skipped test pipelines write comment `/ok-to-test`",
+		RecreateWhen:       "always",
+		RebaseWhen:         "behind-base-branch",
+		Enabled:            true,
+		FollowTag:          buildResult.BuiltImageTag,
+	})
+
+	renovateConfig := RenovateConfig{
+		GitProvider:   target.GitProvider,
+		Username:      target.Username,
+		GitAuthor:     target.GitAuthor,
+		Onboarding:    false,
+		RequireConfig: "ignored",
+		Repositories:  target.Repositories,
+		// was 'regex' before but because: https://docs.renovatebot.com/configuration-options/#enabledmanagers
+		EnabledManagers:     []string{"custom.regex"},
+		Endpoint:            target.Endpoint,
+		CustomManagers:      customManagers,
+		RegistryAliases:     registryAliases,
+		PackageRules:        packageRules,
+		ForkProcessing:      "enabled",
+		Extends:             []string{":gitSignOff"},
+		DependencyDashboard: false,
 	}
 
-	configTemplate, err := template.New("renovate").Parse(body)
-	if err != nil {
-		return "", err
-	}
-	build := strings.Builder{}
-	err = configTemplate.Execute(&build, data)
-	if err != nil {
-		return "", err
-	}
-	return build.String(), nil
+	return renovateConfig, nil
 }
 
 // CreateRenovaterPipeline will create a renovate pipeline in the user namespace, to update component dependencies.
@@ -380,21 +376,70 @@ func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Contex
 	secretTokens := map[string]string{}
 	configmaps := map[string]string{}
 	renovateCmds := []string{}
+	globalConfigString := ""
+	globalConfigType := ""
+
+	allUserConfigMaps := &corev1.ConfigMapList{}
+	if err := u.Client.List(ctx, allUserConfigMaps, client.InNamespace(namespace)); err != nil {
+		return fmt.Errorf("failed to list config maps in %s namespace: %w", namespace, err)
+	}
+	for _, userConfigMap := range allUserConfigMaps.Items {
+		if userConfigMap.Name == NamespaceWideRenovateConfigName {
+			globalConfigString, globalConfigType = getConfigAndTypeFromConfigMap(userConfigMap)
+			break
+		}
+	}
+
 	for _, target := range targets {
 		randomStr1 := RandomString(5)
 		randomStr2 := RandomString(10)
 		randomStr3 := RandomString(10)
 		secretTokens[randomStr2] = target.Token
 		secretTokens[randomStr3] = target.ImageRepositoryPassword
-		config, err := GenerateRenovateConfigForNudge(target, buildResult)
-		if err != nil {
-			return err
-		}
-		configmaps[fmt.Sprintf("%s-%s.js", target.ComponentName, randomStr1)] = config
+		componentConfigName := fmt.Sprintf("%s%s", ComponentRenovateConfigNamePrefix, target.ComponentName)
+		componentConfigString := ""
+		componentConfigType := ""
+		configString := ""
+		configType := "json"
 
-		log.Info(fmt.Sprintf("Creating renovate config map entry for %s component with length %d and value %s", target.ComponentName, len(config), config))
+		for _, userConfigMap := range allUserConfigMaps.Items {
+			if userConfigMap.Name == componentConfigName {
+				componentConfigString, componentConfigType = getConfigAndTypeFromConfigMap(userConfigMap)
+				break
+			}
+		}
+
+		if componentConfigString != "" {
+			configString = componentConfigString
+			configType = componentConfigType
+			log.Info("will use custom renovate config for component", "name", componentConfigName, "type", configType)
+		} else if globalConfigString != "" {
+			configString = globalConfigString
+			configType = globalConfigType
+			log.Info("will use custom global renovate config", "name", NamespaceWideRenovateConfigName, "type", configType)
+		} else {
+			log.Info("will generate renovate config, no custom ones are present")
+			renovateConfig, err := GenerateRenovateConfigForNudge(target, buildResult)
+			if err != nil {
+				return err
+			}
+
+			config, err := json.Marshal(renovateConfig)
+			if err != nil {
+				return err
+			}
+			configString = string(config)
+		}
+
+		log.Info(fmt.Sprintf("Creating renovate config map entry for %s component with length %d and value %s", target.ComponentName, len(configString), configString))
+
+		configmaps[fmt.Sprintf("%s-%s.%s", target.ComponentName, randomStr1, configType)] = configString
+		hostRules := fmt.Sprintf("\"[{'matchHost':'%s','username':'%s','password':'${TOKEN_%s}'}]\"", target.ImageRepositoryHost, target.ImageRepositoryUsername, randomStr3)
+
+		// we are passing host rules via variable, because we can't resolve variable in json config
+		// also this way we can use custom provided config without any modifications
 		renovateCmds = append(renovateCmds,
-			fmt.Sprintf("RENOVATE_PR_HOURLY_LIMIT=0 RENOVATE_PR_CONCURRENT_LIMIT=0 RENOVATE_TOKEN=$TOKEN_%s RENOVATE_REPO_PASS=$TOKEN_%s RENOVATE_CONFIG_FILE=/configs/%s-%s.js renovate", randomStr2, randomStr3, target.ComponentName, randomStr1),
+			fmt.Sprintf("RENOVATE_PR_HOURLY_LIMIT=0 RENOVATE_PR_CONCURRENT_LIMIT=0 RENOVATE_TOKEN=$TOKEN_%s RENOVATE_CONFIG_FILE=/configs/%s-%s.%s RENOVATE_HOST_RULES=%s renovate", randomStr2, target.ComponentName, randomStr1, configType, hostRules),
 		)
 	}
 	if len(renovateCmds) == 0 {
@@ -562,4 +607,18 @@ func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Contex
 	log.Info(fmt.Sprintf("Renovate pipeline %s triggered", pipelineRun.Name), logs.Action, logs.ActionAdd)
 
 	return nil
+}
+
+func getConfigAndTypeFromConfigMap(configMap corev1.ConfigMap) (string, string) {
+	config, exists := configMap.Data[ConfigKeyJson]
+	if exists && len(config) > 0 {
+		return config, "json"
+	}
+
+	config, exists = configMap.Data[ConfigKeyJs]
+	if exists && len(config) > 0 {
+		return config, "js"
+	}
+
+	return "", ""
 }

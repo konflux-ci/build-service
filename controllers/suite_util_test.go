@@ -592,6 +592,33 @@ func createCAConfigMap(configMapKey types.NamespacedName) {
 	}
 }
 
+func createCustomRenovateConfigMap(configMapKey types.NamespacedName, configMapData map[string]string) {
+	caConfigMap := corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: configMapKey.Name, Namespace: configMapKey.Namespace},
+		Data:       configMapData,
+	}
+
+	if err := k8sClient.Create(ctx, &caConfigMap); err != nil && !k8sErrors.IsAlreadyExists(err) {
+		Fail(err.Error())
+	}
+}
+
+func deleteConfigMap(configMapKey types.NamespacedName) {
+	configMap := corev1.ConfigMap{}
+	if err := k8sClient.Get(ctx, configMapKey, &configMap); err != nil {
+		if k8sErrors.IsNotFound(err) {
+			return
+		}
+		Fail(err.Error())
+	}
+	if err := k8sClient.Delete(ctx, &configMap); err != nil && !k8sErrors.IsNotFound(err) {
+		Fail(err.Error())
+	}
+	Eventually(func() bool {
+		return k8sErrors.IsNotFound(k8sClient.Get(ctx, configMapKey, &configMap))
+	}, timeout, interval).Should(BeTrue())
+}
+
 func waitServiceAccount(serviceAccountKey types.NamespacedName) corev1.ServiceAccount {
 	serviceAccount := corev1.ServiceAccount{}
 	Eventually(func() bool {

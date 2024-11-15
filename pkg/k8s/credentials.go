@@ -127,7 +127,7 @@ func bestMatchingSecret(ctx context.Context, componentRepository string, secrets
 
 	for index, secret := range secrets {
 		repositoryAnnotation, exists := secret.Annotations[ScmSecretRepositoryAnnotation]
-		log.Info("found secret", "secret", secret.Name, "repositoryAnnotation", repositoryAnnotation, "exists", exists)
+		log.Info("found secret", "repositoryAnnotation", repositoryAnnotation, "exists", exists, "secret", secret.Name)
 		if !exists || repositoryAnnotation == "" {
 			hostOnlySecrets = append(hostOnlySecrets, secret)
 			continue
@@ -142,6 +142,7 @@ func bestMatchingSecret(ctx context.Context, componentRepository string, secrets
 		// Direct repository match, return secret
 		log.Info("checking for direct match", "componentRepository", componentRepository, "secretRepositories", secretRepositories)
 		if slices.Contains(secretRepositories, componentRepository) {
+			log.Info("secret repository is direct match", "secret", secret.Name)
 			return &secret
 		}
 		log.Info("no direct match found", "componentRepository", componentRepository, "secretRepositories", secretRepositories)
@@ -176,5 +177,7 @@ func bestMatchingSecret(ctx context.Context, componentRepository string, secrets
 			bestIndex = i
 		}
 	}
+
+	log.Info("Using host only secret based on potential matches", "name", secrets[bestIndex].Name)
 	return &secrets[bestIndex]
 }
