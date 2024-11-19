@@ -44,10 +44,11 @@ import (
 )
 
 const (
-	BuildRequestAnnotationName                 = "build.appstudio.openshift.io/request"
-	BuildRequestTriggerPaCBuildAnnotationValue = "trigger-pac-build"
-	BuildRequestConfigurePaCAnnotationValue    = "configure-pac"
-	BuildRequestUnconfigurePaCAnnotationValue  = "unconfigure-pac"
+	BuildRequestAnnotationName                  = "build.appstudio.openshift.io/request"
+	BuildRequestTriggerPaCBuildAnnotationValue  = "trigger-pac-build"
+	BuildRequestConfigurePaCAnnotationValue     = "configure-pac"
+	BuildRequestConfigurePaCNoMrAnnotationValue = "configure-pac-no-mr"
+	BuildRequestUnconfigurePaCAnnotationValue   = "unconfigure-pac"
 
 	BuildStatusAnnotationName = "build.appstudio.openshift.io/status"
 
@@ -63,8 +64,6 @@ const (
 	gitRepoAtShaAnnotationName    = "build.appstudio.openshift.io/repo"
 	gitTargetBranchAnnotationName = "build.appstudio.redhat.com/target_branch"
 
-	ImageRepoAnnotationName         = "image.redhat.com/image"
-	ImageRepoGenerateAnnotationName = "image.redhat.com/generate"
 	buildPipelineServiceAccountName = "appstudio-pipeline"
 
 	defaultBuildPipelineAnnotation     = "build.appstudio.openshift.io/pipeline"
@@ -324,7 +323,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			bometrics.PushPipelineRebuildTriggerTimeMetric.Observe(time.Since(bometrics.ComponentTimesForMetrics[componentIdForMetrics].StartTimestamp).Seconds())
 		}
 
-	case BuildRequestConfigurePaCAnnotationValue:
+	case BuildRequestConfigurePaCAnnotationValue, BuildRequestConfigurePaCNoMrAnnotationValue:
 		updateMetricsTimes(componentIdForMetrics, requestedAction, reconcileStartTime)
 		// initial build upon component creation (doesn't have either build status)
 		initialBuild := func() bool {

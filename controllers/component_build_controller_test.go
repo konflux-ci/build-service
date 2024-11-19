@@ -549,6 +549,41 @@ var _ = Describe("Component initial build controller", func() {
 			}, timeout, interval).Should(BeTrue())
 		})
 
+		It("should successfully setup PaC but don't create PaC config proposal PR", func() {
+			isEnsurePaCMergeRequestInvoked := false
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				isEnsurePaCMergeRequestInvoked = true
+				defer GinkgoRecover()
+				Fail("Should not create onfig proposal PR if requested not to")
+				return "", nil
+			}
+			isSetupPaCWebhookInvoked := false
+			SetupPaCWebhookFunc = func(repoUrl, webhookTargetUrl, webhookSecret string) error {
+				isSetupPaCWebhookInvoked = true
+				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resourcePacPrepKey.Name))
+				Expect(webhookTargetUrl).ToNot(BeEmpty())
+				Expect(webhookSecret).ToNot(BeEmpty())
+				return nil
+			}
+
+			pacSecretData := map[string]string{"password": "ghp_token"}
+			createSCMSecret(namespacePaCSecretKey, pacSecretData, corev1.SecretTypeBasicAuth, map[string]string{})
+
+			createComponentAndProcessBuildRequest(componentConfig{
+				componentKey: resourcePacPrepKey,
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestConfigurePaCNoMrAnnotationValue)
+
+			waitSecretCreated(namespacePaCSecretKey)
+			waitPaCRepositoryCreated(resourcePacPrepKey)
+			Eventually(func() bool {
+				return isSetupPaCWebhookInvoked
+			}, timeout, interval).Should(BeTrue())
+			Consistently(func() bool {
+				return !isEnsurePaCMergeRequestInvoked
+			}, ensureTimeout, interval).Should(BeTrue())
+		})
+
 		It("should reuse the same webhook secret for multi component repository", func() {
 			var webhookSecretStrings []string
 			SetupPaCWebhookFunc = func(repoUrl string, webhookUrl string, webhookSecret string) error {

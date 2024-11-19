@@ -498,6 +498,12 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 		}
 	}
 
+	// It might seem that there is more optimal way of doing this.
+	// However, this use case is not often used, so making logic above more complicated does not worth it.
+	if component.Annotations[BuildRequestAnnotationName] == BuildRequestConfigurePaCNoMrAnnotationValue {
+		// User requested not to create a proposal PR.
+		return "", nil
+	}
 	return gitClient.EnsurePaCMergeRequest(repoUrl, mrData)
 }
 
