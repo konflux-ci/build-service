@@ -275,7 +275,7 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsGithubApp(ctx context.Cont
 			ComponentName:           component.Name,
 			GitProvider:             gitProvider,
 			Username:                fmt.Sprintf("%s[bot]", slug),
-			GitAuthor:               fmt.Sprintf("%s <123456+%s[bot]@users.noreply.github.com>", slug, slug),
+			GitAuthor:               fmt.Sprintf("%s <%d+%s[bot]@users.noreply.github.com>", slug, githubAppInstallation.ID, slug),
 			Token:                   githubAppInstallation.Token,
 			Endpoint:                git.BuildAPIEndpoint("github").APIEndpoint("github.com"),
 			Repositories:            repositories,
