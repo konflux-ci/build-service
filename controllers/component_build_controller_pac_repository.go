@@ -106,37 +106,47 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 	}
 
 	existingRepository := &pacv1alpha1.Repository{}
-	if err := r.Client.Get(ctx, types.NamespacedName{Name: repository.Name, Namespace: repository.Namespace}, existingRepository); err != nil {
-		if errors.IsNotFound(err) {
-			if err := controllerutil.SetOwnerReference(component, repository, r.Scheme); err != nil {
-				return err
-			}
-			if err := r.Client.Create(ctx, repository); err != nil {
-				if strings.Contains(err.Error(), "repository already exist") {
-					// PaC admission webhook denied creation of the PaC repository,
-					// because PaC repository object that references the same git repository already exists.
-					log.Info("An attempt to create second PaC Repository for the same git repository", "GitRepository", repository.Spec.URL, l.Action, l.ActionAdd, l.Audit, "true")
-					return boerrors.NewBuildOpError(boerrors.EPaCDuplicateRepository, err)
-				}
+	err = r.Client.Get(ctx, types.NamespacedName{Name: repository.Name, Namespace: repository.Namespace}, existingRepository)
+	if err == nil {
+		gitUrl := strings.TrimSuffix(strings.TrimSuffix(component.Spec.Source.GitSource.URL, ".git"), "/")
 
-				if strings.Contains(err.Error(), "denied the request: failed to validate") {
-					// PaC admission webhook denied creation of the PaC repository,
-					// because PaC repository object references not allowed git repository url.
+		if existingRepository.Spec.URL == gitUrl {
+			return nil
+		}
+		// repository with the same name exists but with different git URL, add random string to repository name
+		repository.ObjectMeta.Name = fmt.Sprintf("%s-%s", repository.ObjectMeta.Name, RandomString(5))
+	}
 
-					log.Info("An attempt to create PaC Repository for not allowed repository url", "GitRepository", repository.Spec.URL, l.Action, l.ActionAdd, l.Audit, "true")
-					return boerrors.NewBuildOpError(boerrors.EPaCNotAllowedRepositoryUrl, err)
-				}
-
-				log.Error(err, "failed to create Component PaC repository object", l.Action, l.ActionAdd)
-				return err
-			}
-			log.Info("Created PaC Repository object for the component")
-
-		} else {
-			log.Error(err, "failed to get Component PaC repository object", l.Action, l.ActionView)
+	// create repository if not found or when found but with different URL
+	if (err != nil && errors.IsNotFound(err)) || err == nil {
+		if err := controllerutil.SetOwnerReference(component, repository, r.Scheme); err != nil {
 			return err
 		}
+		if err := r.Client.Create(ctx, repository); err != nil {
+			if strings.Contains(err.Error(), "repository already exist") {
+				// PaC admission webhook denied creation of the PaC repository,
+				// because PaC repository object that references the same git repository already exists.
+				log.Info("An attempt to create second PaC Repository for the same git repository", "GitRepository", repository.Spec.URL, l.Action, l.ActionAdd, l.Audit, "true")
+				return boerrors.NewBuildOpError(boerrors.EPaCDuplicateRepository, err)
+			}
+
+			if strings.Contains(err.Error(), "denied the request: failed to validate") {
+				// PaC admission webhook denied creation of the PaC repository,
+				// because PaC repository object references not allowed git repository url.
+				log.Info("An attempt to create PaC Repository for not allowed repository url", "GitRepository", repository.Spec.URL, l.Action, l.ActionAdd, l.Audit, "true")
+				return boerrors.NewBuildOpError(boerrors.EPaCNotAllowedRepositoryUrl, err)
+			}
+
+			log.Error(err, "failed to create Component PaC repository object", l.Action, l.ActionAdd)
+			return err
+		}
+		log.Info("Created PaC Repository object for the component", "RepositoryName", repository.ObjectMeta.Name)
+
+	} else {
+		log.Error(err, "failed to get Component PaC repository object", l.Action, l.ActionView)
+		return err
 	}
+
 	return nil
 }
 

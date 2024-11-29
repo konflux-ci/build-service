@@ -1323,6 +1323,106 @@ var _ = Describe("Component initial build controller", func() {
 			Expect(k8sClient.List(ctx, pacRepositoriesList, &client.ListOptions{Namespace: component1Key.Namespace})).To(Succeed())
 			Expect(pacRepositoriesList.Items).To(HaveLen(2)) // 2-nd repository for the anotherComponentKey component
 		})
+
+		It("when 2 components are created with the same url, Pac Repository will be reused, when 1st component is removed and created with new URL, new repository is created", func() {
+			deleteComponent(anotherComponentKey)
+			deletePaCRepository(anotherComponentKey)
+			component1Key := types.NamespacedName{Name: "test-multi-component1", Namespace: HASAppNamespace}
+			component2Key := types.NamespacedName{Name: "test-multi-component2", Namespace: HASAppNamespace}
+			pacRepositoriesList := &pacv1alpha1.RepositoryList{}
+			pacRepository := &pacv1alpha1.Repository{}
+
+			Expect(k8sClient.List(ctx, pacRepositoriesList, &client.ListOptions{Namespace: component1Key.Namespace})).To(Succeed())
+			Expect(pacRepositoriesList.Items).To(HaveLen(0))
+
+			component1PaCMergeRequestCreated := false
+			component2PaCMergeRequestCreated := false
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				defer GinkgoRecover()
+				if strings.Contains(d.Files[0].FullPath, component1Key.Name) {
+					component1PaCMergeRequestCreated = true
+					return "url1", nil
+				} else if strings.Contains(d.Files[0].FullPath, component2Key.Name) {
+					component2PaCMergeRequestCreated = true
+					return "url2", nil
+				} else {
+					Fail("Unknown component in EnsurePaCMergeRequest")
+				}
+				return "", nil
+			}
+
+			// create 1st component with shared URL
+			createCustomComponentWithBuildRequest(componentConfig{
+				componentKey: component1Key,
+				annotations:  defaultPipelineAnnotations,
+				gitURL:       multiComponentGitRepositoryUrl,
+			}, BuildRequestConfigurePaCAnnotationValue)
+			waitComponentAnnotationGone(component1Key, BuildRequestAnnotationName)
+			Eventually(func() bool { return component1PaCMergeRequestCreated }, timeout, interval).Should(BeTrue())
+			waitPaCRepositoryCreated(component1Key)
+
+			Expect(k8sClient.Get(ctx, component1Key, pacRepository)).To(Succeed())
+			Expect(pacRepository.OwnerReferences).To(HaveLen(1))
+			Expect(pacRepository.Spec.URL).To(Equal(multiComponentGitRepositoryUrl))
+			Expect(k8sClient.List(ctx, pacRepositoriesList, &client.ListOptions{Namespace: component1Key.Namespace})).To(Succeed())
+			Expect(pacRepositoriesList.Items).To(HaveLen(1))
+
+			// create 2nd component with shared URL
+			createCustomComponentWithBuildRequest(componentConfig{
+				componentKey: component2Key,
+				annotations:  defaultPipelineAnnotations,
+				gitURL:       multiComponentGitRepositoryUrl,
+			}, BuildRequestConfigurePaCAnnotationValue)
+			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
+			Eventually(func() bool { return component2PaCMergeRequestCreated }, timeout, interval).Should(BeTrue())
+
+			Expect(k8sClient.Get(ctx, component1Key, pacRepository)).To(Succeed())
+			Expect(pacRepository.OwnerReferences).To(HaveLen(2))
+			Expect(pacRepository.OwnerReferences[0].Name).To(Equal(component1Key.Name))
+			Expect(pacRepository.OwnerReferences[0].Kind).To(Equal("Component"))
+			Expect(pacRepository.OwnerReferences[1].Name).To(Equal(component2Key.Name))
+			Expect(pacRepository.OwnerReferences[1].Kind).To(Equal("Component"))
+			Expect(k8sClient.List(ctx, pacRepositoriesList, &client.ListOptions{Namespace: component1Key.Namespace})).To(Succeed())
+			Expect(pacRepositoriesList.Items).To(HaveLen(1))
+
+			// remove 1st component
+			deleteComponent(component1Key)
+			Expect(k8sClient.Get(ctx, component1Key, pacRepository)).To(Succeed())
+
+			// create 1st component again, but with different URL, which will create new Pac repository and not use the one which has same name as component
+			differentGitRepositoryUrl := "https://github.com/samples/multi-different-component-repository"
+			createCustomComponentWithBuildRequest(componentConfig{
+				componentKey: component1Key,
+				annotations:  defaultPipelineAnnotations,
+				gitURL:       differentGitRepositoryUrl,
+			}, BuildRequestConfigurePaCAnnotationValue)
+			waitComponentAnnotationGone(component1Key, BuildRequestAnnotationName)
+			Eventually(func() bool { return component1PaCMergeRequestCreated }, timeout, interval).Should(BeTrue())
+
+			Expect(k8sClient.List(ctx, pacRepositoriesList, &client.ListOptions{Namespace: component1Key.Namespace})).To(Succeed())
+			Expect(pacRepositoriesList.Items).To(HaveLen(2)) // new repository will be created with added randomStr suffix
+			originalRepositoryFound := false
+			newRepositoryFound := false
+			for _, repo := range pacRepositoriesList.Items {
+				// original repository will be still named after component1 even though component1 was removed, because component2 was using it
+				if repo.Name == component1Key.Name {
+					Expect(repo.Spec.URL).To(Equal(multiComponentGitRepositoryUrl))
+					// not testing ownerReferences because it will still have 2 references even after component1 removal, because
+					// in tests we aren't running controller which removes references from Repository upon component removal
+					originalRepositoryFound = true
+					// new repository for component1 will be named with prefix of component1 and random string, because component1 name repository has different url
+				} else if strings.HasPrefix(repo.Name, fmt.Sprintf("%s-", component1Key.Name)) {
+					Expect(repo.Spec.URL).To(Equal(differentGitRepositoryUrl))
+					Expect(repo.OwnerReferences).To(HaveLen(1))
+					Expect(repo.OwnerReferences[0].Name).To(Equal(component1Key.Name))
+					Expect(repo.OwnerReferences[0].Kind).To(Equal("Component"))
+					newRepositoryFound = true
+				}
+			}
+			Expect(originalRepositoryFound).To(BeTrue())
+			Expect(newRepositoryFound).To(BeTrue())
+		})
+
 	})
 
 	Context("Test Pipelines as Code trigger build", func() {
