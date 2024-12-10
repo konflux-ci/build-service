@@ -273,9 +273,9 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsGithubApp(ctx context.Cont
 		}
 
 		targetsToUpdate = append(targetsToUpdate, updateTarget{
-			ComponentName:           component.Name,
-			GitProvider:             gitProvider,
-			Username:                fmt.Sprintf("%s[bot]", slug),
+			ComponentName: component.Name,
+			GitProvider:   gitProvider,
+			Username:      fmt.Sprintf("%s[bot]", slug),
 			// hardcoding the number because mintmaker has it hardcoded as well, so that way mintmaker will recognize the same author
 			GitAuthor:               fmt.Sprintf("%s <126015336+%s[bot]@users.noreply.github.com>", slug, slug),
 			Token:                   githubAppInstallation.Token,

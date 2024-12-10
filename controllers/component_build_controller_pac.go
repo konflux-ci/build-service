@@ -33,6 +33,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/konflux-ci/build-service/pkg/boerrors"
@@ -534,8 +535,27 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 	}
 
 	isAppUsed := IsPaCApplicationConfigured(gitProvider, pacConfig)
-	if !isAppUsed {
-		if webhookTargetUrl != "" {
+	if !isAppUsed && webhookTargetUrl != "" {
+		gitUrl := strings.TrimSuffix(strings.TrimSuffix(component.Spec.Source.GitSource.URL, ".git"), "/")
+		componentList := &appstudiov1alpha1.ComponentList{}
+		if err := r.Client.List(ctx, componentList, &client.ListOptions{Namespace: component.Namespace}); err != nil {
+			log.Error(err, "failed to list components")
+			return "", "", "", err
+		}
+
+		sameRepoUsed := false
+		for _, comp := range componentList.Items {
+			if comp.Name == component.Name {
+				continue
+			}
+			componentUrl := strings.TrimSuffix(strings.TrimSuffix(comp.Spec.Source.GitSource.URL, ".git"), "/")
+			if componentUrl == gitUrl {
+				sameRepoUsed = true
+				break
+			}
+		}
+
+		if !sameRepoUsed {
 			err = gitClient.DeletePaCWebhook(repoUrl, webhookTargetUrl)
 			if err != nil {
 				// Just log the error and continue with merge request creation
