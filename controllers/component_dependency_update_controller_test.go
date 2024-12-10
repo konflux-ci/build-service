@@ -685,6 +685,7 @@ var _ = Describe("Component nudge controller", func() {
 			distributionRepositories := []string{"registry.redhat.com/some-product", "registry.redhat.com/other-product"}
 			matchPackageNames := []string{buildImageRepository, distributionRepositories[0], distributionRepositories[1]}
 			registryAliases := map[string]string{distributionRepositories[0]: buildImageRepository, distributionRepositories[1]: buildImageRepository}
+			labels := []string{"konflux-nudge"}
 
 			buildResult := BuildResult{
 				BuiltImageRepository:     buildImageRepository,
@@ -722,6 +723,7 @@ var _ = Describe("Component nudge controller", func() {
 			Expect(resultConfig.PackageRules[1].FollowTag).Should(Equal(builtImageTag))
 			Expect(resultConfig.PackageRules[1].MatchPackageNames).Should(Equal(matchPackageNames))
 			Expect(resultConfig.RegistryAliases).Should(Equal(registryAliases))
+			Expect(resultConfig.Labels).Should(Equal(labels))
 		})
 	})
 
