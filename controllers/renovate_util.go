@@ -106,6 +106,7 @@ type RenovateConfig struct {
 	ForkProcessing      string               `json:"forkProcessing"`
 	Extends             []string             `json:"extends"`
 	DependencyDashboard bool                 `json:"dependencyDashboard"`
+	Labels              []string             `json:"labels"`
 }
 
 var DisableAllPackageRules = PackageRule{MatchPackagePatterns: []string{"*"}, Enabled: false}
@@ -275,7 +276,8 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsGithubApp(ctx context.Cont
 			ComponentName:           component.Name,
 			GitProvider:             gitProvider,
 			Username:                fmt.Sprintf("%s[bot]", slug),
-			GitAuthor:               fmt.Sprintf("%s <%d+%s[bot]@users.noreply.github.com>", slug, githubAppInstallation.ID, slug),
+			// hardcoding the number because mintmaker has it hardcoded as well, so that way mintmaker will recognize the same author
+			GitAuthor:               fmt.Sprintf("%s <126015336+%s[bot]@users.noreply.github.com>", slug, slug),
 			Token:                   githubAppInstallation.Token,
 			Endpoint:                git.BuildAPIEndpoint("github").APIEndpoint("github.com"),
 			Repositories:            repositories,
@@ -349,6 +351,7 @@ func generateRenovateConfigForNudge(target updateTarget, buildResult *BuildResul
 		ForkProcessing:      "enabled",
 		Extends:             []string{":gitSignOff"},
 		DependencyDashboard: false,
+		Labels:              []string{"konflux-nudge"},
 	}
 
 	return renovateConfig, nil
