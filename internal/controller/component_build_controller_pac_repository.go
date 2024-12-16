@@ -213,34 +213,37 @@ func generatePACRepository(component appstudiov1alpha1.Component, config *corev1
 			},
 		}
 
-		if gitProvider == "gitlab" {
-			if providerUrl, configured := component.Annotations[GitProviderAnnotationURL]; configured {
-				gitProviderConfig.URL = providerUrl
-			} else {
-				// Get git provider URL from source URL.
-				u, err := url.Parse(component.Spec.Source.GitSource.URL)
-				if err != nil {
-					return nil, err
-				}
-				gitProviderConfig.URL = u.Scheme + "://" + u.Host
+		// gitProviderType is needed for incoming webhook handling
+		gitProviderType := gitProvider
+		if gitProvider == "bitbucket" {
+			// https://pipelinesascode.com/docs/guide/incoming_webhook/#incoming-webhook-url
+			gitProviderType = "bitbucket-cloud"
+		}
+		gitProviderConfig.Type = gitProviderType
+
+		var gitProviderUrl string
+		if providerUrlFromAnnotation, configured := component.Annotations[GitProviderAnnotationURL]; configured {
+			// Use git provider URL provided via the annotation.
+			// Make sure that the url has protocol as it's required.
+			u, err := url.Parse(providerUrlFromAnnotation)
+			if err != nil {
+				return nil, err
 			}
+			protocol := u.Scheme
+			if protocol == "" {
+				// Assume https
+				protocol = "https"
+			}
+			gitProviderUrl = protocol + "://" + u.Host
+		} else {
+			// Get git provider URL from source URL.
+			u, err := url.Parse(component.Spec.Source.GitSource.URL)
+			if err != nil {
+				return nil, err
+			}
+			gitProviderUrl = u.Scheme + "://" + u.Host
 		}
-	}
-
-	if url, ok := component.Annotations[GitProviderAnnotationURL]; ok {
-		if gitProviderConfig == nil {
-			gitProviderConfig = &pacv1alpha1.GitProvider{}
-		}
-		gitProviderConfig.URL = url
-	}
-
-	if gitProviderConfig != nil {
-		repositoryGitProvider := gitProvider
-		// https://pipelinesascode.com/docs/guide/incoming_webhook/#incoming-webhook-url
-		if repositoryGitProvider == "bitbucket" {
-			repositoryGitProvider = "bitbucket-cloud"
-		}
-		gitProviderConfig.Type = repositoryGitProvider
+		gitProviderConfig.URL = gitProviderUrl
 	}
 
 	repository := &pacv1alpha1.Repository{
