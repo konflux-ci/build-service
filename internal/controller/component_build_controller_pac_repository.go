@@ -225,16 +225,11 @@ func generatePACRepository(component appstudiov1alpha1.Component, config *corev1
 		if providerUrlFromAnnotation, configured := component.Annotations[GitProviderAnnotationURL]; configured {
 			// Use git provider URL provided via the annotation.
 			// Make sure that the url has protocol as it's required.
-			u, err := url.Parse(providerUrlFromAnnotation)
-			if err != nil {
-				return nil, err
+			if !strings.Contains(providerUrlFromAnnotation, "://") {
+				gitProviderUrl = "https://" + providerUrlFromAnnotation
+			} else {
+				gitProviderUrl = providerUrlFromAnnotation
 			}
-			protocol := u.Scheme
-			if protocol == "" {
-				// Assume https
-				protocol = "https"
-			}
-			gitProviderUrl = protocol + "://" + u.Host
 		} else {
 			// Get git provider URL from source URL.
 			u, err := url.Parse(component.Spec.Source.GitSource.URL)
