@@ -1169,6 +1169,29 @@ func TestGeneratePACRepository(t *testing.T) {
 				Type: "gitlab",
 			},
 		},
+		{
+			name:    "should create PaC repository for self-hosted GitLab webhook and use provider URL from annotation that has no protocol",
+			repoUrl: "https://gitlab.self-hosted.com/user/test-component-repository/",
+			componentAnnotations: map[string]string{
+				GitProviderAnnotationName: "gitlab",
+				GitProviderAnnotationURL:  "gitlab.self-hosted-proxy.com",
+			},
+			pacConfig: map[string][]byte{
+				"password": []byte("glpat-token"),
+			},
+			expectedGitProviderConfig: &pacv1alpha1.GitProvider{
+				Secret: &pacv1alpha1.Secret{
+					Name: PipelinesAsCodeGitHubAppSecretName,
+					Key:  "password",
+				},
+				WebhookSecret: &pacv1alpha1.Secret{
+					Name: pipelinesAsCodeWebhooksSecretName,
+					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.self-hosted.com/user/test-component-repository/", nil)),
+				},
+				URL:  "https://gitlab.self-hosted-proxy.com",
+				Type: "gitlab",
+			},
+		},
 	}
 
 	for _, tt := range tests {
