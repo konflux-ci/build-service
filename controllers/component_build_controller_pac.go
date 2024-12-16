@@ -216,11 +216,6 @@ func (r *ComponentBuildReconciler) TriggerPaCBuild(ctx context.Context, componen
 	log := ctrllog.FromContext(ctx).WithName("TriggerPaCBuild")
 	ctx = ctrllog.IntoContext(ctx, log)
 
-	incomingSecret, reconcileRequired, err := r.ensureIncomingSecret(ctx, component)
-	if err != nil {
-		return false, err
-	}
-
 	repository, err := r.findPaCRepositoryForComponent(ctx, component)
 	if err != nil {
 		return false, err
@@ -228,6 +223,11 @@ func (r *ComponentBuildReconciler) TriggerPaCBuild(ctx context.Context, componen
 
 	if repository == nil {
 		return false, fmt.Errorf("PaC repository not found for component %s", component.Name)
+	}
+
+	incomingSecret, reconcileRequired, err := r.ensureIncomingSecret(ctx, component)
+	if err != nil {
+		return false, err
 	}
 
 	repoUrl := component.Spec.Source.GitSource.URL
