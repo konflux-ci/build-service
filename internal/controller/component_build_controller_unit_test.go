@@ -989,7 +989,7 @@ func TestGeneratePACRepository(t *testing.T) {
 		expectedGitProviderConfig *pacv1alpha1.GitProvider
 	}{
 		{
-			name:    "should create PaC repository for Github application",
+			name:    "should create PaC repository for GitHub application",
 			repoUrl: "https://github.com/user/test-component-repository",
 			pacConfig: map[string][]byte{
 				PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
@@ -998,7 +998,7 @@ func TestGeneratePACRepository(t *testing.T) {
 			expectedGitProviderConfig: nil,
 		},
 		{
-			name:    "should create PaC repository for Github application even if Github webhook configured",
+			name:    "should create PaC repository for GitHub application even if Github webhook configured",
 			repoUrl: "https://github.com/user/test-component-repository",
 			pacConfig: map[string][]byte{
 				PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
@@ -1008,7 +1008,7 @@ func TestGeneratePACRepository(t *testing.T) {
 			expectedGitProviderConfig: nil,
 		},
 		{
-			name:    "should create PaC repository for Github webhook",
+			name:    "should create PaC repository for GitHub webhook",
 			repoUrl: "https://github.com/user/test-component-repository",
 			pacConfig: map[string][]byte{
 				"password": []byte("ghp_token"),
@@ -1022,6 +1022,65 @@ func TestGeneratePACRepository(t *testing.T) {
 					Name: pipelinesAsCodeWebhooksSecretName,
 					Key:  getWebhookSecretKeyForComponent(getComponent("https://github.com/user/test-component-repository", nil)),
 				},
+				URL:  "https://github.com",
+				Type: "github",
+			},
+		},
+		{
+			name:    "should create PaC repository for GitHub application on self-hosted GitHub",
+			repoUrl: "https://github.self-hosted.com/user/test-component-repository",
+			componentAnnotations: map[string]string{
+				GitProviderAnnotationName: "github",
+				GitProviderAnnotationURL:  "https://github.self-hosted.com",
+			},
+			pacConfig: map[string][]byte{
+				PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
+				PipelinesAsCodeGithubPrivateKey: []byte("private-key"),
+			},
+			expectedGitProviderConfig: nil,
+		},
+		{
+			name:    "should create PaC repository for self-hosted GitHub webhook and figure out provider URL from source URL",
+			repoUrl: "https://github.self-hosted.com/user/test-component-repository/",
+			componentAnnotations: map[string]string{
+				GitProviderAnnotationName: "github",
+			},
+			pacConfig: map[string][]byte{
+				"password": []byte("ghp_token"),
+			},
+			expectedGitProviderConfig: &pacv1alpha1.GitProvider{
+				Secret: &pacv1alpha1.Secret{
+					Name: PipelinesAsCodeGitHubAppSecretName,
+					Key:  "password",
+				},
+				WebhookSecret: &pacv1alpha1.Secret{
+					Name: pipelinesAsCodeWebhooksSecretName,
+					Key:  getWebhookSecretKeyForComponent(getComponent("https://github.self-hosted.com/user/test-component-repository/", nil)),
+				},
+				URL:  "https://github.self-hosted.com",
+				Type: "github",
+			},
+		},
+		{
+			name:    "should create PaC repository for self-hosted GitHub webhook and use provider URL from annotation",
+			repoUrl: "https://github.self-hosted.com/user/test-component-repository/",
+			componentAnnotations: map[string]string{
+				GitProviderAnnotationName: "github",
+				GitProviderAnnotationURL:  "https://github.self-hosted-proxy.com",
+			},
+			pacConfig: map[string][]byte{
+				"password": []byte("ghp_token"),
+			},
+			expectedGitProviderConfig: &pacv1alpha1.GitProvider{
+				Secret: &pacv1alpha1.Secret{
+					Name: PipelinesAsCodeGitHubAppSecretName,
+					Key:  "password",
+				},
+				WebhookSecret: &pacv1alpha1.Secret{
+					Name: pipelinesAsCodeWebhooksSecretName,
+					Key:  getWebhookSecretKeyForComponent(getComponent("https://github.self-hosted.com/user/test-component-repository/", nil)),
+				},
+				URL:  "https://github.self-hosted-proxy.com",
 				Type: "github",
 			},
 		},
@@ -1108,22 +1167,6 @@ func TestGeneratePACRepository(t *testing.T) {
 				},
 				URL:  "https://gitlab.self-hosted-proxy.com",
 				Type: "gitlab",
-			},
-		},
-		{
-			name:    "should create PaC repository for Github application on self-hosted Github",
-			repoUrl: "https://github.self-hosted.com/user/test-component-repository",
-			componentAnnotations: map[string]string{
-				GitProviderAnnotationName: "github",
-				GitProviderAnnotationURL:  "https://github.self-hosted.com",
-			},
-			pacConfig: map[string][]byte{
-				PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
-				PipelinesAsCodeGithubPrivateKey: []byte("private-key"),
-			},
-			expectedGitProviderConfig: &pacv1alpha1.GitProvider{
-				URL:  "https://github.self-hosted.com",
-				Type: "github",
 			},
 		},
 	}
