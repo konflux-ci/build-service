@@ -1000,7 +1000,7 @@ var _ = Describe("Component initial build controller", func() {
 			isRemovePaCPullRequestInvoked := false
 			UndoPaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (webUrl string, err error) {
 				isRemovePaCPullRequestInvoked = true
-				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resourceCleanupKey.Name))
+				Expect(repoUrl).To(Equal(SampleRepoLink + "-samerepo"))
 				Expect(len(d.Files)).To(Equal(2))
 				for _, file := range d.Files {
 					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
@@ -1014,11 +1014,9 @@ var _ = Describe("Component initial build controller", func() {
 				Expect(d.AuthorEmail).ToNot(BeEmpty())
 				return mergeUrl, nil
 			}
-			isDeletePaCWebhookInvoked := false
 			DeletePaCWebhookFunc = func(repoUrl string, webhookUrl string) error {
-				isDeletePaCWebhookInvoked = true
-				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resourceCleanupKey.Name))
-				Expect(webhookUrl).To(Equal(pacWebhookUrl))
+				defer GinkgoRecover()
+				Fail("Should not remove webhook because another component is using the same repository")
 				return nil
 			}
 
@@ -1028,10 +1026,41 @@ var _ = Describe("Component initial build controller", func() {
 			createComponentAndProcessBuildRequest(componentConfig{
 				componentKey: resourceCleanupKey,
 				annotations:  defaultPipelineAnnotations,
+				gitURL:       SampleRepoLink + "-samerepo",
 			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourceCleanupKey)
 
+			// create second component which uses the same url
+			secondComponentKey := types.NamespacedName{Name: HASCompName + "-cleanup-second", Namespace: HASAppNamespace}
+			createComponentAndProcessBuildRequest(componentConfig{
+				componentKey: secondComponentKey,
+				annotations:  defaultPipelineAnnotations,
+				gitURL:       SampleRepoLink + "-samerepo",
+			}, BuildRequestConfigurePaCAnnotationValue)
+			waitPaCFinalizerOnComponent(secondComponentKey)
+
+			// shouldn't remove webhook because another component exists for the same repo
 			setComponentBuildRequest(resourceCleanupKey, BuildRequestUnconfigurePaCAnnotationValue)
+
+			Eventually(func() bool {
+				return isRemovePaCPullRequestInvoked
+			}, timeout, interval).Should(BeTrue())
+
+			expectPacBuildStatus(resourceCleanupKey, "disabled", 0, "", mergeUrl)
+			// delete component so there will be just 1 component using the repository
+			deleteComponent(resourceCleanupKey)
+
+			isRemovePaCPullRequestInvoked = false
+			isDeletePaCWebhookInvoked := false
+			DeletePaCWebhookFunc = func(repoUrl string, webhookUrl string) error {
+				isDeletePaCWebhookInvoked = true
+				Expect(repoUrl).To(Equal(SampleRepoLink + "-samerepo"))
+				Expect(webhookUrl).To(Equal(pacWebhookUrl))
+				return nil
+			}
+
+			// should remove webhook because there isn't another component which uses the same repo
+			setComponentBuildRequest(secondComponentKey, BuildRequestUnconfigurePaCAnnotationValue)
 
 			Eventually(func() bool {
 				return isRemovePaCPullRequestInvoked
@@ -1040,7 +1069,7 @@ var _ = Describe("Component initial build controller", func() {
 				return isDeletePaCWebhookInvoked
 			}, timeout, interval).Should(BeTrue())
 
-			expectPacBuildStatus(resourceCleanupKey, "disabled", 0, "", mergeUrl)
+			expectPacBuildStatus(secondComponentKey, "disabled", 0, "", mergeUrl)
 		})
 
 		It("should not block component deletion if PaC definitions removal failed", func() {
