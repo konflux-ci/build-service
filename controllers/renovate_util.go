@@ -29,18 +29,14 @@ import (
 )
 
 const (
-	RenovateImageEnvName              = "RENOVATE_IMAGE"
-	DefaultRenovateImageUrl           = "quay.io/konflux-ci/mintmaker-renovate-image:cdbc220"
-	DefaultRenovateUser               = "red-hat-konflux"
-	CaConfigMapLabel                  = "config.openshift.io/inject-trusted-cabundle"
-	CaConfigMapKey                    = "ca-bundle.crt"
-	CaFilePath                        = "tls-ca-bundle.pem"
-	CaMountPath                       = "/etc/pki/ca-trust/extracted/pem"
-	CaVolumeMountName                 = "trusted-ca"
-	NamespaceWideRenovateConfigName   = "namespace-wide-nudging-renovate-config"
-	ComponentRenovateConfigNamePrefix = "nudging-renovate-config-"
-	ConfigKeyJson                     = "config.json"
-	ConfigKeyJs                       = "config.js"
+	RenovateImageEnvName    = "RENOVATE_IMAGE"
+	DefaultRenovateImageUrl = "quay.io/konflux-ci/mintmaker-renovate-image:cdbc220"
+	DefaultRenovateUser     = "red-hat-konflux"
+	CaConfigMapLabel        = "config.openshift.io/inject-trusted-cabundle"
+	CaConfigMapKey          = "ca-bundle.crt"
+	CaFilePath              = "tls-ca-bundle.pem"
+	CaMountPath             = "/etc/pki/ca-trust/extracted/pem"
+	CaVolumeMountName       = "trusted-ca"
 )
 
 type renovateRepository struct {
@@ -379,19 +375,6 @@ func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Contex
 	secretTokens := map[string]string{}
 	configmaps := map[string]string{}
 	renovateCmds := []string{}
-	globalConfigString := ""
-	globalConfigType := ""
-
-	allUserConfigMaps := &corev1.ConfigMapList{}
-	if err := u.Client.List(ctx, allUserConfigMaps, client.InNamespace(namespace)); err != nil {
-		return fmt.Errorf("failed to list config maps in %s namespace: %w", namespace, err)
-	}
-	for _, userConfigMap := range allUserConfigMaps.Items {
-		if userConfigMap.Name == NamespaceWideRenovateConfigName {
-			globalConfigString, globalConfigType = getConfigAndTypeFromConfigMap(userConfigMap)
-			break
-		}
-	}
 
 	for _, target := range targets {
 		randomStr1 := RandomString(5)
@@ -399,40 +382,19 @@ func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Contex
 		randomStr3 := RandomString(10)
 		secretTokens[randomStr2] = target.Token
 		secretTokens[randomStr3] = target.ImageRepositoryPassword
-		componentConfigName := fmt.Sprintf("%s%s", ComponentRenovateConfigNamePrefix, target.ComponentName)
-		componentConfigString := ""
-		componentConfigType := ""
 		configString := ""
 		configType := "json"
 
-		for _, userConfigMap := range allUserConfigMaps.Items {
-			if userConfigMap.Name == componentConfigName {
-				componentConfigString, componentConfigType = getConfigAndTypeFromConfigMap(userConfigMap)
-				break
-			}
+		renovateConfig, err := GenerateRenovateConfigForNudge(target, buildResult)
+		if err != nil {
+			return err
 		}
 
-		if componentConfigString != "" {
-			configString = componentConfigString
-			configType = componentConfigType
-			log.Info("will use custom renovate config for component", "name", componentConfigName, "type", configType)
-		} else if globalConfigString != "" {
-			configString = globalConfigString
-			configType = globalConfigType
-			log.Info("will use custom global renovate config", "name", NamespaceWideRenovateConfigName, "type", configType)
-		} else {
-			log.Info("will generate renovate config, no custom ones are present")
-			renovateConfig, err := GenerateRenovateConfigForNudge(target, buildResult)
-			if err != nil {
-				return err
-			}
-
-			config, err := json.Marshal(renovateConfig)
-			if err != nil {
-				return err
-			}
-			configString = string(config)
+		config, err := json.Marshal(renovateConfig)
+		if err != nil {
+			return err
 		}
+		configString = string(config)
 
 		log.Info(fmt.Sprintf("Creating renovate config map entry for %s component with length %d and value %s", target.ComponentName, len(configString), configString))
 
@@ -610,18 +572,4 @@ func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Contex
 	log.Info(fmt.Sprintf("Renovate pipeline %s triggered", pipelineRun.Name), logs.Action, logs.ActionAdd)
 
 	return nil
-}
-
-func getConfigAndTypeFromConfigMap(configMap corev1.ConfigMap) (string, string) {
-	config, exists := configMap.Data[ConfigKeyJson]
-	if exists && len(config) > 0 {
-		return config, "json"
-	}
-
-	config, exists = configMap.Data[ConfigKeyJs]
-	if exists && len(config) > 0 {
-		return config, "js"
-	}
-
-	return "", ""
 }
