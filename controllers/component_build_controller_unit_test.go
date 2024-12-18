@@ -1163,12 +1163,6 @@ func TestGeneratePACRepository(t *testing.T) {
 	}
 }
 
-/*
-add new
-override existing one
-override existing one and unset
-*/
-
 func TestPaCRepoAddParamWorkspace(t *testing.T) {
 	const workspaceName = "someone-tenant"
 
