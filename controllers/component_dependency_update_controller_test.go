@@ -18,6 +18,7 @@ package controllers
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -133,7 +134,7 @@ var _ = Describe("Component nudge controller", func() {
 
 	Context("Test build pipelines have finalizer behaviour", func() {
 		It("Test finalizer added and removed on deletion", func() {
-			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent)
+			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent, "")
 			Eventually(func() bool {
 				pr := getPipelineRun("test-pipeline-1", UserNamespace)
 				return controllerutil.ContainsFinalizer(pr, NudgeFinalizer)
@@ -149,7 +150,7 @@ var _ = Describe("Component nudge controller", func() {
 		})
 
 		It("Test finalizer removed on pipeline completion", func() {
-			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent)
+			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent, "")
 			Eventually(func() bool {
 				pr := getPipelineRun("test-pipeline-1", UserNamespace)
 				return controllerutil.ContainsFinalizer(pr, NudgeFinalizer)
@@ -170,7 +171,7 @@ var _ = Describe("Component nudge controller", func() {
 		})
 
 		It("Test finalizer removed if component deleted", func() {
-			createBuildPipelineRun("test-pipeline-2", UserNamespace, BaseComponent)
+			createBuildPipelineRun("test-pipeline-2", UserNamespace, BaseComponent, "")
 			Eventually(func() bool {
 				pr := getPipelineRun("test-pipeline-2", UserNamespace)
 				return controllerutil.ContainsFinalizer(pr, NudgeFinalizer)
@@ -194,7 +195,7 @@ var _ = Describe("Component nudge controller", func() {
 
 	Context("Test build nudges component", func() {
 		It("Test build performs nudge on success", func() {
-			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent)
+			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent, "")
 			Eventually(func() bool {
 				pr := getPipelineRun("test-pipeline-1", UserNamespace)
 				return controllerutil.ContainsFinalizer(pr, NudgeFinalizer)
@@ -267,7 +268,7 @@ var _ = Describe("Component nudge controller", func() {
 			sa.Secrets = []v1.ObjectReference{{Name: "dockerconfigjsonsecret"}}
 			Expect(k8sClient.Update(ctx, &sa)).To(Succeed())
 
-			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent)
+			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent, "")
 			Eventually(func() bool {
 				pr := getPipelineRun("test-pipeline-1", UserNamespace)
 				return controllerutil.ContainsFinalizer(pr, NudgeFinalizer)
@@ -332,7 +333,7 @@ var _ = Describe("Component nudge controller", func() {
 			sa.Secrets = []v1.ObjectReference{{Name: "dockerconfigjsonsecret"}, {Name: "dockerconfigjsonsecret2"}}
 			Expect(k8sClient.Update(ctx, &sa)).To(Succeed())
 
-			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent)
+			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent, "")
 			Eventually(func() bool {
 				pr := getPipelineRun("test-pipeline-1", UserNamespace)
 				return controllerutil.ContainsFinalizer(pr, NudgeFinalizer)
@@ -367,9 +368,9 @@ var _ = Describe("Component nudge controller", func() {
 		})
 
 		It("Test stale pipeline not nudged", func() {
-			createBuildPipelineRun("stale-pipeline", UserNamespace, BaseComponent)
+			createBuildPipelineRun("stale-pipeline", UserNamespace, BaseComponent, "")
 			time.Sleep(time.Second + time.Millisecond)
-			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent)
+			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent, "")
 			Eventually(func() bool {
 				pr := getPipelineRun("test-pipeline-1", UserNamespace)
 				return controllerutil.ContainsFinalizer(pr, NudgeFinalizer)
@@ -402,6 +403,225 @@ var _ = Describe("Component nudge controller", func() {
 				return renovatePipelinesCreated == 1 && renovateConfigsCreated == 2 && failureCount == 0
 			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 		})
+
+		var assertRenovateConfiMap = func(componentRenovateConfigName *types.NamespacedName, componentRenovateConfigData, namespaceRenovateConfigData map[string]string, imageBuiltFrom string) {
+			customNamespaceConfigMapName := types.NamespacedName{Namespace: UserNamespace, Name: NamespaceWideRenovateConfigMapName}
+			if namespaceRenovateConfigData != nil {
+				createCustomRenovateConfigMap(customNamespaceConfigMapName, namespaceRenovateConfigData)
+			}
+
+			if componentRenovateConfigName != nil && componentRenovateConfigData != nil {
+				createCustomRenovateConfigMap(*componentRenovateConfigName, componentRenovateConfigData)
+
+				component1Name := types.NamespacedName{Namespace: UserNamespace, Name: Operator1}
+				component2Name := types.NamespacedName{Namespace: UserNamespace, Name: Operator2}
+				component1 := applicationapi.Component{}
+				component2 := applicationapi.Component{}
+				err := k8sClient.Get(context.TODO(), component1Name, &component1)
+				Expect(err).ToNot(HaveOccurred())
+				err = k8sClient.Get(context.TODO(), component2Name, &component2)
+				Expect(err).ToNot(HaveOccurred())
+
+				if component1.Annotations == nil {
+					component1.Annotations = make(map[string]string)
+				}
+				if component2.Annotations == nil {
+					component2.Annotations = make(map[string]string)
+				}
+
+				// add annotation with custom renovate config map
+				component1.Annotations[CustomRenovateConfigMapAnnotation] = componentRenovateConfigName.Name
+				err = k8sClient.Update(context.TODO(), &component1)
+				Expect(err).ToNot(HaveOccurred())
+				waitComponentAnnotationExists(component1Name, CustomRenovateConfigMapAnnotation)
+				component2.Annotations[CustomRenovateConfigMapAnnotation] = componentRenovateConfigName.Name
+				err = k8sClient.Update(context.TODO(), &component2)
+				Expect(err).ToNot(HaveOccurred())
+				waitComponentAnnotationExists(component2Name, CustomRenovateConfigMapAnnotation)
+			}
+
+			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent, imageBuiltFrom)
+			Eventually(func() bool {
+				pr := getPipelineRun("test-pipeline-1", UserNamespace)
+				return controllerutil.ContainsFinalizer(pr, NudgeFinalizer)
+			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
+			pr := getPipelineRun("test-pipeline-1", UserNamespace)
+			pr.Status.SetCondition(&apis.Condition{
+				Type:               apis.ConditionSucceeded,
+				Status:             "True",
+				LastTransitionTime: apis.VolatileTime{Inner: metav1.Time{Time: time.Now()}},
+			})
+			pr.Status.Results = []tektonapi.PipelineRunResult{
+				{Name: ImageDigestParamName, Value: tektonapi.ResultValue{Type: tektonapi.ParamTypeString, StringVal: "sha256:12345"}},
+				{Name: ImageUrl, Value: tektonapi.ResultValue{Type: tektonapi.ParamTypeString, StringVal: "quay.io.foo/bar:latest"}},
+			}
+			pr.Status.CompletionTime = &metav1.Time{Time: time.Now()}
+			Expect(k8sClient.Status().Update(ctx, pr)).Should(BeNil())
+			Eventually(func() bool {
+				// check that no nudgeerror event was reported
+				failureCount := getRenovateFailedEventCount()
+				// check that renovate config was created
+				renovateConfigsCreated := len(getRenovateConfigMapList())
+				// check that renovate pipeline run was created
+				renovatePipelinesCreated := len(getRenovatePipelineRunList())
+				return renovatePipelinesCreated == 1 && renovateConfigsCreated == 2 && failureCount == 0
+			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
+
+			if namespaceRenovateConfigData != nil {
+				deleteConfigMap(customNamespaceConfigMapName)
+			}
+			if componentRenovateConfigName != nil && componentRenovateConfigData != nil {
+				deleteConfigMap(*componentRenovateConfigName)
+			}
+		}
+
+		It("Test build performs nudge on success, only namespace wide renovate config provided", func() {
+			customConfigType := "json"
+			automergeValue := true
+			automergeTypeValue := "pr"
+			platformAutomergeValue := false
+			ignoreTestsValue := true
+			commitMessagePrefixValue := "msg_prefix"
+			commitMessageSuffixValue := "msg_suffix"
+			imageBuiltFrom := "repo/sha"
+			commitBodyValue := fmt.Sprintf("Image created from '%s'\n\nSigned-off-by:", imageBuiltFrom)
+			fileMatchValue := []string{"cfile1", "cfile2"}
+			customConfigMapData := map[string]string{
+				RenovateConfigMapAutomergeKey:           "true",
+				RenovateConfigMapCommitMessagePrefixKey: commitMessagePrefixValue,
+				RenovateConfigMapCommitMessageSuffixKey: commitMessageSuffixValue,
+				RenovateConfigMapFileMatchKey:           "cfile1, cfile2",
+				RenovateConfigMapAutomergeTypeKey:       "pr",
+				RenovateConfigMapPlatformAutomergeKey:   "false",
+				RenovateConfigMapIgnoreTestsKey:         "true",
+			}
+			assertRenovateConfiMap(nil, nil, customConfigMapData, imageBuiltFrom)
+
+			renovateConfigMaps := getRenovateConfigMapList()
+			Expect(len(renovateConfigMaps)).Should(Equal(2))
+			for _, renovateConfig := range renovateConfigMaps {
+				if strings.HasPrefix(renovateConfig.ObjectMeta.Name, "renovate-pipeline") {
+					for key, val := range renovateConfig.Data {
+						renovateConfigObj := &RenovateConfig{}
+						err := json.Unmarshal([]byte(val), renovateConfigObj)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(renovateConfigObj.Automerge).Should(Equal(automergeValue))
+						Expect(renovateConfigObj.AutomergeType).Should(Equal(automergeTypeValue))
+						Expect(renovateConfigObj.PlatformAutomerge).Should(Equal(platformAutomergeValue))
+						Expect(renovateConfigObj.IgnoreTests).Should(Equal(ignoreTestsValue))
+						Expect(renovateConfigObj.PackageRules[1].CommitMessagePrefix).Should(Equal(commitMessagePrefixValue))
+						Expect(renovateConfigObj.PackageRules[1].CommitMessageSuffix).Should(Equal(commitMessageSuffixValue))
+						Expect(strings.Contains(renovateConfigObj.PackageRules[1].CommitBody, commitBodyValue)).Should(BeTrue())
+						Expect(renovateConfigObj.CustomManagers[0].FileMatch).Should(Equal(fileMatchValue))
+						Expect(strings.HasSuffix(key, customConfigType))
+					}
+					break
+				}
+			}
+		})
+
+		It("Test build performs nudge on success, only component renovate config provided", func() {
+			customConfigType := "json"
+			customConfigName := "component-specific-renovate-config"
+			customConfigMapName := types.NamespacedName{Namespace: UserNamespace, Name: customConfigName}
+			automergeValue := true
+			automergeTypeValue := "pr"
+			platformAutomergeValue := false
+			ignoreTestsValue := true
+			commitMessagePrefixValue := "msg_prefix"
+			commitMessageSuffixValue := "msg_suffix"
+			imageBuiltFrom := "repo/sha"
+			commitBodyValue := fmt.Sprintf("Image created from '%s'\n\nSigned-off-by:", imageBuiltFrom)
+			fileMatchValue := []string{"cfile1", "cfile2"}
+			customConfigMapData := map[string]string{
+				RenovateConfigMapAutomergeKey:           "true",
+				RenovateConfigMapCommitMessagePrefixKey: commitMessagePrefixValue,
+				RenovateConfigMapCommitMessageSuffixKey: commitMessageSuffixValue,
+				RenovateConfigMapFileMatchKey:           "cfile1, cfile2",
+				RenovateConfigMapAutomergeTypeKey:       "pr",
+				RenovateConfigMapPlatformAutomergeKey:   "false",
+				RenovateConfigMapIgnoreTestsKey:         "true",
+			}
+			assertRenovateConfiMap(&customConfigMapName, customConfigMapData, nil, imageBuiltFrom)
+
+			renovateConfigMaps := getRenovateConfigMapList()
+			Expect(len(renovateConfigMaps)).Should(Equal(2))
+			for _, renovateConfig := range renovateConfigMaps {
+				if strings.HasPrefix(renovateConfig.ObjectMeta.Name, "renovate-pipeline") {
+					for key, val := range renovateConfig.Data {
+						renovateConfigObj := &RenovateConfig{}
+						err := json.Unmarshal([]byte(val), renovateConfigObj)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(renovateConfigObj.Automerge).Should(Equal(automergeValue))
+						Expect(renovateConfigObj.AutomergeType).Should(Equal(automergeTypeValue))
+						Expect(renovateConfigObj.PlatformAutomerge).Should(Equal(platformAutomergeValue))
+						Expect(renovateConfigObj.IgnoreTests).Should(Equal(ignoreTestsValue))
+						Expect(renovateConfigObj.PackageRules[1].CommitMessagePrefix).Should(Equal(commitMessagePrefixValue))
+						Expect(renovateConfigObj.PackageRules[1].CommitMessageSuffix).Should(Equal(commitMessageSuffixValue))
+						Expect(strings.Contains(renovateConfigObj.PackageRules[1].CommitBody, commitBodyValue)).Should(BeTrue())
+						Expect(renovateConfigObj.CustomManagers[0].FileMatch).Should(Equal(fileMatchValue))
+						Expect(strings.HasSuffix(key, customConfigType))
+					}
+					break
+				}
+			}
+		})
+
+		It("Test build performs nudge on success, namespace wide and component renovate config provided", func() {
+			customConfigType := "json"
+			customConfigName := "component-specific-renovate-config"
+			customConfigMapName := types.NamespacedName{Namespace: UserNamespace, Name: customConfigName}
+			automergeValue := true
+			commitMessagePrefixValue := "msg_prefix"
+			commitMessageSuffixValue := "msg_suffix"
+			imageBuiltFrom := "repo/sha"
+			commitBodyValue := fmt.Sprintf("Image created from '%s'\n\nSigned-off-by:", imageBuiltFrom)
+			automergeTypeValue := "pr"
+			platformAutomergeValue := false
+			ignoreTestsValue := true
+			fileMatchValue := []string{"cfile1", "cfile2"}
+			customConfigMapData := map[string]string{
+				RenovateConfigMapAutomergeKey:           "true",
+				RenovateConfigMapCommitMessagePrefixKey: commitMessagePrefixValue,
+				RenovateConfigMapCommitMessageSuffixKey: commitMessageSuffixValue,
+				RenovateConfigMapFileMatchKey:           "cfile1, cfile2",
+				RenovateConfigMapAutomergeTypeKey:       "pr",
+				RenovateConfigMapPlatformAutomergeKey:   "false",
+				RenovateConfigMapIgnoreTestsKey:         "true",
+			}
+			customNamespaceConfigMapData := map[string]string{
+				RenovateConfigMapAutomergeKey:           "false",
+				RenovateConfigMapCommitMessagePrefixKey: "namespace_prefix",
+				RenovateConfigMapCommitMessageSuffixKey: "namespace_suffix",
+				RenovateConfigMapFileMatchKey:           "namespace1, namespace2",
+				RenovateConfigMapAutomergeTypeKey:       "namespacepr",
+				RenovateConfigMapPlatformAutomergeKey:   "true",
+				RenovateConfigMapIgnoreTestsKey:         "false",
+			}
+			assertRenovateConfiMap(&customConfigMapName, customConfigMapData, customNamespaceConfigMapData, imageBuiltFrom)
+
+			renovateConfigMaps := getRenovateConfigMapList()
+			Expect(len(renovateConfigMaps)).Should(Equal(2))
+			for _, renovateConfig := range renovateConfigMaps {
+				if strings.HasPrefix(renovateConfig.ObjectMeta.Name, "renovate-pipeline") {
+					for key, val := range renovateConfig.Data {
+						renovateConfigObj := &RenovateConfig{}
+						err := json.Unmarshal([]byte(val), renovateConfigObj)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(renovateConfigObj.Automerge).Should(Equal(automergeValue))
+						Expect(renovateConfigObj.AutomergeType).Should(Equal(automergeTypeValue))
+						Expect(renovateConfigObj.PlatformAutomerge).Should(Equal(platformAutomergeValue))
+						Expect(renovateConfigObj.IgnoreTests).Should(Equal(ignoreTestsValue))
+						Expect(renovateConfigObj.PackageRules[1].CommitMessagePrefix).Should(Equal(commitMessagePrefixValue))
+						Expect(renovateConfigObj.PackageRules[1].CommitMessageSuffix).Should(Equal(commitMessageSuffixValue))
+						Expect(strings.Contains(renovateConfigObj.PackageRules[1].CommitBody, commitBodyValue)).Should(BeTrue())
+						Expect(renovateConfigObj.CustomManagers[0].FileMatch).Should(Equal(fileMatchValue))
+						Expect(strings.HasSuffix(key, customConfigType))
+					}
+					break
+				}
+			}
+		})
 	})
 
 	Context("Test nudge failure handling", func() {
@@ -409,7 +629,7 @@ var _ = Describe("Component nudge controller", func() {
 			failures = 1
 			// mock function to produce error
 
-			GenerateRenovateConfigForNudge = func(target updateTarget, buildResult *BuildResult) (RenovateConfig, error) {
+			GenerateRenovateConfigForNudge = func(target updateTarget, buildResult *BuildResult, gitRepoAtShaAnnotation string) (RenovateConfig, error) {
 				if failures == 0 {
 					log.Info("components nudged")
 					return RenovateConfig{}, nil
@@ -418,7 +638,7 @@ var _ = Describe("Component nudge controller", func() {
 				return RenovateConfig{}, fmt.Errorf("failure")
 			}
 
-			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent)
+			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent, "")
 			Eventually(func() bool {
 				pr := getPipelineRun("test-pipeline-1", UserNamespace)
 				return controllerutil.ContainsFinalizer(pr, NudgeFinalizer)
@@ -456,7 +676,7 @@ var _ = Describe("Component nudge controller", func() {
 		It("Test retries exceeded", func() {
 			failures = 10
 			// mock function to produce error
-			GenerateRenovateConfigForNudge = func(target updateTarget, buildResult *BuildResult) (RenovateConfig, error) {
+			GenerateRenovateConfigForNudge = func(target updateTarget, buildResult *BuildResult, gitRepoAtShaAnnotation string) (RenovateConfig, error) {
 				if failures == 0 {
 					log.Info("components nudged")
 					return RenovateConfig{}, nil
@@ -465,7 +685,7 @@ var _ = Describe("Component nudge controller", func() {
 				return RenovateConfig{}, fmt.Errorf("failure")
 			}
 
-			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent)
+			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent, "")
 			Eventually(func() bool {
 				pr := getPipelineRun("test-pipeline-1", UserNamespace)
 				return controllerutil.ContainsFinalizer(pr, NudgeFinalizer)
@@ -526,19 +746,39 @@ var _ = Describe("Component nudge controller", func() {
 				DistributionRepositories: distributionRepositories,
 				FileMatches:              fileMatches,
 			}
-			renovateTarget := updateTarget{
-				ComponentName:           "nudged component",
-				GitProvider:             gitProvider,
-				Username:                gitUsername,
-				GitAuthor:               gitAuthor,
-				Token:                   gitToken,
-				Endpoint:                gitEndpoint,
-				Repositories:            repositories,
-				ImageRepositoryHost:     imageRepositoryHost,
-				ImageRepositoryUsername: imageRepositoryUsername,
+
+			automerge := true
+			platformAutomerge := false
+			commitMessagePrefix := "commit_prefix"
+			commitMessageSuffix := "commit_suffix"
+			imageBuiltFrom := "repo/sha"
+			commitBody := fmt.Sprintf("Image created from '%s'\n\nSigned-off-by: %s", imageBuiltFrom, gitAuthor)
+			automergeType := "pr"
+			ignoreTests := true
+
+			customRenovateOptions := CustomRenovateOptions{
+				Automerge:           automerge,
+				CommitMessagePrefix: commitMessagePrefix,
+				CommitMessageSuffix: commitMessageSuffix,
+				AutomergeType:       automergeType,
+				PlatformAutomerge:   platformAutomerge,
+				IgnoreTests:         ignoreTests,
 			}
 
-			resultConfig, err := generateRenovateConfigForNudge(renovateTarget, &buildResult)
+			renovateTarget := updateTarget{
+				ComponentName:                  "nudged component",
+				ComponentCustomRenovateOptions: &customRenovateOptions,
+				GitProvider:                    gitProvider,
+				Username:                       gitUsername,
+				GitAuthor:                      gitAuthor,
+				Token:                          gitToken,
+				Endpoint:                       gitEndpoint,
+				Repositories:                   repositories,
+				ImageRepositoryHost:            imageRepositoryHost,
+				ImageRepositoryUsername:        imageRepositoryUsername,
+			}
+
+			resultConfig, err := generateRenovateConfigForNudge(renovateTarget, &buildResult, imageBuiltFrom)
 			Expect(err).Should(Succeed())
 			Expect(resultConfig.GitProvider).Should(Equal(gitProvider))
 			Expect(resultConfig.Username).Should(Equal(gitUsername))
@@ -549,12 +789,41 @@ var _ = Describe("Component nudge controller", func() {
 			Expect(resultConfig.CustomManagers[0].CurrentValueTemplate).Should(Equal(buildResult.BuiltImageTag))
 			Expect(resultConfig.CustomManagers[0].DepNameTemplate).Should(Equal(buildImageRepository))
 			Expect(resultConfig.PackageRules[1].GroupName).Should(Equal(fmt.Sprintf("Component Update %s", componentName)))
-			Expect(resultConfig.PackageRules[1].BranchName).Should(Equal(fmt.Sprintf("konflux/component-updates/%s", componentName)))
+			Expect(resultConfig.PackageRules[1].BranchPrefix).Should(Equal("konflux/component-updates/"))
+			Expect(resultConfig.PackageRules[1].BranchTopic).Should(Equal(componentName))
 			Expect(resultConfig.PackageRules[1].CommitMessageTopic).Should(Equal(componentName))
 			Expect(resultConfig.PackageRules[1].FollowTag).Should(Equal(builtImageTag))
 			Expect(resultConfig.PackageRules[1].MatchPackageNames).Should(Equal(matchPackageNames))
+			Expect(resultConfig.PackageRules[1].CommitMessagePrefix).Should(Equal(commitMessagePrefix))
+			Expect(resultConfig.PackageRules[1].CommitMessageSuffix).Should(Equal(commitMessageSuffix))
+			Expect(resultConfig.PackageRules[1].CommitBody).Should(Equal(commitBody))
 			Expect(resultConfig.RegistryAliases).Should(Equal(registryAliases))
 			Expect(resultConfig.Labels).Should(Equal(labels))
+			Expect(resultConfig.Automerge).Should(Equal(automerge))
+			Expect(resultConfig.AutomergeType).Should(Equal(automergeType))
+			Expect(resultConfig.PlatformAutomerge).Should(Equal(platformAutomerge))
+			Expect(resultConfig.IgnoreTests).Should(Equal(ignoreTests))
+
+			// use fileMatch from config map instead of annotation
+			fileMatchesList2 := []string{"ffile1", "ffile2", "ffile3"}
+			customRenovateOptions.FileMatch = fileMatchesList2
+
+			renovateTarget2 := updateTarget{
+				ComponentName:                  "nudged component",
+				ComponentCustomRenovateOptions: &customRenovateOptions,
+				GitProvider:                    gitProvider,
+				Username:                       gitUsername,
+				GitAuthor:                      gitAuthor,
+				Token:                          gitToken,
+				Endpoint:                       gitEndpoint,
+				Repositories:                   repositories,
+				ImageRepositoryHost:            imageRepositoryHost,
+				ImageRepositoryUsername:        imageRepositoryUsername,
+			}
+
+			resultConfig2, err := generateRenovateConfigForNudge(renovateTarget2, &buildResult, imageBuiltFrom)
+			Expect(err).Should(Succeed())
+			Expect(resultConfig2.CustomManagers[0].FileMatch).Should(Equal(fileMatchesList2))
 		})
 	})
 
@@ -576,7 +845,7 @@ func getPipelineRun(name string, namespace string) *tektonapi.PipelineRun {
 	return &pr
 }
 
-func createBuildPipelineRun(name string, namespace string, component string) *tektonapi.PipelineRun {
+func createBuildPipelineRun(name, namespace, component, imageBuiltFrom string) *tektonapi.PipelineRun {
 	pipelineSpec := &tektonapi.PipelineSpec{
 		Results: []tektonapi.PipelineResult{
 			{Name: ImageUrl, Value: tektonapi.ResultValue{Type: tektonapi.ParamTypeString, StringVal: "$(tasks.build-container.results.IMAGE_URL)"}},
@@ -603,6 +872,9 @@ func createBuildPipelineRun(name string, namespace string, component string) *te
 	run := tektonapi.PipelineRun{}
 	run.Labels = map[string]string{ComponentNameLabelName: component, PipelineRunTypeLabelName: PipelineRunBuildType}
 	run.Annotations = map[string]string{PacEventTypeAnnotationName: PacEventPushType, NudgeFilesAnnotationName: ".*Dockerfile.*, .*.yaml, .*Containerfile.*"}
+	if imageBuiltFrom != "" {
+		run.Annotations[gitRepoAtShaAnnotationName] = imageBuiltFrom
+	}
 	run.Namespace = namespace
 	run.Name = name
 	run.Spec.PipelineSpec = pipelineSpec
