@@ -263,6 +263,9 @@ func TestGeneratePaCPipelineRunForComponent(t *testing.T) {
 	if pipelineRun.Annotations["pipelinesascode.tekton.dev/max-keep-runs"] != "3" {
 		t.Error("generatePaCPipelineRunForComponent(): wrong pipelinesascode.tekton.dev/max-keep-runs annotation value")
 	}
+	if pipelineRun.Annotations["pipelinesascode.tekton.dev/cancel-in-progress"] != "true" {
+		t.Error("generatePaCPipelineRunForComponent(): wrong pipelinesascode.tekton.dev/cancel-in-progress annotation value")
+	}
 	if pipelineRun.Annotations["build.appstudio.redhat.com/target_branch"] != "{{target_branch}}" {
 		t.Error("generatePaCPipelineRunForComponent(): wrong build.appstudio.redhat.com/target_branch annotation value")
 	}

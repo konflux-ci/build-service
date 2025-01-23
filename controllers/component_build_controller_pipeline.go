@@ -295,6 +295,7 @@ func generatePaCPipelineRunForComponent(
 	repoUrl := component.Spec.Source.GitSource.URL
 
 	annotations := map[string]string{
+		"pipelinesascode.tekton.dev/cancel-in-progress": "false",
 		"pipelinesascode.tekton.dev/max-keep-runs": "3",
 		"build.appstudio.redhat.com/target_branch": "{{target_branch}}",
 		pacCelExpressionAnnotationName:             pipelineCelExpression,
@@ -312,6 +313,7 @@ func generatePaCPipelineRunForComponent(
 	var pipelineName string
 	var proposedImage string
 	if onPull {
+		annotations["pipelinesascode.tekton.dev/cancel-in-progress"] = "true"
 		annotations["build.appstudio.redhat.com/pull_request_number"] = "{{pull_request_number}}"
 		pipelineName = component.Name + pipelineRunOnPRSuffix
 		proposedImage = imageRepo + ":on-pr-{{revision}}"
