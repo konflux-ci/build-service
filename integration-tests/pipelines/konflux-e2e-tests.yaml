@@ -126,6 +126,8 @@ spec:
       params:
         - name: test-stage
           value: "build-service-e2e"
+        - name: test-name
+          value: $(context.pipelineRun.name)
         - name: git-repo
           value: $(tasks.test-metadata.results.git-repo)
         - name: git-url
