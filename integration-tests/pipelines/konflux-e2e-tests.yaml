@@ -138,7 +138,7 @@ spec:
           - name: pathInRepo
             value: integration-tests/tasks/konflux-e2e-tests-task.yaml
       params:
-        - name: test-name
+        - name: test-stage
           value: "build-service-e2e"
         - name: git-repo
           value: $(tasks.test-metadata.results.git-repo)
