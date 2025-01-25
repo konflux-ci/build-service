@@ -85,7 +85,6 @@ spec:
       runAfter:
         - rosa-hcp-metadata
         - test-metadata
-        - create-oci-container
         - sealights-refs
       taskRef:
         resolver: git
