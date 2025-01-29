@@ -17,6 +17,7 @@ limitations under the License.
 package controllers
 
 import (
+	"github.com/google/go-github/v45/github"
 	gp "github.com/konflux-ci/build-service/pkg/git/gitprovider"
 	gpf "github.com/konflux-ci/build-service/pkg/git/gitproviderfactory"
 )
@@ -25,6 +26,8 @@ var (
 	testGitProviderClient   = &TestGitProviderClient{}
 	DefaultBrowseRepository = "https://githost.com/user/repo?rev="
 	UndoPacMergeRequestURL  = "https://githost.com/mr/5678"
+	TestGitHubAppName       = "test-github-app"
+	TestGitHubAppId         = int64(1234567890)
 
 	EnsurePaCMergeRequestFunc        func(repoUrl string, data *gp.MergeRequestData) (webUrl string, err error)
 	UndoPaCMergeRequestFunc          func(repoUrl string, data *gp.MergeRequestData) (webUrl string, err error)
@@ -38,6 +41,7 @@ var (
 	IsFileExistFunc                  func(repoUrl, branchName, filePath string) (bool, error)
 	IsRepositoryPublicFunc           func(repoUrl string) (bool, error)
 	GetConfiguredGitAppNameFunc      func() (string, string, error)
+	GetAppUserInfoFunc               func(userName string) (*github.User, error)
 )
 
 func ResetTestGitProviderClient() {
@@ -81,6 +85,10 @@ func ResetTestGitProviderClient() {
 	GetConfiguredGitAppNameFunc = func() (string, string, error) {
 		return "git-app-name", "slug", nil
 	}
+	GetAppUserInfoFunc = func(userName string) (*github.User, error) {
+		githubUser := github.User{Login: &TestGitHubAppName, ID: &TestGitHubAppId}
+		return &githubUser, nil
+	}
 }
 
 var _ gp.GitProviderClient = (*TestGitProviderClient)(nil)
@@ -122,4 +130,7 @@ func (*TestGitProviderClient) IsRepositoryPublic(repoUrl string) (bool, error) {
 }
 func (*TestGitProviderClient) GetConfiguredGitAppName() (string, string, error) {
 	return GetConfiguredGitAppNameFunc()
+}
+func (*TestGitProviderClient) GetAppUserInfo(userName string) (*github.User, error) {
+	return GetAppUserInfoFunc(userName)
 }
