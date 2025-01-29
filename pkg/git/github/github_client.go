@@ -374,6 +374,11 @@ func (g *GithubClient) GetBrowseRepositoryAtShaLink(repoUrl, sha string) string 
 	return fmt.Sprintf("%s/%s/%s?rev=%s", gitProviderHost, owner, repository, sha)
 }
 
+// GetAppUserId get info about application user
+func (g *GithubClient) GetAppUserId(userName string) (int64, error) {
+	return g.getAppUserID(userName)
+}
+
 func newGithubClient(accessToken string) *GithubClient {
 	gh := &GithubClient{}
 	gh.ctx = context.TODO()

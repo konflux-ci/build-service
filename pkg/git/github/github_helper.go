@@ -373,3 +373,11 @@ func (g *GithubClient) getRepositoryInfo(owner, repository string) (*github.Repo
 	}
 	return repo, nil
 }
+
+func (g *GithubClient) getAppUserID(userName string) (int64, error) {
+	user, _, err := g.client.Users.Get(g.ctx, userName)
+	if err != nil {
+		return 0, err
+	}
+	return *user.ID, nil
+}
