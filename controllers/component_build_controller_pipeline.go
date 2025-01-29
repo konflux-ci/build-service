@@ -296,11 +296,11 @@ func generatePaCPipelineRunForComponent(
 
 	annotations := map[string]string{
 		"pipelinesascode.tekton.dev/cancel-in-progress": "false",
-		"pipelinesascode.tekton.dev/max-keep-runs": "3",
-		"build.appstudio.redhat.com/target_branch": "{{target_branch}}",
-		pacCelExpressionAnnotationName:             pipelineCelExpression,
-		gitCommitShaAnnotationName:                 "{{revision}}",
-		gitRepoAtShaAnnotationName:                 gitClient.GetBrowseRepositoryAtShaLink(repoUrl, "{{revision}}"),
+		"pipelinesascode.tekton.dev/max-keep-runs":      "3",
+		"build.appstudio.redhat.com/target_branch":      "{{target_branch}}",
+		pacCelExpressionAnnotationName:                  pipelineCelExpression,
+		gitCommitShaAnnotationName:                      "{{revision}}",
+		gitRepoAtShaAnnotationName:                      gitClient.GetBrowseRepositoryAtShaLink(repoUrl, "{{revision}}"),
 	}
 	labels := map[string]string{
 		ApplicationNameLabelName:                component.Spec.Application,

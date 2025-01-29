@@ -16,7 +16,11 @@ limitations under the License.
 
 package gitprovider
 
-import "time"
+import (
+	"time"
+
+	"github.com/google/go-github/v45/github"
+)
 
 type GitProviderClient interface {
 	// EnsurePaCMergeRequest creates or updates existing (if needed) Pipelines as Code configuration proposal merge request.
@@ -60,6 +64,9 @@ type GitProviderClient interface {
 	// GetConfiguredGitAppName returns configured git application name and id.
 	// Not all git providers support applications. Currently only GitHub does.
 	GetConfiguredGitAppName() (string, string, error)
+
+	// GetAppUserInfo get info about application user
+	GetAppUserInfo(userName string) (*github.User, error)
 }
 
 type MergeRequestData struct {
