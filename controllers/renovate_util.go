@@ -219,6 +219,8 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsGithubApp(ctx context.Cont
 	// Match installed repositories with Components and get custom branch if defined
 	targetsToUpdate := []updateTarget{}
 	var slug string
+	var appBotName string
+	var appBotId int64
 	for _, component := range componentList {
 		if component.Spec.Source.GitSource == nil {
 			continue
@@ -246,6 +248,28 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsGithubApp(ctx context.Cont
 			continue
 		}
 
+		if appBotId == 0 {
+			pacConfig := map[string][]byte{PipelinesAsCodeGithubPrivateKey: []byte(privateKey), PipelinesAsCodeGithubAppIdKey: []byte(githubAppIdStr)}
+			gitClient, err := gitproviderfactory.CreateGitClient(gitproviderfactory.GitClientConfig{
+				PacSecretData:             pacConfig,
+				GitProvider:               gitProvider,
+				RepoUrl:                   url,
+				IsAppInstallationExpected: true,
+			})
+			if err != nil {
+				log.Error(err, "error create git client for component", "ComponentName", component.Name, "RepoUrl", component.Spec.Source.GitSource.URL)
+				continue
+			}
+			appBotName = fmt.Sprintf("%s[bot]", slug)
+			botInfo, err := gitClient.GetAppUserInfo(appBotName)
+			if err != nil {
+				log.Error(err, "Failed to get application user info", "userName", appBotName)
+				continue
+			}
+			log.Info("got application user", "userID", botInfo.ID, "userLogin", botInfo.Login)
+			appBotId = *botInfo.ID
+		}
+
 		branch := gitSource.Revision
 		if branch == "" {
 			branch = git.InternalDefaultBranch
@@ -269,11 +293,10 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsGithubApp(ctx context.Cont
 		}
 
 		targetsToUpdate = append(targetsToUpdate, updateTarget{
-			ComponentName: component.Name,
-			GitProvider:   gitProvider,
-			Username:      fmt.Sprintf("%s[bot]", slug),
-			// hardcoding the number because mintmaker has it hardcoded as well, so that way mintmaker will recognize the same author
-			GitAuthor:               fmt.Sprintf("%s <126015336+%s[bot]@users.noreply.github.com>", slug, slug),
+			ComponentName:           component.Name,
+			GitProvider:             gitProvider,
+			Username:                appBotName,
+			GitAuthor:               fmt.Sprintf("%s <%d+%s@users.noreply.github.com>", slug, appBotId, appBotName),
 			Token:                   githubAppInstallation.Token,
 			Endpoint:                git.BuildAPIEndpoint("github").APIEndpoint("github.com"),
 			Repositories:            repositories,

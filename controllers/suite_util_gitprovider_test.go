@@ -17,6 +17,7 @@ limitations under the License.
 package controllers
 
 import (
+	"github.com/google/go-github/v45/github"
 	gp "github.com/konflux-ci/build-service/pkg/git/gitprovider"
 	gpf "github.com/konflux-ci/build-service/pkg/git/gitproviderfactory"
 )
@@ -38,6 +39,7 @@ var (
 	IsFileExistFunc                  func(repoUrl, branchName, filePath string) (bool, error)
 	IsRepositoryPublicFunc           func(repoUrl string) (bool, error)
 	GetConfiguredGitAppNameFunc      func() (string, string, error)
+	GetAppUserInfoFunc               func(userName string) (*github.User, error)
 )
 
 func ResetTestGitProviderClient() {
@@ -122,4 +124,7 @@ func (*TestGitProviderClient) IsRepositoryPublic(repoUrl string) (bool, error) {
 }
 func (*TestGitProviderClient) GetConfiguredGitAppName() (string, string, error) {
 	return GetConfiguredGitAppNameFunc()
+}
+func (*TestGitProviderClient) GetAppUserInfo(userName string) (*github.User, error) {
+	return GetAppUserInfoFunc(userName)
 }
