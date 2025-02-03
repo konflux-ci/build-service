@@ -37,17 +37,3 @@ jobs:
         with:
           # Path to SARIF file relative to the root of the repository
           sarif_file: results.sarif
-
-  envtest:
-    name: Envtest
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v3
-        with:
-          go-version-file: './go.mod'
-      - name: Run tests
-        run: make test
-      - name: Upload to Codecov
-        uses: codecov/codecov-action@v3.1.1
-

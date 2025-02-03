@@ -21,7 +21,7 @@ spec:
       default: 'build-service-e2e'
       description: >-
         "The name or identifier of the testing phase (e.g., "integration", "e2e") during which the results
-          are being captured. This helps distinguish the test results within Sealights for better reporting and traceability"      default: ''
+          are being captured. This helps distinguish the test results within Sealights for better reporting and traceability"
     - name: ocp-version
       description: 'The OpenShift version to use for the ephemeral cluster deployment.'
       type: string
