@@ -50,7 +50,7 @@ func (r *ComponentBuildReconciler) findPaCRepositoryForComponent(ctx context.Con
 		return nil, err
 	}
 
-	gitUrl := strings.TrimSuffix(strings.TrimSuffix(component.Spec.Source.GitSource.URL, ".git"), "/")
+	gitUrl := getGitRepoUrl(*component)
 	for _, pacRepository := range pacRepositoriesList.Items {
 		if pacRepository.Spec.URL == gitUrl {
 			return &pacRepository, nil
@@ -108,7 +108,7 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 	existingRepository := &pacv1alpha1.Repository{}
 	err = r.Client.Get(ctx, types.NamespacedName{Name: repository.Name, Namespace: repository.Namespace}, existingRepository)
 	if err == nil {
-		gitUrl := strings.TrimSuffix(strings.TrimSuffix(component.Spec.Source.GitSource.URL, ".git"), "/")
+		gitUrl := getGitRepoUrl(*component)
 
 		if existingRepository.Spec.URL == gitUrl {
 			return nil
@@ -253,7 +253,7 @@ func generatePACRepository(component appstudiov1alpha1.Component, config *corev1
 			Namespace: component.Namespace,
 		},
 		Spec: pacv1alpha1.RepositorySpec{
-			URL:         strings.TrimSuffix(strings.TrimSuffix(component.Spec.Source.GitSource.URL, ".git"), "/"),
+			URL:         getGitRepoUrl(component),
 			GitProvider: gitProviderConfig,
 		},
 	}
@@ -274,9 +274,11 @@ func (r *ComponentBuildReconciler) cleanupPaCRepositoryIncomingsAndSecret(ctx co
 		log.Error(err, "failed to list Components", l.Action, l.ActionView)
 		return err
 	}
+	repoUrl := getGitRepoUrl(*component)
+
 	buildStatus := &BuildStatus{}
 	for _, comp := range componentList.Items {
-		if comp.Spec.Source.GitSource.URL == component.Spec.Source.GitSource.URL {
+		if comp.Spec.Source.GitSource.URL == repoUrl {
 			buildStatus = readBuildStatus(component)
 			if buildStatus.PaC != nil && buildStatus.PaC.State == "enabled" {
 				incomingsRepoAllBranchesCount += 1

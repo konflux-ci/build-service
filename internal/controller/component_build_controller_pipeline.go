@@ -292,7 +292,7 @@ func generatePaCPipelineRunForComponent(
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate cel expression for pipeline: %w", err)
 	}
-	repoUrl := component.Spec.Source.GitSource.URL
+	repoUrl := getGitRepoUrl(*component)
 
 	annotations := map[string]string{
 		"pipelinesascode.tekton.dev/cancel-in-progress": "false",
@@ -447,6 +447,7 @@ func generateCelExpressionForPipeline(component *appstudiov1alpha1.Component, gi
 	eventCondition := fmt.Sprintf(`event == "%s"`, eventType)
 
 	targetBranchCondition := fmt.Sprintf(`target_branch == "%s"`, targetBranch)
+	repoUrl := getGitRepoUrl(*component)
 
 	// Set path changed event filtering only for Components that are stored within a directory of the git repository.
 	// Also, we have to rebuild everything on push events, so applying the filter only to pull request pipeline.
@@ -466,7 +467,6 @@ func generateCelExpressionForPipeline(component *appstudiov1alpha1.Component, gi
 			if !strings.Contains(dockerfile, "://") {
 				// dockerfile could be relative to the context directory or repository root.
 				// To avoid unessesary builds, it's required to pass absolute path to the Dockerfile.
-				repoUrl := component.Spec.Source.GitSource.URL
 				branch := component.Spec.Source.GitSource.Revision
 				dockerfilePath := contextDir + dockerfile
 				isDockerfileInContextDir, err := gitClient.IsFileExist(repoUrl, branch, dockerfilePath)

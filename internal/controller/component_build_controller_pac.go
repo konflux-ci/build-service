@@ -95,19 +95,19 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context,
 	gitProvider, err := getGitProvider(*component)
 	if err != nil {
 		// Do not reconcile, because configuration must be fixed before it is possible to proceed.
-		return "", boerrors.NewBuildOpError(boerrors.EUnknownGitProvider,
-			fmt.Errorf("error detecting git provider: %w", err))
+		return "", err
 	}
+	repoUrl := getGitRepoUrl(*component)
 
-	if strings.HasPrefix(component.Spec.Source.GitSource.URL, "http:") {
+	if strings.HasPrefix(repoUrl, "http:") {
 		return "", boerrors.NewBuildOpError(boerrors.EHttpUsedForRepository,
-			fmt.Errorf("Git repository URL can't use insecure HTTP: %s", component.Spec.Source.GitSource.URL))
+			fmt.Errorf("Git repository URL can't use insecure HTTP: %s", repoUrl))
 	}
 
 	if url, ok := component.Annotations[GitProviderAnnotationURL]; ok {
 		if strings.HasPrefix(url, "http:") {
 			return "", boerrors.NewBuildOpError(boerrors.EHttpUsedForRepository,
-				fmt.Errorf("Git repository URL in annotation %s can't use insecure HTTP: %s", GitProviderAnnotationURL, component.Spec.Source.GitSource.URL))
+				fmt.Errorf("Git repository URL in annotation %s can't use insecure HTTP: %s", GitProviderAnnotationURL, repoUrl))
 		}
 	}
 
@@ -133,7 +133,7 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context,
 		}
 
 		// Obtain Pipelines as Code callback URL
-		webhookTargetUrl, err = r.getPaCWebhookTargetUrl(ctx, component.Spec.Source.GitSource.URL, true)
+		webhookTargetUrl, err = r.getPaCWebhookTargetUrl(ctx, repoUrl, true)
 		if err != nil {
 			return "", err
 		}
@@ -231,12 +231,11 @@ func (r *ComponentBuildReconciler) TriggerPaCBuild(ctx context.Context, componen
 		return false, err
 	}
 
-	repoUrl := component.Spec.Source.GitSource.URL
+	repoUrl := getGitRepoUrl(*component)
 	gitProvider, err := getGitProvider(*component)
 	if err != nil {
-		log.Error(err, "error detecting git provider")
 		// There is no point to continue if git provider is not known.
-		return false, boerrors.NewBuildOpError(boerrors.EUnknownGitProvider, err)
+		return false, err
 	}
 
 	pacSecret, err := r.lookupPaCSecret(ctx, component, gitProvider)
@@ -283,7 +282,7 @@ func (r *ComponentBuildReconciler) TriggerPaCBuild(ctx context.Context, componen
 		return true, nil
 	}
 
-	webhookTargetUrl, err := r.getPaCWebhookTargetUrl(ctx, component.Spec.Source.GitSource.URL, false)
+	webhookTargetUrl, err := r.getPaCWebhookTargetUrl(ctx, repoUrl, false)
 	if err != nil {
 		return false, err
 	}
@@ -328,9 +327,8 @@ func (r *ComponentBuildReconciler) UndoPaCProvisionForComponent(ctx context.Cont
 
 	gitProvider, err := getGitProvider(*component)
 	if err != nil {
-		log.Error(err, "error detecting git provider")
 		// There is no point to continue if git provider is not known.
-		return "", boerrors.NewBuildOpError(boerrors.EUnknownGitProvider, err)
+		return "", err
 	}
 
 	pacSecret, err := r.lookupPaCSecret(ctx, component, gitProvider)
@@ -340,9 +338,10 @@ func (r *ComponentBuildReconciler) UndoPaCProvisionForComponent(ctx context.Cont
 		return "", boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, err)
 	}
 
+	repoUrl := getGitRepoUrl(*component)
 	webhookTargetUrl := ""
 	if !IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
-		webhookTargetUrl, err = r.getPaCWebhookTargetUrl(ctx, component.Spec.Source.GitSource.URL, true)
+		webhookTargetUrl, err = r.getPaCWebhookTargetUrl(ctx, repoUrl, true)
 		if err != nil {
 			// Just log the error and continue with pruning merge request creation
 			log.Error(err, "failed to get Pipelines as Code webhook target URL. Webhook will not be deleted.", l.Action, l.ActionView, l.Audit, "true")
@@ -431,7 +430,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 	ctx = ctrllog.IntoContext(ctx, log)
 
 	gitProvider, _ := getGitProvider(*component)
-	repoUrl := component.Spec.Source.GitSource.URL
+	repoUrl := getGitRepoUrl(*component)
 
 	gitClient, err := gitproviderfactory.CreateGitClient(gitproviderfactory.GitClientConfig{
 		PacSecretData:             pacConfig,
@@ -516,7 +515,7 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 	log := ctrllog.FromContext(ctx)
 
 	gitProvider, _ := getGitProvider(*component)
-	repoUrl := component.Spec.Source.GitSource.URL
+	repoUrl := getGitRepoUrl(*component)
 
 	gitClient, err := gitproviderfactory.CreateGitClient(gitproviderfactory.GitClientConfig{
 		PacSecretData:             pacConfig,
@@ -536,7 +535,6 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 
 	isAppUsed := IsPaCApplicationConfigured(gitProvider, pacConfig)
 	if !isAppUsed && webhookTargetUrl != "" {
-		gitUrl := strings.TrimSuffix(strings.TrimSuffix(component.Spec.Source.GitSource.URL, ".git"), "/")
 		componentList := &appstudiov1alpha1.ComponentList{}
 		if err := r.Client.List(ctx, componentList, &client.ListOptions{Namespace: component.Namespace}); err != nil {
 			log.Error(err, "failed to list components")
@@ -548,8 +546,8 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 			if comp.Name == component.Name {
 				continue
 			}
-			componentUrl := strings.TrimSuffix(strings.TrimSuffix(comp.Spec.Source.GitSource.URL, ".git"), "/")
-			if componentUrl == gitUrl {
+			componentUrl := getGitRepoUrl(comp)
+			if componentUrl == repoUrl {
 				sameRepoUsed = true
 				break
 			}
@@ -634,22 +632,40 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 	return baseBranch, prUrl, action_done, err
 }
 
+// getGitRepoUrl returns trimmed source url
+func getGitRepoUrl(component appstudiov1alpha1.Component) string {
+	return strings.TrimSuffix(strings.TrimSuffix(component.Spec.Source.GitSource.URL, "/"), ".git")
+}
+
 // validateGitSourceUrl validates if component.Spec.Source.GitSource.URL is valid git url
 // https://github.com/owner/repository is valid
 // https://github.com/owner is invalid
-func validateGitSourceUrl(component appstudiov1alpha1.Component) error {
-	if component.Spec.Source.GitSource == nil {
-		err := fmt.Errorf("git source URL is not set for %s Component in %s namespace", component.Name, component.Namespace)
-		return err
-	}
-
-	sourceUrl := component.Spec.Source.GitSource.URL
+func validateGitSourceUrl(component appstudiov1alpha1.Component, gitProvider string) error {
+	sourceUrl := getGitRepoUrl(component)
 	gitUrl, err := url.Parse(sourceUrl)
 	if err != nil {
 		return err
 	}
-	gitSourceUrlPathParts := strings.Split(strings.TrimPrefix(gitUrl.Path, "/"), "/")
+
+	shouldFail := false
+	gitSourceUrlPathParts := strings.Split(strings.TrimSuffix(strings.TrimPrefix(gitUrl.Path, "/"), "/"), "/")
 	if len(gitSourceUrlPathParts) < 2 {
+		shouldFail = true
+	}
+
+	if gitProvider == "github" {
+		if len(gitSourceUrlPathParts) > 2 {
+			shouldFail = true
+		}
+	}
+
+	if gitProvider == "gitlab" {
+		if slices.Contains(gitSourceUrlPathParts, "-") {
+			shouldFail = true
+		}
+	}
+
+	if shouldFail {
 		err := fmt.Errorf("git source URL is not valid git URL '%s' for %s Component in %s namespace", sourceUrl, component.Name, component.Namespace)
 		return err
 	}
@@ -659,16 +675,13 @@ func validateGitSourceUrl(component appstudiov1alpha1.Component) error {
 // getGitProvider returns git provider name based on the repository url or the git-provider annotation
 func getGitProvider(component appstudiov1alpha1.Component) (string, error) {
 	allowedGitProviders := []string{"github", "gitlab", "bitbucket"}
-
-	// validate gitsource URL
-	err := validateGitSourceUrl(component)
-	if err != nil {
-		return "", err
+	if component.Spec.Source.GitSource == nil {
+		return "", boerrors.NewBuildOpError(boerrors.EWrongGitSourceUrl, fmt.Errorf("git source URL is not set for %s Component in %s namespace", component.Name, component.Namespace))
 	}
 
 	gitProvider := component.GetAnnotations()[GitProviderAnnotationName]
 	if gitProvider != "" && !slices.Contains(allowedGitProviders, gitProvider) {
-		return "", fmt.Errorf(`unsupported "%s" annotation value: %s`, GitProviderAnnotationName, gitProvider)
+		return "", boerrors.NewBuildOpError(boerrors.EUnknownGitProvider, fmt.Errorf(`unsupported "%s" annotation value: %s`, GitProviderAnnotationName, gitProvider))
 	}
 
 	if gitProvider == "" {
@@ -678,7 +691,7 @@ func getGitProvider(component appstudiov1alpha1.Component) (string, error) {
 		// https://github.com/redhat-appstudio/application-service
 		u, err := url.Parse(sourceUrl)
 		if err != nil {
-			return "", err
+			return "", boerrors.NewBuildOpError(boerrors.EWrongGitSourceUrl, err)
 		}
 		host = u.Hostname()
 
@@ -691,7 +704,13 @@ func getGitProvider(component appstudiov1alpha1.Component) (string, error) {
 	}
 
 	if gitProvider == "" {
-		return "", fmt.Errorf(`failed to determine git provider, please set the "%s" annotation on the component`, GitProviderAnnotationName)
+		return "", boerrors.NewBuildOpError(boerrors.EUnknownGitProvider, fmt.Errorf(`failed to determine git provider, please set the "%s" annotation on the component`, GitProviderAnnotationName))
+	}
+
+	// validate gitsource URL
+	err := validateGitSourceUrl(component, gitProvider)
+	if err != nil {
+		return "", boerrors.NewBuildOpError(boerrors.EWrongGitSourceUrl, err)
 	}
 
 	return gitProvider, nil
