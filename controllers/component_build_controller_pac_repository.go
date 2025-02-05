@@ -274,9 +274,11 @@ func (r *ComponentBuildReconciler) cleanupPaCRepositoryIncomingsAndSecret(ctx co
 		log.Error(err, "failed to list Components", l.Action, l.ActionView)
 		return err
 	}
+	repoUrl := strings.TrimSuffix(strings.TrimSuffix(component.Spec.Source.GitSource.URL, ".git"), "/")
+
 	buildStatus := &BuildStatus{}
 	for _, comp := range componentList.Items {
-		if comp.Spec.Source.GitSource.URL == component.Spec.Source.GitSource.URL {
+		if comp.Spec.Source.GitSource.URL == repoUrl {
 			buildStatus = readBuildStatus(component)
 			if buildStatus.PaC != nil && buildStatus.PaC.State == "enabled" {
 				incomingsRepoAllBranchesCount += 1
