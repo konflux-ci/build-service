@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,14 +30,25 @@ import (
 )
 
 const (
-	RenovateImageEnvName    = "RENOVATE_IMAGE"
-	DefaultRenovateImageUrl = "quay.io/konflux-ci/mintmaker-renovate-image:cdbc220"
-	DefaultRenovateUser     = "red-hat-konflux"
-	CaConfigMapLabel        = "config.openshift.io/inject-trusted-cabundle"
-	CaConfigMapKey          = "ca-bundle.crt"
-	CaFilePath              = "tls-ca-bundle.pem"
-	CaMountPath             = "/etc/pki/ca-trust/extracted/pem"
-	CaVolumeMountName       = "trusted-ca"
+	RenovateImageEnvName               = "RENOVATE_IMAGE"
+	DefaultRenovateImageUrl            = "quay.io/konflux-ci/mintmaker-renovate-image:083371d"
+	DefaultRenovateUser                = "red-hat-konflux"
+	CaConfigMapLabel                   = "config.openshift.io/inject-trusted-cabundle"
+	CaConfigMapKey                     = "ca-bundle.crt"
+	CaFilePath                         = "tls-ca-bundle.pem"
+	CaMountPath                        = "/etc/pki/ca-trust/extracted/pem"
+	CaVolumeMountName                  = "trusted-ca"
+	BranchPrefix                       = "konflux/component-updates/"
+	NamespaceWideRenovateConfigMapName = "namespace-wide-nudging-renovate-config"
+	CustomRenovateConfigMapAnnotation  = "build.appstudio.openshift.io/nudge_renovate_config_map"
+
+	RenovateConfigMapAutomergeKey           = "automerge"
+	RenovateConfigMapCommitMessagePrefixKey = "commitMessagePrefix"
+	RenovateConfigMapCommitMessageSuffixKey = "commitMessageSuffix"
+	RenovateConfigMapFileMatchKey           = "fileMatch"
+	RenovateConfigMapAutomergeTypeKey       = "automergeType"
+	RenovateConfigMapPlatformAutomergeKey   = "platformAutomerge"
+	RenovateConfigMapIgnoreTestsKey         = "ignoreTests"
 )
 
 type renovateRepository struct {
@@ -44,18 +56,29 @@ type renovateRepository struct {
 	BaseBranches []string `json:"baseBranches,omitempty"`
 }
 
+type CustomRenovateOptions struct {
+	Automerge           bool     `json:"automerge,omitempty"`
+	AutomergeType       string   `json:"automergeType,omitempty"`
+	PlatformAutomerge   bool     `json:"platformAutomerge,omitempty"`
+	IgnoreTests         bool     `json:"ignoreTests,omitempty"`
+	CommitMessagePrefix string   `json:"commitMessagePrefix,omitempty"`
+	CommitMessageSuffix string   `json:"commitMessageSuffix,omitempty"`
+	FileMatch           []string `json:"fileMatch,omitempty"`
+}
+
 // UpdateTarget represents a target source code repository to be executed by Renovate with credentials and repositories
 type updateTarget struct {
-	ComponentName           string
-	GitProvider             string
-	Username                string
-	GitAuthor               string
-	Token                   string
-	Endpoint                string
-	Repositories            []renovateRepository
-	ImageRepositoryHost     string
-	ImageRepositoryUsername string
-	ImageRepositoryPassword string
+	ComponentName                  string
+	ComponentCustomRenovateOptions *CustomRenovateOptions
+	GitProvider                    string
+	Username                       string
+	GitAuthor                      string
+	Token                          string
+	Endpoint                       string
+	Repositories                   []renovateRepository
+	ImageRepositoryHost            string
+	ImageRepositoryUsername        string
+	ImageRepositoryPassword        string
 }
 
 type ComponentDependenciesUpdater struct {
@@ -78,9 +101,14 @@ type PackageRule struct {
 	MatchPackagePatterns []string `json:"matchPackagePatterns,omitempty"`
 	MatchPackageNames    []string `json:"matchPackageNames,omitempty"`
 	GroupName            string   `json:"groupName,omitempty"`
-	BranchName           string   `json:"branchName,omitempty"`
+	BranchPrefix         string   `json:"branchPrefix,omitempty"`
+	BranchTopic          string   `json:"branchTopic,omitempty"`
 	CommitMessageTopic   string   `json:"commitMessageTopic,omitempty"`
+	CommitMessagePrefix  string   `json:"commitMessagePrefix,omitempty"`
+	CommitMessageSuffix  string   `json:"commitMessageSuffix,omitempty"`
+	CommitBody           string   `json:"commitBody,omitempty"`
 	PRFooter             string   `json:"prFooter,omitempty"`
+	PRHeader             string   `json:"prHeader,omitempty"`
 	RecreateWhen         string   `json:"recreateWhen,omitempty"`
 	RebaseWhen           string   `json:"rebaseWhen,omitempty"`
 	Enabled              bool     `json:"enabled"`
@@ -103,11 +131,15 @@ type RenovateConfig struct {
 	Extends             []string             `json:"extends"`
 	DependencyDashboard bool                 `json:"dependencyDashboard"`
 	Labels              []string             `json:"labels"`
+	Automerge           bool                 `json:"automerge,omitempty"`
+	AutomergeType       string               `json:"automergeType,omitempty"`
+	PlatformAutomerge   bool                 `json:"platformAutomerge,omitempty"`
+	IgnoreTests         bool                 `json:"ignoreTests,omitempty"`
 }
 
 var DisableAllPackageRules = PackageRule{MatchPackagePatterns: []string{"*"}, Enabled: false}
 
-var GenerateRenovateConfigForNudge func(target updateTarget, buildResult *BuildResult) (RenovateConfig, error) = generateRenovateConfigForNudge
+var GenerateRenovateConfigForNudge func(target updateTarget, buildResult *BuildResult, gitRepoAtShaLink string) (RenovateConfig, error) = generateRenovateConfigForNudge
 
 func NewComponentDependenciesUpdater(client client.Client, scheme *runtime.Scheme, eventRecorder record.EventRecorder) *ComponentDependenciesUpdater {
 	return &ComponentDependenciesUpdater{Client: client, Scheme: scheme, EventRecorder: eventRecorder, CredentialProvider: k8s.NewGitCredentialProvider(client)}
@@ -118,7 +150,8 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsBasicAuth(ctx context.Cont
 	log := logger.FromContext(ctx)
 	targetsToUpdate := []updateTarget{}
 
-	for _, component := range componentList {
+	for _, comp := range componentList {
+		component := comp
 		gitProvider, err := getGitProvider(component)
 		if err != nil {
 			log.Error(err, "error detecting git provider", "ComponentName", component.Name, "ComponentNamespace", component.Namespace)
@@ -173,17 +206,24 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsBasicAuth(ctx context.Cont
 			username = DefaultRenovateUser
 		}
 
+		customRenovateOptions, err := u.ReadCustomRenovateConfigMap(ctx, &component)
+		if err != nil {
+			// even if it fails on reading custom config Map, we should still perform nudging as we have the core renovate config
+			log.Error(err, "failed to read custom renovate config map, will still continue with nudging", "ComponentName", component.Name, "ComponentNamespace", component.Namespace)
+		}
+
 		targetsToUpdate = append(targetsToUpdate, updateTarget{
-			ComponentName:           component.Name,
-			GitProvider:             gitProvider,
-			Username:                username,
-			GitAuthor:               fmt.Sprintf("%s <123456+%s[bot]@users.noreply.%s>", username, username, scmComponent.RepositoryHost()),
-			Token:                   creds.Password,
-			Endpoint:                git.BuildAPIEndpoint(gitProvider).APIEndpoint(scmComponent.RepositoryHost()),
-			Repositories:            repositories,
-			ImageRepositoryHost:     imageRepositoryHost,
-			ImageRepositoryUsername: imageRepositoryUsername,
-			ImageRepositoryPassword: imageRepositoryPassword,
+			ComponentName:                  component.Name,
+			ComponentCustomRenovateOptions: customRenovateOptions,
+			GitProvider:                    gitProvider,
+			Username:                       username,
+			GitAuthor:                      fmt.Sprintf("%s <123456+%s[bot]@users.noreply.%s>", username, username, scmComponent.RepositoryHost()),
+			Token:                          creds.Password,
+			Endpoint:                       git.BuildAPIEndpoint(gitProvider).APIEndpoint(scmComponent.RepositoryHost()),
+			Repositories:                   repositories,
+			ImageRepositoryHost:            imageRepositoryHost,
+			ImageRepositoryUsername:        imageRepositoryUsername,
+			ImageRepositoryPassword:        imageRepositoryPassword,
 		})
 		log.Info("component to update for basic auth", "component", component.Name, "repositories", repositories)
 	}
@@ -219,7 +259,8 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsGithubApp(ctx context.Cont
 	// Match installed repositories with Components and get custom branch if defined
 	targetsToUpdate := []updateTarget{}
 	var slug string
-	for _, component := range componentList {
+	for _, comp := range componentList {
+		component := comp
 		if component.Spec.Source.GitSource == nil {
 			continue
 		}
@@ -268,18 +309,25 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsGithubApp(ctx context.Cont
 			continue
 		}
 
+		customRenovateOptions, err := u.ReadCustomRenovateConfigMap(ctx, &component)
+		if err != nil {
+			// even if it fails on reading custom config Map, we should still perform nudging as we have the core renovate config
+			log.Error(err, "failed to read custom renovate config map, will still continue with nudging", "ComponentName", component.Name, "ComponentNamespace", component.Namespace)
+		}
+
+		// hardcoding the number in gitAuthor because mintmaker has it hardcoded as well, so that way mintmaker will recognize the same author
 		targetsToUpdate = append(targetsToUpdate, updateTarget{
-			ComponentName: component.Name,
-			GitProvider:   gitProvider,
-			Username:      fmt.Sprintf("%s[bot]", slug),
-			// hardcoding the number because mintmaker has it hardcoded as well, so that way mintmaker will recognize the same author
-			GitAuthor:               fmt.Sprintf("%s <126015336+%s[bot]@users.noreply.github.com>", slug, slug),
-			Token:                   githubAppInstallation.Token,
-			Endpoint:                git.BuildAPIEndpoint("github").APIEndpoint("github.com"),
-			Repositories:            repositories,
-			ImageRepositoryHost:     imageRepositoryHost,
-			ImageRepositoryUsername: imageRepositoryUsername,
-			ImageRepositoryPassword: imageRepositoryPassword,
+			ComponentName:                  component.Name,
+			ComponentCustomRenovateOptions: customRenovateOptions,
+			GitProvider:                    gitProvider,
+			Username:                       fmt.Sprintf("%s[bot]", slug),
+			GitAuthor:                      fmt.Sprintf("%s <126015336+%s[bot]@users.noreply.github.com>", slug, slug),
+			Token:                          githubAppInstallation.Token,
+			Endpoint:                       git.BuildAPIEndpoint("github").APIEndpoint("github.com"),
+			Repositories:                   repositories,
+			ImageRepositoryHost:            imageRepositoryHost,
+			ImageRepositoryUsername:        imageRepositoryUsername,
+			ImageRepositoryPassword:        imageRepositoryPassword,
 		})
 		log.Info("component to update for installations", "component", component.Name, "repositories", repositories)
 	}
@@ -287,8 +335,105 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsGithubApp(ctx context.Cont
 	return targetsToUpdate
 }
 
-// generateRenovateConfigForNudge This method returns renovate config for target
-func generateRenovateConfigForNudge(target updateTarget, buildResult *BuildResult) (RenovateConfig, error) {
+// ReadCustomRenovateConfigMaps returns custom renovate options from config map which is either defined in
+// component's annotation CustomRenovateConfigMapAnnotation (which takes precedence),
+// or from namespace wide config NamespaceWideRenovateConfigMapName
+func (u ComponentDependenciesUpdater) ReadCustomRenovateConfigMap(ctx context.Context, component *v1alpha1.Component) (*CustomRenovateOptions, error) {
+	log := logger.FromContext(ctx)
+	customRenovateOptions := CustomRenovateOptions{}
+
+	customRenovateConfigMapName := NamespaceWideRenovateConfigMapName
+	customComponentRenovateConfigMapName := readComponentCustomRenovateConfigMapAnnotation(component)
+	if customComponentRenovateConfigMapName != "" {
+		customRenovateConfigMapName = customComponentRenovateConfigMapName
+	}
+
+	customRenovateConfigMap := &corev1.ConfigMap{}
+	if err := u.Client.Get(ctx, types.NamespacedName{Name: customRenovateConfigMapName, Namespace: component.Namespace}, customRenovateConfigMap); err != nil {
+		if errors.IsNotFound(err) {
+			if customRenovateConfigMapName != NamespaceWideRenovateConfigMapName {
+				log.Info("custom renovate config map in component annotation doesn't exist", "configMapName", customRenovateConfigMapName)
+			}
+			// no need to fail if custom renovate config map doesn't exist
+			return &customRenovateOptions, nil
+		}
+		return &customRenovateOptions, err
+	}
+	log.Info("will use custom renovate config map", "configMapName", customRenovateConfigMapName)
+
+	automergeOption, automergeExists := customRenovateConfigMap.Data[RenovateConfigMapAutomergeKey]
+	if automergeExists {
+		automergeValue, err := strconv.ParseBool(automergeOption)
+		if err != nil {
+			log.Error(err, "can't parse automerge option in configmap", "configMapName", customRenovateConfigMapName, "automergeValue", automergeOption)
+		} else {
+			customRenovateOptions.Automerge = automergeValue
+		}
+	}
+
+	platformAutomergeOption, platformAutomergeExists := customRenovateConfigMap.Data[RenovateConfigMapPlatformAutomergeKey]
+	if platformAutomergeExists {
+		platformAutomergeValue, err := strconv.ParseBool(platformAutomergeOption)
+		if err != nil {
+			log.Error(err, "can't parse platformAutomerge option in configmap", "configMapName", customRenovateConfigMapName, "platformAutomergeValue", platformAutomergeOption)
+		} else {
+			customRenovateOptions.PlatformAutomerge = platformAutomergeValue
+		}
+	}
+
+	ignoreTestsOption, ignoreTestsExists := customRenovateConfigMap.Data[RenovateConfigMapIgnoreTestsKey]
+	if ignoreTestsExists {
+		ignoreTestsValue, err := strconv.ParseBool(ignoreTestsOption)
+		if err != nil {
+			log.Error(err, "can't parse ignoreTests option in configmap", "configMapName", customRenovateConfigMapName, "ignoreTestsValue", ignoreTestsOption)
+		} else {
+			customRenovateOptions.IgnoreTests = ignoreTestsValue
+		}
+	}
+
+	automergeTypeOption, automergeTypeExists := customRenovateConfigMap.Data[RenovateConfigMapAutomergeTypeKey]
+	if automergeTypeExists {
+		customRenovateOptions.AutomergeType = automergeTypeOption
+	}
+
+	commitMessagePrefixOption, commitMessagePrefixExists := customRenovateConfigMap.Data[RenovateConfigMapCommitMessagePrefixKey]
+	if commitMessagePrefixExists {
+		customRenovateOptions.CommitMessagePrefix = commitMessagePrefixOption
+	}
+
+	commitMessageSuffixOption, commitMessageSuffixExists := customRenovateConfigMap.Data[RenovateConfigMapCommitMessageSuffixKey]
+	if commitMessageSuffixExists {
+		customRenovateOptions.CommitMessageSuffix = commitMessageSuffixOption
+	}
+
+	fileMatchOption, fileMatchExists := customRenovateConfigMap.Data[RenovateConfigMapFileMatchKey]
+	if fileMatchExists {
+		fileMatchParts := strings.Split(fileMatchOption, ",")
+		for i := range fileMatchParts {
+			fileMatchParts[i] = strings.TrimSpace(fileMatchParts[i])
+		}
+		customRenovateOptions.FileMatch = fileMatchParts
+	}
+
+	return &customRenovateOptions, nil
+}
+
+// readComponentCustomRenovateConfigMapAnnotation returns name of ConfigMap with custom renovate settings for nudge.
+// The ConfigMap name is taken from CustomRenovateConfigMapAnnotation annotation on the Component.
+func readComponentCustomRenovateConfigMapAnnotation(component *v1alpha1.Component) string {
+	if component.Annotations == nil {
+		return ""
+	}
+
+	customRenovateConfigMapAnnotation, customRenovateConfigMapAnnotationExists := component.Annotations[CustomRenovateConfigMapAnnotation]
+	if customRenovateConfigMapAnnotationExists && customRenovateConfigMapAnnotation != "" {
+		return customRenovateConfigMapAnnotation
+	}
+	return ""
+}
+
+// generateRenovateConfigForNudge returns renovate config for specific component in the target
+func generateRenovateConfigForNudge(target updateTarget, buildResult *BuildResult, gitRepoAtShaLink string) (RenovateConfig, error) {
 	fileMatchParts := strings.Split(buildResult.FileMatches, ",")
 	for i := range fileMatchParts {
 		fileMatchParts[i] = strings.TrimSpace(fileMatchParts[i])
@@ -309,6 +454,11 @@ func generateRenovateConfigForNudge(target updateTarget, buildResult *BuildResul
 
 	}
 
+	// use Filematch from custom renovate confing rather than from pipeline run annotation
+	if target.ComponentCustomRenovateOptions.FileMatch != nil {
+		fileMatchParts = target.ComponentCustomRenovateOptions.FileMatch
+
+	}
 	customManagers = append(customManagers, CustomManager{
 		FileMatch:            fileMatchParts,
 		CustomType:           "regex",
@@ -320,15 +470,20 @@ func generateRenovateConfigForNudge(target updateTarget, buildResult *BuildResul
 
 	packageRules = append(packageRules, DisableAllPackageRules)
 	packageRules = append(packageRules, PackageRule{
-		MatchPackageNames:  matchPackageNames,
-		GroupName:          fmt.Sprintf("Component Update %s", buildResult.Component.Name),
-		BranchName:         fmt.Sprintf("konflux/component-updates/%s", buildResult.Component.Name),
-		CommitMessageTopic: buildResult.Component.Name,
-		PRFooter:           "To execute skipped test pipelines write comment `/ok-to-test`",
-		RecreateWhen:       "always",
-		RebaseWhen:         "behind-base-branch",
-		Enabled:            true,
-		FollowTag:          buildResult.BuiltImageTag,
+		MatchPackageNames:   matchPackageNames,
+		GroupName:           fmt.Sprintf("Component Update %s", buildResult.Component.Name),
+		BranchPrefix:        BranchPrefix,
+		BranchTopic:         buildResult.Component.Name,
+		CommitMessageTopic:  buildResult.Component.Name,
+		PRFooter:            "To execute skipped test pipelines write comment `/ok-to-test`",
+		PRHeader:            fmt.Sprintf("Image created from '%s'", gitRepoAtShaLink),
+		RecreateWhen:        "always",
+		RebaseWhen:          "behind-base-branch",
+		Enabled:             true,
+		FollowTag:           buildResult.BuiltImageTag,
+		CommitBody:          fmt.Sprintf("Image created from '%s'\n\nSigned-off-by: %s", gitRepoAtShaLink, target.GitAuthor),
+		CommitMessagePrefix: target.ComponentCustomRenovateOptions.CommitMessagePrefix,
+		CommitMessageSuffix: target.ComponentCustomRenovateOptions.CommitMessageSuffix,
 	})
 
 	renovateConfig := RenovateConfig{
@@ -345,9 +500,13 @@ func generateRenovateConfigForNudge(target updateTarget, buildResult *BuildResul
 		RegistryAliases:     registryAliases,
 		PackageRules:        packageRules,
 		ForkProcessing:      "enabled",
-		Extends:             []string{":gitSignOff"},
+		Extends:             []string{},
 		DependencyDashboard: false,
 		Labels:              []string{"konflux-nudge"},
+		Automerge:           target.ComponentCustomRenovateOptions.Automerge,
+		PlatformAutomerge:   target.ComponentCustomRenovateOptions.PlatformAutomerge,
+		IgnoreTests:         target.ComponentCustomRenovateOptions.IgnoreTests,
+		AutomergeType:       target.ComponentCustomRenovateOptions.AutomergeType,
 	}
 
 	return renovateConfig, nil
@@ -361,7 +520,7 @@ func generateRenovateConfigForNudge(target updateTarget, buildResult *BuildResul
 // - Tekton automatically provides docker config from linked service accounts for private images, with a job I would need to implement this manually
 //
 // Warning: the installation token used here should only be scoped to the individual repositories being updated
-func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Context, namespace string, targets []updateTarget, debug bool, buildResult *BuildResult) error {
+func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Context, namespace string, targets []updateTarget, debug bool, buildResult *BuildResult, gitRepoAtShaLink string) error {
 	log := logger.FromContext(ctx)
 	log.Info(fmt.Sprintf("Creating renovate pipeline for %d components", len(targets)))
 
@@ -385,7 +544,7 @@ func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Contex
 		configString := ""
 		configType := "json"
 
-		renovateConfig, err := GenerateRenovateConfigForNudge(target, buildResult)
+		renovateConfig, err := GenerateRenovateConfigForNudge(target, buildResult, gitRepoAtShaLink)
 		if err != nil {
 			return err
 		}
