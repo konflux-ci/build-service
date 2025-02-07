@@ -1,5 +1,5 @@
 /*
-Copyright 2021-2023 Red Hat, Inc.
+Copyright 2021-2025 Red Hat, Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -40,7 +40,7 @@ import (
 	"github.com/konflux-ci/build-service/pkg/bometrics"
 	"github.com/konflux-ci/build-service/pkg/k8s"
 	l "github.com/konflux-ci/build-service/pkg/logs"
-	"github.com/konflux-ci/build-service/pkg/webhook"
+	pacwebhook "github.com/konflux-ci/build-service/pkg/pacwebhook"
 )
 
 const (
@@ -103,7 +103,7 @@ type ComponentBuildReconciler struct {
 	Scheme             *runtime.Scheme
 	EventRecorder      record.EventRecorder
 	CredentialProvider *k8s.GitCredentialProvider
-	WebhookURLLoader   webhook.WebhookURLLoader
+	WebhookURLLoader   pacwebhook.WebhookURLLoader
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -123,6 +123,7 @@ func (r *ComponentBuildReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				return false
 			},
 		})).
+		Named("ComponentOnboarding").
 		Complete(r)
 }
 

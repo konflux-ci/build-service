@@ -1,5 +1,5 @@
 /*
-Copyright 2022.
+Copyright 2022-2025 Red Hat, Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -62,6 +62,7 @@ func (r *PaCPipelineRunPrunerReconciler) SetupWithManager(mgr ctrl.Manager) erro
 				return false
 			},
 		})).
+		Named("PaCPipelineRunPruner").
 		Complete(r)
 }
 

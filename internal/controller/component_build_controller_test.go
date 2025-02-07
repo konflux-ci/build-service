@@ -1,5 +1,5 @@
 /*
-Copyright 2021-2023 Red Hat, Inc.
+Copyright 2021-2025 Red Hat, Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -46,7 +46,8 @@ import (
 )
 
 const (
-	githubAppPrivateKey = `-----BEGIN RSA PRIVATE KEY-----
+	githubAppPrivateKey = `-----BEGIN RSA PRIVATE KEY-----` + // notsecret
+		`
 MIIEogIBAAKCAQEAtSwZCtZ0Tnepuezo/TL9vhdP00fOedCpN3HsKjqz7zXTnqkq
 foxemrDvRSg5n73sZhZMYX6NKY1FBLTE6OazvJQg0eXu7Bf5+5sg5ZZIthX1wbPU
 wk18S5HsC1NTDGHVlQ2pQEuXmpxi/FAKgHaYbhx2J2SzD2gdKEOAufBZ14o8btF2
