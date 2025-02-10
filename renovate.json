@@ -1,0 +1,16 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "packageRules": [
+    {
+      "matchPackageNames": [
+        "registry.access.redhat.com/ubi9/go-toolset"
+      ],
+      "allowedVersions": [
+        "<2"
+      ]
+    }
+  ]
+}
