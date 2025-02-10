@@ -324,7 +324,7 @@ func ensureRequiredAPIGroupsAndResourcesExist(restConfig *rest.Config) {
 		time.Sleep(delay)
 	}
 
-	setupLog.Info("timed out waiting for required API Groups and Resources")
+	setupLog.Error(fmt.Errorf("failed to start operator"), "timed out waiting for required API Groups and Resources")
 	os.Exit(1)
 }
 
