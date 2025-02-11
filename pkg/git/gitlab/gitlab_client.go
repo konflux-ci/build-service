@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/google/go-github/v45/github"
 	"github.com/xanzy/go-gitlab"
 
 	gp "github.com/konflux-ci/build-service/pkg/git/gitprovider"
@@ -323,6 +324,10 @@ func (g *GitlabClient) GetBrowseRepositoryAtShaLink(repoUrl, sha string) string 
 
 func (g *GitlabClient) GetConfiguredGitAppName() (string, string, error) {
 	return "", "", fmt.Errorf("GitLab does not support applications")
+}
+
+func (g *GitlabClient) GetAppUserInfo(username string) (*github.User, error) {
+	return nil, fmt.Errorf("GitLab does not support applications")
 }
 
 func newGitlabClient(accessToken, baseUrl string) (*GitlabClient, error) {

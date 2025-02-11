@@ -108,7 +108,7 @@ var _ = Describe("Component nudge controller", func() {
 				Token:        "some_token",
 				ID:           1,
 				Repositories: []*gitgithub.Repository{{Name: &repo_name, FullName: &repo_fullname, DefaultBranch: &repo_defaultbranch}},
-			}, "slug", nil
+			}, TestGitHubAppName, nil
 		}
 	})
 
@@ -495,6 +495,10 @@ var _ = Describe("Component nudge controller", func() {
 				RenovateConfigMapPlatformAutomergeKey:   "false",
 				RenovateConfigMapIgnoreTestsKey:         "true",
 			}
+			gitHubAppUsername := fmt.Sprintf("%s[bot]", TestGitHubAppName)
+			gitHubAppGitAuthor := fmt.Sprintf("%s <%d+%s@users.noreply.github.com>", TestGitHubAppName, TestGitHubAppId, gitHubAppUsername)
+			gitHubAppSignedOff := fmt.Sprintf("Signed-off-by: %s", gitHubAppGitAuthor)
+			gitHubAppUsed := 0
 			assertRenovateConfiMap(nil, nil, customConfigMapData, imageBuiltFrom)
 
 			renovateConfigMaps := getRenovateConfigMapList()
@@ -514,10 +518,16 @@ var _ = Describe("Component nudge controller", func() {
 						Expect(strings.Contains(renovateConfigObj.PackageRules[1].CommitBody, commitBodyValue)).Should(BeTrue())
 						Expect(renovateConfigObj.CustomManagers[0].FileMatch).Should(Equal(fileMatchValue))
 						Expect(strings.HasSuffix(key, customConfigType))
+						if renovateConfigObj.Username == gitHubAppUsername {
+							gitHubAppUsed++
+							Expect(renovateConfigObj.GitAuthor).Should(Equal(gitHubAppGitAuthor))
+							Expect(strings.Contains(renovateConfigObj.PackageRules[1].CommitBody, gitHubAppSignedOff)).Should(BeTrue())
+						}
 					}
 					break
 				}
 			}
+			Expect(gitHubAppUsed).Should(Equal(2))
 		})
 
 		It("Test build performs nudge on success, only component renovate config provided", func() {
