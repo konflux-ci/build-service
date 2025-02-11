@@ -100,18 +100,17 @@ func main() {
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	flag.StringVar(&webhookConfigPath, "webhook-config-path", "", "Path to a file that contains webhook configurations")
 
-	opts := zap.Options{
+	zapOpts := zap.Options{
 		TimeEncoder: uberzapcore.ISO8601TimeEncoder,
 		ZapOpts:     []uberzap.Option{uberzap.WithCaller(true)},
-		// Development: true,
 	}
-	opts.BindFlags(flag.CommandLine)
+	zapOpts.BindFlags(flag.CommandLine)
 
 	klog.InitFlags(flag.CommandLine)
 
 	flag.Parse()
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&zapOpts)))
 	klog.SetLogger(setupLog)
 
 	if err := routev1.AddToScheme(scheme); err != nil {
