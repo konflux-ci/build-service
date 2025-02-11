@@ -100,6 +100,8 @@ const (
 	EUnknownGitProvider BOErrorId = 60
 	// Insecure HTTP can't be used for git repository URL
 	EHttpUsedForRepository BOErrorId = 61
+	// Wrong git source url used, can't be path to tree/blob etc
+	EWrongGitSourceUrl BOErrorId = 62
 
 	// Happens when configured in cluster Pipelines as Code application is not installed in Component source repository.
 	// User must install the application to fix this error.
@@ -189,6 +191,7 @@ var boErrorMessages = map[BOErrorId]string{
 
 	EUnknownGitProvider:    "unknown git provider of the source repository",
 	EHttpUsedForRepository: "http used for git repository, use secure connection",
+	EWrongGitSourceUrl:     "wrong git source url used, can't be path to tree/blob etc",
 
 	EGitHubAppNotInstalled:         "GitHub Application is not installed in user repository",
 	EGitHubAppMalformedPrivateKey:  "malformed GitHub Application private key",

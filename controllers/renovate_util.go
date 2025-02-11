@@ -158,7 +158,8 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsBasicAuth(ctx context.Cont
 			continue
 		}
 
-		scmComponent, err := git.NewScmComponent(gitProvider, component.Spec.Source.GitSource.URL, component.Spec.Source.GitSource.Revision, component.Name, component.Namespace)
+		repoUrl := strings.TrimSuffix(strings.TrimSuffix(component.Spec.Source.GitSource.URL, ".git"), "/")
+		scmComponent, err := git.NewScmComponent(gitProvider, repoUrl, component.Spec.Source.GitSource.Revision, component.Name, component.Namespace)
 		if err != nil {
 			log.Error(err, "error parsing component", "ComponentName", component.Name, "ComponentNamespace", component.Namespace)
 			continue
@@ -167,7 +168,7 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsBasicAuth(ctx context.Cont
 		creds, err := u.CredentialProvider.GetBasicAuthCredentials(ctx, scmComponent)
 		if err != nil {
 			log.Error(err, "error getting basic auth credentials for component", "ComponentName", component.Name, "ComponentNamespace", component.Namespace)
-			log.Info(fmt.Sprintf("for repository %s", component.Spec.Source.GitSource.URL))
+			log.Info(fmt.Sprintf("for repository %s", repoUrl))
 			continue
 		}
 
@@ -181,16 +182,16 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsBasicAuth(ctx context.Cont
 			gitClient, err := gitproviderfactory.CreateGitClient(gitproviderfactory.GitClientConfig{
 				PacSecretData:             pacConfig,
 				GitProvider:               gitProvider,
-				RepoUrl:                   component.Spec.Source.GitSource.URL,
+				RepoUrl:                   repoUrl,
 				IsAppInstallationExpected: true,
 			})
 			if err != nil {
-				log.Error(err, "error create git client for component", "ComponentName", component.Name, "RepoUrl", component.Spec.Source.GitSource.URL)
+				log.Error(err, "error create git client for component", "ComponentName", component.Name, "RepoUrl", repoUrl)
 				continue
 			}
-			defaultBranch, err := gitClient.GetDefaultBranch(component.Spec.Source.GitSource.URL)
+			defaultBranch, err := gitClient.GetDefaultBranch(repoUrl)
 			if err != nil {
-				log.Error(err, "error get git default branch for component", "ComponentName", component.Name, "RepoUrl", component.Spec.Source.GitSource.URL)
+				log.Error(err, "error get git default branch for component", "ComponentName", component.Name, "RepoUrl", repoUrl)
 				continue
 			}
 			branch = defaultBranch
