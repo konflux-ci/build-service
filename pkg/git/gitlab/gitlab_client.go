@@ -175,10 +175,10 @@ func (g *GitlabClient) FindUnmergedPaCMergeRequest(repoUrl string, d *gp.MergeRe
 	}
 
 	opts := &gitlab.ListProjectMergeRequestsOptions{
-		State:          gitlab.String("opened"),
-		AuthorUsername: gitlab.String(d.AuthorName),
-		SourceBranch:   gitlab.String(d.BaseBranchName),
-		TargetBranch:   gitlab.String(d.BranchName),
+		State:          gitlab.Ptr("opened"),
+		AuthorUsername: gitlab.Ptr(d.AuthorName),
+		SourceBranch:   gitlab.Ptr(d.BaseBranchName),
+		TargetBranch:   gitlab.Ptr(d.BranchName),
 	}
 	mrs, resp, err := g.client.MergeRequests.ListProjectMergeRequests(projectPath, opts)
 	if err != nil {
