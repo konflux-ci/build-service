@@ -1,10 +1,13 @@
 # Build the manager binary
 # For more details and updates, refer to
 # https://catalog.redhat.com/software/containers/ubi9/go-toolset/61e5c00b4ec9945c18787690
-FROM registry.access.redhat.com/ubi9/go-toolset:1.22.9-1738746453 AS builder
+FROM registry.access.redhat.com/ubi9/go-toolset:1.22.9-1738267444 AS builder
+ARG TARGETOS
+ARG TARGETARCH
 
 USER 1001
 
+WORKDIR /workspace
 # Copy the Go Modules manifests
 COPY --chown=1001:0 go.mod go.mod
 COPY --chown=1001:0 go.sum go.sum
@@ -16,13 +19,18 @@ RUN go mod download
 COPY --chown=1001:0 . .
 
 # Build
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o manager main.go
+# the GOARCH has not a default value to allow the binary be built according to the host where the command
+# was called. For example, if we call make docker-build in a local env which has the Apple Silicon M1 SO
+# the docker BUILDPLATFORM arg will be linux/arm64 when for Apple x86 it will be linux/amd64. Therefore,
+# by leaving it empty we can ensure that the container and binary shipped on it will have the same platform.
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o manager cmd/main.go
 
 # Use ubi-minimal as minimal base image to package the manager binary
 # For more details and updates, refer to
 # https://catalog.redhat.com/software/containers/ubi9/ubi-minimal/615bd9b4075b022acc111bf5
 FROM registry.access.redhat.com/ubi9/ubi-minimal:9.4
-COPY --from=builder /opt/app-root/src/manager /
+WORKDIR /
+COPY --from=builder /workspace/manager .
 USER 65532:65532
 
 # Required for ecosystem-cert-preflight-checks

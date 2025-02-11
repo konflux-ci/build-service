@@ -1,5 +1,5 @@
 /*
-Copyright 2021-2023 Red Hat, Inc.
+Copyright 2021-2025 Red Hat, Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -113,12 +113,6 @@ type RepositoryConfigAuth struct {
 
 // SetupController creates a new Integration reconciler and adds it to the Manager.
 func (r *ComponentDependencyUpdateReconciler) SetupWithManager(manager ctrl.Manager) error {
-	return setupControllerWithManager(manager, r)
-}
-
-// setupControllerWithManager sets up the controller with the Manager which monitors new PipelineRuns and filters
-// out pipelines we don't need
-func setupControllerWithManager(manager ctrl.Manager, reconciler *ComponentDependencyUpdateReconciler) error {
 	return ctrl.NewControllerManagedBy(manager).
 		For(&tektonapi.PipelineRun{}, builder.WithPredicates(predicate.Funcs{
 			CreateFunc: func(e event.CreateEvent) bool {
@@ -150,7 +144,8 @@ func setupControllerWithManager(manager ctrl.Manager, reconciler *ComponentDepen
 				return true
 			},
 		})).
-		Complete(reconciler)
+		Named("ComponentDependencyUpdateReconciler").
+		Complete(r)
 }
 
 // The following line for configmaps is informational, the actual permissions are defined in component_build_controller.

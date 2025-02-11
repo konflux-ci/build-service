@@ -1,3 +1,18 @@
+/*
+Copyright 2023-2025 Red Hat, Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+	http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 package webhook
 
 import (
@@ -23,12 +38,11 @@ func NewConfigWebhookURLLoader(mapping map[string]string) ConfigWebhookURLLoader
 	return ConfigWebhookURLLoader{mapping: mapping}
 }
 
-/*
-	Load implements WebhookURLLoader.
-
-Find the longest prefix match of `repositoryUrl“ and the keys of `mapping`,
-and return the value of that key.
-*/
+// Load implements WebhookURLLoader.
+// Load allows to configure the PaC webhook target url based on the repository url of the component.
+// The PaC webhook target url config is read from the provided config file or environment variable (has precedence).
+// In case no config file or environment variable are provided, the default PaC route in the cluster will be used.
+// Find the longest prefix match of `repositoryUrl` and the keys of `mapping`, and return the value of that key.
 func (c ConfigWebhookURLLoader) Load(repositoryUrl string) string {
 	longestPrefixLen := 0
 	matchedTarget := ""

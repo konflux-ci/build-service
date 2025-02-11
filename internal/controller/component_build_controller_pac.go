@@ -1,5 +1,5 @@
 /*
-Copyright 2021-2023 Red Hat, Inc.
+Copyright 2021-2025 Red Hat, Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -185,7 +185,7 @@ func validatePaCConfiguration(gitProvider string, pacSecret corev1.Secret) error
 			}
 
 			privateKey := strings.TrimSpace(string(pacSecret.Data[PipelinesAsCodeGithubPrivateKey]))
-			if !strings.HasPrefix(privateKey, "-----BEGIN RSA PRIVATE KEY-----") ||
+			if !strings.HasPrefix(privateKey, "-----BEGIN RSA PRIVATE KEY-----") || // notsecret
 				!strings.HasSuffix(privateKey, "-----END RSA PRIVATE KEY-----") {
 				return fmt.Errorf(" Pipelines as Code secret: GitHub application private key is invalid")
 			}

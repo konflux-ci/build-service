@@ -1,5 +1,5 @@
 /*
-Copyright 2022-2023 Red Hat, Inc.
+Copyright 2022-2025 Red Hat, Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -33,7 +33,6 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	corev1 "k8s.io/api/core/v1"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -44,7 +43,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/konflux-ci/build-service/pkg/k8s"
-	"github.com/konflux-ci/build-service/pkg/webhook"
+	pacwebhook "github.com/konflux-ci/build-service/pkg/pacwebhook"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -83,19 +82,19 @@ var _ = BeforeSuite(func() {
 	applicationApiDepVersion := "v0.0.0-20240812090716-e7eb2ecfb409"
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
-			filepath.Join("..", "hack", "routecrd", "route.yaml"),
+			filepath.Join("..", "..", "hack", "routecrd", "route.yaml"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "konflux-ci", "application-api@"+applicationApiDepVersion, "config", "crd", "bases"),
-			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "tektoncd", "pipeline@v0.57.0", "config"),
-			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "openshift-pipelines", "pipelines-as-code@v0.21.0", "config"),
+			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "tektoncd", "pipeline@v0.63.0", "config", "300-crds"),
+			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "openshift-pipelines", "pipelines-as-code@v0.28.2", "config"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "konflux-ci", "release-service@v0.0.0-20240610124538-758a1d48d002", "config", "crd", "bases"),
 		},
 		ErrorIfCRDPathMissing: true,
 	}
 
 	cfg, err := testEnv.Start()
-	cfg.Timeout = 5 * time.Second
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
+	cfg.Timeout = 5 * time.Second
 
 	err = routev1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
@@ -134,8 +133,6 @@ var _ = BeforeSuite(func() {
 
 	Expect(k8sClient.Create(context.Background(), &svcAccount)).Should(Succeed())
 
-	Expect(patchPipelineRunCRD()).Should(Succeed())
-
 	clientOpts := client.Options{
 		Cache: &client.CacheOptions{
 			DisableFor: getCacheExcludedObjectsTypes(),
@@ -148,14 +145,14 @@ var _ = BeforeSuite(func() {
 	})
 	Expect(err).ToNot(HaveOccurred())
 
-	webhookConfig, err := webhook.LoadMappingFromFile("", os.ReadFile)
+	webhookConfig, err := pacwebhook.LoadMappingFromFile("", os.ReadFile)
 	Expect(err).ToNot(HaveOccurred())
 
 	err = (&ComponentBuildReconciler{
 		Client:             k8sManager.GetClient(),
 		Scheme:             k8sManager.GetScheme(),
 		EventRecorder:      k8sManager.GetEventRecorderFor("ComponentOnboarding"),
-		WebhookURLLoader:   webhook.NewConfigWebhookURLLoader(webhookConfig),
+		WebhookURLLoader:   pacwebhook.NewConfigWebhookURLLoader(webhookConfig),
 		CredentialProvider: k8s.NewGitCredentialProvider(k8sManager.GetClient()),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
@@ -182,39 +179,6 @@ var _ = BeforeSuite(func() {
 		Expect(err).ToNot(HaveOccurred(), "failed to run manager")
 	}()
 })
-
-// The Tekton PipelineRun CRD defines v1beta1 as the storage version. When build-service creates
-// a v1 PipelineRun, it needs to be converted to v1beta1 before it gets stored in etcd. Normally,
-// this would be done by a conversion webhook, but the webhook doesn't seem to work in the envtest
-// environment.
-//
-// Adding the webhook path to envtest.Environment.WebhookInstallOptions does not help.
-//
-// Instead, patch the PipelineRun CRD. Set v1 as the storage version so that the conversion webhook
-// is not needed.
-//
-// TODO: in github.com/tektoncd/pipelines@v0.49.0, the storage version changed to v1. After we
-// update the dependency, we can drop this workaround.
-// https://github.com/tektoncd/pipeline/commit/7384a67b77c07444f0e1d5748e771c1477e0db23
-func patchPipelineRunCRD() error {
-	var pipelineRunCRD apiextensionsv1.CustomResourceDefinition
-	err := k8sClient.Get(ctx, types.NamespacedName{Namespace: "", Name: "pipelineruns.tekton.dev"}, &pipelineRunCRD)
-	if err != nil {
-		return err
-	}
-
-	v1beta1 := &pipelineRunCRD.Spec.Versions[0]
-	v1 := &pipelineRunCRD.Spec.Versions[1]
-
-	Expect(v1beta1.Name).To(Equal("v1beta1"))
-	Expect(v1.Name).To(Equal("v1"))
-
-	v1beta1.Storage = false
-	v1.Storage = true
-
-	err = k8sClient.Update(ctx, &pipelineRunCRD)
-	return err
-}
 
 var _ = AfterSuite(func() {
 	cancel()

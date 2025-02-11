@@ -1,5 +1,5 @@
 /*
-Copyright 2022-2023 Red Hat, Inc.
+Copyright 2022-2025 Red Hat, Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -175,10 +175,10 @@ func (g *GitlabClient) FindUnmergedPaCMergeRequest(repoUrl string, d *gp.MergeRe
 	}
 
 	opts := &gitlab.ListProjectMergeRequestsOptions{
-		State:          gitlab.String("opened"),
-		AuthorUsername: gitlab.String(d.AuthorName),
-		SourceBranch:   gitlab.String(d.BaseBranchName),
-		TargetBranch:   gitlab.String(d.BranchName),
+		State:          gitlab.Ptr("opened"),
+		AuthorUsername: gitlab.Ptr(d.AuthorName),
+		SourceBranch:   gitlab.Ptr(d.BaseBranchName),
+		TargetBranch:   gitlab.Ptr(d.BranchName),
 	}
 	mrs, resp, err := g.client.MergeRequests.ListProjectMergeRequests(projectPath, opts)
 	if err != nil {
