@@ -25,6 +25,8 @@ var (
 	testGitProviderClient   = &TestGitProviderClient{}
 	DefaultBrowseRepository = "https://githost.com/user/repo?rev="
 	UndoPacMergeRequestURL  = "https://githost.com/mr/5678"
+	TestGitHubAppName       = "test-github-app"
+	TestGitHubAppId         = int64(1234567890)
 
 	EnsurePaCMergeRequestFunc        func(repoUrl string, data *gp.MergeRequestData) (webUrl string, err error)
 	UndoPaCMergeRequestFunc          func(repoUrl string, data *gp.MergeRequestData) (webUrl string, err error)
@@ -38,6 +40,7 @@ var (
 	IsFileExistFunc                  func(repoUrl, branchName, filePath string) (bool, error)
 	IsRepositoryPublicFunc           func(repoUrl string) (bool, error)
 	GetConfiguredGitAppNameFunc      func() (string, string, error)
+	GetAppUserIdFunc                 func(userName string) (int64, error)
 )
 
 func ResetTestGitProviderClient() {
@@ -81,6 +84,9 @@ func ResetTestGitProviderClient() {
 	GetConfiguredGitAppNameFunc = func() (string, string, error) {
 		return "git-app-name", "slug", nil
 	}
+	GetAppUserIdFunc = func(userName string) (int64, error) {
+		return TestGitHubAppId, nil
+	}
 }
 
 var _ gp.GitProviderClient = (*TestGitProviderClient)(nil)
@@ -122,4 +128,7 @@ func (*TestGitProviderClient) IsRepositoryPublic(repoUrl string) (bool, error) {
 }
 func (*TestGitProviderClient) GetConfiguredGitAppName() (string, string, error) {
 	return GetConfiguredGitAppNameFunc()
+}
+func (*TestGitProviderClient) GetAppUserId(userName string) (int64, error) {
+	return GetAppUserIdFunc(userName)
 }

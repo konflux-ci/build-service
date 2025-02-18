@@ -60,6 +60,9 @@ type GitProviderClient interface {
 	// GetConfiguredGitAppName returns configured git application name and id.
 	// Not all git providers support applications. Currently only GitHub does.
 	GetConfiguredGitAppName() (string, string, error)
+
+	// GetAppUserId get info about application user
+	GetAppUserId(userName string) (int64, error)
 }
 
 type MergeRequestData struct {

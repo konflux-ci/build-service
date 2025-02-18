@@ -325,6 +325,10 @@ func (g *GitlabClient) GetConfiguredGitAppName() (string, string, error) {
 	return "", "", fmt.Errorf("GitLab does not support applications")
 }
 
+func (g *GitlabClient) GetAppUserId(username string) (int64, error) {
+	return 0, fmt.Errorf("GitLab does not support applications")
+}
+
 func newGitlabClient(accessToken, baseUrl string) (*GitlabClient, error) {
 	glc := &GitlabClient{}
 	c, err := gitlab.NewClient(accessToken, gitlab.WithBaseURL(baseUrl))
