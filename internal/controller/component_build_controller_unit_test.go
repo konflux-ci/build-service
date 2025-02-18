@@ -1375,6 +1375,56 @@ func TestGetGitProvider(t *testing.T) {
 			componentRepoUrl: "https://github.com/user",
 			expectError:      true,
 		},
+		{
+			name:             "should return error if git source URL path doesn't have 2 parts namespace(owner)/repo",
+			componentRepoUrl: "https://github.com/user",
+			expectError:      true,
+		},
+		{
+			name:             "should return error if git source URL path has more than 2 parts namespace(owner)/repo",
+			componentRepoUrl: "https://github.com/user/repository/tree",
+			expectError:      true,
+		},
+		{
+			name:             "should return error if git source URL path has more than 2 parts namespace(owner)/repo",
+			componentRepoUrl: "https://github.com/user/repository/tree/branch/file",
+			expectError:      true,
+		},
+		{
+			name:             "should detect gitlab provider even if path has more than 2 parts",
+			componentRepoUrl: "https://gitlab.com/user/test-component-repository/additional",
+			want:             "gitlab",
+		},
+		{
+			name:             "should detect gitlab provider even if path has more than 2 parts",
+			componentRepoUrl: "https://gitlab.com/user/test-component-repository/additional/other",
+			want:             "gitlab",
+		},
+		{
+			name:             "should detect gitlab provider url ends with '.git'",
+			componentRepoUrl: "https://gitlab.com/user/test-component-repository.git",
+			want:             "gitlab",
+		},
+		{
+			name:             "should detect gitlab provider url ends with '.git' and slash",
+			componentRepoUrl: "https://gitlab.com/user/test-component-repository.git/",
+			want:             "gitlab",
+		},
+		{
+			name:             "should return error if gitlab url contains '-'",
+			componentRepoUrl: "https://gitlab.com/user/test-component-repository/additional/other/-/tree/main/file",
+			expectError:      true,
+		},
+		{
+			name:             "should return error if gitlab url contains '-'",
+			componentRepoUrl: "https://gitlab.com/user/test-component-repository/additional/other/-/commit/shacommit",
+			expectError:      true,
+		},
+		{
+			name:             "should return error if gitlab url contains '-'",
+			componentRepoUrl: "https://gitlab.com/user/test-component-repository/additional/other/-/blob/main/blobfile",
+			expectError:      true,
+		},
 	}
 
 	for _, tt := range tests {

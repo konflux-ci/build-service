@@ -22,7 +22,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"regexp"
-	"strings"
 
 	appstudiov1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -92,7 +91,8 @@ func (r *ComponentBuildReconciler) ensureIncomingSecret(ctx context.Context, com
 func (r *ComponentBuildReconciler) lookupPaCSecret(ctx context.Context, component *appstudiov1alpha1.Component, gitProvider string) (*corev1.Secret, error) {
 	log := ctrllog.FromContext(ctx)
 
-	scmComponent, err := git.NewScmComponent(gitProvider, component.Spec.Source.GitSource.URL, component.Spec.Source.GitSource.Revision, component.Name, component.Namespace)
+	repoUrl := getGitRepoUrl(*component)
+	scmComponent, err := git.NewScmComponent(gitProvider, repoUrl, component.Spec.Source.GitSource.Revision, component.Name, component.Namespace)
 	if err != nil {
 		return nil, err
 	}
@@ -189,7 +189,7 @@ func (r *ComponentBuildReconciler) ensureWebhookSecret(ctx context.Context, comp
 }
 
 func getWebhookSecretKeyForComponent(component appstudiov1alpha1.Component) string {
-	gitRepoUrl := strings.TrimSuffix(component.Spec.Source.GitSource.URL, ".git")
+	gitRepoUrl := getGitRepoUrl(component)
 
 	notAllowedCharRegex, _ := regexp.Compile("[^-._a-zA-Z0-9]{1}")
 	return notAllowedCharRegex.ReplaceAllString(gitRepoUrl, "_")
