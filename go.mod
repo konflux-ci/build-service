@@ -30,9 +30,9 @@ require (
 // If you update dependencies below you must also update internal/controller/suite_test.go
 require (
 	github.com/konflux-ci/application-api v0.0.0-20240812090716-e7eb2ecfb409
-	github.com/konflux-ci/release-service v0.0.0-20240610124538-758a1d48d002
+	github.com/konflux-ci/release-service v0.0.0-20250222152223-2f1b5f6c8f03
 	github.com/openshift-pipelines/pipelines-as-code v0.28.2
-	github.com/tektoncd/pipeline v0.63.0
+	github.com/tektoncd/pipeline v0.66.0
 )
 
 require (
