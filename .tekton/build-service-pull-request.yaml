@@ -175,7 +175,7 @@ spec:
         - name: name
           value: sealights-go-oci-ta
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-sealights-go-oci-ta:0.1@sha256:43bc7db74b9ffdcdd68f9460b411be1560495d4d7db4d98d7e5d417143efcda6
+          value: quay.io/konflux-ci/tekton-catalog/task-sealights-go-oci-ta:0.1@sha256:01d2805c881bfadd181a41866424783d6369b89d0bfa59c16b16370e4d0649ec
         - name: kind
           value: task
         resolver: bundles
