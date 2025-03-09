@@ -175,7 +175,7 @@ spec:
         - name: name
           value: sealights-go-oci-ta
         - name: bundle
-          value: quay.io/flacatus/go-oci-ta@sha256:dfce244d880f499b646a30e32f2bdd84d8275e622e83dd5e88eada55031399fb
+          value: quay.io/flacatus/go-oci-ta@sha256:56651ea1c8210406e754eb77aec3ecd0dabf2ba789b47dd61c3d77d2cdc0de88
         - name: kind
           value: task
         resolver: bundles
