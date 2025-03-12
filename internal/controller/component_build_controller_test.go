@@ -710,7 +710,7 @@ var _ = Describe("Component initial build controller", func() {
 
 		It("should set default branch as base branch when Revision is not set", func() {
 			const repoDefaultBranch = "default-branch"
-			GetDefaultBranchFunc = func(repoUrl string) (string, error) {
+			GetDefaultBranchWithChecksFunc = func(repoUrl string) (string, error) {
 				return repoDefaultBranch, nil
 			}
 
@@ -1163,7 +1163,7 @@ var _ = Describe("Component initial build controller", func() {
 
 		It("should close unmerged PaC pull request opened based on default branch", func() {
 			defaultBranch := "devel"
-			GetDefaultBranchFunc = func(repoUrl string) (string, error) {
+			GetDefaultBranchWithChecksFunc = func(repoUrl string) (string, error) {
 				return defaultBranch, nil
 			}
 			assertCloseUnmergedMergeRequest(defaultBranch, true)
