@@ -33,7 +33,7 @@ var (
 	FindUnmergedPaCMergeRequestFunc  func(repoUrl string, data *gp.MergeRequestData) (*gp.MergeRequest, error)
 	SetupPaCWebhookFunc              func(repoUrl string, webhookUrl string, webhookSecret string) error
 	DeletePaCWebhookFunc             func(repoUrl string, webhookUrl string) error
-	GetDefaultBranchFunc             func(repoUrl string) (string, error)
+	GetDefaultBranchWithChecksFunc   func(repoUrl string) (string, error)
 	DeleteBranchFunc                 func(repoUrl string, branchName string) (bool, error)
 	GetBranchShaFunc                 func(repoUrl string, branchName string) (string, error)
 	GetBrowseRepositoryAtShaLinkFunc func(repoUrl string, sha string) string
@@ -63,7 +63,7 @@ func ResetTestGitProviderClient() {
 	DeletePaCWebhookFunc = func(repoUrl string, webhookUrl string) error {
 		return nil
 	}
-	GetDefaultBranchFunc = func(repoUrl string) (string, error) {
+	GetDefaultBranchWithChecksFunc = func(repoUrl string) (string, error) {
 		return "dafaultbranch", nil
 	}
 	DeleteBranchFunc = func(repoUrl string, branchName string) (bool, error) {
@@ -108,8 +108,8 @@ func (*TestGitProviderClient) SetupPaCWebhook(repoUrl string, webhookUrl string,
 func (*TestGitProviderClient) DeletePaCWebhook(repoUrl string, webhookUrl string) error {
 	return DeletePaCWebhookFunc(repoUrl, webhookUrl)
 }
-func (*TestGitProviderClient) GetDefaultBranch(repoUrl string) (string, error) {
-	return GetDefaultBranchFunc(repoUrl)
+func (*TestGitProviderClient) GetDefaultBranchWithChecks(repoUrl string) (string, error) {
+	return GetDefaultBranchWithChecksFunc(repoUrl)
 }
 func (*TestGitProviderClient) DeleteBranch(repoUrl string, branchName string) (bool, error) {
 	return DeleteBranchFunc(repoUrl, branchName)
