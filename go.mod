@@ -21,18 +21,18 @@ require (
 	k8s.io/apimachinery v0.31.0
 	k8s.io/client-go v0.31.0
 	k8s.io/klog/v2 v2.130.1
-	k8s.io/utils v0.0.0-20240902221715-702e33fdd3c3
+	k8s.io/utils v0.0.0-20241210054802-24370beab758
 	knative.dev/pkg v0.0.0-20240815051656-89743d9bbf7c
-	sigs.k8s.io/controller-runtime v0.19.3
+	sigs.k8s.io/controller-runtime v0.19.4
 	sigs.k8s.io/yaml v1.4.0
 )
 
 // If you update dependencies below you must also update internal/controller/suite_test.go
 require (
 	github.com/konflux-ci/application-api v0.0.0-20240812090716-e7eb2ecfb409
-	github.com/konflux-ci/release-service v0.0.0-20240610124538-758a1d48d002
+	github.com/konflux-ci/release-service v0.0.0-20250313191253-1e73c4f5cc24
 	github.com/openshift-pipelines/pipelines-as-code v0.28.2
-	github.com/tektoncd/pipeline v0.63.0
+	github.com/tektoncd/pipeline v0.66.0
 )
 
 require (
