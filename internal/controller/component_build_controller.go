@@ -442,7 +442,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 
 		buildStatus := readBuildStatus(&component)
-		buildStatus.Message = fmt.Sprintf("unexpected build request sealights: %s", requestedAction)
+		buildStatus.Message = fmt.Sprintf("unexpected build request: %s", requestedAction)
 		writeBuildStatus(&component, buildStatus)
 	}
 
