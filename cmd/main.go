@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
 	"fmt"
@@ -30,9 +31,12 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/selection"
+	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/discovery"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -78,6 +82,7 @@ func init() {
 }
 
 // +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=get
 
 func main() {
 	var metricsAddr string
@@ -198,6 +203,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	ensureBuildPipelineClusterRoleExist(mgr.GetClient())
+
 	webhookConfig, err := pacwebhook.LoadMappingFromFile(webhookConfigPath, os.ReadFile)
 	if err != nil {
 		setupLog.Error(err, "Failed to load webhook config file", "path", webhookConfigPath)
@@ -276,6 +283,7 @@ func getCacheExcludedObjectsTypes() []client.Object {
 	return []client.Object{
 		&corev1.Secret{},
 		&corev1.ConfigMap{},
+		&rbacv1.ClusterRole{},
 	}
 }
 
@@ -368,4 +376,29 @@ NextGroup:
 	}
 
 	return true
+}
+
+// Makes sure that Cluster Role that defines permissins for build pipelines exists in the cluster.
+// Otherwise no build can be done and there is no point in starting the operator.
+func ensureBuildPipelineClusterRoleExist(client client.Client) {
+	buildPipelinesRunnerClusterRole := &rbacv1.ClusterRole{}
+	buildPipelinesRunnerClusterRoleKey := types.NamespacedName{Name: controllers.BuildPipelineClusterRoleName}
+
+	delay := 5 * time.Second
+	attempts := 60
+	for i := 0; i < attempts; i++ {
+		if err := client.Get(context.TODO(), buildPipelinesRunnerClusterRoleKey, buildPipelinesRunnerClusterRole); err == nil {
+			return
+		} else {
+			if errors.IsNotFound(err) {
+				setupLog.Info(fmt.Sprintf("Waiting for %s Cluster Role", controllers.BuildPipelineClusterRoleName))
+			} else {
+				setupLog.Info(fmt.Sprintf("failed to get %s Cluster Role: %s", controllers.BuildPipelineClusterRoleName, err.Error()))
+			}
+		}
+		time.Sleep(delay)
+	}
+
+	setupLog.Error(fmt.Errorf("failed to start operator"), fmt.Sprintf("timed out waiting for %s Cluster Role", controllers.BuildPipelineClusterRoleName))
+	os.Exit(1)
 }
