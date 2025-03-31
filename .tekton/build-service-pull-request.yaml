@@ -175,7 +175,7 @@ spec:
         - name: name
           value: sealights-go-oci-ta
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-sealights-go-oci-ta:0.1@sha256:5c31f32ea625b3a7419d7a6994bfa2cce477d3050c0c145dc14a47302feb253e
+          value: quay.io/konflux-ci/tekton-catalog/task-sealights-go-oci-ta:0.1@sha256:7c8fdf2873aee7b02feaa42f4868be55878d2d06dc3a93b1ceb77d1c6fa3fc22
         - name: kind
           value: task
         resolver: bundles
@@ -196,6 +196,8 @@ spec:
           value: '{{ target_branch }}'
         - name: oci-storage
           value: $(params.output-image).sealights.git
+        - name: disable-token-save
+          value: "true"
     - name: prefetch-dependencies
       params:
       - name: input
