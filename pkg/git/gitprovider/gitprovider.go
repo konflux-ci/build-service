@@ -38,8 +38,9 @@ type GitProviderClient interface {
 	// DeletePaCWebhook deletes Pipelines as Code webhook in the given repository
 	DeletePaCWebhook(repoUrl, webhookUrl string) error
 
-	// GetDefaultBranch returns name of default branch in the given repository
-	GetDefaultBranch(repoUrl string) (string, error)
+	// GetDefaultBranchWithChecks returns name of default branch in the given repository
+	// also performs additional checks if repo exists and hostname is valid and returns more specific error
+	GetDefaultBranchWithChecks(repoUrl string) (string, error)
 
 	// DeleteBranch deletes given branch from repository.
 	// Returns true if branch was deleted, false if the branch didn't exist.

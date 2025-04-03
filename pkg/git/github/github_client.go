@@ -291,10 +291,16 @@ func (g *GithubClient) DeletePaCWebhook(repoUrl, webhookUrl string) error {
 	return g.deleteWebhook(owner, repository, *existingWebhook.ID)
 }
 
-// GetDefaultBranch returns name of default branch in the given repository
-func (g *GithubClient) GetDefaultBranch(repoUrl string) (string, error) {
+// GetDefaultBranchWithChecks returns name of default branch in the given repository
+// also performs additional checks if repo exists and hostname is valid and returns more specific error
+func (g *GithubClient) GetDefaultBranchWithChecks(repoUrl string) (string, error) {
 	owner, repository := getOwnerAndRepoFromUrl(repoUrl)
-	return g.getDefaultBranch(owner, repository)
+
+	defaultBranch, err := g.getDefaultBranch(owner, repository)
+	if err != nil {
+		return "", CheckGitUrlError(err)
+	}
+	return defaultBranch, nil
 }
 
 // DeleteBranch deletes given branch from repository

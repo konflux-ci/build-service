@@ -254,7 +254,7 @@ func (r *ComponentBuildReconciler) TriggerPaCBuild(ctx context.Context, componen
 	}
 
 	// getting branch in advance just to test credentials
-	defaultBranch, err := gitClient.GetDefaultBranch(repoUrl)
+	defaultBranch, err := gitClient.GetDefaultBranchWithChecks(repoUrl)
 	if err != nil {
 		return false, err
 	}
@@ -443,7 +443,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 	}
 
 	// getting branch in advance just to test credentials
-	defaultBranch, err := gitClient.GetDefaultBranch(repoUrl)
+	defaultBranch, err := gitClient.GetDefaultBranchWithChecks(repoUrl)
 	if err != nil {
 		return "", err
 	}
@@ -528,7 +528,7 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 	}
 
 	// getting branch in advance just to test credentials
-	defaultBranch, err := gitClient.GetDefaultBranch(repoUrl)
+	defaultBranch, err := gitClient.GetDefaultBranchWithChecks(repoUrl)
 	if err != nil {
 		return "", "", "", err
 	}
