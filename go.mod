@@ -1,6 +1,8 @@
 module github.com/konflux-ci/build-service
 
-go 1.22.9
+go 1.23.0
+
+toolchain go1.23.8
 
 require (
 	github.com/bradleyfalzon/ghinstallation/v2 v2.11.0
@@ -15,7 +17,7 @@ require (
 	github.com/xanzy/go-gitlab v0.108.0
 	go.uber.org/zap v1.27.0
 	golang.org/x/exp v0.0.0-20240823005443-9b4947da3948
-	golang.org/x/oauth2 v0.23.0
+	golang.org/x/oauth2 v0.29.0
 	gotest.tools/v3 v3.5.1
 	k8s.io/api v0.31.0
 	k8s.io/apimachinery v0.31.0
