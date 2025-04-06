@@ -26,7 +26,7 @@ import (
 	"strings"
 
 	ghinstallation "github.com/bradleyfalzon/ghinstallation/v2"
-	"github.com/google/go-github/v45/github"
+	"github.com/google/go-github/v70/github"
 	"github.com/konflux-ci/build-service/pkg/boerrors"
 )
 
