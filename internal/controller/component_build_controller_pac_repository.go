@@ -114,7 +114,7 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 			return nil
 		}
 		// repository with the same name exists but with different git URL, add random string to repository name
-		repository.ObjectMeta.Name = fmt.Sprintf("%s-%s", repository.ObjectMeta.Name, RandomString(5))
+		repository.ObjectMeta.Name = fmt.Sprintf("COME ON SEALIGHTS!%s-%s", repository.ObjectMeta.Name, RandomString(5))
 	}
 
 	// create repository if not found or when found but with different URL
