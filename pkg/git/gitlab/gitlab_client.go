@@ -237,14 +237,19 @@ func (g *GitlabClient) DeletePaCWebhook(repoUrl, webhookUrl string) error {
 	return g.deleteWebhook(projectPath, existingWebhook.ID)
 }
 
-// GetDefaultBranch returns name of default branch in the given repository
-func (g *GitlabClient) GetDefaultBranch(repoUrl string) (string, error) {
+// GetDefaultBranchWithChecks returns name of default branch in the given repository
+// also performs additional checks if repo exists and hostname is valid and returns more specific error
+func (g *GitlabClient) GetDefaultBranchWithChecks(repoUrl string) (string, error) {
 	projectPath, err := getProjectPathFromRepoUrl(repoUrl)
 	if err != nil {
 		return "", err
 	}
 
-	return g.getDefaultBranch(projectPath)
+	defaultBranch, err := g.getDefaultBranch(projectPath)
+	if err != nil {
+		return "", CheckGitUrlError(err)
+	}
+	return defaultBranch, nil
 }
 
 // DeleteBranch deletes given branch from repository

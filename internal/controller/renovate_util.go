@@ -189,7 +189,7 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsBasicAuth(ctx context.Cont
 				log.Error(err, "error create git client for component", "ComponentName", component.Name, "RepoUrl", repoUrl)
 				continue
 			}
-			defaultBranch, err := gitClient.GetDefaultBranch(repoUrl)
+			defaultBranch, err := gitClient.GetDefaultBranchWithChecks(repoUrl)
 			if err != nil {
 				log.Error(err, "error get git default branch for component", "ComponentName", component.Name, "RepoUrl", repoUrl)
 				continue
