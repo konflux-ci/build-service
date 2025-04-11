@@ -22,18 +22,19 @@ import (
 	"net/http"
 	"strings"
 
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/yaml"
-
 	"github.com/h2non/gock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	routev1 "github.com/openshift/api/route/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 
 	appstudiov1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
 	"github.com/konflux-ci/build-service/pkg/boerrors"
@@ -81,7 +82,7 @@ var (
 	defaultPipelineAnnotations     = map[string]string{defaultBuildPipelineAnnotation: defaultPipelineAnnotationValue}
 )
 
-var _ = Describe("Component initial build controller", func() {
+var _ = Describe("Component build controller", func() {
 
 	const (
 		pacHost       = "pac-host"
@@ -94,6 +95,7 @@ var _ = Describe("Component initial build controller", func() {
 		pacSecretKey          = types.NamespacedName{Name: PipelinesAsCodeGitHubAppSecretName, Namespace: BuildServiceNamespaceName}
 		namespacePaCSecretKey = types.NamespacedName{Name: PipelinesAsCodeGitHubAppSecretName, Namespace: HASAppNamespace}
 		webhookSecretKey      = types.NamespacedName{Name: pipelinesAsCodeWebhooksSecretName, Namespace: HASAppNamespace}
+		buildRoleBindingKey   = types.NamespacedName{Name: buildPipelineRoleBindingName, Namespace: HASAppNamespace}
 	)
 
 	BeforeEach(func() {
@@ -101,6 +103,304 @@ var _ = Describe("Component initial build controller", func() {
 		github.GetAllAppInstallations = func(githubAppIdStr string, appPrivateKeyPem []byte) ([]github.ApplicationInstallation, string, error) {
 			return nil, "slug", nil
 		}
+	})
+
+	Context("Test build pipeline Service Account", func() {
+		var (
+			component1Key = types.NamespacedName{Name: "component-sa-1", Namespace: HASAppNamespace}
+			component2Key = types.NamespacedName{Name: "component-sa-2", Namespace: HASAppNamespace}
+		)
+
+		_ = BeforeEach(func() {
+			ResetTestGitProviderClient()
+		})
+
+		_ = AfterEach(func() {
+			deleteComponent(component1Key)
+			deleteComponent(component2Key)
+
+			deleteRoleBinding(buildRoleBindingKey)
+			deleteServiceAccount(getComponentServiceAccountKey(component1Key))
+			deleteServiceAccount(getComponentServiceAccountKey(component2Key))
+		})
+
+		It("should create build pipeline dedicated service account and role binding", func() {
+			createComponent(component1Key)
+
+			component1SAKey := getComponentServiceAccountKey(component1Key)
+			waitServiceAccount(component1SAKey)
+			roleBinding := waitServiceAccountInRoleBinding(buildRoleBindingKey, component1SAKey.Name)
+			Expect(roleBinding.RoleRef.Kind).To(Equal("ClusterRole"))
+			Expect(roleBinding.RoleRef.Name).To(Equal(BuildPipelineClusterRoleName))
+			Expect(roleBinding.Subjects).To(HaveLen(1))
+		})
+
+		It("should create build pipeline dedicated service account for each component and common role binding", func() {
+			createComponent(component1Key)
+			createComponent(component2Key)
+
+			component1SAKey := getComponentServiceAccountKey(component1Key)
+			waitServiceAccount(component1SAKey)
+			roleBinding := waitServiceAccountInRoleBinding(buildRoleBindingKey, component1SAKey.Name)
+			Expect(roleBinding.RoleRef.Kind).To(Equal("ClusterRole"))
+			Expect(roleBinding.RoleRef.Name).To(Equal(BuildPipelineClusterRoleName))
+			Expect(roleBinding.Subjects).To(HaveLen(1))
+
+			component2SAKey := getComponentServiceAccountKey(component2Key)
+			waitServiceAccount(component2SAKey)
+			roleBinding = waitServiceAccountInRoleBinding(buildRoleBindingKey, component2SAKey.Name)
+			Expect(roleBinding.RoleRef.Kind).To(Equal("ClusterRole"))
+			Expect(roleBinding.RoleRef.Name).To(Equal(BuildPipelineClusterRoleName))
+			Expect(roleBinding.Subjects).To(HaveLen(2))
+		})
+
+		It("should remove build pipeline dedicated service account for each component and common role binding when the last service account removed", func() {
+			component1Config := getComponentData(componentConfig{componentKey: component1Key})
+			// Simulate PaC provision was done
+			component1Config.Finalizers = append(component1Config.Finalizers, PaCProvisionFinalizer)
+			Expect(k8sClient.Create(ctx, component1Config)).To(Succeed())
+
+			component2Config := getComponentData(componentConfig{componentKey: component2Key})
+			// Simulate PaC provision was done
+			component2Config.Finalizers = append(component1Config.Finalizers, PaCProvisionFinalizer)
+			Expect(k8sClient.Create(ctx, component2Config)).To(Succeed())
+
+			component1SAKey := getComponentServiceAccountKey(component1Key)
+			component1SA := waitServiceAccount(component1SAKey)
+			Expect(component1SA.OwnerReferences).To(HaveLen(1))
+			Expect(component1SA.OwnerReferences[0].Name).To(Equal(component1Key.Name))
+			Expect(component1SA.OwnerReferences[0].Kind).To(Equal("Component"))
+
+			roleBinding := waitServiceAccountInRoleBinding(buildRoleBindingKey, component1SAKey.Name)
+			Expect(roleBinding.RoleRef.Kind).To(Equal("ClusterRole"))
+			Expect(roleBinding.RoleRef.Name).To(Equal(BuildPipelineClusterRoleName))
+
+			component2SAKey := getComponentServiceAccountKey(component2Key)
+			component2SA := waitServiceAccount(component2SAKey)
+			Expect(component2SA.OwnerReferences).To(HaveLen(1))
+			Expect(component2SA.OwnerReferences[0].Name).To(Equal(component2Key.Name))
+			Expect(component2SA.OwnerReferences[0].Kind).To(Equal("Component"))
+
+			roleBinding = waitServiceAccountInRoleBinding(buildRoleBindingKey, component2SAKey.Name)
+			Expect(roleBinding.RoleRef.Kind).To(Equal("ClusterRole"))
+			Expect(roleBinding.RoleRef.Name).To(Equal(BuildPipelineClusterRoleName))
+			Expect(roleBinding.Subjects).To(HaveLen(2))
+
+			deleteComponent(component1Key)
+
+			roleBinding = waitServiceAccountInRoleBinding(buildRoleBindingKey, component2SAKey.Name)
+			Expect(roleBinding.RoleRef.Kind).To(Equal("ClusterRole"))
+			Expect(roleBinding.RoleRef.Name).To(Equal(BuildPipelineClusterRoleName))
+			Expect(roleBinding.Subjects).To(HaveLen(1))
+			Expect(roleBinding.Subjects[0].Kind).To(Equal("ServiceAccount"))
+			Expect(roleBinding.Subjects[0].Name).To(Equal(component2SAKey.Name))
+
+			deleteComponent(component2Key)
+
+			waitRoleBindingGone(buildRoleBindingKey)
+		})
+
+		It("should clean up dangling role binding subjects and delete role binding", func() {
+			createCustomComponentWithoutBuildRequest(componentConfig{
+				componentKey: component1Key,
+				finalizers:   []string{PaCProvisionFinalizer}, // simulate PaC provision was done
+			})
+
+			component1SAKey := getComponentServiceAccountKey(component1Key)
+			component1SA := waitServiceAccount(component1SAKey)
+			Expect(component1SA.OwnerReferences).To(HaveLen(1))
+			Expect(component1SA.OwnerReferences[0].Name).To(Equal(component1Key.Name))
+			Expect(component1SA.OwnerReferences[0].Kind).To(Equal("Component"))
+
+			roleBinding := waitServiceAccountInRoleBinding(buildRoleBindingKey, component1SAKey.Name)
+			Expect(roleBinding.RoleRef.Kind).To(Equal("ClusterRole"))
+			Expect(roleBinding.RoleRef.Name).To(Equal(BuildPipelineClusterRoleName))
+			Expect(roleBinding.Subjects).To(HaveLen(1))
+
+			// Create another component without successful PaC provison
+			createComponent(component2Key)
+			component2SAKey := getComponentServiceAccountKey(component2Key)
+			component2SA := waitServiceAccount(component2SAKey)
+			Expect(component2SA.OwnerReferences).To(HaveLen(1))
+			Expect(component2SA.OwnerReferences[0].Name).To(Equal(component2Key.Name))
+			Expect(component2SA.OwnerReferences[0].Kind).To(Equal("Component"))
+
+			roleBinding = waitServiceAccountInRoleBinding(buildRoleBindingKey, component2SAKey.Name)
+			Expect(roleBinding.RoleRef.Kind).To(Equal("ClusterRole"))
+			Expect(roleBinding.RoleRef.Name).To(Equal(BuildPipelineClusterRoleName))
+			Expect(roleBinding.Subjects).To(HaveLen(2))
+
+			deleteComponent(component2Key)
+			// Simulate owner reference is working
+			deleteServiceAccount(component2SAKey)
+
+			roleBinding = waitServiceAccountInRoleBinding(buildRoleBindingKey, component1SAKey.Name)
+			Expect(roleBinding.RoleRef.Kind).To(Equal("ClusterRole"))
+			Expect(roleBinding.RoleRef.Name).To(Equal(BuildPipelineClusterRoleName))
+			// We've got dangling subject in the role binding, it's expected To(HaveLen(1))
+			Expect(roleBinding.Subjects).To(HaveLen(2))
+			// Add another dangling subject
+			roleBinding.Subjects = append(roleBinding.Subjects, rbacv1.Subject{
+				Kind: "ServiceAccount",
+				Name: "unrelated",
+			})
+			Expect(k8sClient.Update(ctx, &roleBinding)).To(Succeed())
+			roleBinding = waitServiceAccountInRoleBinding(buildRoleBindingKey, component1SAKey.Name)
+			Expect(roleBinding.Subjects).To(HaveLen(3))
+
+			// Upon deletion of a provisioned Component, all dangling references should be cleaned up
+			deleteComponent(component1Key)
+			// Since no subjects left, the role binding should be deleted too
+			waitRoleBindingGone(buildRoleBindingKey)
+		})
+
+		It("should clean up dangling role binding subjects and keep role binding", func() {
+			createCustomComponentWithoutBuildRequest(componentConfig{
+				componentKey: component1Key,
+				finalizers:   []string{PaCProvisionFinalizer}, // simulate PaC provision was done
+			})
+
+			component1SAKey := getComponentServiceAccountKey(component1Key)
+			component1SA := waitServiceAccount(component1SAKey)
+			Expect(component1SA.OwnerReferences).To(HaveLen(1))
+			Expect(component1SA.OwnerReferences[0].Name).To(Equal(component1Key.Name))
+			Expect(component1SA.OwnerReferences[0].Kind).To(Equal("Component"))
+
+			roleBinding := waitServiceAccountInRoleBinding(buildRoleBindingKey, component1SAKey.Name)
+			Expect(roleBinding.RoleRef.Kind).To(Equal("ClusterRole"))
+			Expect(roleBinding.RoleRef.Name).To(Equal(BuildPipelineClusterRoleName))
+			Expect(roleBinding.Subjects).To(HaveLen(1))
+
+			createCustomComponentWithoutBuildRequest(componentConfig{
+				componentKey: component2Key,
+				finalizers:   []string{PaCProvisionFinalizer}, // simulate PaC provision was done
+			})
+
+			component2SAKey := getComponentServiceAccountKey(component2Key)
+			component2SA := waitServiceAccount(component2SAKey)
+			Expect(component2SA.OwnerReferences).To(HaveLen(1))
+			Expect(component2SA.OwnerReferences[0].Name).To(Equal(component2Key.Name))
+			Expect(component2SA.OwnerReferences[0].Kind).To(Equal("Component"))
+
+			roleBinding = waitServiceAccountInRoleBinding(buildRoleBindingKey, component2SAKey.Name)
+			Expect(roleBinding.RoleRef.Kind).To(Equal("ClusterRole"))
+			Expect(roleBinding.RoleRef.Name).To(Equal(BuildPipelineClusterRoleName))
+			Expect(roleBinding.Subjects).To(HaveLen(2))
+
+			// Add a dangling subject to the Role Binding
+			roleBinding.Subjects = append(roleBinding.Subjects, rbacv1.Subject{
+				Kind: "ServiceAccount",
+				Name: "dangling",
+			})
+			Expect(k8sClient.Update(ctx, &roleBinding)).To(Succeed())
+
+			deleteComponent(component2Key)
+			// Simulate owner reference is working
+			deleteServiceAccount(component2SAKey)
+
+			// Since Component 1 is still exist, the Role Binding should be kept
+			roleBinding = waitServiceAccountInRoleBinding(buildRoleBindingKey, component1SAKey.Name)
+			Expect(roleBinding.Subjects).To(HaveLen(1))
+		})
+
+		It("should restore build pipeline dedicated service account on reconcile", func() {
+			createComponent(component1Key)
+
+			component1SAKey := getComponentServiceAccountKey(component1Key)
+			waitServiceAccount(component1SAKey)
+			waitServiceAccountInRoleBinding(buildRoleBindingKey, component1SAKey.Name)
+
+			deleteServiceAccount(component1SAKey)
+
+			// trigger a reconcile
+			component1 := getComponent(component1Key)
+			component1.Annotations["test-change"] = "reconcile"
+			Expect(k8sClient.Update(ctx, component1)).To(Succeed())
+
+			waitServiceAccount(component1SAKey)
+			waitServiceAccountInRoleBinding(buildRoleBindingKey, component1SAKey.Name)
+		})
+
+		It("should restore build pipelines role binding on reconcile", func() {
+			createComponent(component1Key)
+			createComponent(component2Key)
+
+			component1SAKey := getComponentServiceAccountKey(component1Key)
+			waitServiceAccount(component1SAKey)
+			roleBinding := waitServiceAccountInRoleBinding(buildRoleBindingKey, component1SAKey.Name)
+			Expect(roleBinding.RoleRef.Kind).To(Equal("ClusterRole"))
+			Expect(roleBinding.RoleRef.Name).To(Equal(BuildPipelineClusterRoleName))
+			Expect(roleBinding.Subjects).To(HaveLen(1))
+
+			component2SAKey := getComponentServiceAccountKey(component2Key)
+			waitServiceAccount(component2SAKey)
+			roleBinding = waitServiceAccountInRoleBinding(buildRoleBindingKey, component2SAKey.Name)
+			Expect(roleBinding.RoleRef.Kind).To(Equal("ClusterRole"))
+			Expect(roleBinding.RoleRef.Name).To(Equal(BuildPipelineClusterRoleName))
+			Expect(roleBinding.Subjects).To(HaveLen(2))
+
+			deleteRoleBinding(buildRoleBindingKey)
+
+			// trigger a reconcile for component 1
+			component1 := getComponent(component1Key)
+			component1.Annotations["test-change"] = "reconcile"
+			Expect(k8sClient.Update(ctx, component1)).To(Succeed())
+			// trigger a reconcile for component 2
+			component2 := getComponent(component2Key)
+			component2.Annotations["test-change"] = "reconcile"
+			Expect(k8sClient.Update(ctx, component2)).To(Succeed())
+
+			roleBinding = waitServiceAccountInRoleBinding(buildRoleBindingKey, component1SAKey.Name)
+			roleBinding = waitServiceAccountInRoleBinding(buildRoleBindingKey, component2SAKey.Name)
+			Expect(roleBinding.Subjects).To(HaveLen(2))
+			Expect(roleBinding.RoleRef.Kind).To(Equal("ClusterRole"))
+			Expect(roleBinding.RoleRef.Name).To(Equal(BuildPipelineClusterRoleName))
+		})
+
+		It("should create PaC PR with build pipeline service account", func() {
+			// TODO remove the config map creation after migration is done
+			useNewSaConfigMap := corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: "use-new-sa", Namespace: BuildServiceNamespaceName},
+			}
+			Expect(k8sClient.Create(ctx, &useNewSaConfigMap)).To(Succeed())
+
+			// Prepare resources needed for PaC provision
+			createNamespace(pipelinesAsCodeNamespace)
+			createRoute(pacRouteKey, "pac-host")
+			defer deleteRoute(pacRouteKey)
+			pacSecretData := map[string]string{
+				"github-application-id": "12345",
+				"github-private-key":    githubAppPrivateKey,
+			}
+			createSecret(pacSecretKey, pacSecretData)
+			defer deleteSecret(pacSecretKey)
+			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
+			defer deleteConfigMap(defaultPipelineConfigMapKey)
+
+			isCreatePaCPullRequestInvoked := false
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				defer GinkgoRecover()
+
+				Expect(len(d.Files)).To(Equal(2))
+				for _, file := range d.Files {
+					buildPipelineData := &tektonapi.PipelineRun{}
+					Expect(yaml.Unmarshal(file.Content, buildPipelineData)).To(Succeed())
+					Expect(buildPipelineData.Spec.TaskRunTemplate.ServiceAccountName).To(Equal(getComponentServiceAccountKey(component1Key).Name))
+				}
+
+				isCreatePaCPullRequestInvoked = true
+				return "merge-url", nil
+			}
+
+			createCustomComponentWithBuildRequest(componentConfig{
+				componentKey: component1Key,
+				annotations:  defaultPipelineAnnotations,
+			}, BuildRequestConfigurePaCAnnotationValue)
+
+			Eventually(func() bool {
+				return isCreatePaCPullRequestInvoked
+			}, timeout, interval).Should(BeTrue())
+		})
 	})
 
 	Context("Test Pipelines as Code build preparation", func() {
@@ -122,6 +422,8 @@ var _ = Describe("Component initial build controller", func() {
 
 		_ = AfterEach(func() {
 			deleteComponent(resourcePacPrepKey)
+			deleteRoleBinding(buildRoleBindingKey)
+			deleteServiceAccount(getComponentServiceAccountKey(resourcePacPrepKey))
 			deletePaCRepository(resourcePacPrepKey)
 
 			deleteSecret(webhookSecretKey)
@@ -1227,6 +1529,9 @@ var _ = Describe("Component initial build controller", func() {
 			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourceCleanupKey)
 
+			componentBuildSAKey := getComponentServiceAccountKey(resourceCleanupKey)
+			waitServiceAccount(componentBuildSAKey)
+			// waiting deprecated SA for backward compatibility
 			waitPipelineServiceAccount(resourceCleanupKey.Namespace)
 
 			// Make sure that proper cleanup was invoked
@@ -1236,6 +1541,7 @@ var _ = Describe("Component initial build controller", func() {
 				return "merge-url", nil
 			}
 
+			deleteServiceAccount(componentBuildSAKey)
 			deletePipelineServiceAccount(resourceCleanupKey.Namespace)
 
 			Expect(isRemovePaCPullRequestInvoked).To(BeFalse())
@@ -1246,6 +1552,9 @@ var _ = Describe("Component initial build controller", func() {
 			pipelineServiceAccountKey := types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: resourceCleanupKey.Namespace}
 			pipelineServiceAccount := &corev1.ServiceAccount{}
 			err := k8sClient.Get(ctx, pipelineServiceAccountKey, pipelineServiceAccount)
+			Expect(k8sErrors.IsNotFound(err)).To(BeTrue())
+
+			err = k8sClient.Get(ctx, componentBuildSAKey, pipelineServiceAccount)
 			Expect(k8sErrors.IsNotFound(err)).To(BeTrue())
 		})
 	})
@@ -1981,6 +2290,251 @@ var _ = Describe("Component initial build controller", func() {
 			Expect((*repository.Spec.Incomings)[0].Targets).To(Equal([]string{"main", "another"}))
 			Expect(len((*repository.Spec.Incomings)[0].Params)).To(Equal(1))
 			Expect((*repository.Spec.Incomings)[0].Params).To(Equal([]string{"source_url"}))
+		})
+	})
+
+	// TODO delete when migration is done
+	Context("Test Pipelines as Code Service Account migration PR", func() {
+		const (
+			mergeUrl                       = "merge-url"
+			buildStatusPaCProvisionedValue = `{"pac":{"state":"enabled","merge-url":"https://githost.com/org/repo/pull/123","configuration-time":"Wed, 06 Nov 2024 08:41:44 UTC"},"message":"done"}`
+		)
+		var (
+			resourceMigrationKey = types.NamespacedName{Name: HASCompName + "-sa-migration", Namespace: HASAppNamespace}
+		)
+
+		_ = BeforeEach(func() {
+			createNamespace(pipelinesAsCodeNamespace)
+			createRoute(pacRouteKey, "pac-host")
+			createNamespace(BuildServiceNamespaceName)
+			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
+			pacSecretData := map[string]string{
+				"github-application-id": "12345",
+				"github-private-key":    githubAppPrivateKey,
+			}
+			createSecret(pacSecretKey, pacSecretData)
+
+			ResetTestGitProviderClient()
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				defer GinkgoRecover()
+				Fail("should be checked")
+				return "", nil
+			}
+
+			createCustomComponentWithoutBuildRequest(componentConfig{
+				componentKey: resourceMigrationKey,
+				annotations: map[string]string{
+					defaultBuildPipelineAnnotation: defaultPipelineAnnotationValue,
+					BuildStatusAnnotationName:      buildStatusPaCProvisionedValue, // simulate PaC provision was done
+				},
+				finalizers: []string{PaCProvisionFinalizer}, // simulate PaC provision was done
+			})
+		})
+
+		_ = AfterEach(func() {
+			deleteComponent(resourceMigrationKey)
+			deletePaCRepository(resourceMigrationKey)
+
+			deleteSecret(webhookSecretKey)
+			deleteSecret(namespacePaCSecretKey)
+
+			deleteSecret(pacSecretKey)
+			deleteRoute(pacRouteKey)
+		})
+
+		It("should create migration PR", func() {
+			isCreateSAMigrationPRInvoked := false
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				defer GinkgoRecover()
+
+				Expect(len(d.Files)).To(Equal(2))
+				for _, file := range d.Files {
+					buildPipelineData := &tektonapi.PipelineRun{}
+					Expect(yaml.Unmarshal(file.Content, buildPipelineData)).To(Succeed())
+					Expect(buildPipelineData.Spec.TaskRunTemplate.ServiceAccountName).To(Equal(getComponentServiceAccountKey(resourceMigrationKey).Name))
+				}
+
+				isCreateSAMigrationPRInvoked = true
+				return mergeUrl + "-migration", nil
+			}
+			DownloadFileContentFunc = func(repoUrl, branchName, filePath string) ([]byte, error) {
+				return yaml.Marshal(tektonapi.PipelineRun{})
+			}
+
+			component := getComponent(resourceMigrationKey)
+			component.Annotations[serviceAccountMigrationAnnotationName] = "true"
+			Expect(k8sClient.Update(ctx, component)).To(Succeed())
+
+			Eventually(func() bool {
+				return isCreateSAMigrationPRInvoked
+			}, timeout, interval).Should(BeTrue())
+			waitComponentAnnotationGone(resourceMigrationKey, serviceAccountMigrationAnnotationName)
+		})
+
+		It("should create migration PR if only push pipeline present", func() {
+			isCreateSAMigrationPRInvoked := false
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				defer GinkgoRecover()
+
+				Expect(len(d.Files)).To(Equal(1))
+				buildPipelineData := &tektonapi.PipelineRun{}
+				Expect(yaml.Unmarshal(d.Files[0].Content, buildPipelineData)).To(Succeed())
+				Expect(buildPipelineData.Name).To(HaveSuffix(pipelineRunOnPushSuffix))
+				Expect(buildPipelineData.Spec.TaskRunTemplate.ServiceAccountName).To(Equal(getComponentServiceAccountKey(resourceMigrationKey).Name))
+
+				isCreateSAMigrationPRInvoked = true
+				return mergeUrl + "-migration", nil
+			}
+			DownloadFileContentFunc = func(repoUrl, branchName, filePath string) ([]byte, error) {
+				if strings.HasSuffix(filePath, pipelineRunOnPushFilename) {
+					return yaml.Marshal(
+						tektonapi.PipelineRun{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: resourceMigrationKey.Name + pipelineRunOnPushSuffix,
+							},
+						})
+				}
+				return nil, k8sErrors.NewNotFound(schema.GroupResource{}, "pull pipeline")
+			}
+
+			component := getComponent(resourceMigrationKey)
+			component.Annotations[serviceAccountMigrationAnnotationName] = "true"
+			Expect(k8sClient.Update(ctx, component)).To(Succeed())
+
+			Eventually(func() bool {
+				return isCreateSAMigrationPRInvoked
+			}, timeout, interval).Should(BeTrue())
+			waitComponentAnnotationGone(resourceMigrationKey, serviceAccountMigrationAnnotationName)
+		})
+
+		It("should create migration PR if only pull pipeline present", func() {
+			isCreateSAMigrationPRInvoked := false
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				defer GinkgoRecover()
+
+				Expect(len(d.Files)).To(Equal(1))
+				buildPipelineData := &tektonapi.PipelineRun{}
+				Expect(yaml.Unmarshal(d.Files[0].Content, buildPipelineData)).To(Succeed())
+				Expect(buildPipelineData.Name).To(HaveSuffix(pipelineRunOnPRSuffix))
+				Expect(buildPipelineData.Spec.TaskRunTemplate.ServiceAccountName).To(Equal(getComponentServiceAccountKey(resourceMigrationKey).Name))
+
+				isCreateSAMigrationPRInvoked = true
+				return mergeUrl + "-migration", nil
+			}
+			DownloadFileContentFunc = func(repoUrl, branchName, filePath string) ([]byte, error) {
+				if strings.HasSuffix(filePath, pipelineRunOnPRFilename) {
+					return yaml.Marshal(
+						tektonapi.PipelineRun{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: resourceMigrationKey.Name + pipelineRunOnPRSuffix,
+							},
+						})
+				}
+				return nil, k8sErrors.NewNotFound(schema.GroupResource{}, "push pipeline")
+			}
+
+			component := getComponent(resourceMigrationKey)
+			component.Annotations[serviceAccountMigrationAnnotationName] = "true"
+			Expect(k8sClient.Update(ctx, component)).To(Succeed())
+
+			Eventually(func() bool {
+				return isCreateSAMigrationPRInvoked
+			}, timeout, interval).Should(BeTrue())
+			waitComponentAnnotationGone(resourceMigrationKey, serviceAccountMigrationAnnotationName)
+		})
+
+		It("should recover after transient errors and create migration PR", func() {
+			isCreateSAMigrationPRInvoked := false
+			errorCounter := 0
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				if errorCounter < 5 {
+					errorCounter++
+					return "", fmt.Errorf("faile to do something")
+				}
+
+				defer GinkgoRecover()
+
+				Expect(len(d.Files)).To(Equal(2))
+				for _, file := range d.Files {
+					buildPipelineData := &tektonapi.PipelineRun{}
+					Expect(yaml.Unmarshal(file.Content, buildPipelineData)).To(Succeed())
+					Expect(buildPipelineData.Spec.TaskRunTemplate.ServiceAccountName).To(Equal(getComponentServiceAccountKey(resourceMigrationKey).Name))
+				}
+
+				isCreateSAMigrationPRInvoked = true
+				return mergeUrl + "-migration", nil
+			}
+			DownloadFileContentFunc = func(repoUrl, branchName, filePath string) ([]byte, error) {
+				return yaml.Marshal(tektonapi.PipelineRun{})
+			}
+
+			component := getComponent(resourceMigrationKey)
+			component.Annotations[serviceAccountMigrationAnnotationName] = "true"
+			Expect(k8sClient.Update(ctx, component)).To(Succeed())
+
+			Eventually(func() bool {
+				return isCreateSAMigrationPRInvoked
+			}, timeout, interval).Should(BeTrue())
+			waitComponentAnnotationGone(resourceMigrationKey, serviceAccountMigrationAnnotationName)
+		})
+
+		It("should not create migration PR and stop on persistent error", func() {
+			isCreateSAMigrationPRInvoked := false
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				defer GinkgoRecover()
+				isCreateSAMigrationPRInvoked = true
+				Fail("should not invoke migration PR creation")
+				return "", nil
+			}
+			DownloadFileContentFunc = func(repoUrl, branchName, filePath string) ([]byte, error) {
+				return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppNotInstalled, fmt.Errorf("error"))
+			}
+
+			component := getComponent(resourceMigrationKey)
+			component.Annotations[serviceAccountMigrationAnnotationName] = "true"
+			Expect(k8sClient.Update(ctx, component)).To(Succeed())
+
+			Consistently(func() bool {
+				return !isCreateSAMigrationPRInvoked
+			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
+			waitComponentAnnotationGone(resourceMigrationKey, serviceAccountMigrationAnnotationName)
+		})
+
+		It("should stop if persistent error occurs on migration PR creation", func() {
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				return "", boerrors.NewBuildOpError(boerrors.EGitHubAppNotInstalled, fmt.Errorf("error"))
+			}
+			DownloadFileContentFunc = func(repoUrl, branchName, filePath string) ([]byte, error) {
+				return yaml.Marshal(tektonapi.PipelineRun{})
+			}
+
+			component := getComponent(resourceMigrationKey)
+			component.Annotations[serviceAccountMigrationAnnotationName] = "true"
+			Expect(k8sClient.Update(ctx, component)).To(Succeed())
+
+			waitComponentAnnotationGone(resourceMigrationKey, serviceAccountMigrationAnnotationName)
+		})
+
+		It("should not create migration PR if pipeline definitions not found", func() {
+			isCreateSAMigrationPRInvoked := false
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				defer GinkgoRecover()
+				isCreateSAMigrationPRInvoked = true
+				Fail("should not invoke migration PR creation")
+				return "", nil
+			}
+			DownloadFileContentFunc = func(repoUrl, branchName, filePath string) ([]byte, error) {
+				return nil, k8sErrors.NewNotFound(schema.GroupResource{}, "pipeline")
+			}
+
+			component := getComponent(resourceMigrationKey)
+			component.Annotations[serviceAccountMigrationAnnotationName] = "true"
+			Expect(k8sClient.Update(ctx, component)).To(Succeed())
+
+			Consistently(func() bool {
+				return !isCreateSAMigrationPRInvoked
+			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
+			waitComponentAnnotationGone(resourceMigrationKey, serviceAccountMigrationAnnotationName)
 		})
 	})
 })

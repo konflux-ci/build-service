@@ -210,6 +210,7 @@ func getRoleBindingSaSubjectIndex(roleBinding *rbacv1.RoleBinding, serviceAccoun
 // Deletes the common Role Binding if no subjects are left.
 func (r *ComponentBuildReconciler) removeBuildPipelineServiceAccountBinding(ctx context.Context, component *appstudiov1alpha1.Component) error {
 	log := ctrllog.FromContext(ctx)
+	log.Info("requested to remove build pipeline Service Account binding")
 
 	buildPipelinesRoleBinding := &rbacv1.RoleBinding{}
 	if err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineRoleBindingName, Namespace: component.Namespace}, buildPipelinesRoleBinding); err != nil {
@@ -221,28 +222,43 @@ func (r *ComponentBuildReconciler) removeBuildPipelineServiceAccountBinding(ctx 
 		return err
 	}
 
+	subjectsNumberBefore := len(buildPipelinesRoleBinding.Subjects)
+
 	buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(component)
 	subjectIndex := getRoleBindingSaSubjectIndex(buildPipelinesRoleBinding, buildPipelineServiceAccountName)
 	if subjectIndex != -1 {
 		if len(buildPipelinesRoleBinding.Subjects) == 1 {
-			// Clean the last subject
+			// Remove the last subject
 			buildPipelinesRoleBinding.Subjects = nil
 		} else {
 			// Remove subject by its index
 			oldSubjects := buildPipelinesRoleBinding.Subjects
 			newSubjects := append(oldSubjects[:subjectIndex], oldSubjects[subjectIndex+1:]...)
 			buildPipelinesRoleBinding.Subjects = newSubjects
+		}
+	}
+
+	// This is nice to have action to clean up records for already deleted Service Accounts.
+	// That might happen when a user creates a Component and deletes it before PaC provision.
+	if len(buildPipelinesRoleBinding.Subjects) != 0 {
+		saList := &corev1.ServiceAccountList{}
+		if err := r.Client.List(ctx, saList, client.InNamespace(buildPipelinesRoleBinding.Namespace)); err == nil {
+			buildPipelinesRoleBinding = removeInvalidServiceAccountSubjects(buildPipelinesRoleBinding, saList.Items)
+		} else {
+			// Do not break flow because of optional cleanup
+			log.Error(err, "failed to list Service Accounts, skipping additional build pipeline Role Binding cleanup")
+		}
+	}
+
+	if len(buildPipelinesRoleBinding.Subjects) != 0 {
+		if len(buildPipelinesRoleBinding.Subjects) != subjectsNumberBefore {
 			if err := r.Client.Update(ctx, buildPipelinesRoleBinding); err != nil {
 				log.Error(err, "failed to remove subject from common build pipelines Role Binding")
 				return err
 			}
 			log.Info("removed subject from common build pipelines Role Binding")
-			return nil
 		}
-	}
-
-	// Check if we need to keep common build pipelines Role Binding
-	if len(buildPipelinesRoleBinding.Subjects) == 0 {
+	} else {
 		// No subjects left, remove whole Role Binding
 		if err := r.Client.Delete(ctx, buildPipelinesRoleBinding); err != nil {
 			log.Error(err, "failed to delete common build pipelines Role Binding", l.Action, l.ActionDelete)
@@ -252,6 +268,25 @@ func (r *ComponentBuildReconciler) removeBuildPipelineServiceAccountBinding(ctx 
 	}
 
 	return nil
+}
+
+// removeInvalidServiceAccountSubjects removes unexisting Service Accounts from the given Role Binding.
+func removeInvalidServiceAccountSubjects(roleBinding *rbacv1.RoleBinding, existingSAs []corev1.ServiceAccount) *rbacv1.RoleBinding {
+	var newSubjects []rbacv1.Subject = nil
+	for _, subject := range roleBinding.Subjects {
+		if subject.Kind == "ServiceAccount" {
+			for _, sa := range existingSAs {
+				if subject.Name == sa.Name {
+					newSubjects = append(newSubjects, subject)
+					break
+				}
+			}
+		} else {
+			newSubjects = append(newSubjects, subject)
+		}
+	}
+	roleBinding.Subjects = newSubjects
+	return roleBinding
 }
 
 //

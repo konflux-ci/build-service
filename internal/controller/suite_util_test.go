@@ -24,6 +24,7 @@ import (
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	routev1 "github.com/openshift/api/route/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -72,6 +73,7 @@ type componentConfig struct {
 	gitSourceContext string
 	application      string
 	annotations      map[string]string
+	finalizers       []string
 }
 
 func getComponentData(config componentConfig) *appstudiov1alpha1.Component {
@@ -105,6 +107,10 @@ func getComponentData(config componentConfig) *appstudiov1alpha1.Component {
 			annotations[key] = value
 		}
 	}
+	finalizers := []string{}
+	if len(config.finalizers) != 0 {
+		finalizers = append(finalizers, config.finalizers...)
+	}
 	return &appstudiov1alpha1.Component{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "appstudio.redhat.com/v1alpha1",
@@ -114,6 +120,7 @@ func getComponentData(config componentConfig) *appstudiov1alpha1.Component {
 			Name:        name,
 			Namespace:   namespace,
 			Annotations: annotations,
+			Finalizers:  finalizers,
 		},
 		Spec: appstudiov1alpha1.ComponentSpec{
 			ComponentName:  name,
@@ -672,4 +679,52 @@ func waitPipelineServiceAccount(namespace string) {
 func deletePipelineServiceAccount(namespace string) {
 	pipelineServiceAccountkey := types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: namespace}
 	deleteServiceAccount((pipelineServiceAccountkey))
+}
+
+func getComponentServiceAccountKey(componentKey types.NamespacedName) types.NamespacedName {
+	return types.NamespacedName{
+		Name:      "build-pipeline-" + componentKey.Name,
+		Namespace: componentKey.Namespace,
+	}
+}
+
+func waitRoleBindingGone(roleBindingKey types.NamespacedName) {
+	roleBinding := rbacv1.RoleBinding{}
+	Eventually(func() bool {
+		err := k8sClient.Get(ctx, roleBindingKey, &roleBinding)
+		return k8sErrors.IsNotFound(err)
+	}, timeout, interval).Should(BeTrue())
+}
+
+func waitServiceAccountInRoleBinding(roleBindingKey types.NamespacedName, serviceAccountName string) rbacv1.RoleBinding {
+	roleBinding := rbacv1.RoleBinding{}
+	Eventually(func() bool {
+		if err := k8sClient.Get(ctx, roleBindingKey, &roleBinding); err != nil {
+			return false
+		}
+		for _, subject := range roleBinding.Subjects {
+			if subject.Kind == "ServiceAccount" && subject.Name == serviceAccountName {
+				return true
+			}
+		}
+		return false
+	}, timeout, interval).Should(BeTrue())
+
+	return roleBinding
+}
+
+func deleteRoleBinding(roleBindingKey types.NamespacedName) {
+	roleBinding := rbacv1.RoleBinding{}
+	if err := k8sClient.Get(ctx, roleBindingKey, &roleBinding); err != nil {
+		if k8sErrors.IsNotFound(err) {
+			return
+		}
+		Fail(err.Error())
+	}
+	if err := k8sClient.Delete(ctx, &roleBinding); err != nil && !k8sErrors.IsNotFound(err) {
+		Fail(err.Error())
+	}
+	Eventually(func() bool {
+		return k8sErrors.IsNotFound(k8sClient.Get(ctx, roleBindingKey, &roleBinding))
+	}, timeout, interval).Should(BeTrue())
 }
