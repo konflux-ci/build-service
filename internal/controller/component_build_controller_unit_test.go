@@ -339,6 +339,10 @@ func TestGeneratePaCPipelineRunForComponent(t *testing.T) {
 		}
 		t.Errorf("generatePaCPipelineRunForComponent(): unexpected pipeline workspaces %v", workspace)
 	}
+
+	if pipelineRun.Spec.TaskRunTemplate.ServiceAccountName != "build-pipeline-"+component.Name {
+		t.Error("generatePaCPipelineRunForComponent(): build pipeline service account is incorrect")
+	}
 }
 
 func TestGeneratePaCPipelineRunForComponent_ShouldStopIfTargetBranchIsNotSet(t *testing.T) {

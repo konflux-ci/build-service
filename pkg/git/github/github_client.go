@@ -355,6 +355,20 @@ func (g *GithubClient) IsFileExist(repoUrl, branchName, filePath string) (bool, 
 	return len(files) > 0, nil
 }
 
+func (g *GithubClient) DownloadFileContent(repoUrl, branchName, filePath string) ([]byte, error) {
+	owner, repository := getOwnerAndRepoFromUrl(repoUrl)
+
+	if branchName == "" {
+		var err error
+		branchName, err = g.getDefaultBranch(owner, repository)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return g.downloadFileContent(owner, repository, branchName, filePath)
+}
+
 // IsRepositoryPublic returns true if the repository could be accessed without authentication
 func (g *GithubClient) IsRepositoryPublic(repoUrl string) (bool, error) {
 	owner, repository := getOwnerAndRepoFromUrl(repoUrl)

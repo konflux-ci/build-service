@@ -423,6 +423,15 @@ func generateMergeRequestSourceBranch(component *appstudiov1alpha1.Component) st
 	return fmt.Sprintf("%s%s", pacMergeRequestSourceBranchPrefix, component.Name)
 }
 
+// getPipelineRunDefinitionFilePath returns full path in git repository to the pipeline run definition of the given Component.
+func getPipelineRunDefinitionFilePath(component *appstudiov1alpha1.Component, isPullRequest bool) string {
+	pipelineNameSuffix := pipelineRunOnPushFilename
+	if isPullRequest {
+		pipelineNameSuffix = pipelineRunOnPRFilename
+	}
+	return ".tekton/" + component.Name + "-" + pipelineNameSuffix
+}
+
 // ConfigureRepositoryForPaC creates a merge request with initial Pipelines as Code configuration
 // and configures a webhook to notify in-cluster PaC unless application (on the repository side) is used.
 func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context, component *appstudiov1alpha1.Component, pacConfig map[string][]byte, webhookTargetUrl, webhookSecret string) (prUrl string, err error) {
@@ -468,8 +477,8 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 		AuthorName:     "konflux",
 		AuthorEmail:    "konflux@no-reply.konflux-ci.dev",
 		Files: []gp.RepositoryFile{
-			{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPushFilename, Content: pipelineRunOnPushYaml},
-			{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPRFilename, Content: pipelineRunOnPRYaml},
+			{FullPath: getPipelineRunDefinitionFilePath(component, false), Content: pipelineRunOnPushYaml},
+			{FullPath: getPipelineRunDefinitionFilePath(component, true), Content: pipelineRunOnPRYaml},
 		},
 	}
 
@@ -606,8 +615,8 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 			AuthorName:     "konflux",
 			AuthorEmail:    "konflux@no-reply.konflux-ci.dev",
 			Files: []gp.RepositoryFile{
-				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPushFilename},
-				{FullPath: ".tekton/" + component.Name + "-" + pipelineRunOnPRFilename},
+				{FullPath: getPipelineRunDefinitionFilePath(component, false)},
+				{FullPath: getPipelineRunDefinitionFilePath(component, true)},
 			},
 		}
 
