@@ -183,6 +183,8 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return ctrl.Result{}, err
 		}
 
+		// We need to make sure the Service Account exists before checking the Component image,
+		// because Image Controller operator expects the Service Account to exist to link push secret to it.
 		if err := r.EnsureBuildPipelineServiceAccount(ctx, &component); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -256,16 +258,15 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	// Migrate existing components to the new Service Accounts model.
-	// TODO remove when migration is done.
+	// TODO remove when the migration is done.
 	if component.Annotations != nil && component.Annotations[serviceAccountMigrationAnnotationName] == "true" {
 		if err := r.performServiceAccountMigration(ctx, &component); err != nil {
-			if boErr, ok := err.(*boerrors.BuildOpError); ok && boErr.IsPersistent() {
-				// Permanent error, cannot do more, stop.
-				log.Error(err, "Migration to the new Service Account permanently failed")
-				return ctrl.Result{}, nil
+			if boErr, ok := err.(*boerrors.BuildOpError); !ok || !boErr.IsPersistent() {
+				// Transient error, retry the migration
+				return ctrl.Result{}, err
 			}
-			// Retry the migration
-			return ctrl.Result{}, err
+			// Permanent error, cannot do more, stop.
+			log.Error(err, "Migration to the new Service Account permanently failed")
 		}
 		delete(component.Annotations, serviceAccountMigrationAnnotationName)
 		return ctrl.Result{}, r.Client.Update(ctx, &component)
