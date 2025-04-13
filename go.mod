@@ -1,6 +1,8 @@
 module github.com/konflux-ci/build-service
 
-go 1.22.9
+go 1.23
+
+toolchain go1.23.8
 
 require (
 	github.com/bradleyfalzon/ghinstallation/v2 v2.11.0
