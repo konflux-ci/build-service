@@ -105,7 +105,7 @@ spec:
             value: tasks/rosa/hosted-cp/rosa-hcp-provision/0.2/rosa-hcp-provision.yaml
       params:
         - name: cluster-name
-          value: $(tasks.rosa-hcp-metadata.results.cluster-name)
+          value: $(tasks.rosa-hcp-metadata-new.results.cluster-name)
         - name: ocp-version
           value: $(params.ocp-version)
         - name: replicas
