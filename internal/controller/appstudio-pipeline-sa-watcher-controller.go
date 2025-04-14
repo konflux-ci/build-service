@@ -79,12 +79,21 @@ func (r *AppstudioPipelineServiceAccountWatcherReconciler) Reconcile(ctx context
 		return ctrl.Result{}, err
 	}
 
+	commonServiceAccount := &corev1.ServiceAccount{}
+	if err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: req.Namespace}, commonServiceAccount); err != nil {
+		if errors.IsNotFound(err) {
+			// Assume the migration to the dedicated build Service Account has been done, nothing to do.
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, err
+	}
+
 	for _, component := range componentList.Items {
-		buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(&component)
+		dedicatedBuildPipelineServiceAccountName := getBuildPipelineServiceAccountName(&component)
 		buildPipelinesServiceAccount := &corev1.ServiceAccount{}
-		if err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: req.Namespace}, buildPipelinesServiceAccount); err != nil {
+		if err := r.Client.Get(ctx, types.NamespacedName{Name: dedicatedBuildPipelineServiceAccountName, Namespace: req.Namespace}, buildPipelinesServiceAccount); err != nil {
 			if !errors.IsNotFound(err) {
-				log.Error(err, fmt.Sprintf("failed to read build pipeline Service Account %s in namespace %s", buildPipelineServiceAccountName, component.Namespace), l.Action, l.ActionView)
+				log.Error(err, fmt.Sprintf("failed to read build pipeline Service Account %s in namespace %s", dedicatedBuildPipelineServiceAccountName, component.Namespace), l.Action, l.ActionView)
 				// do not break sync because of a faulty item
 			}
 			// Dedicated build pipeline Service Account hasn't been yet created.
@@ -92,7 +101,7 @@ func (r *AppstudioPipelineServiceAccountWatcherReconciler) Reconcile(ctx context
 			continue
 		}
 
-		if err := LinkCommonAppstudioPipelineSecretsToNewServiceAccount(ctx, r.Client, &component); err != nil {
+		if err := LinkCommonAppstudioPipelineSecretsToNewServiceAccount(ctx, r.Client, &component, commonServiceAccount); err != nil {
 			log.Error(err, "failed to sync linked secrets for Component", "Component", component.Name, l.Action, l.ActionUpdate)
 			// do not break sync because of a faulty item
 		}

@@ -311,16 +311,10 @@ func (r *ComponentBuildReconciler) performServiceAccountMigration(ctx context.Co
 }
 
 func (r *ComponentBuildReconciler) linkCommonAppstudioPipelineSecretsToNewServiceAccount(ctx context.Context, component *appstudiov1alpha1.Component) error {
-	return LinkCommonAppstudioPipelineSecretsToNewServiceAccount(ctx, r.Client, component)
-}
-
-// LinkCommonSecretsToNewServiceAccount links all secrets from appstudio-pipeline Service Account
-// except image repository secrets to the new dedicated to build Service Account.
-func LinkCommonAppstudioPipelineSecretsToNewServiceAccount(ctx context.Context, c client.Client, component *appstudiov1alpha1.Component) error {
 	log := ctrllog.FromContext(ctx)
 
 	appstudioPipelineServiceAccount := &corev1.ServiceAccount{}
-	if err := c.Get(ctx, types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: component.Namespace}, appstudioPipelineServiceAccount); err != nil {
+	if err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: component.Namespace}, appstudioPipelineServiceAccount); err != nil {
 		if errors.IsNotFound(err) {
 			// Ignore not found error, assume the migration for the linked secrets has been done.
 			log.Info("skipping linked secret migration")
@@ -328,6 +322,13 @@ func LinkCommonAppstudioPipelineSecretsToNewServiceAccount(ctx context.Context, 
 		}
 		return err
 	}
+	return LinkCommonAppstudioPipelineSecretsToNewServiceAccount(ctx, r.Client, component, appstudioPipelineServiceAccount)
+}
+
+// LinkCommonSecretsToNewServiceAccount links all secrets from appstudio-pipeline Service Account
+// except image repository secrets to the new dedicated to build Service Account.
+func LinkCommonAppstudioPipelineSecretsToNewServiceAccount(ctx context.Context, c client.Client, component *appstudiov1alpha1.Component, appstudioPipelineServiceAccount *corev1.ServiceAccount) error {
+	log := ctrllog.FromContext(ctx)
 
 	componentBuildServiceAccount := &corev1.ServiceAccount{}
 	if err := c.Get(ctx, types.NamespacedName{Name: getBuildPipelineServiceAccountName(component), Namespace: component.Namespace}, componentBuildServiceAccount); err != nil {
@@ -396,6 +397,7 @@ const saMigrationMergeRequestDescription = `
 ## Build pipeline Service Account migration
 
 This PR chnages Service Account used by build pipeline from "appstudio-pipeline" to dedicated to the Component Service Account.
+Please merge the Service Account update to avoid broken builds when deprected "appstudio-pipeline" Service Account is removed.
 `
 
 // Need to create a PR that adds to every pipeline definition:
@@ -466,19 +468,26 @@ func (r *ComponentBuildReconciler) setServiceAccountInPipelineDefinition(ctx con
 
 	pipelineRunServiceAccountName := getBuildPipelineServiceAccountName(component)
 
+	pushPipelineDefinitionUpdated := false
 	if pushPipelineDefinitionFound {
-		pushPipelineContent, err = addServiceAccountToPipelineRun(pushPipelineContent, pipelineRunServiceAccountName)
+		pushPipelineContent, pushPipelineDefinitionUpdated, err = addServiceAccountToPipelineRun(pushPipelineContent, pipelineRunServiceAccountName)
 		if err != nil {
 			log.Error(err, "failed to add Service Account to push pipeline definition")
 			return err
 		}
 	}
+	pullPipelineDefinitionUpdated := false
 	if pullPipelineDefinitionFound {
-		pullPipelineContent, err = addServiceAccountToPipelineRun(pullPipelineContent, pipelineRunServiceAccountName)
+		pullPipelineContent, pullPipelineDefinitionUpdated, err = addServiceAccountToPipelineRun(pullPipelineContent, pipelineRunServiceAccountName)
 		if err != nil {
 			log.Error(err, "failed to add Service Account to pull pipeline definition")
 			return err
 		}
+	}
+	if !pushPipelineDefinitionUpdated && !pullPipelineDefinitionUpdated {
+		// Nothing to update, stop
+		log.Info("User has already set a custom Service Account for their pipelines, skip migration")
+		return nil
 	}
 
 	mrData := &gp.MergeRequestData{
@@ -492,10 +501,10 @@ func (r *ComponentBuildReconciler) setServiceAccountInPipelineDefinition(ctx con
 		AuthorEmail:    "konflux@no-reply.konflux-ci.dev",
 		Files:          []gp.RepositoryFile{},
 	}
-	if pushPipelineDefinitionFound {
+	if pushPipelineDefinitionFound && pushPipelineDefinitionUpdated {
 		mrData.Files = append(mrData.Files, gp.RepositoryFile{FullPath: pushPipelinePath, Content: pushPipelineContent})
 	}
-	if pullPipelineDefinitionFound {
+	if pullPipelineDefinitionFound && pullPipelineDefinitionUpdated {
 		mrData.Files = append(mrData.Files, gp.RepositoryFile{FullPath: pullPipelinePath, Content: pullPipelineContent})
 	}
 
@@ -511,13 +520,24 @@ func (r *ComponentBuildReconciler) setServiceAccountInPipelineDefinition(ctx con
 }
 
 // addServiceAccountToPipelineRun specifies given service account to use in the pipeline.
-func addServiceAccountToPipelineRun(pipelineRunBytes []byte, serviceAccountName string) ([]byte, error) {
+// If a user specified Service Account different than "appstudio-pipeline", do not overwrite it.
+func addServiceAccountToPipelineRun(pipelineRunBytes []byte, serviceAccountName string) ([]byte, bool, error) {
 	buildPipelineData := &tektonapi.PipelineRun{}
 	if err := yaml.Unmarshal(pipelineRunBytes, buildPipelineData); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
-	buildPipelineData.Spec.TaskRunTemplate.ServiceAccountName = serviceAccountName
+	if buildPipelineData.Spec.TaskRunTemplate.ServiceAccountName == "" || buildPipelineData.Spec.TaskRunTemplate.ServiceAccountName == buildPipelineServiceAccountName {
+		// Update Service Account to the dedicated one.
+		buildPipelineData.Spec.TaskRunTemplate.ServiceAccountName = serviceAccountName
 
-	return yaml.Marshal(buildPipelineData)
+		pipelineRun, err := yaml.Marshal(buildPipelineData)
+		if err != nil {
+			return nil, false, err
+		}
+		return pipelineRun, true, nil
+	}
+
+	// Service Account is already set by user, do not overwrite.
+	return pipelineRunBytes, false, nil
 }

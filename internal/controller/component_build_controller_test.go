@@ -2536,5 +2536,34 @@ var _ = Describe("Component build controller", func() {
 			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 			waitComponentAnnotationGone(resourceMigrationKey, serviceAccountMigrationAnnotationName)
 		})
+
+		It("should not create migration PR if custom Service Account is used", func() {
+			isCreateSAMigrationPRInvoked := false
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				defer GinkgoRecover()
+				isCreateSAMigrationPRInvoked = true
+				Fail("should not invoke migration PR creation")
+				return "", nil
+			}
+			DownloadFileContentFunc = func(repoUrl, branchName, filePath string) ([]byte, error) {
+				return yaml.Marshal(
+					tektonapi.PipelineRun{
+						Spec: tektonapi.PipelineRunSpec{
+							TaskRunTemplate: tektonapi.PipelineTaskRunTemplate{
+								ServiceAccountName: "my-sa",
+							},
+						},
+					})
+			}
+
+			component := getComponent(resourceMigrationKey)
+			component.Annotations[serviceAccountMigrationAnnotationName] = "true"
+			Expect(k8sClient.Update(ctx, component)).To(Succeed())
+
+			Consistently(func() bool {
+				return !isCreateSAMigrationPRInvoked
+			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
+			waitComponentAnnotationGone(resourceMigrationKey, serviceAccountMigrationAnnotationName)
+		})
 	})
 })
