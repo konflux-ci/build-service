@@ -280,8 +280,20 @@ func (g *GitlabClient) GetBranchSha(repoUrl, branchName string) (string, error) 
 }
 
 func (g *GitlabClient) DownloadFileContent(repoUrl, branchName, filePath string) ([]byte, error) {
-	// TODO
-	return nil, nil
+	projectPath, err := getProjectPathFromRepoUrl(repoUrl)
+	if err != nil {
+		return nil, err
+	}
+
+	if branchName == "" {
+		var err error
+		branchName, err = g.getDefaultBranch(projectPath)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return g.downloadFileContent(projectPath, branchName, filePath)
 }
 
 // IsFileExist check whether given file exists in the given branch of the reposiotry.
