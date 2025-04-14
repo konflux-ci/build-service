@@ -64,7 +64,7 @@ spec:
       params:
         - name: SNAPSHOT
           value: $(params.SNAPSHOT)
-    - name: rosa-hcp-metadata
+    - name: rosa-hcp-metadata-new
       taskRef:
         resolver: git
         params:
@@ -91,7 +91,7 @@ spec:
           value: $(context.pipelineRun.name)
     - name: provision-rosa
       runAfter:
-        - rosa-hcp-metadata
+        - rosa-hcp-metadata-new
         - test-metadata
         - sealights-refs
       taskRef:
@@ -183,7 +183,7 @@ spec:
         - name: git-org
           value: $(tasks.test-metadata.results.git-org)
         - name: cluster-name
-          value: $(tasks.rosa-hcp-metadata.results.cluster-name)
+          value: $(tasks.rosa-hcp-metadata-new.results.cluster-name)
         - name: konflux-test-infra-secret
           value: $(params.konflux-test-infra-secret)
         - name: cloud-credential-key
