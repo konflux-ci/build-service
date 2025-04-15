@@ -73,6 +73,8 @@ const (
 
 	FailureRetryTime  = time.Minute * 5 // We retry after 5 minutes on failure
 	DefaultNudgeFiles = ".*Dockerfile.*, .*.yaml, .*Containerfile.*"
+
+	sharedBuildPipelineServiceAccountName = buildPipelineServiceAccountName
 )
 
 // The amount of time we wait before attempting to update the component, to try and avoid contention issues
@@ -547,8 +549,12 @@ func (r *ComponentDependencyUpdateReconciler) getImageRepositoryCredentials(ctx 
 	buildPipelineServiceAccount := &corev1.ServiceAccount{}
 	err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: namespace}, buildPipelineServiceAccount)
 	if err != nil {
-		log.Error(err, fmt.Sprintf("Failed to read service account %s in namespace %s", buildPipelineServiceAccountName, namespace), l.Action, l.ActionView)
-		return "", "", err
+		if !errors.IsNotFound(err) {
+			log.Error(err, fmt.Sprintf("Failed to read service account %s in namespace %s", buildPipelineServiceAccountName, namespace), l.Action, l.ActionView)
+			return "", "", err
+		}
+		// Fall back to deprecated appstudio-pipline Service Account
+		buildPipelineServiceAccountName = sharedBuildPipelineServiceAccountName
 	}
 
 	linkedSecretNames := []string{}

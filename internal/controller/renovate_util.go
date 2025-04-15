@@ -27,6 +27,7 @@ import (
 	"github.com/konflux-ci/build-service/pkg/git/gitproviderfactory"
 	"github.com/konflux-ci/build-service/pkg/k8s"
 	"github.com/konflux-ci/build-service/pkg/logs"
+	l "github.com/konflux-ci/build-service/pkg/logs"
 )
 
 const (
@@ -635,6 +636,16 @@ func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Contex
 		}
 	}
 
+	renovatePipelineServiceAccountName := getBuildPipelineServiceAccountName(buildResult.Component)
+	if err := u.Client.Get(ctx, types.NamespacedName{Name: renovatePipelineServiceAccountName, Namespace: namespace}, &corev1.ServiceAccount{}); err != nil {
+		if !errors.IsNotFound(err) {
+			log.Error(err, fmt.Sprintf("Failed to read service account %s in namespace %s", renovatePipelineServiceAccountName, namespace), l.Action, l.ActionView)
+			return err
+		}
+		// Fall back to deprecated appstudio-pipline Service Account
+		renovatePipelineServiceAccountName = buildPipelineServiceAccountName
+	}
+
 	trueBool := true
 	falseBool := false
 	renovateImageUrl := os.Getenv(RenovateImageEnvName)
@@ -694,6 +705,9 @@ func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Contex
 						},
 					},
 				}},
+			},
+			TaskRunTemplate: tektonapi.PipelineTaskRunTemplate{
+				ServiceAccountName: renovatePipelineServiceAccountName,
 			},
 		},
 	}

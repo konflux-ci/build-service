@@ -635,6 +635,37 @@ var _ = Describe("Component nudge controller", func() {
 				}
 			}
 		})
+
+		It("Should use dedicated build pipeline Service Account in renovate pipeline", func() {
+			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent, "")
+			Eventually(func() bool {
+				pr := getPipelineRun("test-pipeline-1", UserNamespace)
+				return controllerutil.ContainsFinalizer(pr, NudgeFinalizer)
+			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
+			pr := getPipelineRun("test-pipeline-1", UserNamespace)
+			pr.Status.SetCondition(&apis.Condition{
+				Type:               apis.ConditionSucceeded,
+				Status:             "True",
+				LastTransitionTime: apis.VolatileTime{Inner: metav1.Time{Time: time.Now()}},
+			})
+			pr.Status.Results = []tektonapi.PipelineRunResult{
+				{Name: ImageDigestParamName, Value: tektonapi.ResultValue{Type: tektonapi.ParamTypeString, StringVal: "sha256:12345"}},
+				{Name: ImageUrl, Value: tektonapi.ResultValue{Type: tektonapi.ParamTypeString, StringVal: "quay.io.foo/bar:latest"}},
+			}
+			pr.Status.CompletionTime = &metav1.Time{Time: time.Now()}
+			Expect(k8sClient.Status().Update(ctx, pr)).To(Succeed())
+
+			Eventually(func() bool {
+				// check that renovate pipeline run was created
+				renovatePipelinesCreated := len(getRenovatePipelineRunList())
+				return renovatePipelinesCreated == 1
+			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
+
+			renovatePipelines := getRenovatePipelineRunList()
+			Expect(len(renovatePipelines)).Should(Equal(1))
+			renovatePipeline := renovatePipelines[0]
+			Expect(renovatePipeline.Spec.TaskRunTemplate.ServiceAccountName).To(Equal(getComponentServiceAccountKey(baseComponentKey).Name))
+		})
 	})
 
 	Context("Test nudge failure handling", func() {
