@@ -107,11 +107,14 @@ var _ = Describe("Component build controller", func() {
 
 	Context("Test build pipeline Service Account", func() {
 		var (
-			component1Key = types.NamespacedName{Name: "component-sa-1", Namespace: HASAppNamespace}
-			component2Key = types.NamespacedName{Name: "component-sa-2", Namespace: HASAppNamespace}
+			namespace           = "sa-test"
+			component1Key       = types.NamespacedName{Name: "component-sa-1", Namespace: namespace}
+			component2Key       = types.NamespacedName{Name: "component-sa-2", Namespace: namespace}
+			buildRoleBindingKey = types.NamespacedName{Name: buildPipelineRoleBindingName, Namespace: namespace}
 		)
 
 		_ = BeforeEach(func() {
+			createNamespace(namespace)
 			ResetTestGitProviderClient()
 		})
 
