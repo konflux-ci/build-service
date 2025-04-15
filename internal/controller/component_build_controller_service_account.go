@@ -43,7 +43,7 @@ import (
 
 const (
 	BuildPipelineClusterRoleName = "appstudio-pipelines-runner"
-	buildPipelineRoleBindingName = BuildPipelineClusterRoleName + "-bindings"
+	buildPipelineRoleBindingName = "konflux-pipelines-runner-bindings"
 
 	commonBuildSecretLabelName = "build.appstudio.openshift.io/common-secret"
 

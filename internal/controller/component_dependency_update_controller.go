@@ -554,7 +554,9 @@ func (r *ComponentDependencyUpdateReconciler) getImageRepositoryCredentials(ctx 
 			return "", "", err
 		}
 		// Fall back to deprecated appstudio-pipline Service Account
-		buildPipelineServiceAccountName = sharedBuildPipelineServiceAccountName
+		if err := r.Client.Get(ctx, types.NamespacedName{Name: sharedBuildPipelineServiceAccountName, Namespace: namespace}, buildPipelineServiceAccount); err != nil {
+			return "", "", err
+		}
 	}
 
 	linkedSecretNames := []string{}
