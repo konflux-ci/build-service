@@ -430,7 +430,7 @@ func (r *ComponentBuildReconciler) setServiceAccountInPipelineDefinition(ctx con
 	}
 
 	// getting branch in advance just to test credentials
-	defaultBranch, err := gitClient.GetDefaultBranch(repoUrl)
+	defaultBranch, err := gitClient.GetDefaultBranchWithChecks(repoUrl)
 	if err != nil {
 		return err
 	}
