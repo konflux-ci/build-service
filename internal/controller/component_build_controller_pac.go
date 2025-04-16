@@ -77,7 +77,10 @@ To customize the proposed PipelineRuns after merge, please refer to [Build Pipel
 
 	// Annotation that specifies git provider id for self hosted SCM instances, e.g. github or gitlab.
 	GitProviderAnnotationName = "git-provider"
-	GitProviderAnnotationURL  = "git-provider-url"
+	// Annotation that specifies git provider API URL.
+	// Just git provider URL works in some cases.
+	// https://pipelinesascode.com/docs/install/gitlab/#notes
+	GitProviderAnnotationURL = "git-provider-url"
 )
 
 // That way it can be mocked in tests
@@ -688,7 +691,7 @@ func getGitProvider(component appstudiov1alpha1.Component) (string, error) {
 		sourceUrl := component.Spec.Source.GitSource.URL
 		var host string
 
-		// https://github.com/redhat-appstudio/application-service
+		// sourceUrl example: https://github.com/konflux-ci/build-service
 		u, err := url.Parse(sourceUrl)
 		if err != nil {
 			return "", boerrors.NewBuildOpError(boerrors.EWrongGitSourceUrl, err)

@@ -236,7 +236,12 @@ func generatePACRepository(component appstudiov1alpha1.Component, config *corev1
 			if err != nil {
 				return nil, err
 			}
-			gitProviderUrl = u.Scheme + "://" + u.Host
+			if u.Host == "github.com" || u.Host == "gitlab.com" {
+				// Do not attempt to override working defaults
+				gitProviderUrl = ""
+			} else {
+				gitProviderUrl = u.Scheme + "://" + u.Host
+			}
 		}
 		gitProviderConfig.URL = gitProviderUrl
 	}
