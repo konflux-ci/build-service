@@ -317,7 +317,7 @@ func (r *ComponentBuildReconciler) linkCommonAppstudioPipelineSecretsToNewServic
 	if err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: component.Namespace}, appstudioPipelineServiceAccount); err != nil {
 		if errors.IsNotFound(err) {
 			// Ignore not found error, assume the migration for the linked secrets has been done.
-			log.Info("skipping linked secret migration")
+			log.Info("skipping linked secret migration due to missing appstudio-pipeline Service Account")
 			return nil
 		}
 		return err
@@ -325,7 +325,7 @@ func (r *ComponentBuildReconciler) linkCommonAppstudioPipelineSecretsToNewServic
 	return LinkCommonAppstudioPipelineSecretsToNewServiceAccount(ctx, r.Client, component, appstudioPipelineServiceAccount)
 }
 
-// LinkCommonSecretsToNewServiceAccount links all secrets from appstudio-pipeline Service Account
+// LinkCommonAppstudioPipelineSecretsToNewServiceAccount links all secrets from appstudio-pipeline Service Account
 // except image repository secrets to the new dedicated to build Service Account.
 func LinkCommonAppstudioPipelineSecretsToNewServiceAccount(ctx context.Context, c client.Client, component *appstudiov1alpha1.Component, appstudioPipelineServiceAccount *corev1.ServiceAccount) error {
 	log := ctrllog.FromContext(ctx)
@@ -396,7 +396,7 @@ func isSaSecretLinked(serviceAccount *corev1.ServiceAccount, secretName string, 
 const saMigrationMergeRequestDescription = `
 ## Build pipeline Service Account migration
 
-This PR chnages Service Account used by build pipeline from "appstudio-pipeline" to dedicated to the Component Service Account.
+This PR changes Service Account used by build pipeline from "appstudio-pipeline" to dedicated to the Component Service Account.
 Please merge the Service Account update to avoid broken builds when deprected "appstudio-pipeline" Service Account is removed.
 `
 

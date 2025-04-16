@@ -129,7 +129,6 @@ var _ = Describe("Component build controller", func() {
 
 		It("should create build pipeline dedicated service account and role binding", func() {
 			createComponent(component1Key)
-
 			component1SAKey := getComponentServiceAccountKey(component1Key)
 			waitServiceAccount(component1SAKey)
 			roleBinding := waitServiceAccountInRoleBinding(buildRoleBindingKey, component1SAKey.Name)
@@ -140,8 +139,6 @@ var _ = Describe("Component build controller", func() {
 
 		It("should create build pipeline dedicated service account for each component and common role binding", func() {
 			createComponent(component1Key)
-			createComponent(component2Key)
-
 			component1SAKey := getComponentServiceAccountKey(component1Key)
 			waitServiceAccount(component1SAKey)
 			roleBinding := waitServiceAccountInRoleBinding(buildRoleBindingKey, component1SAKey.Name)
@@ -149,6 +146,7 @@ var _ = Describe("Component build controller", func() {
 			Expect(roleBinding.RoleRef.Name).To(Equal(BuildPipelineClusterRoleName))
 			Expect(roleBinding.Subjects).To(HaveLen(1))
 
+			createComponent(component2Key)
 			component2SAKey := getComponentServiceAccountKey(component2Key)
 			waitServiceAccount(component2SAKey)
 			roleBinding = waitServiceAccountInRoleBinding(buildRoleBindingKey, component2SAKey.Name)
@@ -163,11 +161,6 @@ var _ = Describe("Component build controller", func() {
 			component1Config.Finalizers = append(component1Config.Finalizers, PaCProvisionFinalizer)
 			Expect(k8sClient.Create(ctx, component1Config)).To(Succeed())
 
-			component2Config := getComponentData(componentConfig{componentKey: component2Key})
-			// Simulate PaC provision was done
-			component2Config.Finalizers = append(component1Config.Finalizers, PaCProvisionFinalizer)
-			Expect(k8sClient.Create(ctx, component2Config)).To(Succeed())
-
 			component1SAKey := getComponentServiceAccountKey(component1Key)
 			component1SA := waitServiceAccount(component1SAKey)
 			Expect(component1SA.OwnerReferences).To(HaveLen(1))
@@ -177,6 +170,11 @@ var _ = Describe("Component build controller", func() {
 			roleBinding := waitServiceAccountInRoleBinding(buildRoleBindingKey, component1SAKey.Name)
 			Expect(roleBinding.RoleRef.Kind).To(Equal("ClusterRole"))
 			Expect(roleBinding.RoleRef.Name).To(Equal(BuildPipelineClusterRoleName))
+
+			component2Config := getComponentData(componentConfig{componentKey: component2Key})
+			// Simulate PaC provision was done
+			component2Config.Finalizers = append(component1Config.Finalizers, PaCProvisionFinalizer)
+			Expect(k8sClient.Create(ctx, component2Config)).To(Succeed())
 
 			component2SAKey := getComponentServiceAccountKey(component2Key)
 			component2SA := waitServiceAccount(component2SAKey)
@@ -220,7 +218,7 @@ var _ = Describe("Component build controller", func() {
 			Expect(roleBinding.RoleRef.Name).To(Equal(BuildPipelineClusterRoleName))
 			Expect(roleBinding.Subjects).To(HaveLen(1))
 
-			// Create another component without successful PaC provison
+			// Create another component without successful PaC provison, so the finalizer won't exist.
 			createComponent(component2Key)
 			component2SAKey := getComponentServiceAccountKey(component2Key)
 			component2SA := waitServiceAccount(component2SAKey)
@@ -240,7 +238,8 @@ var _ = Describe("Component build controller", func() {
 			roleBinding = waitServiceAccountInRoleBinding(buildRoleBindingKey, component1SAKey.Name)
 			Expect(roleBinding.RoleRef.Kind).To(Equal("ClusterRole"))
 			Expect(roleBinding.RoleRef.Name).To(Equal(BuildPipelineClusterRoleName))
-			// We've got dangling subject in the role binding, it's expected To(HaveLen(1))
+			// We've got dangling subject in the role binding, it's expected To(HaveLen(1)),
+			// but because finalizer is was not added, it doesn't reach the clean up point.
 			Expect(roleBinding.Subjects).To(HaveLen(2))
 			// Add another dangling subject
 			roleBinding.Subjects = append(roleBinding.Subjects, rbacv1.Subject{
@@ -308,7 +307,6 @@ var _ = Describe("Component build controller", func() {
 
 		It("should restore build pipeline dedicated service account on reconcile", func() {
 			createComponent(component1Key)
-
 			component1SAKey := getComponentServiceAccountKey(component1Key)
 			waitServiceAccount(component1SAKey)
 			waitServiceAccountInRoleBinding(buildRoleBindingKey, component1SAKey.Name)
@@ -326,8 +324,6 @@ var _ = Describe("Component build controller", func() {
 
 		It("should restore build pipelines role binding on reconcile", func() {
 			createComponent(component1Key)
-			createComponent(component2Key)
-
 			component1SAKey := getComponentServiceAccountKey(component1Key)
 			waitServiceAccount(component1SAKey)
 			roleBinding := waitServiceAccountInRoleBinding(buildRoleBindingKey, component1SAKey.Name)
@@ -335,6 +331,7 @@ var _ = Describe("Component build controller", func() {
 			Expect(roleBinding.RoleRef.Name).To(Equal(BuildPipelineClusterRoleName))
 			Expect(roleBinding.Subjects).To(HaveLen(1))
 
+			createComponent(component2Key)
 			component2SAKey := getComponentServiceAccountKey(component2Key)
 			waitServiceAccount(component2SAKey)
 			roleBinding = waitServiceAccountInRoleBinding(buildRoleBindingKey, component2SAKey.Name)
