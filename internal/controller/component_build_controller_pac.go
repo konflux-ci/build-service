@@ -73,6 +73,8 @@ To start the PipelineRun, add a new comment with content ` + "`/ok-to-test`" + `
 For more detailed information about running a PipelineRun, please refer to Pipelines as Code documentation [Running the PipelineRun](https://pipelinesascode.com/docs/guide/running/)
 
 To customize the proposed PipelineRuns after merge, please refer to [Build Pipeline customization](https://konflux-ci.dev/docs/how-tos/configuring/)
+
+Please follow the block sequence indentation style introduced by the proprosed PipelineRuns YAMLs, or keep using consistent indentation level through your customized PipelineRuns. When different levels are mixed, it will be changed to the proposed style.
 `
 
 	// Annotation that specifies git provider id for self hosted SCM instances, e.g. github or gitlab.
