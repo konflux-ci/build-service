@@ -60,7 +60,7 @@ const (
 	pacIncomingSecretNameSuffix    = "-incoming"
 	pacIncomingSecretKey           = "incoming-secret"
 
-	pacMergeRequestSourceBranchPrefix = "appstudio-"
+	pacMergeRequestSourceBranchPrefix = "konflux-"
 
 	appstudioWorkspaceNameLabel      = "appstudio.redhat.com/workspace_name"
 	pacCustomParamAppstudioWorkspace = "appstudio_workspace"
