@@ -73,6 +73,8 @@ const (
 
 	FailureRetryTime  = time.Minute * 5 // We retry after 5 minutes on failure
 	DefaultNudgeFiles = ".*Dockerfile.*, .*.yaml, .*Containerfile.*"
+
+	sharedBuildPipelineServiceAccountName = buildPipelineServiceAccountName
 )
 
 // The amount of time we wait before attempting to update the component, to try and avoid contention issues
@@ -376,6 +378,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 		}
 	}
 
+	// Filter components to have only components that are nudged (should be rebuilt) after current component build.
 	for i := range components.Items {
 		comp := components.Items[i]
 		if slices.Contains(updatedComponent.Spec.BuildNudgesRef, comp.Name) {
@@ -383,10 +386,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 		}
 	}
 
-	updatedOutputImage := updatedComponent.Spec.ContainerImage
-	imageRepositoryHost := strings.Split(updatedOutputImage, "/")[0]
-
-	imageRepositoryUsername, imageRepositoryPassword, err := r.getImageRepositoryCredentials(ctx, pipelineRun.Namespace, updatedOutputImage)
+	imageRepositoryUsername, imageRepositoryPassword, err := r.getImageRepositoryCredentials(ctx, updatedComponent)
 	if err != nil {
 		// when we can't find credential for repository, remove pipeline finalizer and return error
 		_, errRemoveFinalizer := r.removePipelineFinalizer(ctx, pipelineRun, patch)
@@ -396,6 +396,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 
 		return ctrl.Result{}, err
 	}
+	imageRepositoryHost := strings.Split(updatedComponent.Spec.ContainerImage, "/")[0]
 
 	var nudgeErr error
 	var targets []updateTarget
@@ -537,24 +538,34 @@ func (r *ComponentDependencyUpdateReconciler) removePipelineFinalizer(ctx contex
 
 // getImageRepositoryCredentials returns username and password for image repository
 // it is searching all dockerconfigjson type secrets which are linked to the service account
-func (r *ComponentDependencyUpdateReconciler) getImageRepositoryCredentials(ctx context.Context, namespace, updatedOutputImage string) (string, string, error) {
+func (r *ComponentDependencyUpdateReconciler) getImageRepositoryCredentials(ctx context.Context, component *applicationapi.Component) (string, string, error) {
 	log := ctrllog.FromContext(ctx)
 
+	updatedOutputImage := component.Spec.ContainerImage
+	namespace := component.Namespace
+
 	// get service account and gather linked secrets
-	pipelinesServiceAccount := &corev1.ServiceAccount{}
-	err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: namespace}, pipelinesServiceAccount)
+	buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(component)
+	buildPipelineServiceAccount := &corev1.ServiceAccount{}
+	err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: namespace}, buildPipelineServiceAccount)
 	if err != nil {
-		log.Error(err, fmt.Sprintf("Failed to read service account %s in namespace %s", buildPipelineServiceAccountName, namespace), l.Action, l.ActionView)
-		return "", "", err
+		if !errors.IsNotFound(err) {
+			log.Error(err, fmt.Sprintf("Failed to read service account %s in namespace %s", buildPipelineServiceAccountName, namespace), l.Action, l.ActionView)
+			return "", "", err
+		}
+		// Fall back to deprecated appstudio-pipline Service Account
+		if err := r.Client.Get(ctx, types.NamespacedName{Name: sharedBuildPipelineServiceAccountName, Namespace: namespace}, buildPipelineServiceAccount); err != nil {
+			return "", "", err
+		}
 	}
 
 	linkedSecretNames := []string{}
-	for _, secret := range pipelinesServiceAccount.Secrets {
+	for _, secret := range buildPipelineServiceAccount.Secrets {
 		linkedSecretNames = append(linkedSecretNames, secret.Name)
 	}
 
 	if len(linkedSecretNames) == 0 {
-		err = fmt.Errorf("No secrets linked to service account %s in namespace %s", buildPipelineServiceAccountName, namespace)
+		err = fmt.Errorf("no secrets linked to service account %s in namespace %s", buildPipelineServiceAccountName, namespace)
 		log.Error(err, "no linked secrets")
 		return "", "", err
 	}
@@ -680,7 +691,7 @@ func GetMatchedCredentialForImageRepository(ctx context.Context, outputImage str
 	}
 
 	log.Info("no credentials found for repo", "repo", repoPath)
-	return "", "", fmt.Errorf("No credentials found for repository %s ", repoPath)
+	return "", "", fmt.Errorf("no credentials found for repository %s ", repoPath)
 }
 
 func IsBuildPushPipelineRun(object client.Object) bool {

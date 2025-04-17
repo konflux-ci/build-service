@@ -54,18 +54,21 @@ var failures = 0
 
 var _ = Describe("Component nudge controller", func() {
 
+	var (
+		baseComponentKey = types.NamespacedName{Namespace: UserNamespace, Name: BaseComponent}
+	)
+
 	delayTime = 0
 	BeforeEach(func() {
 		createNamespace(UserNamespace)
-		baseComponentName := types.NamespacedName{Namespace: UserNamespace, Name: BaseComponent}
 		createCustomComponentWithoutBuildRequest(componentConfig{
-			componentKey:   baseComponentName,
+			componentKey:   baseComponentKey,
 			containerImage: "quay.io/organization/repo:tag",
 		})
 		createComponent(types.NamespacedName{Namespace: UserNamespace, Name: Operator1})
 		createComponent(types.NamespacedName{Namespace: UserNamespace, Name: Operator2})
 		baseComponent := applicationapi.Component{}
-		err := k8sClient.Get(context.TODO(), baseComponentName, &baseComponent)
+		err := k8sClient.Get(context.TODO(), baseComponentKey, &baseComponent)
 		Expect(err).ToNot(HaveOccurred())
 		baseComponent.Spec.BuildNudgesRef = []string{Operator1, Operator2}
 		err = k8sClient.Update(context.TODO(), &baseComponent)
@@ -95,7 +98,7 @@ var _ = Describe("Component nudge controller", func() {
 		caConfigMapKey := types.NamespacedName{Name: "trusted-ca", Namespace: BuildServiceNamespaceName}
 		createCAConfigMap(caConfigMapKey)
 
-		serviceAccountKey := types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: UserNamespace}
+		serviceAccountKey := getComponentServiceAccountKey(baseComponentKey)
 		sa := waitServiceAccount(serviceAccountKey)
 		sa.Secrets = []v1.ObjectReference{{Name: "dockerconfigjsonsecret"}}
 		Expect(k8sClient.Update(ctx, &sa)).To(Succeed())
@@ -263,7 +266,7 @@ var _ = Describe("Component nudge controller", func() {
 			deleteSecret(imageRepoSecretKey)
 			createSCMSecret(imageRepoSecretKey, imageRepoSecretData, v1.SecretTypeDockerConfigJson, map[string]string{})
 
-			serviceAccountKey := types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: UserNamespace}
+			serviceAccountKey := getComponentServiceAccountKey(baseComponentKey)
 			sa := waitServiceAccount(serviceAccountKey)
 			sa.Secrets = []v1.ObjectReference{{Name: "dockerconfigjsonsecret"}}
 			Expect(k8sClient.Update(ctx, &sa)).To(Succeed())
@@ -328,7 +331,7 @@ var _ = Describe("Component nudge controller", func() {
 			imageRepoSecretKey = types.NamespacedName{Name: "dockerconfigjsonsecret3", Namespace: UserNamespace}
 			createSCMSecret(imageRepoSecretKey, imageRepoSecretData, v1.SecretTypeDockerConfigJson, map[string]string{})
 
-			serviceAccountKey := types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: UserNamespace}
+			serviceAccountKey := getComponentServiceAccountKey(baseComponentKey)
 			sa := waitServiceAccount(serviceAccountKey)
 			sa.Secrets = []v1.ObjectReference{{Name: "dockerconfigjsonsecret"}, {Name: "dockerconfigjsonsecret2"}}
 			Expect(k8sClient.Update(ctx, &sa)).To(Succeed())
@@ -631,6 +634,37 @@ var _ = Describe("Component nudge controller", func() {
 					break
 				}
 			}
+		})
+
+		It("Should use dedicated build pipeline Service Account in renovate pipeline", func() {
+			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent, "")
+			Eventually(func() bool {
+				pr := getPipelineRun("test-pipeline-1", UserNamespace)
+				return controllerutil.ContainsFinalizer(pr, NudgeFinalizer)
+			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
+			pr := getPipelineRun("test-pipeline-1", UserNamespace)
+			pr.Status.SetCondition(&apis.Condition{
+				Type:               apis.ConditionSucceeded,
+				Status:             "True",
+				LastTransitionTime: apis.VolatileTime{Inner: metav1.Time{Time: time.Now()}},
+			})
+			pr.Status.Results = []tektonapi.PipelineRunResult{
+				{Name: ImageDigestParamName, Value: tektonapi.ResultValue{Type: tektonapi.ParamTypeString, StringVal: "sha256:12345"}},
+				{Name: ImageUrl, Value: tektonapi.ResultValue{Type: tektonapi.ParamTypeString, StringVal: "quay.io.foo/bar:latest"}},
+			}
+			pr.Status.CompletionTime = &metav1.Time{Time: time.Now()}
+			Expect(k8sClient.Status().Update(ctx, pr)).To(Succeed())
+
+			Eventually(func() bool {
+				// check that renovate pipeline run was created
+				renovatePipelinesCreated := len(getRenovatePipelineRunList())
+				return renovatePipelinesCreated == 1
+			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
+
+			renovatePipelines := getRenovatePipelineRunList()
+			Expect(len(renovatePipelines)).Should(Equal(1))
+			renovatePipeline := renovatePipelines[0]
+			Expect(renovatePipeline.Spec.TaskRunTemplate.ServiceAccountName).To(Equal(getComponentServiceAccountKey(baseComponentKey).Name))
 		})
 	})
 

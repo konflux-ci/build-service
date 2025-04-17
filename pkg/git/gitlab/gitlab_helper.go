@@ -18,6 +18,7 @@ package gitlab
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -172,17 +173,31 @@ func (g *GitlabClient) getDefaultBranch(projectPath string) (string, error) {
 	return projectInfo.DefaultBranch, nil
 }
 
+// downloadFileContent retrieves requested file.
+// filePath must be the full path to the file.
+func (g *GitlabClient) downloadFileContent(projectPath, branchName, filePath string) ([]byte, error) {
+	opts := &gitlab.GetRawFileOptions{
+		Ref: &branchName,
+	}
+	fileContent, resp, err := g.client.RepositoryFiles.GetRawFile(projectPath, filePath, opts)
+	if err != nil {
+		if resp == nil || resp.StatusCode != 404 {
+			return nil, err
+		}
+		return nil, errors.New("not found")
+	}
+	return fileContent, nil
+}
+
 func (g *GitlabClient) filesUpToDate(projectPath, branchName string, files []gp.RepositoryFile) (bool, error) {
 	for _, file := range files {
-		opts := &gitlab.GetRawFileOptions{
-			Ref: &branchName,
-		}
-		fileContent, resp, err := g.client.RepositoryFiles.GetRawFile(projectPath, file.FullPath, opts)
+		fileContent, err := g.downloadFileContent(projectPath, branchName, file.FullPath)
 		if err != nil {
-			if resp == nil || resp.StatusCode != 404 {
-				return false, err
+			if strings.Contains(err.Error(), "not found") {
+				// File not found
+				return false, nil
 			}
-			return false, nil
+			return false, err
 		}
 		if !bytes.Equal(fileContent, file.Content) {
 			return false, nil

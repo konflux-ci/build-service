@@ -151,8 +151,9 @@ func updateMetricsTimes(componentIdForMetrics string, requestedAction string, re
 //+kubebuilder:rbac:groups=core,resources=configmaps,verbs=create;get;list;watch;update;patch;delete
 //+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;patch;update;delete
 //+kubebuilder:rbac:groups=core,resources=namespaces,verbs=get;list;watch
-//+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+//+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch
 
 func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -174,11 +175,23 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	// don't recreate SA upon component deletion
+	// Don't recreate build pipeline Service Account upon component deletion.
 	if component.ObjectMeta.DeletionTimestamp.IsZero() {
-		// Ensure pipeline service account exists
+		// Ensure deprecated pipeline service account exists for backward compatability.
 		_, err = r.ensurePipelineServiceAccount(ctx, component.Namespace)
 		if err != nil {
+			return ctrl.Result{}, err
+		}
+
+		// We need to make sure the Service Account exists before checking the Component image,
+		// because Image Controller operator expects the Service Account to exist to link push secret to it.
+		if err := r.EnsureBuildPipelineServiceAccount(ctx, &component); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		// TODO remove after migration to dedicated Service Account is done.
+		// It's needed to add newly linked common secrets to appstudio-pipeline into dedicated Service Account.
+		if err := r.linkCommonAppstudioPipelineSecretsToNewServiceAccount(ctx, &component); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
@@ -236,7 +249,27 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			_, _ = r.UndoPaCProvisionForComponent(ctx, &component)
 		}
 
+		// Clean up common build pipelines Role Binding
+		if err := r.removeBuildPipelineServiceAccountBinding(ctx, &component); err != nil {
+			return ctrl.Result{}, err
+		}
+
 		return ctrl.Result{}, nil
+	}
+
+	// Migrate existing components to the new Service Accounts model.
+	// TODO remove when the migration is done.
+	if component.Annotations != nil && component.Annotations[serviceAccountMigrationAnnotationName] == "true" {
+		if err := r.performServiceAccountMigration(ctx, &component); err != nil {
+			if boErr, ok := err.(*boerrors.BuildOpError); !ok || !boErr.IsPersistent() {
+				// Transient error, retry the migration
+				return ctrl.Result{}, err
+			}
+			// Permanent error, cannot do more, stop.
+			log.Error(err, "Migration to the new Service Account permanently failed")
+		}
+		delete(component.Annotations, serviceAccountMigrationAnnotationName)
+		return ctrl.Result{}, r.Client.Update(ctx, &component)
 	}
 
 	_, _, err = r.GetBuildPipelineFromComponentAnnotation(ctx, &component)

@@ -130,7 +130,6 @@ var _ = BeforeSuite(func() {
 			Namespace: "default",
 		},
 	}
-
 	Expect(k8sClient.Create(context.Background(), &svcAccount)).Should(Succeed())
 
 	clientOpts := client.Options{
@@ -170,6 +169,13 @@ var _ = BeforeSuite(func() {
 		Scheme:                       k8sManager.GetScheme(),
 		EventRecorder:                k8sManager.GetEventRecorderFor("ComponentDependencyUpdateReconciler"),
 		ComponentDependenciesUpdater: *NewComponentDependenciesUpdater(k8sManager.GetClient(), k8sManager.GetScheme(), k8sManager.GetEventRecorderFor("ComponentDependencyUpdateReconciler")),
+	}).SetupWithManager(k8sManager)
+	Expect(err).ToNot(HaveOccurred())
+
+	// TODO delete the controller after migration to the new dedicated to build Service Account.
+	err = (&AppstudioPipelineServiceAccountWatcherReconciler{
+		Client: k8sManager.GetClient(),
+		Scheme: k8sManager.GetScheme(),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 

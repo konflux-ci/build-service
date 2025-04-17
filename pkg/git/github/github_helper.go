@@ -18,6 +18,7 @@ package github
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -123,24 +124,36 @@ func (g *GithubClient) getDefaultBranch(owner, repository string) (string, error
 	return *repositoryInfo.DefaultBranch, nil
 }
 
+// downloadFileContent retrieves requested file.
+// filePath must be the full path to the file.
+func (g *GithubClient) downloadFileContent(owner, repository, branch, filePath string) ([]byte, error) {
+	opts := &github.RepositoryContentGetOptions{
+		Ref: "refs/heads/" + branch,
+	}
+
+	fileContentReader, resp, err := g.client.Repositories.DownloadContents(g.ctx, owner, repository, filePath, opts)
+	if err != nil {
+		// It's not clear when it returns 404 or 200 with the error message. Check both.
+		if resp.StatusCode == 404 || strings.Contains(err.Error(), "no file named") {
+			// Given file not found
+			return nil, errors.New("not found")
+		}
+
+		return nil, refineGitHostingServiceError(resp.Response, err)
+	}
+
+	return io.ReadAll(fileContentReader)
+}
+
+// filesUpToDate checks if all given files have expected content in remote git repository.
 func (g *GithubClient) filesUpToDate(owner, repository, branch string, files []gp.RepositoryFile) (bool, error) {
 	for _, file := range files {
-		opts := &github.RepositoryContentGetOptions{
-			Ref: "refs/heads/" + branch,
-		}
-
-		fileContentReader, resp, err := g.client.Repositories.DownloadContents(g.ctx, owner, repository, file.FullPath, opts)
+		fileContent, err := g.downloadFileContent(owner, repository, branch, file.FullPath)
 		if err != nil {
-			// It's not clear when it returns 404 or 200 with the error message. Check both.
-			if resp.StatusCode == 404 || strings.Contains(err.Error(), "no file named") {
-				// Given file not found
+			if strings.Contains(err.Error(), "not found") {
+				// File not found
 				return false, nil
 			}
-
-			return false, refineGitHostingServiceError(resp.Response, err)
-		}
-		fileContent, err := io.ReadAll(fileContentReader)
-		if err != nil {
 			return false, err
 		}
 

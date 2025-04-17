@@ -49,6 +49,9 @@ type GitProviderClient interface {
 	// GetBranchSha returns SHA of top commit in the given branch
 	GetBranchSha(repoUrl, branchName string) (string, error)
 
+	// DownloadFileContent retrieves file content by full path in the git repository.
+	DownloadFileContent(repoUrl, branchName, filePath string) ([]byte, error)
+
 	// IsFileExist check whether given file exists in the given branch of the reposiotry
 	IsFileExist(repoUrl, branchName, filePath string) (bool, error)
 
