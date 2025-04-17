@@ -192,12 +192,12 @@ spec:
           value: $(tasks.status)
     - name: quality-dashboard-upload
       taskRef:
-        resolver: git
+        resolver: git #
         params:
           - name: url
-            value: https://github.com/konflux-ci/tekton-integration-catalog.git
+            value: https://github.com/flacatus/tekton-integration-catalog.git
           - name: revision
-            value: main
+            value: test_qd
           - name: pathInRepo
             value: common/tasks/quality-dashboard/0.1/quality-dashboard-upload.yaml
       params:
