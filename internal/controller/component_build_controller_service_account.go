@@ -354,6 +354,10 @@ func migrateLinkedSecrets(appstudioPipelineServiceAccount, componentBuildService
 	// secrets
 	for _, secretObject := range appstudioPipelineServiceAccount.Secrets {
 		secretName := secretObject.Name
+		if strings.HasPrefix(secretName, "appstudio-pipeline-dockercfg-") {
+			// Skip dockerconfig of "appstudio-pipeline" Service Account
+			continue
+		}
 		if !isImageRepositorySecret(secretName) && !isSaSecretLinked(componentBuildServiceAccount, secretName, false) {
 			componentBuildServiceAccount.Secrets = append(componentBuildServiceAccount.Secrets, corev1.ObjectReference{Name: secretName})
 			isEdited = true
@@ -363,9 +367,35 @@ func migrateLinkedSecrets(appstudioPipelineServiceAccount, componentBuildService
 	// pull secrets
 	for _, pullSecretObject := range appstudioPipelineServiceAccount.ImagePullSecrets {
 		pullSecretName := pullSecretObject.Name
+		if strings.HasPrefix(pullSecretName, "appstudio-pipeline-dockercfg-") {
+			// Skip dockerconfig of "appstudio-pipeline" Service Account
+			continue
+		}
 		if !isImageRepositorySecret(pullSecretName) && !isSaSecretLinked(componentBuildServiceAccount, pullSecretName, true) {
 			componentBuildServiceAccount.ImagePullSecrets = append(componentBuildServiceAccount.ImagePullSecrets, corev1.LocalObjectReference{Name: pullSecretName})
 			isEdited = true
+		}
+	}
+
+	// Remove dockerconfig secrets of "appstudio-pipeline" Service Account
+	for secretIndex, secretObject := range componentBuildServiceAccount.Secrets {
+		secretName := secretObject.Name
+		if strings.HasPrefix(secretName, "appstudio-pipeline-dockercfg-") {
+			oldSecrets := componentBuildServiceAccount.Secrets
+			newSecrets := append(oldSecrets[:secretIndex], oldSecrets[secretIndex+1:]...)
+			componentBuildServiceAccount.Secrets = newSecrets
+			isEdited = true
+			break
+		}
+	}
+	for pullSecretIndex, pullSecretObject := range componentBuildServiceAccount.ImagePullSecrets {
+		secretName := pullSecretObject.Name
+		if strings.HasPrefix(secretName, "appstudio-pipeline-dockercfg-") {
+			oldPullSecrets := componentBuildServiceAccount.ImagePullSecrets
+			newPullSecrets := append(oldPullSecrets[:pullSecretIndex], oldPullSecrets[pullSecretIndex+1:]...)
+			componentBuildServiceAccount.ImagePullSecrets = newPullSecrets
+			isEdited = true
+			break
 		}
 	}
 

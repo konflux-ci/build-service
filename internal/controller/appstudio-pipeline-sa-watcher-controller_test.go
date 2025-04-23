@@ -159,6 +159,50 @@ var _ = Describe("appstudio-pipeline Service Account watcher controller", func()
 			}, timeout, interval).Should(BeTrue())
 		})
 
+		It("should ignore dockercfg secret of appstudio-pipeline", func() {
+			appstudioPipelineDockercfgSecretName := "appstudio-pipeline-dockercfg-c66gp"
+
+			appstudioPipelineSA := waitServiceAccount(appstudioPipelineSAKey)
+			appstudioPipelineSA.Secrets = append(appstudioPipelineSA.Secrets, corev1.ObjectReference{Name: appstudioPipelineDockercfgSecretName})
+			appstudioPipelineSA.ImagePullSecrets = append(appstudioPipelineSA.ImagePullSecrets, corev1.LocalObjectReference{Name: appstudioPipelineDockercfgSecretName})
+			Expect(k8sClient.Update(ctx, &appstudioPipelineSA)).To(Succeed())
+
+			Consistently(func() bool {
+				component1SA := waitServiceAccount(component1SAKey)
+				component2SA := waitServiceAccount(component2SAKey)
+				return !isSecretLinkedToServiceAccount(component1SA, appstudioPipelineDockercfgSecretName, false) &&
+					!isSecretLinkedToServiceAccount(component1SA, appstudioPipelineDockercfgSecretName, true) &&
+					!isSecretLinkedToServiceAccount(component2SA, appstudioPipelineDockercfgSecretName, false) &&
+					!isSecretLinkedToServiceAccount(component2SA, appstudioPipelineDockercfgSecretName, true)
+			}, timeout, interval).Should(BeTrue())
+		})
+
+		It("should remove dockercfg secret of appstudio-pipeline from dedicated Service Account", func() {
+			appstudioPipelineDockercfgSecretName := "appstudio-pipeline-dockercfg-c66gp"
+			buildPipelineSaName := component1Key.Name + "-dockercfg-zb8kc"
+
+			component1SA := waitServiceAccount(component1SAKey)
+			component1SA.Secrets = append(component1SA.Secrets, corev1.ObjectReference{Name: appstudioPipelineDockercfgSecretName})
+			component1SA.Secrets = append(component1SA.Secrets, corev1.ObjectReference{Name: buildPipelineSaName})
+			component1SA.ImagePullSecrets = append(component1SA.ImagePullSecrets, corev1.LocalObjectReference{Name: appstudioPipelineDockercfgSecretName})
+			component1SA.ImagePullSecrets = append(component1SA.ImagePullSecrets, corev1.LocalObjectReference{Name: buildPipelineSaName})
+			Expect(k8sClient.Update(ctx, &component1SA)).To(Succeed())
+
+			// Trigger reconcile
+			appstudioPipelineSA := waitServiceAccount(appstudioPipelineSAKey)
+			appstudioPipelineSA.Annotations = map[string]string{}
+			appstudioPipelineSA.Annotations["test"] = "test"
+			Expect(k8sClient.Update(ctx, &appstudioPipelineSA)).To(Succeed())
+
+			Eventually(func() bool {
+				component1SA := waitServiceAccount(component2SAKey)
+				return !isSecretLinkedToServiceAccount(component1SA, appstudioPipelineDockercfgSecretName, false) &&
+					!isSecretLinkedToServiceAccount(component1SA, appstudioPipelineDockercfgSecretName, true) &&
+					isSecretLinkedToServiceAccount(component1SA, buildPipelineSaName, false) &&
+					isSecretLinkedToServiceAccount(component1SA, buildPipelineSaName, true)
+			})
+		})
+
 		It("clean up", func() {
 			deleteComponent(component1Key)
 			deleteComponent(component2Key)
@@ -168,3 +212,21 @@ var _ = Describe("appstudio-pipeline Service Account watcher controller", func()
 		})
 	})
 })
+
+func isSecretLinkedToServiceAccount(sa corev1.ServiceAccount, secretName string, isPull bool) bool {
+	if isPull {
+		for _, secretReference := range sa.ImagePullSecrets {
+			if secretReference.Name == secretName {
+				return true
+			}
+		}
+		return false
+	}
+
+	for _, secretReference := range sa.Secrets {
+		if secretReference.Name == secretName {
+			return true
+		}
+	}
+	return false
+}
