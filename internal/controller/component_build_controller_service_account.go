@@ -476,7 +476,7 @@ func (r *ComponentBuildReconciler) setServiceAccountInPipelineDefinition(ctx con
 	var pushPipelineContent []byte
 	pushPipelineContent, err = gitClient.DownloadFileContent(repoUrl, baseBranch, pushPipelinePath)
 	if err != nil {
-		if !errors.IsNotFound(err) {
+		if !errors.IsNotFound(err) && !strings.Contains(err.Error(), "not found") {
 			return err
 		}
 		pushPipelineDefinitionFound = false
@@ -485,7 +485,7 @@ func (r *ComponentBuildReconciler) setServiceAccountInPipelineDefinition(ctx con
 	var pullPipelineContent []byte
 	pullPipelineContent, err = gitClient.DownloadFileContent(repoUrl, baseBranch, pullPipelinePath)
 	if err != nil {
-		if !errors.IsNotFound(err) {
+		if !errors.IsNotFound(err) && !strings.Contains(err.Error(), "not found") {
 			return err
 		}
 		pullPipelineDefinitionFound = false
