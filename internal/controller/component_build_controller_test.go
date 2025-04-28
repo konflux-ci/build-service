@@ -1644,7 +1644,9 @@ var _ = Describe("Component build controller", func() {
 			Expect(isRemovePaCPullRequestInvoked).To(BeFalse())
 			// Clean up for the component should not recreate pipeline service account
 			deleteComponent(resourceCleanupKey)
-			Expect(isRemovePaCPullRequestInvoked).To(BeTrue())
+			// Wait for method to be actually called, because we remove finalizer immediately,
+			// so removal of PR might not be called yet while component is already gone
+			Eventually(func() bool { return isRemovePaCPullRequestInvoked }, timeout, interval).Should(BeTrue())
 
 			pipelineServiceAccountKey := types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: resourceCleanupKey.Namespace}
 			pipelineServiceAccount := &corev1.ServiceAccount{}
