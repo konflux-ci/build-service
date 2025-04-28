@@ -62,6 +62,7 @@ import (
 	pacwebhook "github.com/konflux-ci/build-service/pkg/pacwebhook"
 
 	appstudiov1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
+	imagerepositoryapi "github.com/konflux-ci/image-controller/api/v1alpha1"
 	releaseapi "github.com/konflux-ci/release-service/api/v1alpha1"
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	routev1 "github.com/openshift/api/route/v1"
@@ -131,6 +132,10 @@ func main() {
 		os.Exit(1)
 	}
 	if err := releaseapi.AddToScheme(scheme); err != nil {
+		setupLog.Error(err, "unable to add pipelinesascode api to the scheme")
+		os.Exit(1)
+	}
+	if err := imagerepositoryapi.AddToScheme(scheme); err != nil {
 		setupLog.Error(err, "unable to add pipelinesascode api to the scheme")
 		os.Exit(1)
 	}

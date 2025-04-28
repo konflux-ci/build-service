@@ -20,8 +20,12 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	imgcv1alpha1 "github.com/konflux-ci/image-controller/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 var _ = Describe("appstudio-pipeline Service Account watcher controller", func() {
@@ -195,12 +199,70 @@ var _ = Describe("appstudio-pipeline Service Account watcher controller", func()
 			Expect(k8sClient.Update(ctx, &appstudioPipelineSA)).To(Succeed())
 
 			Eventually(func() bool {
-				component1SA := waitServiceAccount(component2SAKey)
+				component1SA := waitServiceAccount(component1SAKey)
 				return !isSecretLinkedToServiceAccount(component1SA, appstudioPipelineDockercfgSecretName, false) &&
 					!isSecretLinkedToServiceAccount(component1SA, appstudioPipelineDockercfgSecretName, true) &&
 					isSecretLinkedToServiceAccount(component1SA, buildPipelineSaName, false) &&
 					isSecretLinkedToServiceAccount(component1SA, buildPipelineSaName, true)
-			})
+			}, timeout, interval).Should(BeTrue())
+		})
+
+		It("should sync only image repository secret that is not component related", func() {
+			component1ImageRepositoryPushSecretName := "component1-image-push"
+			component1ImageRepositoryPullSecretName := "component1-image-pull"
+			commonImageRepositoryPushSecretName := "common-image-push"
+			commonImageRepositoryPullSecretName := "common-image-pull"
+
+			component1 := getComponent(component1Key)
+			component1ImageRepository := &imgcv1alpha1.ImageRepository{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "imagerepository-for-component1",
+					Namespace: namespace,
+				},
+			}
+			Expect(controllerutil.SetOwnerReference(component1, component1ImageRepository, scheme.Scheme)).To(Succeed())
+			Expect(k8sClient.Create(ctx, component1ImageRepository)).To(Succeed())
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: component1ImageRepository.Name, Namespace: namespace}, component1ImageRepository)).To(Succeed())
+			component1ImageRepository.Status = imgcv1alpha1.ImageRepositoryStatus{
+				Credentials: imgcv1alpha1.CredentialsStatus{
+					PushSecretName: component1ImageRepositoryPushSecretName,
+					PullSecretName: component1ImageRepositoryPullSecretName,
+				},
+			}
+			Expect(k8sClient.Status().Update(ctx, component1ImageRepository)).To(Succeed())
+			defer func() { Expect(k8sClient.Delete(ctx, component1ImageRepository)).To(Succeed()) }()
+
+			commonImageRepository := &imgcv1alpha1.ImageRepository{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "common",
+					Namespace: namespace,
+				},
+			}
+			Expect(k8sClient.Create(ctx, commonImageRepository)).To(Succeed())
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: commonImageRepository.Name, Namespace: namespace}, commonImageRepository)).To(Succeed())
+			commonImageRepository.Status = imgcv1alpha1.ImageRepositoryStatus{
+				Credentials: imgcv1alpha1.CredentialsStatus{
+					PushSecretName: commonImageRepositoryPushSecretName,
+					PullSecretName: commonImageRepositoryPullSecretName,
+				},
+			}
+			Expect(k8sClient.Status().Update(ctx, commonImageRepository)).To(Succeed())
+			defer func() { Expect(k8sClient.Delete(ctx, commonImageRepository)).To(Succeed()) }()
+
+			appstudioPipelineSA := waitServiceAccount(appstudioPipelineSAKey)
+			appstudioPipelineSA.Secrets = append(appstudioPipelineSA.Secrets, corev1.ObjectReference{Name: component1ImageRepositoryPushSecretName})
+			appstudioPipelineSA.Secrets = append(appstudioPipelineSA.Secrets, corev1.ObjectReference{Name: commonImageRepositoryPushSecretName})
+			appstudioPipelineSA.ImagePullSecrets = append(appstudioPipelineSA.ImagePullSecrets, corev1.LocalObjectReference{Name: component1ImageRepositoryPullSecretName})
+			appstudioPipelineSA.ImagePullSecrets = append(appstudioPipelineSA.ImagePullSecrets, corev1.LocalObjectReference{Name: commonImageRepositoryPullSecretName})
+			Expect(k8sClient.Update(ctx, &appstudioPipelineSA)).To(Succeed())
+
+			Eventually(func() bool {
+				component2SA := waitServiceAccount(component2SAKey)
+				return !isSecretLinkedToServiceAccount(component2SA, component1ImageRepositoryPushSecretName, false) &&
+					!isSecretLinkedToServiceAccount(component2SA, component1ImageRepositoryPullSecretName, true) &&
+					isSecretLinkedToServiceAccount(component2SA, commonImageRepositoryPushSecretName, false) &&
+					isSecretLinkedToServiceAccount(component2SA, commonImageRepositoryPullSecretName, true)
+			}, timeout, interval).Should(BeTrue())
 		})
 
 		It("clean up", func() {

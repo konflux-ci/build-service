@@ -38,6 +38,7 @@ import (
 	gp "github.com/konflux-ci/build-service/pkg/git/gitprovider"
 	"github.com/konflux-ci/build-service/pkg/git/gitproviderfactory"
 	l "github.com/konflux-ci/build-service/pkg/logs"
+	imgcv1alpha1 "github.com/konflux-ci/image-controller/api/v1alpha1"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 )
 
@@ -322,12 +323,19 @@ func (r *ComponentBuildReconciler) linkCommonAppstudioPipelineSecretsToNewServic
 		}
 		return err
 	}
-	return LinkCommonAppstudioPipelineSecretsToNewServiceAccount(ctx, r.Client, component, appstudioPipelineServiceAccount)
+
+	imageRepositoryList := &imgcv1alpha1.ImageRepositoryList{}
+	if err := r.Client.List(ctx, imageRepositoryList, client.InNamespace(component.Namespace)); err != nil {
+		log.Error(err, "failed to list ImageRepositories in namespace", l.Action, l.ActionView)
+		return err
+	}
+
+	return LinkCommonAppstudioPipelineSecretsToNewServiceAccount(ctx, r.Client, component, appstudioPipelineServiceAccount, imageRepositoryList.Items)
 }
 
 // LinkCommonAppstudioPipelineSecretsToNewServiceAccount links all secrets from appstudio-pipeline Service Account
 // except image repository secrets to the new dedicated to build Service Account.
-func LinkCommonAppstudioPipelineSecretsToNewServiceAccount(ctx context.Context, c client.Client, component *appstudiov1alpha1.Component, appstudioPipelineServiceAccount *corev1.ServiceAccount) error {
+func LinkCommonAppstudioPipelineSecretsToNewServiceAccount(ctx context.Context, c client.Client, component *appstudiov1alpha1.Component, appstudioPipelineServiceAccount *corev1.ServiceAccount, imageRepositories []imgcv1alpha1.ImageRepository) error {
 	log := ctrllog.FromContext(ctx)
 
 	componentBuildServiceAccount := &corev1.ServiceAccount{}
@@ -336,7 +344,7 @@ func LinkCommonAppstudioPipelineSecretsToNewServiceAccount(ctx context.Context, 
 		return err
 	}
 
-	isComponentServiceAccountEdited := migrateLinkedSecrets(appstudioPipelineServiceAccount, componentBuildServiceAccount)
+	isComponentServiceAccountEdited := migrateLinkedSecrets(appstudioPipelineServiceAccount, componentBuildServiceAccount, imageRepositories)
 	if isComponentServiceAccountEdited {
 		if err := c.Update(ctx, componentBuildServiceAccount); err != nil {
 			log.Error(err, "failed to update build Service Account after attempt of secrets migration")
@@ -348,7 +356,7 @@ func LinkCommonAppstudioPipelineSecretsToNewServiceAccount(ctx context.Context, 
 	return nil
 }
 
-func migrateLinkedSecrets(appstudioPipelineServiceAccount, componentBuildServiceAccount *corev1.ServiceAccount) bool {
+func migrateLinkedSecrets(appstudioPipelineServiceAccount, componentBuildServiceAccount *corev1.ServiceAccount, imageRepositories []imgcv1alpha1.ImageRepository) bool {
 	isEdited := false
 
 	// secrets
@@ -358,10 +366,14 @@ func migrateLinkedSecrets(appstudioPipelineServiceAccount, componentBuildService
 			// Skip dockerconfig of "appstudio-pipeline" Service Account
 			continue
 		}
-		if !isImageRepositorySecret(secretName) && !isSaSecretLinked(componentBuildServiceAccount, secretName, false) {
-			componentBuildServiceAccount.Secrets = append(componentBuildServiceAccount.Secrets, corev1.ObjectReference{Name: secretName})
-			isEdited = true
+		if isSaSecretLinked(componentBuildServiceAccount, secretName, false) {
+			continue
 		}
+		if isImageRepositorySecret(secretName) && isComponentImageRepositorySecret(secretName, imageRepositories) {
+			continue
+		}
+		componentBuildServiceAccount.Secrets = append(componentBuildServiceAccount.Secrets, corev1.ObjectReference{Name: secretName})
+		isEdited = true
 	}
 
 	// pull secrets
@@ -371,10 +383,14 @@ func migrateLinkedSecrets(appstudioPipelineServiceAccount, componentBuildService
 			// Skip dockerconfig of "appstudio-pipeline" Service Account
 			continue
 		}
-		if !isImageRepositorySecret(pullSecretName) && !isSaSecretLinked(componentBuildServiceAccount, pullSecretName, true) {
-			componentBuildServiceAccount.ImagePullSecrets = append(componentBuildServiceAccount.ImagePullSecrets, corev1.LocalObjectReference{Name: pullSecretName})
-			isEdited = true
+		if isSaSecretLinked(componentBuildServiceAccount, pullSecretName, true) {
+			continue
 		}
+		if isImageRepositorySecret(pullSecretName) && isComponentImageRepositorySecret(pullSecretName, imageRepositories) {
+			continue
+		}
+		componentBuildServiceAccount.ImagePullSecrets = append(componentBuildServiceAccount.ImagePullSecrets, corev1.LocalObjectReference{Name: pullSecretName})
+		isEdited = true
 	}
 
 	// Remove dockerconfig secrets of "appstudio-pipeline" Service Account
@@ -403,7 +419,23 @@ func migrateLinkedSecrets(appstudioPipelineServiceAccount, componentBuildService
 }
 
 func isImageRepositorySecret(secretName string) bool {
-	return strings.HasPrefix(secretName, "imagerepository") || strings.HasSuffix(secretName, "image-push")
+	return strings.HasPrefix(secretName, "imagerepository") || strings.HasSuffix(secretName, "image-push") || strings.HasSuffix(secretName, "image-pull")
+}
+
+// isComponentImageRepositorySecret returns true if given secret is related to an ImageRepository and
+// the ImageRepository belongs to (i.e. owned by) a Component.
+func isComponentImageRepositorySecret(secretName string, imageRepositories []imgcv1alpha1.ImageRepository) bool {
+	for _, imageRepository := range imageRepositories {
+		if imageRepository.Status.Credentials.PushSecretName == secretName || imageRepository.Status.Credentials.PullSecretName == secretName {
+			for _, owner := range imageRepository.OwnerReferences {
+				if owner.Kind == "Component" {
+					return true
+				}
+			}
+			return false
+		}
+	}
+	return false
 }
 
 func isSaSecretLinked(serviceAccount *corev1.ServiceAccount, secretName string, isPull bool) bool {
