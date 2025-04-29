@@ -33,6 +33,7 @@ import (
 
 	appstudiov1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
 	l "github.com/konflux-ci/build-service/pkg/logs"
+	imgcv1alpha1 "github.com/konflux-ci/image-controller/api/v1alpha1"
 )
 
 // TODO delete the controller after migration to the new dedicated to build Service Account.
@@ -69,6 +70,8 @@ func (r *AppstudioPipelineServiceAccountWatcherReconciler) SetupWithManager(mgr 
 		Complete(r)
 }
 
+//+kubebuilder:rbac:groups=appstudio.redhat.com,resources=imagerepositories,verbs=get;list;watch
+
 func (r *AppstudioPipelineServiceAccountWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := ctrllog.FromContext(ctx).WithName("appstudioPipelineSA")
 	log.Info("Synching secrets")
@@ -88,6 +91,12 @@ func (r *AppstudioPipelineServiceAccountWatcherReconciler) Reconcile(ctx context
 		return ctrl.Result{}, err
 	}
 
+	imageRepositoryList := &imgcv1alpha1.ImageRepositoryList{}
+	if err := r.Client.List(ctx, imageRepositoryList, client.InNamespace(req.Namespace)); err != nil {
+		log.Error(err, "failed to list ImageRepositories in namespace", l.Action, l.ActionView)
+		return ctrl.Result{}, err
+	}
+
 	for _, component := range componentList.Items {
 		dedicatedBuildPipelineServiceAccountName := getBuildPipelineServiceAccountName(&component)
 		buildPipelinesServiceAccount := &corev1.ServiceAccount{}
@@ -101,7 +110,7 @@ func (r *AppstudioPipelineServiceAccountWatcherReconciler) Reconcile(ctx context
 			continue
 		}
 
-		if err := LinkCommonAppstudioPipelineSecretsToNewServiceAccount(ctx, r.Client, &component, commonServiceAccount); err != nil {
+		if err := LinkCommonAppstudioPipelineSecretsToNewServiceAccount(ctx, r.Client, &component, commonServiceAccount, imageRepositoryList.Items); err != nil {
 			log.Error(err, "failed to sync linked secrets for Component", "Component", component.Name, l.Action, l.ActionUpdate)
 			// do not break sync because of a faulty item
 		}
