@@ -43,9 +43,6 @@ import (
 
 const (
 	UserNamespace = "user1-tenant"
-	BaseComponent = "base-component"
-	Operator1     = "operator1"
-	Operator2     = "operator2"
 	ImageUrl      = "IMAGE_URL"
 	ImageDigest   = "IMAGE_DIGEST"
 )
@@ -54,26 +51,9 @@ var failures = 0
 
 var _ = Describe("Component nudge controller", func() {
 
-	var (
-		baseComponentKey = types.NamespacedName{Namespace: UserNamespace, Name: BaseComponent}
-	)
-
 	delayTime = 0
 	BeforeEach(func() {
 		createNamespace(UserNamespace)
-		createCustomComponentWithoutBuildRequest(componentConfig{
-			componentKey:   baseComponentKey,
-			containerImage: "quay.io/organization/repo:tag",
-		})
-		createComponent(types.NamespacedName{Namespace: UserNamespace, Name: Operator1})
-		createComponent(types.NamespacedName{Namespace: UserNamespace, Name: Operator2})
-		baseComponent := applicationapi.Component{}
-		err := k8sClient.Get(context.TODO(), baseComponentKey, &baseComponent)
-		Expect(err).ToNot(HaveOccurred())
-		baseComponent.Spec.BuildNudgesRef = []string{Operator1, Operator2}
-		err = k8sClient.Update(context.TODO(), &baseComponent)
-		Expect(err).ToNot(HaveOccurred())
-
 		createNamespace(BuildServiceNamespaceName)
 		pacSecretKey := types.NamespacedName{Name: PipelinesAsCodeGitHubAppSecretName, Namespace: BuildServiceNamespaceName}
 		pacSecretData := map[string]string{
@@ -98,11 +78,6 @@ var _ = Describe("Component nudge controller", func() {
 		caConfigMapKey := types.NamespacedName{Name: "trusted-ca", Namespace: BuildServiceNamespaceName}
 		createCAConfigMap(caConfigMapKey)
 
-		serviceAccountKey := getComponentServiceAccountKey(baseComponentKey)
-		sa := waitServiceAccount(serviceAccountKey)
-		sa.Secrets = []v1.ObjectReference{{Name: "dockerconfigjsonsecret"}}
-		Expect(k8sClient.Update(ctx, &sa)).To(Succeed())
-
 		github.GetAppInstallationsForRepository = func(githubAppIdStr string, appPrivateKeyPem []byte, repoUrl string) (*github.ApplicationInstallation, string, error) {
 			repo_name := "repo_name"
 			repo_fullname := "repo_fullname"
@@ -123,6 +98,7 @@ var _ = Describe("Component nudge controller", func() {
 		deleteOptionsNamespace := client.DeleteAllOfOptions{
 			ListOptions: deleteListOptions,
 		}
+
 		_ = k8sClient.DeleteAllOf(context.TODO(), &applicationapi.Component{}, &deleteOptionsNamespace)
 		_ = k8sClient.DeleteAllOf(context.TODO(), &tektonapi.PipelineRun{}, &deleteOptionsNamespace)
 		_ = k8sClient.DeleteAllOf(context.TODO(), &v1.ConfigMap{}, &deleteOptionsNamespace)
@@ -136,8 +112,36 @@ var _ = Describe("Component nudge controller", func() {
 	})
 
 	Context("Test build pipelines have finalizer behaviour", func() {
+		var (
+			baseComponentName = "base-component-finalizer"
+			baseComponentKey  = types.NamespacedName{Namespace: UserNamespace, Name: baseComponentName}
+			operator1Key      = types.NamespacedName{Namespace: UserNamespace, Name: "operator1-finalizer"}
+			operator2Key      = types.NamespacedName{Namespace: UserNamespace, Name: "operator2-finalizer"}
+		)
+
+		_ = BeforeEach(func() {
+			createCustomComponentWithoutBuildRequest(componentConfig{
+				componentKey:   baseComponentKey,
+				containerImage: "quay.io/organization/repo:tag",
+				annotations:    defaultPipelineAnnotations,
+			})
+			createComponent(operator1Key)
+			createComponent(operator2Key)
+			baseComponent := applicationapi.Component{}
+			err := k8sClient.Get(context.TODO(), baseComponentKey, &baseComponent)
+			Expect(err).ToNot(HaveOccurred())
+			baseComponent.Spec.BuildNudgesRef = []string{operator1Key.Name, operator2Key.Name}
+			err = k8sClient.Update(context.TODO(), &baseComponent)
+			Expect(err).ToNot(HaveOccurred())
+
+			serviceAccountKey := getComponentServiceAccountKey(baseComponentKey)
+			sa := waitServiceAccount(serviceAccountKey)
+			sa.Secrets = []v1.ObjectReference{{Name: "dockerconfigjsonsecret"}}
+			Expect(k8sClient.Update(ctx, &sa)).To(Succeed())
+		})
+
 		It("Test finalizer added and removed on deletion", func() {
-			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent, "")
+			createBuildPipelineRun("test-pipeline-1", UserNamespace, baseComponentName, "")
 			Eventually(func() bool {
 				pr := getPipelineRun("test-pipeline-1", UserNamespace)
 				return controllerutil.ContainsFinalizer(pr, NudgeFinalizer)
@@ -153,7 +157,7 @@ var _ = Describe("Component nudge controller", func() {
 		})
 
 		It("Test finalizer removed on pipeline completion", func() {
-			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent, "")
+			createBuildPipelineRun("test-pipeline-1", UserNamespace, baseComponentName, "")
 			Eventually(func() bool {
 				pr := getPipelineRun("test-pipeline-1", UserNamespace)
 				return controllerutil.ContainsFinalizer(pr, NudgeFinalizer)
@@ -174,7 +178,7 @@ var _ = Describe("Component nudge controller", func() {
 		})
 
 		It("Test finalizer removed if component deleted", func() {
-			createBuildPipelineRun("test-pipeline-2", UserNamespace, BaseComponent, "")
+			createBuildPipelineRun("test-pipeline-2", UserNamespace, baseComponentName, "")
 			Eventually(func() bool {
 				pr := getPipelineRun("test-pipeline-2", UserNamespace)
 				return controllerutil.ContainsFinalizer(pr, NudgeFinalizer)
@@ -197,8 +201,36 @@ var _ = Describe("Component nudge controller", func() {
 	})
 
 	Context("Test build nudges component", func() {
+		var (
+			baseComponentName = "base-component-nudges"
+			baseComponentKey  = types.NamespacedName{Namespace: UserNamespace, Name: baseComponentName}
+			operator1Key      = types.NamespacedName{Namespace: UserNamespace, Name: "operator1-nudges"}
+			operator2Key      = types.NamespacedName{Namespace: UserNamespace, Name: "operator2-nudges"}
+		)
+
+		_ = BeforeEach(func() {
+			createCustomComponentWithoutBuildRequest(componentConfig{
+				componentKey:   baseComponentKey,
+				containerImage: "quay.io/organization/repo:tag",
+				annotations:    defaultPipelineAnnotations,
+			})
+			createComponent(operator1Key)
+			createComponent(operator2Key)
+			baseComponent := applicationapi.Component{}
+			err := k8sClient.Get(context.TODO(), baseComponentKey, &baseComponent)
+			Expect(err).ToNot(HaveOccurred())
+			baseComponent.Spec.BuildNudgesRef = []string{operator1Key.Name, operator2Key.Name}
+			err = k8sClient.Update(context.TODO(), &baseComponent)
+			Expect(err).ToNot(HaveOccurred())
+
+			serviceAccountKey := getComponentServiceAccountKey(baseComponentKey)
+			sa := waitServiceAccount(serviceAccountKey)
+			sa.Secrets = []v1.ObjectReference{{Name: "dockerconfigjsonsecret"}}
+			Expect(k8sClient.Update(ctx, &sa)).To(Succeed())
+		})
+
 		It("Test build performs nudge on success", func() {
-			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent, "")
+			createBuildPipelineRun("test-pipeline-1", UserNamespace, baseComponentName, "")
 			Eventually(func() bool {
 				pr := getPipelineRun("test-pipeline-1", UserNamespace)
 				return controllerutil.ContainsFinalizer(pr, NudgeFinalizer)
@@ -271,7 +303,7 @@ var _ = Describe("Component nudge controller", func() {
 			sa.Secrets = []v1.ObjectReference{{Name: "dockerconfigjsonsecret"}}
 			Expect(k8sClient.Update(ctx, &sa)).To(Succeed())
 
-			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent, "")
+			createBuildPipelineRun("test-pipeline-1", UserNamespace, baseComponentName, "")
 			Eventually(func() bool {
 				pr := getPipelineRun("test-pipeline-1", UserNamespace)
 				return controllerutil.ContainsFinalizer(pr, NudgeFinalizer)
@@ -336,7 +368,7 @@ var _ = Describe("Component nudge controller", func() {
 			sa.Secrets = []v1.ObjectReference{{Name: "dockerconfigjsonsecret"}, {Name: "dockerconfigjsonsecret2"}}
 			Expect(k8sClient.Update(ctx, &sa)).To(Succeed())
 
-			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent, "")
+			createBuildPipelineRun("test-pipeline-1", UserNamespace, baseComponentName, "")
 			Eventually(func() bool {
 				pr := getPipelineRun("test-pipeline-1", UserNamespace)
 				return controllerutil.ContainsFinalizer(pr, NudgeFinalizer)
@@ -371,9 +403,9 @@ var _ = Describe("Component nudge controller", func() {
 		})
 
 		It("Test stale pipeline not nudged", func() {
-			createBuildPipelineRun("stale-pipeline", UserNamespace, BaseComponent, "")
+			createBuildPipelineRun("stale-pipeline", UserNamespace, baseComponentName, "")
 			time.Sleep(time.Second + time.Millisecond)
-			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent, "")
+			createBuildPipelineRun("test-pipeline-1", UserNamespace, baseComponentName, "")
 			Eventually(func() bool {
 				pr := getPipelineRun("test-pipeline-1", UserNamespace)
 				return controllerutil.ContainsFinalizer(pr, NudgeFinalizer)
@@ -416,13 +448,11 @@ var _ = Describe("Component nudge controller", func() {
 			if componentRenovateConfigName != nil && componentRenovateConfigData != nil {
 				createCustomRenovateConfigMap(*componentRenovateConfigName, componentRenovateConfigData)
 
-				component1Name := types.NamespacedName{Namespace: UserNamespace, Name: Operator1}
-				component2Name := types.NamespacedName{Namespace: UserNamespace, Name: Operator2}
 				component1 := applicationapi.Component{}
 				component2 := applicationapi.Component{}
-				err := k8sClient.Get(context.TODO(), component1Name, &component1)
+				err := k8sClient.Get(context.TODO(), operator1Key, &component1)
 				Expect(err).ToNot(HaveOccurred())
-				err = k8sClient.Get(context.TODO(), component2Name, &component2)
+				err = k8sClient.Get(context.TODO(), operator2Key, &component2)
 				Expect(err).ToNot(HaveOccurred())
 
 				if component1.Annotations == nil {
@@ -436,14 +466,14 @@ var _ = Describe("Component nudge controller", func() {
 				component1.Annotations[CustomRenovateConfigMapAnnotation] = componentRenovateConfigName.Name
 				err = k8sClient.Update(context.TODO(), &component1)
 				Expect(err).ToNot(HaveOccurred())
-				waitComponentAnnotationExists(component1Name, CustomRenovateConfigMapAnnotation)
+				waitComponentAnnotationExists(operator1Key, CustomRenovateConfigMapAnnotation)
 				component2.Annotations[CustomRenovateConfigMapAnnotation] = componentRenovateConfigName.Name
 				err = k8sClient.Update(context.TODO(), &component2)
 				Expect(err).ToNot(HaveOccurred())
-				waitComponentAnnotationExists(component2Name, CustomRenovateConfigMapAnnotation)
+				waitComponentAnnotationExists(operator2Key, CustomRenovateConfigMapAnnotation)
 			}
 
-			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent, imageBuiltFrom)
+			createBuildPipelineRun("test-pipeline-1", UserNamespace, baseComponentName, imageBuiltFrom)
 			Eventually(func() bool {
 				pr := getPipelineRun("test-pipeline-1", UserNamespace)
 				return controllerutil.ContainsFinalizer(pr, NudgeFinalizer)
@@ -637,7 +667,7 @@ var _ = Describe("Component nudge controller", func() {
 		})
 
 		It("Should use dedicated build pipeline Service Account in renovate pipeline", func() {
-			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent, "")
+			createBuildPipelineRun("test-pipeline-1", UserNamespace, baseComponentName, "")
 			Eventually(func() bool {
 				pr := getPipelineRun("test-pipeline-1", UserNamespace)
 				return controllerutil.ContainsFinalizer(pr, NudgeFinalizer)
@@ -669,6 +699,34 @@ var _ = Describe("Component nudge controller", func() {
 	})
 
 	Context("Test nudge failure handling", func() {
+		var (
+			baseComponentName = "base-component-failure"
+			baseComponentKey  = types.NamespacedName{Namespace: UserNamespace, Name: baseComponentName}
+			operator1Key      = types.NamespacedName{Namespace: UserNamespace, Name: "operator1-failure"}
+			operator2Key      = types.NamespacedName{Namespace: UserNamespace, Name: "operator2-failure"}
+		)
+
+		_ = BeforeEach(func() {
+			createCustomComponentWithoutBuildRequest(componentConfig{
+				componentKey:   baseComponentKey,
+				containerImage: "quay.io/organization/repo:tag",
+				annotations:    defaultPipelineAnnotations,
+			})
+			createComponent(operator1Key)
+			createComponent(operator2Key)
+			baseComponent := applicationapi.Component{}
+			err := k8sClient.Get(context.TODO(), baseComponentKey, &baseComponent)
+			Expect(err).ToNot(HaveOccurred())
+			baseComponent.Spec.BuildNudgesRef = []string{operator1Key.Name, operator2Key.Name}
+			err = k8sClient.Update(context.TODO(), &baseComponent)
+			Expect(err).ToNot(HaveOccurred())
+
+			serviceAccountKey := getComponentServiceAccountKey(baseComponentKey)
+			sa := waitServiceAccount(serviceAccountKey)
+			sa.Secrets = []v1.ObjectReference{{Name: "dockerconfigjsonsecret"}}
+			Expect(k8sClient.Update(ctx, &sa)).To(Succeed())
+		})
+
 		It("Test single failure results in retry", func() {
 			failures = 1
 			// mock function to produce error
@@ -682,7 +740,7 @@ var _ = Describe("Component nudge controller", func() {
 				return RenovateConfig{}, fmt.Errorf("failure")
 			}
 
-			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent, "")
+			createBuildPipelineRun("test-pipeline-1", UserNamespace, baseComponentName, "")
 			Eventually(func() bool {
 				pr := getPipelineRun("test-pipeline-1", UserNamespace)
 				return controllerutil.ContainsFinalizer(pr, NudgeFinalizer)
@@ -729,7 +787,7 @@ var _ = Describe("Component nudge controller", func() {
 				return RenovateConfig{}, fmt.Errorf("failure")
 			}
 
-			createBuildPipelineRun("test-pipeline-1", UserNamespace, BaseComponent, "")
+			createBuildPipelineRun("test-pipeline-1", UserNamespace, baseComponentName, "")
 			Eventually(func() bool {
 				pr := getPipelineRun("test-pipeline-1", UserNamespace)
 				return controllerutil.ContainsFinalizer(pr, NudgeFinalizer)
