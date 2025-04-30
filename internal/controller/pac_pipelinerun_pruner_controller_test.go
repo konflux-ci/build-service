@@ -29,16 +29,19 @@ var _ = Describe("Component PipelineRuns pruner controller", func() {
 
 	var (
 		// All related to the component resources have the same key (but different type)
-		resourcePrunerKey = types.NamespacedName{Name: HASCompName + "-pruner", Namespace: HASAppNamespace}
+		namespace         = "pipelines-pruner"
+		resourcePrunerKey = types.NamespacedName{Name: HASCompName + "-pruner", Namespace: namespace}
 	)
 
 	Context("Test Component PipelineRuns pruning ", func() {
 
 		_ = BeforeEach(func() {
+			createNamespace(namespace)
 			createCustomComponentWithBuildRequest(componentConfig{
 				componentKey: resourcePrunerKey,
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
+			ResetTestGitProviderClient()
 		})
 
 		It("should not fail if nothing to prune", func() {
@@ -72,7 +75,7 @@ var _ = Describe("Component PipelineRuns pruner controller", func() {
 			createPaCPipelineRunWithName(resourcePrunerKey, "component-on-push-vk1t5")
 			Expect(len(listComponentPipelineRuns(resourcePrunerKey))).To(Equal(2))
 
-			anotherComponentKey := types.NamespacedName{Namespace: HASAppNamespace, Name: "component2"}
+			anotherComponentKey := types.NamespacedName{Namespace: namespace, Name: "component2"}
 			createCustomComponentWithBuildRequest(componentConfig{
 				componentKey: anotherComponentKey,
 				annotations:  defaultPipelineAnnotations,

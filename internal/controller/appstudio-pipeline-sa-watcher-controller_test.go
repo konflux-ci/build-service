@@ -48,6 +48,7 @@ var _ = Describe("appstudio-pipeline Service Account watcher controller", func()
 
 		It("prepare resources", func() {
 			createNamespace(namespace)
+			ResetTestGitProviderClient()
 
 			component1 := getComponentData(componentConfig{componentKey: component1Key})
 			component1.Spec.ContainerImage = ""

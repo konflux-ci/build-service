@@ -713,6 +713,23 @@ func waitServiceAccountInRoleBinding(roleBindingKey types.NamespacedName, servic
 	return roleBinding
 }
 
+func waitServiceAccountNotInRoleBinding(roleBindingKey types.NamespacedName, serviceAccountName string) rbacv1.RoleBinding {
+	roleBinding := rbacv1.RoleBinding{}
+	Eventually(func() bool {
+		if err := k8sClient.Get(ctx, roleBindingKey, &roleBinding); err != nil {
+			return false
+		}
+		for _, subject := range roleBinding.Subjects {
+			if subject.Kind == "ServiceAccount" && subject.Name == serviceAccountName {
+				return false
+			}
+		}
+		return true
+	}, timeout, interval).Should(BeTrue())
+
+	return roleBinding
+}
+
 func deleteRoleBinding(roleBindingKey types.NamespacedName) {
 	roleBinding := rbacv1.RoleBinding{}
 	if err := k8sClient.Get(ctx, roleBindingKey, &roleBinding); err != nil {
