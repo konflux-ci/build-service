@@ -48,6 +48,8 @@ const (
 
 	commonBuildSecretLabelName = "build.appstudio.openshift.io/common-secret"
 
+	imageRepositoryComponentLabelName = "appstudio.redhat.com/component"
+
 	serviceAccountMigrationAnnotationName = "build.appstudio.openshift.io/sa-migration"
 )
 
@@ -94,6 +96,11 @@ func (r *ComponentBuildReconciler) EnsureBuildPipelineServiceAccount(ctx context
 		}
 	}
 
+	if err := r.ensureNudgingPullSecrets(ctx, component); err != nil {
+		log.Error(err, "failed to ensure nudge secrets linked")
+		return err
+	}
+
 	if err := r.ensureBuildPipelineServiceAccountBinding(ctx, component); err != nil {
 		log.Error(err, "failed to ensure role binding for build pipleine Service Account")
 		return err
@@ -124,6 +131,78 @@ func (r *ComponentBuildReconciler) linkCommonSecretsToBuildPipelineServiceAccoun
 	// Add found secrets to the Service Account Secrets section
 	for _, commonSecret := range commonSecretsList.Items {
 		serviceAccount.Secrets = append(serviceAccount.Secrets, corev1.ObjectReference{Name: commonSecret.Name})
+	}
+
+	return nil
+}
+
+// ensureNudgingPullSecrets makes sure that Component build pipeline Service Account
+// has pull secrets for image repositories of Components that nudge current Component linked.
+// Note, they must be linked into Secrets section (not imagePullSecrets).
+func (r *ComponentBuildReconciler) ensureNudgingPullSecrets(ctx context.Context, component *appstudiov1alpha1.Component) error {
+	buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(component)
+	log := ctrllog.FromContext(ctx).WithValues("ServiceAccountName", buildPipelineServiceAccountName)
+
+	buildPipelineServiceAccount := &corev1.ServiceAccount{}
+	if err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: component.Namespace}, buildPipelineServiceAccount); err != nil {
+		log.Error(err, "failed to get build pipeline Service Account", l.Action, l.ActionView)
+		return err
+	}
+
+	allComponentsInNamespaceList := &appstudiov1alpha1.ComponentList{}
+	if err := r.Client.List(ctx, allComponentsInNamespaceList, client.InNamespace(component.Namespace)); err != nil {
+		log.Error(err, "failed to list all Components in namespace", l.Action, l.ActionView)
+		return err
+	}
+
+	// Find all Components that nudge current one.
+	nudgingComponents := []string{}
+	for _, c := range allComponentsInNamespaceList.Items {
+		for _, componentNameToNudge := range c.Spec.BuildNudgesRef {
+			if componentNameToNudge == component.Name {
+				nudgingComponents = append(nudgingComponents, c.Name)
+				break
+			}
+		}
+	}
+
+	if len(nudgingComponents) == 0 {
+		// No components that nudge current one, nothing to link.
+		return nil
+	}
+
+	isServiceAccountUpdated := false
+	for _, componentName := range nudgingComponents {
+		imageRepositoryList := &imgcv1alpha1.ImageRepositoryList{}
+		componentImageRepositoryRequirement, err := labels.NewRequirement(imageRepositoryComponentLabelName, selection.Equals, []string{componentName})
+		if err != nil {
+			return err
+		}
+		componentImageRepositorySelector := labels.NewSelector().Add(*componentImageRepositoryRequirement)
+		componentImageRepositoryListOptions := client.ListOptions{
+			LabelSelector: componentImageRepositorySelector,
+			Namespace:     component.Namespace,
+		}
+		if err := r.Client.List(ctx, imageRepositoryList, &componentImageRepositoryListOptions); err != nil {
+			log.Error(err, "failed to list Component Image Repository")
+			return err
+		}
+		if len(imageRepositoryList.Items) > 0 {
+			// Each Component can have only one Image Repository
+			pullSecretName := imageRepositoryList.Items[0].Status.Credentials.PullSecretName
+			if !isSaSecretLinked(buildPipelineServiceAccount, pullSecretName, false) {
+				buildPipelineServiceAccount.Secrets = append(buildPipelineServiceAccount.Secrets,
+					corev1.ObjectReference{Name: pullSecretName, Namespace: buildPipelineServiceAccount.Namespace})
+				isServiceAccountUpdated = true
+			}
+		}
+	}
+	if isServiceAccountUpdated {
+		if err := r.Client.Update(ctx, buildPipelineServiceAccount); err != nil {
+			log.Error(err, "failed to update build pipeline Service Account", l.Action, l.ActionUpdate)
+			return err
+		}
+		log.Info("Updated Service Account pull secrets")
 	}
 
 	return nil
