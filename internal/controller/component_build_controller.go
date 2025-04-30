@@ -235,6 +235,11 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return ctrl.Result{}, nil
 		}
 
+		if err := r.clenaUpNudgingPullSecrets(ctx, &component); err != nil {
+			log.Error(err, "failed to clean up linked nudging pull secrets")
+			return ctrl.Result{}, err
+		}
+
 		if controllerutil.ContainsFinalizer(&component, PaCProvisionFinalizer) {
 			// In order to not to block the deletion of the Component,
 			// delete finalizer unconditionally and then try to do clean up ignoring errors.

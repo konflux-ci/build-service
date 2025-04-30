@@ -56,7 +56,10 @@ const (
 // getBuildPipelineServiceAccountName returns name of dedicated Service Account
 // that should be used for build pipelines of the given Component.
 func getBuildPipelineServiceAccountName(component *appstudiov1alpha1.Component) string {
-	return "build-pipeline-" + component.GetName()
+	return getBuildPipelineServiceAccountNameByComponentName(component.GetName())
+}
+func getBuildPipelineServiceAccountNameByComponentName(componentName string) string {
+	return "build-pipeline-" + componentName
 }
 
 // EnsureBuildPipelineServiceAccount checks if dedicated Service Account for Component build pipelines and
@@ -143,18 +146,13 @@ func (r *ComponentBuildReconciler) ensureNudgingPullSecrets(ctx context.Context,
 	buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(component)
 	log := ctrllog.FromContext(ctx).WithValues("ServiceAccountName", buildPipelineServiceAccountName)
 
-	buildPipelineServiceAccount := &corev1.ServiceAccount{}
-	if err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: component.Namespace}, buildPipelineServiceAccount); err != nil {
-		log.Error(err, "failed to get build pipeline Service Account", l.Action, l.ActionView)
-		return err
-	}
-
 	allComponentsInNamespaceList := &appstudiov1alpha1.ComponentList{}
 	if err := r.Client.List(ctx, allComponentsInNamespaceList, client.InNamespace(component.Namespace)); err != nil {
 		log.Error(err, "failed to list all Components in namespace", l.Action, l.ActionView)
 		return err
 	}
 
+	// TODO use Component.Status.BuildNudgedBy when KONFLUX-6841 is resolved and the data in status will be reliable.
 	// Find all Components that nudge current one.
 	nudgingComponents := []string{}
 	for _, c := range allComponentsInNamespaceList.Items {
@@ -171,30 +169,28 @@ func (r *ComponentBuildReconciler) ensureNudgingPullSecrets(ctx context.Context,
 		return nil
 	}
 
+	buildPipelineServiceAccount := &corev1.ServiceAccount{}
+	if err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: component.Namespace}, buildPipelineServiceAccount); err != nil {
+		log.Error(err, "failed to get build pipeline Service Account", l.Action, l.ActionView)
+		return err
+	}
+
 	isServiceAccountUpdated := false
 	for _, componentName := range nudgingComponents {
-		imageRepositoryList := &imgcv1alpha1.ImageRepositoryList{}
-		componentImageRepositoryRequirement, err := labels.NewRequirement(imageRepositoryComponentLabelName, selection.Equals, []string{componentName})
+		imageRepository, err := r.getComponentImageRepository(ctx, componentName, component.Namespace)
 		if err != nil {
+			log.Error(err, "failed to get Image Repository for Component", "Component", componentName, l.Action, l.ActionView)
 			return err
 		}
-		componentImageRepositorySelector := labels.NewSelector().Add(*componentImageRepositoryRequirement)
-		componentImageRepositoryListOptions := client.ListOptions{
-			LabelSelector: componentImageRepositorySelector,
-			Namespace:     component.Namespace,
+		if imageRepository == nil {
+			// The Component doesn't have related Image Repository object.
+			continue
 		}
-		if err := r.Client.List(ctx, imageRepositoryList, &componentImageRepositoryListOptions); err != nil {
-			log.Error(err, "failed to list Component Image Repository")
-			return err
-		}
-		if len(imageRepositoryList.Items) > 0 {
-			// Each Component can have only one Image Repository
-			pullSecretName := imageRepositoryList.Items[0].Status.Credentials.PullSecretName
-			if !isSaSecretLinked(buildPipelineServiceAccount, pullSecretName, false) {
-				buildPipelineServiceAccount.Secrets = append(buildPipelineServiceAccount.Secrets,
-					corev1.ObjectReference{Name: pullSecretName, Namespace: buildPipelineServiceAccount.Namespace})
-				isServiceAccountUpdated = true
-			}
+		pullSecretName := imageRepository.Status.Credentials.PullSecretName
+		if !isSaSecretLinked(buildPipelineServiceAccount, pullSecretName, false) {
+			buildPipelineServiceAccount.Secrets = append(buildPipelineServiceAccount.Secrets,
+				corev1.ObjectReference{Name: pullSecretName, Namespace: buildPipelineServiceAccount.Namespace})
+			isServiceAccountUpdated = true
 		}
 	}
 	if isServiceAccountUpdated {
@@ -206,6 +202,80 @@ func (r *ComponentBuildReconciler) ensureNudgingPullSecrets(ctx context.Context,
 	}
 
 	return nil
+}
+
+// clenaUpNudgingPullSecrets removes the current Component pull secret from the linked secrets list
+// of the nudged Components build pipeline Service Account.
+func (r *ComponentBuildReconciler) clenaUpNudgingPullSecrets(ctx context.Context, component *appstudiov1alpha1.Component) error {
+	if len(component.Spec.BuildNudgesRef) == 0 {
+		// No nudge relations, nothing to do.
+		return nil
+	}
+
+	log := ctrllog.FromContext(ctx).WithName("cleanupNudgingPullSecrets")
+
+	imageRepository, err := r.getComponentImageRepository(ctx, component.Name, component.Namespace)
+	if err != nil {
+		log.Error(err, "failed to get Image Repository", l.Action, l.ActionView)
+		return err
+	}
+	if imageRepository == nil {
+		// The Component doesn't have related Image Repository object.
+		return nil
+	}
+	pullSecretName := imageRepository.Status.Credentials.PullSecretName
+
+	for _, nudgedComponentName := range component.Spec.BuildNudgesRef {
+		nudgedComponentBuildPipelineServiceAccountName := getBuildPipelineServiceAccountNameByComponentName(nudgedComponentName)
+		nudgedComponentBuildPipelineServiceAccount := &corev1.ServiceAccount{}
+		if err := r.Client.Get(ctx, types.NamespacedName{Name: nudgedComponentBuildPipelineServiceAccountName, Namespace: component.Namespace}, nudgedComponentBuildPipelineServiceAccount); err != nil {
+			log.Error(err, "failed to get build pipeline Service Account for Component", "Component", nudgedComponentName, l.Action, l.ActionView)
+			return err
+		}
+
+		pullSecretIndex := getSecretReferenceIndex(nudgedComponentBuildPipelineServiceAccount, pullSecretName, false)
+		if pullSecretIndex == -1 {
+			// The secret is not linked to the nudged Component build pipeline Service Account.
+			continue
+		}
+
+		oldSecrets := nudgedComponentBuildPipelineServiceAccount.Secrets
+		newSecrets := append(oldSecrets[:pullSecretIndex], oldSecrets[pullSecretIndex+1:]...)
+		nudgedComponentBuildPipelineServiceAccount.Secrets = newSecrets
+
+		if err := r.Client.Update(ctx, nudgedComponentBuildPipelineServiceAccount); err != nil {
+			log.Error(err, "failed to remove pull secret link from build pipeline Service Account for Component", "Component", nudgedComponentName, l.Action, l.ActionUpdate)
+			return err
+		}
+	}
+
+	return nil
+}
+
+// getComponentImageRepository retreives related to the given Component Image Repository.
+// Returns nil if the Component doesn't have related Image Repository.
+func (r *ComponentBuildReconciler) getComponentImageRepository(ctx context.Context, componentName, namespace string) (*imgcv1alpha1.ImageRepository, error) {
+	log := ctrllog.FromContext(ctx)
+
+	imageRepositoryList := &imgcv1alpha1.ImageRepositoryList{}
+	componentImageRepositoryRequirement, err := labels.NewRequirement(imageRepositoryComponentLabelName, selection.Equals, []string{componentName})
+	if err != nil {
+		return nil, err
+	}
+	componentImageRepositorySelector := labels.NewSelector().Add(*componentImageRepositoryRequirement)
+	componentImageRepositoryListOptions := client.ListOptions{
+		LabelSelector: componentImageRepositorySelector,
+		Namespace:     namespace,
+	}
+	if err := r.Client.List(ctx, imageRepositoryList, &componentImageRepositoryListOptions); err != nil {
+		log.Error(err, "failed to list Component Image Repository")
+		return nil, err
+	}
+	if len(imageRepositoryList.Items) > 0 {
+		// Each Component can have only one Image Repository
+		return &imageRepositoryList.Items[0], nil
+	}
+	return nil, nil
 }
 
 // ensureBuildPipelineServiceAccountBinding makes sure that a common for all build pipelines Service Accounts
@@ -369,6 +439,29 @@ func removeInvalidServiceAccountSubjects(roleBinding *rbacv1.RoleBinding, existi
 	return roleBinding
 }
 
+// getSecretReferenceIndex returns index of secret reference in the given Service Account.
+// Returns -1 if the secret is not linked.
+func getSecretReferenceIndex(serviceAccount *corev1.ServiceAccount, secretName string, isPull bool) int {
+	if isPull {
+		for i, pullSecretObject := range serviceAccount.ImagePullSecrets {
+			if pullSecretObject.Name == secretName {
+				return i
+			}
+		}
+	} else {
+		for i, secretObject := range serviceAccount.Secrets {
+			if secretObject.Name == secretName {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+func isSaSecretLinked(serviceAccount *corev1.ServiceAccount, secretName string, isPull bool) bool {
+	return getSecretReferenceIndex(serviceAccount, secretName, isPull) != -1
+}
+
 //
 // Migration from appstudio-pipeline Service Account to dedicated to build Service Account
 //
@@ -512,23 +605,6 @@ func isComponentImageRepositorySecret(secretName string, imageRepositories []img
 				}
 			}
 			return false
-		}
-	}
-	return false
-}
-
-func isSaSecretLinked(serviceAccount *corev1.ServiceAccount, secretName string, isPull bool) bool {
-	if isPull {
-		for _, pullSecretObject := range serviceAccount.ImagePullSecrets {
-			if pullSecretObject.Name == secretName {
-				return true
-			}
-		}
-	} else {
-		for _, secretObject := range serviceAccount.Secrets {
-			if secretObject.Name == secretName {
-				return true
-			}
 		}
 	}
 	return false
