@@ -28,12 +28,14 @@ import (
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 
 	appstudiov1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
+	imgcv1alpha1 "github.com/konflux-ci/image-controller/api/v1alpha1"
 
 	. "github.com/konflux-ci/build-service/pkg/common"
 	"sigs.k8s.io/yaml"
@@ -357,6 +359,76 @@ func waitNoPipelineRunsForComponent(componentLookupKey types.NamespacedName) {
 	}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 }
 
+func createImageRepositoryForComponent(componentKey types.NamespacedName) *imgcv1alpha1.ImageRepository {
+	component := getComponent(componentKey)
+
+	imageRepository := &imgcv1alpha1.ImageRepository{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      componentKey.Name,
+			Namespace: componentKey.Namespace,
+			Labels: map[string]string{
+				"appstudio.redhat.com/application": component.Spec.Application,
+				"appstudio.redhat.com/component":   component.Name,
+			},
+		},
+		Spec: imgcv1alpha1.ImageRepositorySpec{
+			Image: imgcv1alpha1.ImageParameters{
+				Name:       component.Namespace + "/" + component.Name,
+				Visibility: imgcv1alpha1.ImageVisibility(imgcv1alpha1.ImageVisibilityPublic),
+			},
+		},
+	}
+	Expect(controllerutil.SetOwnerReference(component, imageRepository, scheme.Scheme)).To(Succeed())
+	Expect(k8sClient.Create(ctx, imageRepository)).To(Succeed())
+	Eventually(func() bool {
+		if err := k8sClient.Get(ctx, componentKey, imageRepository); err != nil {
+			return false
+		}
+		return imageRepository.ResourceVersion != ""
+	}, timeout, interval).Should(BeTrue())
+
+	Expect(k8sClient.Get(ctx, componentKey, imageRepository)).To(Succeed())
+	imageRepository.Status = imgcv1alpha1.ImageRepositoryStatus{
+		State: imgcv1alpha1.ImageRepositoryStateReady,
+		Image: imgcv1alpha1.ImageStatus{
+			URL:        "registry.io/test-org/" + imageRepository.Spec.Image.Name,
+			Visibility: imageRepository.Spec.Image.Visibility,
+		},
+		Credentials: imgcv1alpha1.CredentialsStatus{
+			PushSecretName: componentKey.Name + "-image-push",
+			PullSecretName: componentKey.Name + "-image-pull",
+		},
+	}
+	Expect(k8sClient.Status().Update(ctx, imageRepository))
+	Eventually(func() bool {
+		if err := k8sClient.Get(ctx, componentKey, imageRepository); err != nil {
+			return false
+		}
+		return imageRepository.Status.Image.URL != ""
+	}, timeout, interval).Should(BeTrue())
+
+	return imageRepository
+}
+
+func deleteImageRepository(resourceKey types.NamespacedName) {
+	imageRepository := &imgcv1alpha1.ImageRepository{}
+	if err := k8sClient.Get(ctx, resourceKey, imageRepository); err != nil {
+		if k8sErrors.IsNotFound(err) {
+			return
+		}
+		Fail(err.Error())
+	}
+	if err := k8sClient.Delete(ctx, imageRepository); err != nil {
+		if !k8sErrors.IsNotFound(err) {
+			Fail(err.Error())
+		}
+		return
+	}
+	Eventually(func() bool {
+		return k8sErrors.IsNotFound(k8sClient.Get(ctx, resourceKey, imageRepository))
+	}, timeout, interval).Should(BeTrue())
+}
+
 func createSecret(resourceKey types.NamespacedName, data map[string]string) {
 	secret := &corev1.Secret{
 		TypeMeta: metav1.TypeMeta{
@@ -647,6 +719,54 @@ func waitServiceAccount(serviceAccountKey types.NamespacedName) corev1.ServiceAc
 	}, timeout, interval).Should(BeTrue())
 
 	return serviceAccount
+}
+
+func waitServiceAccountLinkedSecret(serviceAccountKey types.NamespacedName, secretName string, isPullSecret bool) corev1.ServiceAccount {
+	serviceAccount := corev1.ServiceAccount{}
+	Eventually(func() bool {
+		if err := k8sClient.Get(ctx, serviceAccountKey, &serviceAccount); err != nil {
+			return false
+		}
+		if isPullSecret {
+			for _, pullSecretReference := range serviceAccount.ImagePullSecrets {
+				if pullSecretReference.Name == secretName {
+					return true
+				}
+			}
+		} else {
+			for _, secretReference := range serviceAccount.Secrets {
+				if secretReference.Name == secretName {
+					return true
+				}
+			}
+		}
+		return false
+	}, timeout, interval).Should(BeTrue())
+
+	return serviceAccount
+}
+
+func waitServiceAccountLinkedSecretGone(serviceAccountKey types.NamespacedName, secretName string, isPullSecret bool) {
+	serviceAccount := corev1.ServiceAccount{}
+	Eventually(func() bool {
+		if err := k8sClient.Get(ctx, serviceAccountKey, &serviceAccount); err != nil {
+			return false
+		}
+		if isPullSecret {
+			for _, pullSecretReference := range serviceAccount.ImagePullSecrets {
+				if pullSecretReference.Name == secretName {
+					return false
+				}
+			}
+		} else {
+			for _, secretReference := range serviceAccount.Secrets {
+				if secretReference.Name == secretName {
+					return false
+				}
+			}
+		}
+		return true
+	}, timeout, interval).Should(BeTrue())
 }
 
 func deleteServiceAccount(serviceAccountKey types.NamespacedName) {
