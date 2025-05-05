@@ -403,6 +403,7 @@ var _ = Describe("Component build controller", func() {
 			nudgedComponentSAKey := getComponentServiceAccountKey(nudgedComponentKey)
 
 			createComponent(nudgedComponentKey)
+			defer deleteComponent(nudgedComponentKey)
 			nudgedComponentImageRepo := createImageRepositoryForComponent(nudgedComponentKey)
 			defer deleteImageRepository(nudgedComponentKey)
 

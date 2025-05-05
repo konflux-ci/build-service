@@ -721,51 +721,36 @@ func waitServiceAccount(serviceAccountKey types.NamespacedName) corev1.ServiceAc
 	return serviceAccount
 }
 
-func waitServiceAccountLinkedSecret(serviceAccountKey types.NamespacedName, secretName string, isPullSecret bool) corev1.ServiceAccount {
+func isServiceAccountHasSecretLinked(serviceAccountKey types.NamespacedName, secretName string, isPullSecret bool) bool {
 	serviceAccount := corev1.ServiceAccount{}
-	Eventually(func() bool {
-		if err := k8sClient.Get(ctx, serviceAccountKey, &serviceAccount); err != nil {
-			return false
-		}
-		if isPullSecret {
-			for _, pullSecretReference := range serviceAccount.ImagePullSecrets {
-				if pullSecretReference.Name == secretName {
-					return true
-				}
-			}
-		} else {
-			for _, secretReference := range serviceAccount.Secrets {
-				if secretReference.Name == secretName {
-					return true
-				}
-			}
-		}
+	if err := k8sClient.Get(ctx, serviceAccountKey, &serviceAccount); err != nil {
 		return false
-	}, timeout, interval).Should(BeTrue())
+	}
+	if isPullSecret {
+		for _, pullSecretReference := range serviceAccount.ImagePullSecrets {
+			if pullSecretReference.Name == secretName {
+				return true
+			}
+		}
+	} else {
+		for _, secretReference := range serviceAccount.Secrets {
+			if secretReference.Name == secretName {
+				return true
+			}
+		}
+	}
+	return false
+}
 
-	return serviceAccount
+func waitServiceAccountLinkedSecret(serviceAccountKey types.NamespacedName, secretName string, isPullSecret bool) {
+	Eventually(func() bool {
+		return isServiceAccountHasSecretLinked(serviceAccountKey, secretName, isPullSecret)
+	}, timeout, interval).Should(BeTrue())
 }
 
 func waitServiceAccountLinkedSecretGone(serviceAccountKey types.NamespacedName, secretName string, isPullSecret bool) {
-	serviceAccount := corev1.ServiceAccount{}
 	Eventually(func() bool {
-		if err := k8sClient.Get(ctx, serviceAccountKey, &serviceAccount); err != nil {
-			return false
-		}
-		if isPullSecret {
-			for _, pullSecretReference := range serviceAccount.ImagePullSecrets {
-				if pullSecretReference.Name == secretName {
-					return false
-				}
-			}
-		} else {
-			for _, secretReference := range serviceAccount.Secrets {
-				if secretReference.Name == secretName {
-					return false
-				}
-			}
-		}
-		return true
+		return !isServiceAccountHasSecretLinked(serviceAccountKey, secretName, isPullSecret)
 	}, timeout, interval).Should(BeTrue())
 }
 

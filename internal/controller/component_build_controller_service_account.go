@@ -204,15 +204,15 @@ func (r *ComponentBuildReconciler) ensureNudgingPullSecrets(ctx context.Context,
 	return nil
 }
 
-// clenaUpNudgingPullSecrets removes the current Component pull secret from the linked secrets list
+// cleanUpNudgingPullSecrets removes the current Component pull secret from the linked secrets list
 // of the nudged Components build pipeline Service Account.
-func (r *ComponentBuildReconciler) clenaUpNudgingPullSecrets(ctx context.Context, component *appstudiov1alpha1.Component) error {
+func (r *ComponentBuildReconciler) cleanUpNudgingPullSecrets(ctx context.Context, component *appstudiov1alpha1.Component) error {
 	if len(component.Spec.BuildNudgesRef) == 0 {
 		// No nudge relations, nothing to do.
 		return nil
 	}
 
-	log := ctrllog.FromContext(ctx).WithName("cleanupNudgingPullSecrets")
+	log := ctrllog.FromContext(ctx).WithName("cleanUpNudgingPullSecrets")
 
 	imageRepository, err := r.getComponentImageRepository(ctx, component.Name, component.Namespace)
 	if err != nil {
