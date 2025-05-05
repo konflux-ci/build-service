@@ -45,6 +45,8 @@ const (
 	UserNamespace = "user1-tenant"
 	ImageUrl      = "IMAGE_URL"
 	ImageDigest   = "IMAGE_DIGEST"
+
+	buildStatusPaCProvisionedValue = `{"pac":{"state":"enabled","merge-url":"https://githost.com/org/repo/pull/123","configuration-time":"Wed, 06 Nov 2024 08:41:44 UTC"},"message":"done"}`
 )
 
 var failures = 0
@@ -77,6 +79,8 @@ var _ = Describe("Component nudge controller", func() {
 
 		caConfigMapKey := types.NamespacedName{Name: "trusted-ca", Namespace: BuildServiceNamespaceName}
 		createCAConfigMap(caConfigMapKey)
+
+		createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
 
 		github.GetAppInstallationsForRepository = func(githubAppIdStr string, appPrivateKeyPem []byte, repoUrl string) (*github.ApplicationInstallation, string, error) {
 			repo_name := "repo_name"
@@ -123,10 +127,27 @@ var _ = Describe("Component nudge controller", func() {
 			createCustomComponentWithoutBuildRequest(componentConfig{
 				componentKey:   baseComponentKey,
 				containerImage: "quay.io/organization/repo:tag",
-				annotations:    defaultPipelineAnnotations,
+				annotations: map[string]string{
+					defaultBuildPipelineAnnotation: defaultPipelineAnnotationValue,
+					BuildStatusAnnotationName:      buildStatusPaCProvisionedValue, // simulate PaC provision was done, so when we update BuildNudgesRef there won't be any new object
+				},
 			})
-			createComponent(operator1Key)
-			createComponent(operator2Key)
+			createCustomComponentWithoutBuildRequest(componentConfig{
+				componentKey:   operator1Key,
+				containerImage: "quay.io/organization/repo1:tag",
+				annotations: map[string]string{
+					defaultBuildPipelineAnnotation: defaultPipelineAnnotationValue,
+					BuildStatusAnnotationName:      buildStatusPaCProvisionedValue, // simulate PaC provision was done
+				},
+			})
+			createCustomComponentWithoutBuildRequest(componentConfig{
+				componentKey:   operator2Key,
+				containerImage: "quay.io/organization/repo2:tag",
+				annotations: map[string]string{
+					defaultBuildPipelineAnnotation: defaultPipelineAnnotationValue,
+					BuildStatusAnnotationName:      buildStatusPaCProvisionedValue, // simulate PaC provision was done
+				},
+			})
 			baseComponent := applicationapi.Component{}
 			err := k8sClient.Get(context.TODO(), baseComponentKey, &baseComponent)
 			Expect(err).ToNot(HaveOccurred())
@@ -212,10 +233,27 @@ var _ = Describe("Component nudge controller", func() {
 			createCustomComponentWithoutBuildRequest(componentConfig{
 				componentKey:   baseComponentKey,
 				containerImage: "quay.io/organization/repo:tag",
-				annotations:    defaultPipelineAnnotations,
+				annotations: map[string]string{
+					defaultBuildPipelineAnnotation: defaultPipelineAnnotationValue,
+					BuildStatusAnnotationName:      buildStatusPaCProvisionedValue, // simulate PaC provision was done, so when we update BuildNudgesRef there won't be any new object
+				},
 			})
-			createComponent(operator1Key)
-			createComponent(operator2Key)
+			createCustomComponentWithoutBuildRequest(componentConfig{
+				componentKey:   operator1Key,
+				containerImage: "quay.io/organization/repo1:tag",
+				annotations: map[string]string{
+					defaultBuildPipelineAnnotation: defaultPipelineAnnotationValue,
+					BuildStatusAnnotationName:      buildStatusPaCProvisionedValue, // simulate PaC provision was done
+				},
+			})
+			createCustomComponentWithoutBuildRequest(componentConfig{
+				componentKey:   operator2Key,
+				containerImage: "quay.io/organization/repo2:tag",
+				annotations: map[string]string{
+					defaultBuildPipelineAnnotation: defaultPipelineAnnotationValue,
+					BuildStatusAnnotationName:      buildStatusPaCProvisionedValue, // simulate PaC provision was done
+				},
+			})
 			baseComponent := applicationapi.Component{}
 			err := k8sClient.Get(context.TODO(), baseComponentKey, &baseComponent)
 			Expect(err).ToNot(HaveOccurred())
@@ -710,10 +748,27 @@ var _ = Describe("Component nudge controller", func() {
 			createCustomComponentWithoutBuildRequest(componentConfig{
 				componentKey:   baseComponentKey,
 				containerImage: "quay.io/organization/repo:tag",
-				annotations:    defaultPipelineAnnotations,
+				annotations: map[string]string{
+					defaultBuildPipelineAnnotation: defaultPipelineAnnotationValue,
+					BuildStatusAnnotationName:      buildStatusPaCProvisionedValue, // simulate PaC provision was done, so when we update BuildNudgesRef there won't be any new object
+				},
 			})
-			createComponent(operator1Key)
-			createComponent(operator2Key)
+			createCustomComponentWithoutBuildRequest(componentConfig{
+				componentKey:   operator1Key,
+				containerImage: "quay.io/organization/repo1:tag",
+				annotations: map[string]string{
+					defaultBuildPipelineAnnotation: defaultPipelineAnnotationValue,
+					BuildStatusAnnotationName:      buildStatusPaCProvisionedValue, // simulate PaC provision was done
+				},
+			})
+			createCustomComponentWithoutBuildRequest(componentConfig{
+				componentKey:   operator2Key,
+				containerImage: "quay.io/organization/repo2:tag",
+				annotations: map[string]string{
+					defaultBuildPipelineAnnotation: defaultPipelineAnnotationValue,
+					BuildStatusAnnotationName:      buildStatusPaCProvisionedValue, // simulate PaC provision was done
+				},
+			})
 			baseComponent := applicationapi.Component{}
 			err := k8sClient.Get(context.TODO(), baseComponentKey, &baseComponent)
 			Expect(err).ToNot(HaveOccurred())

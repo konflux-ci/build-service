@@ -91,11 +91,8 @@ var _ = Describe("Component build controller", func() {
 
 	var (
 		// All related to the component resources have the same key (but different type)
-		pacRouteKey           = types.NamespacedName{Name: pipelinesAsCodeRouteName, Namespace: pipelinesAsCodeNamespace}
-		pacSecretKey          = types.NamespacedName{Name: PipelinesAsCodeGitHubAppSecretName, Namespace: BuildServiceNamespaceName}
-		namespacePaCSecretKey = types.NamespacedName{Name: PipelinesAsCodeGitHubAppSecretName, Namespace: HASAppNamespace}
-		webhookSecretKey      = types.NamespacedName{Name: pipelinesAsCodeWebhooksSecretName, Namespace: HASAppNamespace}
-		buildRoleBindingKey   = types.NamespacedName{Name: buildPipelineRoleBindingName, Namespace: HASAppNamespace}
+		pacRouteKey  = types.NamespacedName{Name: pipelinesAsCodeRouteName, Namespace: pipelinesAsCodeNamespace}
+		pacSecretKey = types.NamespacedName{Name: PipelinesAsCodeGitHubAppSecretName, Namespace: BuildServiceNamespaceName}
 	)
 
 	BeforeEach(func() {
@@ -115,6 +112,16 @@ var _ = Describe("Component build controller", func() {
 
 		_ = BeforeEach(func() {
 			createNamespace(namespace)
+			createNamespace(pipelinesAsCodeNamespace)
+			createRoute(pacRouteKey, "pac-host")
+			createNamespace(BuildServiceNamespaceName)
+			pacSecretData := map[string]string{
+				"github-application-id": "12345",
+				"github-private-key":    githubAppPrivateKey,
+			}
+			createSecret(pacSecretKey, pacSecretData)
+			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
+
 			ResetTestGitProviderClient()
 		})
 
@@ -189,7 +196,7 @@ var _ = Describe("Component build controller", func() {
 
 			deleteComponent(component1Key)
 
-			roleBinding = waitServiceAccountInRoleBinding(buildRoleBindingKey, component2SAKey.Name)
+			roleBinding = waitServiceAccountNotInRoleBinding(buildRoleBindingKey, component1SAKey.Name)
 			Expect(roleBinding.RoleRef.Kind).To(Equal("ClusterRole"))
 			Expect(roleBinding.RoleRef.Name).To(Equal(BuildPipelineClusterRoleName))
 			Expect(roleBinding.Subjects).To(HaveLen(1))
@@ -301,7 +308,9 @@ var _ = Describe("Component build controller", func() {
 			deleteServiceAccount(component2SAKey)
 
 			// Since Component 1 is still exist, the Role Binding should be kept
-			roleBinding = waitServiceAccountInRoleBinding(buildRoleBindingKey, component1SAKey.Name)
+			// we will wait for SA disappear from binding, because component might be removed sooner (as finalizer is removed before unprovision and removal from rolebinding)
+			// then removal from rolebinding happens
+			roleBinding = waitServiceAccountNotInRoleBinding(buildRoleBindingKey, component2SAKey.Name)
 			Expect(roleBinding.Subjects).To(HaveLen(1))
 		})
 
@@ -364,19 +373,6 @@ var _ = Describe("Component build controller", func() {
 			}
 			Expect(k8sClient.Create(ctx, &useNewSaConfigMap)).To(Succeed())
 
-			// Prepare resources needed for PaC provision
-			createNamespace(pipelinesAsCodeNamespace)
-			createRoute(pacRouteKey, "pac-host")
-			defer deleteRoute(pacRouteKey)
-			pacSecretData := map[string]string{
-				"github-application-id": "12345",
-				"github-private-key":    githubAppPrivateKey,
-			}
-			createSecret(pacSecretKey, pacSecretData)
-			defer deleteSecret(pacSecretKey)
-			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
-			defer deleteConfigMap(defaultPipelineConfigMapKey)
-
 			isCreatePaCPullRequestInvoked := false
 			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
 				defer GinkgoRecover()
@@ -404,9 +400,23 @@ var _ = Describe("Component build controller", func() {
 	})
 
 	Context("Test Pipelines as Code build preparation", func() {
-		var resourcePacPrepKey = types.NamespacedName{Name: HASCompName + "-pacprepannotation", Namespace: HASAppNamespace}
+		var (
+			namespace             = "pac-preparation"
+			resourcePacPrepKey    = types.NamespacedName{Name: HASCompName + "-pacprepannotation", Namespace: namespace}
+			namespacePaCSecretKey = types.NamespacedName{Name: PipelinesAsCodeGitHubAppSecretName, Namespace: namespace}
+			webhookSecretKey      = types.NamespacedName{Name: pipelinesAsCodeWebhooksSecretName, Namespace: namespace}
+			buildRoleBindingKey   = types.NamespacedName{Name: buildPipelineRoleBindingName, Namespace: namespace}
+		)
 
 		_ = BeforeEach(func() {
+			createNamespace(namespace)
+			contextNamespace := &corev1.Namespace{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: namespace}, contextNamespace)).Should(Succeed())
+			contextNamespace.SetLabels(map[string]string{
+				appstudioWorkspaceNameLabel: "build",
+			})
+			Expect(k8sClient.Update(ctx, contextNamespace)).Should(Succeed())
+
 			createNamespace(pipelinesAsCodeNamespace)
 			createRoute(pacRouteKey, "pac-host")
 			createNamespace(BuildServiceNamespaceName)
@@ -898,7 +908,7 @@ var _ = Describe("Component build controller", func() {
 			createSCMSecret(namespacePaCSecretKey, pacSecretData, corev1.SecretTypeBasicAuth, map[string]string{})
 
 			component1Key := resourcePacPrepKey
-			component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
+			component2Key := types.NamespacedName{Name: "component2", Namespace: namespace}
 			deleteAllPaCRepositories(component1Key.Namespace)
 
 			createCustomComponentWithBuildRequest(componentConfig{
@@ -941,7 +951,7 @@ var _ = Describe("Component build controller", func() {
 			createSCMSecret(namespacePaCSecretKey, pacSecretData, corev1.SecretTypeBasicAuth, map[string]string{})
 
 			component1Key := resourcePacPrepKey
-			component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
+			component2Key := types.NamespacedName{Name: "component2", Namespace: namespace}
 
 			createCustomComponentWithBuildRequest(componentConfig{
 				componentKey: component1Key,
@@ -995,7 +1005,7 @@ var _ = Describe("Component build controller", func() {
 				},
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        resourcePacPrepKey.Name,
-					Namespace:   HASAppNamespace,
+					Namespace:   namespace,
 					Annotations: defaultPipelineAnnotations,
 				},
 				Spec: appstudiov1alpha1.ComponentSpec{
@@ -1049,9 +1059,15 @@ var _ = Describe("Component build controller", func() {
 	})
 
 	Context("Test Pipelines as Code build clean up", func() {
-		var resourceCleanupKey = types.NamespacedName{Name: HASCompName + "-cleanup", Namespace: HASAppNamespace}
+		var (
+			namespace             = "build-cleanup"
+			resourceCleanupKey    = types.NamespacedName{Name: HASCompName + "-cleanup", Namespace: namespace}
+			namespacePaCSecretKey = types.NamespacedName{Name: PipelinesAsCodeGitHubAppSecretName, Namespace: namespace}
+			webhookSecretKey      = types.NamespacedName{Name: pipelinesAsCodeWebhooksSecretName, Namespace: namespace}
+		)
 
 		_ = BeforeEach(func() {
+			createNamespace(namespace)
 			createNamespace(pipelinesAsCodeNamespace)
 			createRoute(pacRouteKey, "pac-host")
 			createNamespace(BuildServiceNamespaceName)
@@ -1208,7 +1224,7 @@ var _ = Describe("Component build controller", func() {
 			expectPacBuildStatus(resourceCleanupKey, "enabled", 0, "", mergeUrl)
 
 			// provision 2nd component
-			component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
+			component2Key := types.NamespacedName{Name: "component2", Namespace: namespace}
 			createComponentAndProcessBuildRequest(componentConfig{
 				componentKey: component2Key,
 				annotations:  defaultPipelineAnnotations,
@@ -1334,7 +1350,7 @@ var _ = Describe("Component build controller", func() {
 			waitPaCFinalizerOnComponent(resourceCleanupKey)
 
 			// create second component which uses the same url
-			secondComponentKey := types.NamespacedName{Name: HASCompName + "-cleanup-second", Namespace: HASAppNamespace}
+			secondComponentKey := types.NamespacedName{Name: HASCompName + "-cleanup-second", Namespace: namespace}
 			createComponentAndProcessBuildRequest(componentConfig{
 				componentKey: secondComponentKey,
 				annotations:  defaultPipelineAnnotations,
@@ -1523,11 +1539,15 @@ var _ = Describe("Component build controller", func() {
 				"github-private-key":    githubAppPrivateKey,
 			}
 			createSecret(pacSecretKey, pacSecretData)
-			createComponentAndProcessBuildRequest(componentConfig{
+			createCustomComponentWithoutBuildRequest(componentConfig{
 				componentKey: resourceCleanupKey,
-				annotations:  defaultPipelineAnnotations,
-			}, BuildRequestConfigurePaCAnnotationValue)
-			waitPaCFinalizerOnComponent(resourceCleanupKey)
+				finalizers:   []string{PaCProvisionFinalizer}, // simulate PaC provision was done
+				annotations: map[string]string{
+					defaultBuildPipelineAnnotation: defaultPipelineAnnotationValue,
+					// simulate PaC provision was done, so it won't update component after provision, which would race with removal of SA, and it could be created again
+					BuildStatusAnnotationName: buildStatusPaCProvisionedValue,
+				},
+			})
 
 			componentBuildSAKey := getComponentServiceAccountKey(resourceCleanupKey)
 			waitServiceAccount(componentBuildSAKey)
@@ -1563,11 +1583,15 @@ var _ = Describe("Component build controller", func() {
 		const (
 			multiComponentGitRepositoryUrl = "https://github.com/samples/multi-component-repository"
 		)
-		var anotherComponentKey = types.NamespacedName{Name: HASCompName + "-multicomp", Namespace: HASAppNamespace}
+		var (
+			namespace           = "multi-component"
+			anotherComponentKey = types.NamespacedName{Name: HASCompName + "-multicomp", Namespace: namespace}
+		)
 
 		_ = BeforeEach(func() {
 			deleteAllPaCRepositories(anotherComponentKey.Namespace)
 
+			createNamespace(namespace)
 			createNamespace(pipelinesAsCodeNamespace)
 			createRoute(pacRouteKey, "pac-host")
 			createNamespace(BuildServiceNamespaceName)
@@ -1598,8 +1622,8 @@ var _ = Describe("Component build controller", func() {
 		})
 
 		It("should reuse existing PaC repository for multi component git repository", func() {
-			component1Key := types.NamespacedName{Name: "test-multi-component1", Namespace: HASAppNamespace}
-			component2Key := types.NamespacedName{Name: "test-multi-component2", Namespace: HASAppNamespace}
+			component1Key := types.NamespacedName{Name: "test-multi-component1", Namespace: namespace}
+			component2Key := types.NamespacedName{Name: "test-multi-component2", Namespace: namespace}
 
 			pacRepositoriesList := &pacv1alpha1.RepositoryList{}
 			pacRepository := &pacv1alpha1.Repository{}
@@ -1666,8 +1690,8 @@ var _ = Describe("Component build controller", func() {
 		It("when 2 components are created with the same url, Pac Repository will be reused, when 1st component is removed and created with new URL, new repository is created", func() {
 			deleteComponent(anotherComponentKey)
 			deletePaCRepository(anotherComponentKey)
-			component1Key := types.NamespacedName{Name: "test-multi-component1", Namespace: HASAppNamespace}
-			component2Key := types.NamespacedName{Name: "test-multi-component2", Namespace: HASAppNamespace}
+			component1Key := types.NamespacedName{Name: "test-multi-component1", Namespace: namespace}
+			component2Key := types.NamespacedName{Name: "test-multi-component2", Namespace: namespace}
 			pacRepositoriesList := &pacv1alpha1.RepositoryList{}
 			pacRepository := &pacv1alpha1.Repository{}
 
@@ -1765,9 +1789,15 @@ var _ = Describe("Component build controller", func() {
 	})
 
 	Context("Test Pipelines as Code trigger build", func() {
-		var resourcePacTriggerKey = types.NamespacedName{Name: HASCompName + "-pactrigger", Namespace: HASAppNamespace}
+		var (
+			namespace             = "trigger-build"
+			resourcePacTriggerKey = types.NamespacedName{Name: HASCompName + "-pactrigger", Namespace: namespace}
+			namespacePaCSecretKey = types.NamespacedName{Name: PipelinesAsCodeGitHubAppSecretName, Namespace: namespace}
+			webhookSecretKey      = types.NamespacedName{Name: pipelinesAsCodeWebhooksSecretName, Namespace: namespace}
+		)
 
 		_ = BeforeEach(func() {
+			createNamespace(namespace)
 			createNamespace(pipelinesAsCodeNamespace)
 			createRoute(pacRouteKey, "pac-host")
 			createNamespace(BuildServiceNamespaceName)
@@ -1874,7 +1904,7 @@ var _ = Describe("Component build controller", func() {
 			repository := waitPaCRepositoryCreated(resourcePacTriggerKey)
 
 			// provision 2nd component
-			component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
+			component2Key := types.NamespacedName{Name: "component2", Namespace: namespace}
 			createComponentAndProcessBuildRequest(componentConfig{
 				componentKey: component2Key,
 				annotations:  defaultPipelineAnnotations,
@@ -1968,7 +1998,7 @@ var _ = Describe("Component build controller", func() {
 			repository := waitPaCRepositoryCreated(resourcePacTriggerKey)
 
 			// provision 2nd component
-			component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
+			component2Key := types.NamespacedName{Name: "component2", Namespace: namespace}
 			createComponentAndProcessBuildRequest(componentConfig{
 				componentKey: component2Key,
 				annotations:  defaultPipelineAnnotations,
@@ -2075,7 +2105,7 @@ var _ = Describe("Component build controller", func() {
 			Expect(k8sClient.Update(ctx, repository)).Should(Succeed())
 
 			// provision 2nd component
-			component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
+			component2Key := types.NamespacedName{Name: "component2", Namespace: namespace}
 			createComponentAndProcessBuildRequest(componentConfig{
 				componentKey: component2Key,
 				annotations:  defaultPipelineAnnotations,
@@ -2160,7 +2190,7 @@ var _ = Describe("Component build controller", func() {
 			Expect(k8sClient.Update(ctx, repository)).Should(Succeed())
 
 			// provision 2nd component
-			component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
+			component2Key := types.NamespacedName{Name: "component2", Namespace: namespace}
 			createComponentAndProcessBuildRequest(componentConfig{
 				componentKey: component2Key,
 				annotations:  defaultPipelineAnnotations,
@@ -2239,7 +2269,7 @@ var _ = Describe("Component build controller", func() {
 			Expect(k8sClient.Update(ctx, repository)).Should(Succeed())
 
 			// provision 2nd component
-			component2Key := types.NamespacedName{Name: "component2", Namespace: HASAppNamespace}
+			component2Key := types.NamespacedName{Name: "component2", Namespace: namespace}
 			createComponentAndProcessBuildRequest(componentConfig{
 				componentKey: component2Key,
 				annotations:  defaultPipelineAnnotations,
@@ -2300,10 +2330,14 @@ var _ = Describe("Component build controller", func() {
 			buildStatusPaCProvisionedValue = `{"pac":{"state":"enabled","merge-url":"https://githost.com/org/repo/pull/123","configuration-time":"Wed, 06 Nov 2024 08:41:44 UTC"},"message":"done"}`
 		)
 		var (
-			resourceMigrationKey = types.NamespacedName{Name: HASCompName + "-sa-migration", Namespace: HASAppNamespace}
+			namespace             = "after-migration"
+			resourceMigrationKey  = types.NamespacedName{Name: HASCompName + "-sa-migration", Namespace: namespace}
+			namespacePaCSecretKey = types.NamespacedName{Name: PipelinesAsCodeGitHubAppSecretName, Namespace: namespace}
+			webhookSecretKey      = types.NamespacedName{Name: pipelinesAsCodeWebhooksSecretName, Namespace: namespace}
 		)
 
 		_ = BeforeEach(func() {
+			createNamespace(namespace)
 			createNamespace(pipelinesAsCodeNamespace)
 			createRoute(pacRouteKey, "pac-host")
 			createNamespace(BuildServiceNamespaceName)
