@@ -143,6 +143,7 @@ func updateMetricsTimes(componentIdForMetrics string, requestedAction string, re
 
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=components,verbs=get;list;watch;update;patch
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=components/status,verbs=get;list;watch
+//+kubebuilder:rbac:groups=appstudio.redhat.com,resources=imagerepositories,verbs=get;list;watch
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=releaseplanadmissions,verbs=get;list;watch
 //+kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns,verbs=create
 //+kubebuilder:rbac:groups=pipelinesascode.tekton.dev,resources=repositories,verbs=get;list;watch;create;update;patch;delete
@@ -232,6 +233,11 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 			// A new reconcile will be triggered because of the update above
 			return ctrl.Result{}, nil
+		}
+
+		if err := r.cleanUpNudgingPullSecrets(ctx, &component); err != nil {
+			log.Error(err, "failed to clean up linked nudging pull secrets")
+			return ctrl.Result{}, err
 		}
 
 		if controllerutil.ContainsFinalizer(&component, PaCProvisionFinalizer) {

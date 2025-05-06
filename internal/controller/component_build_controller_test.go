@@ -397,6 +397,83 @@ var _ = Describe("Component build controller", func() {
 				return isCreatePaCPullRequestInvoked
 			}, timeout, interval).Should(BeTrue())
 		})
+
+		It("should manage pull secrets for nudging", func() {
+			nudgedComponentKey := types.NamespacedName{Namespace: namespace, Name: "nudged-component"}
+			nudgedComponentSAKey := getComponentServiceAccountKey(nudgedComponentKey)
+
+			createComponent(nudgedComponentKey)
+			defer deleteComponent(nudgedComponentKey)
+			nudgedComponentImageRepo := createImageRepositoryForComponent(nudgedComponentKey)
+			defer deleteImageRepository(nudgedComponentKey)
+
+			// Simulate Image Controller and add push secret of nudged Component to its Service Account
+			nudgedComponentSA := waitServiceAccount(nudgedComponentSAKey)
+			nudgedComponentSA.Secrets = append(nudgedComponentSA.Secrets, corev1.ObjectReference{Name: nudgedComponentImageRepo.Status.Credentials.PushSecretName})
+			Expect(k8sClient.Update(ctx, &nudgedComponentSA)).To(Succeed())
+
+			component1SAKey := getComponentServiceAccountKey(component1Key)
+			createCustomComponentWithoutBuildRequest(componentConfig{
+				componentKey: component1Key,
+				finalizers:   []string{PaCProvisionFinalizer}, // Simulate PaC provision done
+			})
+			component1ImageRepo := createImageRepositoryForComponent(component1Key)
+			defer deleteImageRepository(component1Key)
+
+			// Create a component with nudge reference
+			component2SAKey := getComponentServiceAccountKey(component2Key)
+			component2 := getSampleComponentData(component2Key)
+			component2.Finalizers = append(component2.Finalizers, PaCProvisionFinalizer) // Simulate PaC provision done
+			component2.Spec.BuildNudgesRef = []string{
+				nudgedComponentKey.Name,
+			}
+			createComponentCustom(component2)
+			component2ImageRepo := createImageRepositoryForComponent(component2Key)
+			defer deleteImageRepository(component2Key)
+			// Check that the pull secret of nudging Component was linked to the nudged Component build pipeline Service Account
+			waitServiceAccountLinkedSecret(nudgedComponentSAKey, component2ImageRepo.Status.Credentials.PullSecretName, false)
+			// Check that a pull secret was not linked from a not nudging Component
+			waitServiceAccountLinkedSecretGone(nudgedComponentSAKey, component1ImageRepo.Status.Credentials.PullSecretName, false)
+			// Also ensure, that the secret wasn't linked to a wrong Service Account
+			waitServiceAccountLinkedSecretGone(component1SAKey, component2ImageRepo.Status.Credentials.PullSecretName, false)
+			waitServiceAccountLinkedSecretGone(component2SAKey, component2ImageRepo.Status.Credentials.PullSecretName, false)
+
+			// Add a nudge from Component 1 after its creation
+			component1 := getComponent(component1Key)
+			component1.Spec.BuildNudgesRef = []string{
+				nudgedComponentKey.Name,
+			}
+			Expect(k8sClient.Update(ctx, component1)).To(Succeed())
+
+			// Trigger a reconcile for nudged Component.
+			// In real environment it should be done by update of BuildNudgedBy field in the nudged Component status
+			nudgedComponent := getComponent(nudgedComponentKey)
+			nudgedComponent.Annotations["build-nudged-by"] = "component1"
+			Expect(k8sClient.Update(ctx, nudgedComponent)).To(Succeed())
+
+			// Check that the pull secret of newly added nudging Component was linked to the nudged Component build pipeline Service Account
+			waitServiceAccountLinkedSecret(nudgedComponentSAKey, component1ImageRepo.Status.Credentials.PullSecretName, false)
+			// Check that the pull secret of earlier added nudging Component is kept linked to the nudged Component build pipeline Service Account
+			waitServiceAccountLinkedSecret(nudgedComponentSAKey, component2ImageRepo.Status.Credentials.PullSecretName, false)
+
+			// Also ensure, that the secrets waren't linked to a wrong Service Account
+			waitServiceAccountLinkedSecretGone(component1SAKey, component1ImageRepo.Status.Credentials.PullSecretName, false)
+			waitServiceAccountLinkedSecretGone(component1SAKey, component2ImageRepo.Status.Credentials.PullSecretName, false)
+			waitServiceAccountLinkedSecretGone(component2SAKey, component1ImageRepo.Status.Credentials.PullSecretName, false)
+			waitServiceAccountLinkedSecretGone(component2SAKey, component2ImageRepo.Status.Credentials.PullSecretName, false)
+
+			// Delete a nudging Component and check unlinking
+			deleteComponent(component2Key)
+			waitServiceAccountLinkedSecretGone(nudgedComponentSAKey, component2ImageRepo.Status.Credentials.PullSecretName, false)
+			// Check that the pull secret from still nudging Component is preserved
+			waitServiceAccountLinkedSecret(nudgedComponentSAKey, component1ImageRepo.Status.Credentials.PullSecretName, false)
+
+			deleteComponent(component1Key)
+			waitServiceAccountLinkedSecretGone(nudgedComponentSAKey, component1ImageRepo.Status.Credentials.PullSecretName, false)
+
+			// Ensure that the push secret of the nudged Component is not removed
+			waitServiceAccountLinkedSecret(nudgedComponentSAKey, nudgedComponentImageRepo.Status.Credentials.PushSecretName, false)
+		})
 	})
 
 	Context("Test Pipelines as Code build preparation", func() {
