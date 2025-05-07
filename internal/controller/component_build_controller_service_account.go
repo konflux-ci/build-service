@@ -604,6 +604,11 @@ func isComponentImageRepositorySecret(secretName string, imageRepositories []img
 					return true
 				}
 			}
+			// Handle the situation when both the Component and the Image Repository were created at the same time
+			// and Image Controller operator hasn't yet set the owner reference.
+			if imageRepository.Labels[ApplicationNameLabelName] != "" && imageRepository.Labels[ComponentNameLabelName] != "" {
+				return true
+			}
 			return false
 		}
 	}
