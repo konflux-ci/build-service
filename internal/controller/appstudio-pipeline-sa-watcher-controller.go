@@ -19,6 +19,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -71,6 +72,7 @@ func (r *AppstudioPipelineServiceAccountWatcherReconciler) SetupWithManager(mgr 
 }
 
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=imagerepositories,verbs=get;list;watch
+//+kubebuilder:rbac:groups=appstudio.redhat.com,resources=imagerepositories/status,verbs=get;list;watch
 
 func (r *AppstudioPipelineServiceAccountWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := ctrllog.FromContext(ctx).WithName("appstudioPipelineSA")
@@ -95,6 +97,14 @@ func (r *AppstudioPipelineServiceAccountWatcherReconciler) Reconcile(ctx context
 	if err := r.Client.List(ctx, imageRepositoryList, client.InNamespace(req.Namespace)); err != nil {
 		log.Error(err, "failed to list ImageRepositories in namespace", l.Action, l.ActionView)
 		return ctrl.Result{}, err
+	}
+	// Wait all Image Repositories are provisioned
+	for _, imageRepository := range imageRepositoryList.Items {
+		if imageRepository.Status.State == "" {
+			// Wait Image Controller to finish
+			log.Info("Waiting for Image Repository provision", "ImageRepositoryName", imageRepository.Name)
+			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		}
 	}
 
 	for _, component := range componentList.Items {
