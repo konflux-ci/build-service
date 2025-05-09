@@ -144,6 +144,8 @@ const (
 	EGitLabTokenBlockedAccount BOErrorId = 92
 	// EGitLabSecretTypeNotSupported the secret type with GitLab credentials is not supported.
 	EGitLabSecretTypeNotSupported BOErrorId = 93
+	// EGitLabBranchDoesntExist GitLab branch doesn't exist
+	EGitLabBranchDoesntExist BOErrorId = 94
 
 	// Value of 'image.redhat.com/image' component annotation is not a valid json or the json has invalid structure.
 	EFailedToParseImageAnnotation BOErrorId = 200
@@ -211,6 +213,7 @@ var boErrorMessages = map[BOErrorId]string{
 	EGitLabTokenUnauthorized:      "Access token is unrecognizable by remote GitLab service",
 	EGitLabTokenBlockedAccount:    "Access token has blocked account",
 	EGitLabSecretTypeNotSupported: "The secret type with GitLab credentials is not supported",
+	EGitLabBranchDoesntExist:      "GitLab branch does not exist",
 
 	EFailedToParseImageAnnotation:        "Failed to parse image.redhat.com/image annotation value",
 	EComponentGitSecretMissing:           "Secret with git credential not found",

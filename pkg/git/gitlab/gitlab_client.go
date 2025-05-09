@@ -23,6 +23,7 @@ import (
 
 	"github.com/xanzy/go-gitlab"
 
+	"github.com/konflux-ci/build-service/pkg/boerrors"
 	gp "github.com/konflux-ci/build-service/pkg/git/gitprovider"
 )
 
@@ -52,6 +53,14 @@ func (g *GitlabClient) EnsurePaCMergeRequest(repoUrl string, d *gp.MergeRequestD
 			return "", err
 		}
 		d.BaseBranchName = baseBranch
+	} else {
+		baseBranchExists, err := g.branchExist(projectPath, d.BaseBranchName)
+		if err != nil {
+			return "", err
+		}
+		if !baseBranchExists {
+			return "", boerrors.NewBuildOpError(boerrors.EGitLabBranchDoesntExist, fmt.Errorf("branch '%s' does not exist", d.BaseBranchName))
+		}
 	}
 
 	pacConfigurationUpToDate, err := g.filesUpToDate(projectPath, d.BaseBranchName, d.Files)
@@ -136,6 +145,15 @@ func (g *GitlabClient) UndoPaCMergeRequest(repoUrl string, d *gp.MergeRequestDat
 			return "", err
 		}
 		d.BaseBranchName = baseBranchName
+	} else {
+		baseBranchExists, err := g.branchExist(projectPath, d.BaseBranchName)
+		if err != nil {
+			return "", err
+		}
+		if !baseBranchExists {
+			// when base branch doesn't exist, there is nothing to cleanup
+			return "", nil
+		}
 	}
 
 	files, err := g.filesExistInDirectory(projectPath, d.BaseBranchName, ".tekton", d.Files)

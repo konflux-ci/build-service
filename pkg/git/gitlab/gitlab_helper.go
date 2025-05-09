@@ -92,7 +92,8 @@ func GetBaseUrl(repoUrl string) (string, error) {
 func refineGitHostingServiceError(response *http.Response, originErr error) error {
 	// go-gitlab APIs do not return a http.Response object if the error is not related to an HTTP request.
 	if response == nil {
-		if strings.Contains(originErr.Error(), "The provided authorization grant is invalid") || strings.Contains(originErr.Error(), "401 Unauthorized") {
+		// This is one of auth errors net/http: invalid header field value for \"Private-Token\"
+		if strings.Contains(originErr.Error(), "The provided authorization grant is invalid") || strings.Contains(originErr.Error(), "401 Unauthorized") || strings.Contains(originErr.Error(), "Private-Token") {
 			return boerrors.NewBuildOpError(boerrors.EGitLabTokenUnauthorized, originErr)
 		}
 		if strings.Contains(originErr.Error(), "403 Forbidden - Your account has been blocked") {
@@ -147,8 +148,10 @@ func (g *GitlabClient) createBranch(projectPath, branchName, baseBranchName stri
 		Branch: &branchName,
 		Ref:    &baseBranchName,
 	}
-	_, _, err := g.client.Branches.CreateBranch(projectPath, opts)
-	return err
+	if _, resp, err := g.client.Branches.CreateBranch(projectPath, opts); err != nil {
+		return refineGitHostingServiceError(resp.Response, err)
+	}
+	return nil
 }
 
 func (g *GitlabClient) deleteBranch(projectPath, branch string) (bool, error) {
@@ -163,9 +166,9 @@ func (g *GitlabClient) deleteBranch(projectPath, branch string) (bool, error) {
 }
 
 func (g *GitlabClient) getDefaultBranch(projectPath string) (string, error) {
-	projectInfo, _, err := g.client.Projects.GetProject(projectPath, nil)
+	projectInfo, resp, err := g.client.Projects.GetProject(projectPath, nil)
 	if err != nil {
-		return "", refineGitHostingServiceError(nil, err)
+		return "", refineGitHostingServiceError(resp.Response, err)
 	}
 	if projectInfo == nil {
 		return "", fmt.Errorf("project info is empty in GitLab API response")
@@ -277,8 +280,10 @@ func (g *GitlabClient) commitFilesIntoBranch(projectPath, branchName, commitMess
 		AuthorEmail:   &authorEmail,
 		Actions:       actions,
 	}
-	_, _, err := g.client.Commits.CreateCommit(projectPath, opts)
-	return err
+	if _, resp, err := g.client.Commits.CreateCommit(projectPath, opts); err != nil {
+		return refineGitHostingServiceError(resp.Response, err)
+	}
+	return nil
 }
 
 // Creates commit into specified branch that deletes given files.
@@ -433,6 +438,9 @@ func (g *GitlabClient) getProjectInfo(projectPath string) (*gitlab.Project, erro
 
 // CheckGitUrlError returns more specific git error
 func CheckGitUrlError(err error) error {
+	if _, isBoError := err.(*boerrors.BuildOpError); isBoError {
+		return err
+	}
 	if strings.Contains(err.Error(), "404 Not Found") || strings.Contains(err.Error(), "no such host") {
 		return boerrors.NewBuildOpError(boerrors.ENotExistGitSourceUrl, fmt.Errorf("git source URL host is invalid or repository doesn't exist"))
 	}
