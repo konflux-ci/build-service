@@ -44,3 +44,38 @@ patches:
 # [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix including the one in
 # crd/kustomization.yaml
 #- path: manager_webhook_patch.yaml
+
+# since we add a prefix to resource names, we need to add in those new names of
+# those resources into the resources that reference them
+replacements:
+- source:
+    kind: ClusterRole
+    name: metrics-reader
+  targets:
+  - select:
+      kind: ClusterRoleBinding
+      name: metrics-reader
+    fieldPaths:
+    - roleRef.name
+- source:
+    kind: Secret
+    name: metrics-reader
+  targets:
+  - select:
+      kind: ServiceMonitor
+      group: monitoring.coreos.com
+      version: v1
+      name: controller-manager-metrics-monitor
+    fieldPaths:
+    - spec.endpoints.0.authorization.credentials.name
+- source:
+    kind: ServiceMonitor
+    group: monitoring.coreos.com
+    version: v1
+    name: controller-manager-metrics-monitor
+  targets:
+  - select:
+      kind: Secret
+      name: metrics-reader
+    fieldPaths:
+    - metadata.annotations.[kubernetes.io/service-account.name]
