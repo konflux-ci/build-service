@@ -50,6 +50,8 @@ const (
 	RenovateConfigMapAutomergeTypeKey       = "automergeType"
 	RenovateConfigMapPlatformAutomergeKey   = "platformAutomerge"
 	RenovateConfigMapIgnoreTestsKey         = "ignoreTests"
+	RenovateConfigMapGitLabIgnoreApprovals  = "gitLabIgnoreApprovals"
+	RenovateConfigMapAutomergeSchedule      = "automergeSchedule"
 )
 
 type renovateRepository struct {
@@ -58,13 +60,15 @@ type renovateRepository struct {
 }
 
 type CustomRenovateOptions struct {
-	Automerge           bool     `json:"automerge,omitempty"`
-	AutomergeType       string   `json:"automergeType,omitempty"`
-	PlatformAutomerge   bool     `json:"platformAutomerge,omitempty"`
-	IgnoreTests         bool     `json:"ignoreTests,omitempty"`
-	CommitMessagePrefix string   `json:"commitMessagePrefix,omitempty"`
-	CommitMessageSuffix string   `json:"commitMessageSuffix,omitempty"`
-	FileMatch           []string `json:"fileMatch,omitempty"`
+	Automerge             bool     `json:"automerge,omitempty"`
+	AutomergeType         string   `json:"automergeType,omitempty"`
+	PlatformAutomerge     bool     `json:"platformAutomerge,omitempty"`
+	IgnoreTests           bool     `json:"ignoreTests,omitempty"`
+	CommitMessagePrefix   string   `json:"commitMessagePrefix,omitempty"`
+	CommitMessageSuffix   string   `json:"commitMessageSuffix,omitempty"`
+	FileMatch             []string `json:"fileMatch,omitempty"`
+	GitLabIgnoreApprovals bool     `json:"gitLabIgnoreApprovals,omitempty"`
+	AutomergeSchedule     []string `json:"automergeSchedule,omitempty"`
 }
 
 // UpdateTarget represents a target source code repository to be executed by Renovate with credentials and repositories
@@ -117,25 +121,27 @@ type PackageRule struct {
 }
 
 type RenovateConfig struct {
-	GitProvider         string               `json:"platform"`
-	Username            string               `json:"username"`
-	GitAuthor           string               `json:"gitAuthor"`
-	Onboarding          bool                 `json:"onboarding"`
-	RequireConfig       string               `json:"requireConfig"`
-	Repositories        []renovateRepository `json:"repositories"`
-	EnabledManagers     []string             `json:"enabledManagers"`
-	Endpoint            string               `json:"endpoint"`
-	CustomManagers      []CustomManager      `json:"customManagers,omitempty"`
-	RegistryAliases     map[string]string    `json:"registryAliases,omitempty"`
-	PackageRules        []PackageRule        `json:"packageRules,omitempty"`
-	ForkProcessing      string               `json:"forkProcessing"`
-	Extends             []string             `json:"extends"`
-	DependencyDashboard bool                 `json:"dependencyDashboard"`
-	Labels              []string             `json:"labels"`
-	Automerge           bool                 `json:"automerge,omitempty"`
-	AutomergeType       string               `json:"automergeType,omitempty"`
-	PlatformAutomerge   bool                 `json:"platformAutomerge,omitempty"`
-	IgnoreTests         bool                 `json:"ignoreTests,omitempty"`
+	GitProvider           string               `json:"platform"`
+	Username              string               `json:"username"`
+	GitAuthor             string               `json:"gitAuthor"`
+	Onboarding            bool                 `json:"onboarding"`
+	RequireConfig         string               `json:"requireConfig"`
+	Repositories          []renovateRepository `json:"repositories"`
+	EnabledManagers       []string             `json:"enabledManagers"`
+	Endpoint              string               `json:"endpoint"`
+	CustomManagers        []CustomManager      `json:"customManagers,omitempty"`
+	RegistryAliases       map[string]string    `json:"registryAliases,omitempty"`
+	PackageRules          []PackageRule        `json:"packageRules,omitempty"`
+	ForkProcessing        string               `json:"forkProcessing"`
+	Extends               []string             `json:"extends"`
+	DependencyDashboard   bool                 `json:"dependencyDashboard"`
+	Labels                []string             `json:"labels"`
+	Automerge             bool                 `json:"automerge,omitempty"`
+	AutomergeType         string               `json:"automergeType,omitempty"`
+	PlatformAutomerge     bool                 `json:"platformAutomerge,omitempty"`
+	IgnoreTests           bool                 `json:"ignoreTests,omitempty"`
+	GitLabIgnoreApprovals bool                 `json:"gitLabIgnoreApprovals,omitempty"`
+	AutomergeSchedule     []string             `json:"automergeSchedule,omitempty"`
 }
 
 var DisableAllPackageRules = PackageRule{MatchPackagePatterns: []string{"*"}, Enabled: false}
@@ -416,6 +422,17 @@ func (u ComponentDependenciesUpdater) ReadCustomRenovateConfigMap(ctx context.Co
 		}
 	}
 
+	gitLabIgnoreApprovalsOption, gitLabIgnoreApprovalsExists := customRenovateConfigMap.Data[RenovateConfigMapGitLabIgnoreApprovals]
+	if gitLabIgnoreApprovalsExists {
+		gitLabIgnoreApprovalsValue, err := strconv.ParseBool(gitLabIgnoreApprovalsOption)
+		if err != nil {
+			log.Error(err, "can't parse gitLabIgnoreApprovals option in configmap", "configMapName", customRenovateConfigMapName,
+				"gitLabIgnoreApprovalsValue", gitLabIgnoreApprovalsOption)
+		} else {
+			customRenovateOptions.GitLabIgnoreApprovals = gitLabIgnoreApprovalsValue
+		}
+	}
+
 	automergeTypeOption, automergeTypeExists := customRenovateConfigMap.Data[RenovateConfigMapAutomergeTypeKey]
 	if automergeTypeExists {
 		customRenovateOptions.AutomergeType = automergeTypeOption
@@ -438,6 +455,15 @@ func (u ComponentDependenciesUpdater) ReadCustomRenovateConfigMap(ctx context.Co
 			fileMatchParts[i] = strings.TrimSpace(fileMatchParts[i])
 		}
 		customRenovateOptions.FileMatch = fileMatchParts
+	}
+
+	automergeScheduleOption, automergeScheduleExists := customRenovateConfigMap.Data[RenovateConfigMapAutomergeSchedule]
+	if automergeScheduleExists {
+		automergeScheduleParts := strings.Split(automergeScheduleOption, "|")
+		for i := range automergeScheduleParts {
+			automergeScheduleParts[i] = strings.TrimSpace(automergeScheduleParts[i])
+		}
+		customRenovateOptions.AutomergeSchedule = automergeScheduleParts
 	}
 
 	return &customRenovateOptions, nil
@@ -519,19 +545,21 @@ func generateRenovateConfigForNudge(target updateTarget, buildResult *BuildResul
 		RequireConfig: "ignored",
 		Repositories:  target.Repositories,
 		// was 'regex' before but because: https://docs.renovatebot.com/configuration-options/#enabledmanagers
-		EnabledManagers:     []string{"custom.regex"},
-		Endpoint:            target.Endpoint,
-		CustomManagers:      customManagers,
-		RegistryAliases:     registryAliases,
-		PackageRules:        packageRules,
-		ForkProcessing:      "enabled",
-		Extends:             []string{},
-		DependencyDashboard: false,
-		Labels:              []string{"konflux-nudge"},
-		Automerge:           target.ComponentCustomRenovateOptions.Automerge,
-		PlatformAutomerge:   target.ComponentCustomRenovateOptions.PlatformAutomerge,
-		IgnoreTests:         target.ComponentCustomRenovateOptions.IgnoreTests,
-		AutomergeType:       target.ComponentCustomRenovateOptions.AutomergeType,
+		EnabledManagers:       []string{"custom.regex"},
+		Endpoint:              target.Endpoint,
+		CustomManagers:        customManagers,
+		RegistryAliases:       registryAliases,
+		PackageRules:          packageRules,
+		ForkProcessing:        "enabled",
+		Extends:               []string{},
+		DependencyDashboard:   false,
+		Labels:                []string{"konflux-nudge"},
+		Automerge:             target.ComponentCustomRenovateOptions.Automerge,
+		PlatformAutomerge:     target.ComponentCustomRenovateOptions.PlatformAutomerge,
+		IgnoreTests:           target.ComponentCustomRenovateOptions.IgnoreTests,
+		AutomergeType:         target.ComponentCustomRenovateOptions.AutomergeType,
+		GitLabIgnoreApprovals: target.ComponentCustomRenovateOptions.GitLabIgnoreApprovals,
+		AutomergeSchedule:     target.ComponentCustomRenovateOptions.AutomergeSchedule,
 	}
 
 	return renovateConfig, nil

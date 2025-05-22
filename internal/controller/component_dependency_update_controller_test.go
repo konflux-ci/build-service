@@ -554,6 +554,8 @@ var _ = Describe("Component nudge controller", func() {
 			ignoreTestsValue := true
 			commitMessagePrefixValue := "msg_prefix"
 			commitMessageSuffixValue := "msg_suffix"
+			gitLabIgnoreApprovalsValue := true
+			automergeScheduleValue := []string{"* 22-23,0-4 * * *", "* * * * 0,6"}
 			imageBuiltFrom := "repo/sha"
 			commitBodyValue := fmt.Sprintf("Image created from '%s'\n\nSigned-off-by:", imageBuiltFrom)
 			fileMatchValue := []string{"cfile1", "cfile2"}
@@ -565,6 +567,8 @@ var _ = Describe("Component nudge controller", func() {
 				RenovateConfigMapAutomergeTypeKey:       "pr",
 				RenovateConfigMapPlatformAutomergeKey:   "false",
 				RenovateConfigMapIgnoreTestsKey:         "true",
+				RenovateConfigMapGitLabIgnoreApprovals:  "true",
+				RenovateConfigMapAutomergeSchedule:      "* 22-23,0-4 * * *| * * * * 0,6",
 			}
 			gitHubAppUsername := fmt.Sprintf("%s[bot]", TestGitHubAppName)
 			gitHubAppGitAuthor := fmt.Sprintf("%s <%d+%s@users.noreply.github.com>", TestGitHubAppName, TestGitHubAppId, gitHubAppUsername)
@@ -584,6 +588,8 @@ var _ = Describe("Component nudge controller", func() {
 						Expect(renovateConfigObj.AutomergeType).Should(Equal(automergeTypeValue))
 						Expect(renovateConfigObj.PlatformAutomerge).Should(Equal(platformAutomergeValue))
 						Expect(renovateConfigObj.IgnoreTests).Should(Equal(ignoreTestsValue))
+						Expect(renovateConfigObj.GitLabIgnoreApprovals).Should(Equal(gitLabIgnoreApprovalsValue))
+						Expect(renovateConfigObj.AutomergeSchedule).Should(Equal(automergeScheduleValue))
 						Expect(renovateConfigObj.PackageRules[1].CommitMessagePrefix).Should(Equal(commitMessagePrefixValue))
 						Expect(renovateConfigObj.PackageRules[1].CommitMessageSuffix).Should(Equal(commitMessageSuffixValue))
 						Expect(strings.Contains(renovateConfigObj.PackageRules[1].CommitBody, commitBodyValue)).Should(BeTrue())
@@ -611,6 +617,8 @@ var _ = Describe("Component nudge controller", func() {
 			ignoreTestsValue := true
 			commitMessagePrefixValue := "msg_prefix"
 			commitMessageSuffixValue := "msg_suffix"
+			gitLabIgnoreApprovalsValue := true
+			automergeScheduleValue := []string{"* 22-23,0-4 * * *", "* * * * 0,6"}
 			imageBuiltFrom := "repo/sha"
 			commitBodyValue := fmt.Sprintf("Image created from '%s'\n\nSigned-off-by:", imageBuiltFrom)
 			fileMatchValue := []string{"cfile1", "cfile2"}
@@ -622,6 +630,8 @@ var _ = Describe("Component nudge controller", func() {
 				RenovateConfigMapAutomergeTypeKey:       "pr",
 				RenovateConfigMapPlatformAutomergeKey:   "false",
 				RenovateConfigMapIgnoreTestsKey:         "true",
+				RenovateConfigMapGitLabIgnoreApprovals:  "true",
+				RenovateConfigMapAutomergeSchedule:      "* 22-23,0-4 * * *| * * * * 0,6",
 			}
 			assertRenovateConfiMap(&customConfigMapName, customConfigMapData, nil, imageBuiltFrom)
 
@@ -637,6 +647,8 @@ var _ = Describe("Component nudge controller", func() {
 						Expect(renovateConfigObj.AutomergeType).Should(Equal(automergeTypeValue))
 						Expect(renovateConfigObj.PlatformAutomerge).Should(Equal(platformAutomergeValue))
 						Expect(renovateConfigObj.IgnoreTests).Should(Equal(ignoreTestsValue))
+						Expect(renovateConfigObj.GitLabIgnoreApprovals).Should(Equal(gitLabIgnoreApprovalsValue))
+						Expect(renovateConfigObj.AutomergeSchedule).Should(Equal(automergeScheduleValue))
 						Expect(renovateConfigObj.PackageRules[1].CommitMessagePrefix).Should(Equal(commitMessagePrefixValue))
 						Expect(renovateConfigObj.PackageRules[1].CommitMessageSuffix).Should(Equal(commitMessageSuffixValue))
 						Expect(strings.Contains(renovateConfigObj.PackageRules[1].CommitBody, commitBodyValue)).Should(BeTrue())
@@ -660,6 +672,8 @@ var _ = Describe("Component nudge controller", func() {
 			automergeTypeValue := "pr"
 			platformAutomergeValue := false
 			ignoreTestsValue := true
+			gitLabIgnoreApprovalsValue := true
+			automergeScheduleValue := []string{"* 22-23,0-4 * * *", "* * * * 0,6"}
 			fileMatchValue := []string{"cfile1", "cfile2"}
 			customConfigMapData := map[string]string{
 				RenovateConfigMapAutomergeKey:           "true",
@@ -669,6 +683,8 @@ var _ = Describe("Component nudge controller", func() {
 				RenovateConfigMapAutomergeTypeKey:       "pr",
 				RenovateConfigMapPlatformAutomergeKey:   "false",
 				RenovateConfigMapIgnoreTestsKey:         "true",
+				RenovateConfigMapGitLabIgnoreApprovals:  "true",
+				RenovateConfigMapAutomergeSchedule:      "* 22-23,0-4 * * *| * * * * 0,6",
 			}
 			customNamespaceConfigMapData := map[string]string{
 				RenovateConfigMapAutomergeKey:           "false",
@@ -678,6 +694,8 @@ var _ = Describe("Component nudge controller", func() {
 				RenovateConfigMapAutomergeTypeKey:       "namespacepr",
 				RenovateConfigMapPlatformAutomergeKey:   "true",
 				RenovateConfigMapIgnoreTestsKey:         "false",
+				RenovateConfigMapGitLabIgnoreApprovals:  "false",
+				RenovateConfigMapAutomergeSchedule:      "1 * * * *",
 			}
 			assertRenovateConfiMap(&customConfigMapName, customConfigMapData, customNamespaceConfigMapData, imageBuiltFrom)
 
@@ -693,6 +711,8 @@ var _ = Describe("Component nudge controller", func() {
 						Expect(renovateConfigObj.AutomergeType).Should(Equal(automergeTypeValue))
 						Expect(renovateConfigObj.PlatformAutomerge).Should(Equal(platformAutomergeValue))
 						Expect(renovateConfigObj.IgnoreTests).Should(Equal(ignoreTestsValue))
+						Expect(renovateConfigObj.GitLabIgnoreApprovals).Should(Equal(gitLabIgnoreApprovalsValue))
+						Expect(renovateConfigObj.AutomergeSchedule).Should(Equal(automergeScheduleValue))
 						Expect(renovateConfigObj.PackageRules[1].CommitMessagePrefix).Should(Equal(commitMessagePrefixValue))
 						Expect(renovateConfigObj.PackageRules[1].CommitMessageSuffix).Should(Equal(commitMessageSuffixValue))
 						Expect(strings.Contains(renovateConfigObj.PackageRules[1].CommitBody, commitBodyValue)).Should(BeTrue())
@@ -912,14 +932,18 @@ var _ = Describe("Component nudge controller", func() {
 			commitBody := fmt.Sprintf("Image created from '%s'\n\nSigned-off-by: %s", imageBuiltFrom, gitAuthor)
 			automergeType := "pr"
 			ignoreTests := true
+			gitLabIgnoreApprovals := true
+			automergeSchedule := []string{"* 22-23,0-4 * * *", "* * * * 0,6"}
 
 			customRenovateOptions := CustomRenovateOptions{
-				Automerge:           automerge,
-				CommitMessagePrefix: commitMessagePrefix,
-				CommitMessageSuffix: commitMessageSuffix,
-				AutomergeType:       automergeType,
-				PlatformAutomerge:   platformAutomerge,
-				IgnoreTests:         ignoreTests,
+				Automerge:             automerge,
+				CommitMessagePrefix:   commitMessagePrefix,
+				CommitMessageSuffix:   commitMessageSuffix,
+				AutomergeType:         automergeType,
+				PlatformAutomerge:     platformAutomerge,
+				IgnoreTests:           ignoreTests,
+				GitLabIgnoreApprovals: gitLabIgnoreApprovals,
+				AutomergeSchedule:     automergeSchedule,
 			}
 
 			renovateTarget := updateTarget{
@@ -960,6 +984,8 @@ var _ = Describe("Component nudge controller", func() {
 			Expect(resultConfig.AutomergeType).Should(Equal(automergeType))
 			Expect(resultConfig.PlatformAutomerge).Should(Equal(platformAutomerge))
 			Expect(resultConfig.IgnoreTests).Should(Equal(ignoreTests))
+			Expect(resultConfig.GitLabIgnoreApprovals).Should(Equal(gitLabIgnoreApprovals))
+			Expect(resultConfig.AutomergeSchedule).Should(Equal(automergeSchedule))
 
 			// use fileMatch from config map instead of annotation
 			fileMatchesList2 := []string{"ffile1", "ffile2", "ffile3"}
