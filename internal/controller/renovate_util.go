@@ -459,7 +459,7 @@ func (u ComponentDependenciesUpdater) ReadCustomRenovateConfigMap(ctx context.Co
 
 	automergeScheduleOption, automergeScheduleExists := customRenovateConfigMap.Data[RenovateConfigMapAutomergeSchedule]
 	if automergeScheduleExists {
-		automergeScheduleParts := strings.Split(automergeScheduleOption, "|")
+		automergeScheduleParts := strings.Split(automergeScheduleOption, ";")
 		for i := range automergeScheduleParts {
 			automergeScheduleParts[i] = strings.TrimSpace(automergeScheduleParts[i])
 		}

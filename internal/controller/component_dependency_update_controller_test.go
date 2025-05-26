@@ -568,7 +568,7 @@ var _ = Describe("Component nudge controller", func() {
 				RenovateConfigMapPlatformAutomergeKey:   "false",
 				RenovateConfigMapIgnoreTestsKey:         "true",
 				RenovateConfigMapGitLabIgnoreApprovals:  "true",
-				RenovateConfigMapAutomergeSchedule:      "* 22-23,0-4 * * *| * * * * 0,6",
+				RenovateConfigMapAutomergeSchedule:      "* 22-23,0-4 * * *; * * * * 0,6",
 			}
 			gitHubAppUsername := fmt.Sprintf("%s[bot]", TestGitHubAppName)
 			gitHubAppGitAuthor := fmt.Sprintf("%s <%d+%s@users.noreply.github.com>", TestGitHubAppName, TestGitHubAppId, gitHubAppUsername)
@@ -631,7 +631,7 @@ var _ = Describe("Component nudge controller", func() {
 				RenovateConfigMapPlatformAutomergeKey:   "false",
 				RenovateConfigMapIgnoreTestsKey:         "true",
 				RenovateConfigMapGitLabIgnoreApprovals:  "true",
-				RenovateConfigMapAutomergeSchedule:      "* 22-23,0-4 * * *| * * * * 0,6",
+				RenovateConfigMapAutomergeSchedule:      "* 22-23,0-4 * * *; * * * * 0,6",
 			}
 			assertRenovateConfiMap(&customConfigMapName, customConfigMapData, nil, imageBuiltFrom)
 
@@ -684,7 +684,7 @@ var _ = Describe("Component nudge controller", func() {
 				RenovateConfigMapPlatformAutomergeKey:   "false",
 				RenovateConfigMapIgnoreTestsKey:         "true",
 				RenovateConfigMapGitLabIgnoreApprovals:  "true",
-				RenovateConfigMapAutomergeSchedule:      "* 22-23,0-4 * * *| * * * * 0,6",
+				RenovateConfigMapAutomergeSchedule:      "* 22-23,0-4 * * *; * * * * 0,6",
 			}
 			customNamespaceConfigMapData := map[string]string{
 				RenovateConfigMapAutomergeKey:           "false",
