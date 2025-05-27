@@ -42,16 +42,18 @@ const (
 	BranchPrefix                       = "konflux/component-updates/"
 	NamespaceWideRenovateConfigMapName = "namespace-wide-nudging-renovate-config"
 	CustomRenovateConfigMapAnnotation  = "build.appstudio.openshift.io/nudge_renovate_config_map"
+	DefaultRenovateLabel               = "konflux-nudge"
 
-	RenovateConfigMapAutomergeKey           = "automerge"
-	RenovateConfigMapCommitMessagePrefixKey = "commitMessagePrefix"
-	RenovateConfigMapCommitMessageSuffixKey = "commitMessageSuffix"
-	RenovateConfigMapFileMatchKey           = "fileMatch"
-	RenovateConfigMapAutomergeTypeKey       = "automergeType"
-	RenovateConfigMapPlatformAutomergeKey   = "platformAutomerge"
-	RenovateConfigMapIgnoreTestsKey         = "ignoreTests"
-	RenovateConfigMapGitLabIgnoreApprovals  = "gitLabIgnoreApprovals"
-	RenovateConfigMapAutomergeSchedule      = "automergeSchedule"
+	RenovateConfigMapAutomergeKey             = "automerge"
+	RenovateConfigMapCommitMessagePrefixKey   = "commitMessagePrefix"
+	RenovateConfigMapCommitMessageSuffixKey   = "commitMessageSuffix"
+	RenovateConfigMapFileMatchKey             = "fileMatch"
+	RenovateConfigMapAutomergeTypeKey         = "automergeType"
+	RenovateConfigMapPlatformAutomergeKey     = "platformAutomerge"
+	RenovateConfigMapIgnoreTestsKey           = "ignoreTests"
+	RenovateConfigMapGitLabIgnoreApprovalsKey = "gitLabIgnoreApprovals"
+	RenovateConfigMapAutomergeScheduleKey     = "automergeSchedule"
+	RenovateConfigMapLabelsKey                = "labels"
 )
 
 type renovateRepository struct {
@@ -69,6 +71,7 @@ type CustomRenovateOptions struct {
 	FileMatch             []string `json:"fileMatch,omitempty"`
 	GitLabIgnoreApprovals bool     `json:"gitLabIgnoreApprovals,omitempty"`
 	AutomergeSchedule     []string `json:"automergeSchedule,omitempty"`
+	Labels                []string `json:"labels,omitempty"`
 }
 
 // UpdateTarget represents a target source code repository to be executed by Renovate with credentials and repositories
@@ -422,7 +425,7 @@ func (u ComponentDependenciesUpdater) ReadCustomRenovateConfigMap(ctx context.Co
 		}
 	}
 
-	gitLabIgnoreApprovalsOption, gitLabIgnoreApprovalsExists := customRenovateConfigMap.Data[RenovateConfigMapGitLabIgnoreApprovals]
+	gitLabIgnoreApprovalsOption, gitLabIgnoreApprovalsExists := customRenovateConfigMap.Data[RenovateConfigMapGitLabIgnoreApprovalsKey]
 	if gitLabIgnoreApprovalsExists {
 		gitLabIgnoreApprovalsValue, err := strconv.ParseBool(gitLabIgnoreApprovalsOption)
 		if err != nil {
@@ -457,13 +460,22 @@ func (u ComponentDependenciesUpdater) ReadCustomRenovateConfigMap(ctx context.Co
 		customRenovateOptions.FileMatch = fileMatchParts
 	}
 
-	automergeScheduleOption, automergeScheduleExists := customRenovateConfigMap.Data[RenovateConfigMapAutomergeSchedule]
+	automergeScheduleOption, automergeScheduleExists := customRenovateConfigMap.Data[RenovateConfigMapAutomergeScheduleKey]
 	if automergeScheduleExists {
 		automergeScheduleParts := strings.Split(automergeScheduleOption, ";")
 		for i := range automergeScheduleParts {
 			automergeScheduleParts[i] = strings.TrimSpace(automergeScheduleParts[i])
 		}
 		customRenovateOptions.AutomergeSchedule = automergeScheduleParts
+	}
+
+	labelsOption, labelsExists := customRenovateConfigMap.Data[RenovateConfigMapLabelsKey]
+	if labelsExists {
+		labelsParts := strings.Split(labelsOption, ",")
+		for i := range labelsParts {
+			labelsParts[i] = strings.TrimSpace(labelsParts[i])
+		}
+		customRenovateOptions.Labels = labelsParts
 	}
 
 	return &customRenovateOptions, nil
@@ -510,6 +522,13 @@ func generateRenovateConfigForNudge(target updateTarget, buildResult *BuildResul
 		fileMatchParts = target.ComponentCustomRenovateOptions.FileMatch
 
 	}
+
+	// add default label
+	labels := []string{DefaultRenovateLabel}
+	if target.ComponentCustomRenovateOptions.Labels != nil {
+		labels = append(labels, target.ComponentCustomRenovateOptions.Labels...)
+	}
+
 	customManagers = append(customManagers, CustomManager{
 		FileMatch:            fileMatchParts,
 		CustomType:           "regex",
@@ -553,7 +572,7 @@ func generateRenovateConfigForNudge(target updateTarget, buildResult *BuildResul
 		ForkProcessing:        "enabled",
 		Extends:               []string{},
 		DependencyDashboard:   false,
-		Labels:                []string{"konflux-nudge"},
+		Labels:                labels,
 		Automerge:             target.ComponentCustomRenovateOptions.Automerge,
 		PlatformAutomerge:     target.ComponentCustomRenovateOptions.PlatformAutomerge,
 		IgnoreTests:           target.ComponentCustomRenovateOptions.IgnoreTests,
