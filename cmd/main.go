@@ -192,6 +192,9 @@ func main() {
 	restConfig := ctrl.GetConfigOrDie()
 	ensureRequiredAPIGroupsAndResourcesExist(restConfig)
 
+	leaseDuration := 60 * time.Second
+	renewDeadline := 35 * time.Second
+
 	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
 		Client:                        clientOpts,
 		Scheme:                        scheme,
@@ -202,6 +205,8 @@ func main() {
 		LeaderElection:                enableLeaderElection,
 		LeaderElectionID:              "5483be8f.redhat.com",
 		LeaderElectionReleaseOnCancel: true,
+		LeaseDuration:                 &leaseDuration,
+		RenewDeadline:                 &renewDeadline,
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
