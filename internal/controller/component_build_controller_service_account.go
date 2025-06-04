@@ -187,6 +187,10 @@ func (r *ComponentBuildReconciler) ensureNudgingPullSecrets(ctx context.Context,
 			continue
 		}
 		pullSecretName := imageRepository.Status.Credentials.PullSecretName
+		if pullSecretName == "" {
+			// Skip Image Repositories that are under provision or haven't been provisioned successfully.
+			continue
+		}
 		if !isSaSecretLinked(buildPipelineServiceAccount, pullSecretName, false) {
 			buildPipelineServiceAccount.Secrets = append(buildPipelineServiceAccount.Secrets,
 				corev1.ObjectReference{Name: pullSecretName, Namespace: buildPipelineServiceAccount.Namespace})
