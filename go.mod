@@ -31,7 +31,7 @@ require (
 require (
 	github.com/konflux-ci/application-api v0.0.0-20240812090716-e7eb2ecfb409
 	github.com/konflux-ci/release-service v0.0.0-20240610124538-758a1d48d002
-	github.com/konflux-ci/image-controller v0.0.0-20250424143112-69ec692d353c
+	github.com/konflux-ci/image-controller b54f99a76900
 	github.com/openshift-pipelines/pipelines-as-code v0.28.2
 	github.com/tektoncd/pipeline v0.63.0
 )
