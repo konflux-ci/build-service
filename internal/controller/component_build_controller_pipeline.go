@@ -472,9 +472,8 @@ func generateCelExpressionForPipeline(component *appstudiov1alpha1.Component, gi
 	repoUrl := getGitRepoUrl(*component)
 
 	// Set path changed event filtering only for Components that are stored within a directory of the git repository.
-	// Also, we have to rebuild everything on push events, so applying the filter only to pull request pipeline.
 	pathChangedSuffix := ""
-	if onPull && component.Spec.Source.GitSource.Context != "" && component.Spec.Source.GitSource.Context != "/" && component.Spec.Source.GitSource.Context != "./" && component.Spec.Source.GitSource.Context != "." {
+	if component.Spec.Source.GitSource.Context != "" && component.Spec.Source.GitSource.Context != "/" && component.Spec.Source.GitSource.Context != "./" && component.Spec.Source.GitSource.Context != "." {
 		contextDir := component.Spec.Source.GitSource.Context
 		if !strings.HasSuffix(contextDir, "/") {
 			contextDir += "/"
