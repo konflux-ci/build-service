@@ -30,14 +30,14 @@ require (
 // If you update dependencies below you must also update internal/controller/suite_test.go
 require (
 	github.com/konflux-ci/application-api v0.0.0-20240812090716-e7eb2ecfb409
-	github.com/konflux-ci/release-service v0.0.0-20240610124538-758a1d48d002
 	github.com/konflux-ci/image-controller v0.0.0-20250424143112-69ec692d353c
+	github.com/konflux-ci/release-service v0.0.0-20240610124538-758a1d48d002
 	github.com/openshift-pipelines/pipelines-as-code v0.28.2
 	github.com/tektoncd/pipeline v0.63.0
 )
 
 require (
-	cel.dev/expr v0.18.0 // indirect
+	cel.dev/expr v0.24.0 // indirect
 	contrib.go.opencensus.io/exporter/ocagent v0.7.1-0.20200907061046-05415f1de66d // indirect
 	contrib.go.opencensus.io/exporter/prometheus v0.4.2 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
