@@ -30,8 +30,8 @@ require (
 // If you update dependencies below you must also update internal/controller/suite_test.go
 require (
 	github.com/konflux-ci/application-api v0.0.0-20240812090716-e7eb2ecfb409
-	github.com/konflux-ci/release-service v0.0.0-20240610124538-758a1d48d002
 	github.com/konflux-ci/image-controller v0.0.0-20250424143112-69ec692d353c
+	github.com/konflux-ci/release-service v0.0.0-20240610124538-758a1d48d002
 	github.com/openshift-pipelines/pipelines-as-code v0.28.2
 	github.com/tektoncd/pipeline v0.63.0
 )
@@ -129,7 +129,7 @@ require (
 	golang.org/x/text v0.21.0 // indirect
 	golang.org/x/time v0.7.0 // indirect
 	golang.org/x/tools v0.29.0 // indirect
-	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
+	gomodules.xyz/jsonpatch/v2 v2.5.0 // indirect
 	google.golang.org/api v0.195.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20240903143218-8af14fe29dc1 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240903143218-8af14fe29dc1 // indirect
