@@ -238,7 +238,7 @@ func (g *GithubClient) addCommitToBranch(owner, repository, authorName, authorEm
 		return err
 	}
 	if signedOff {
-		commitMessage = fmt.Sprintf("%s\nSigned-off-by: %s <%s>", commitMessage, authorName, authorEmail)
+		commitMessage = fmt.Sprintf("%s\n\nSigned-off-by: %s <%s>", commitMessage, authorName, authorEmail)
 	}
 
 	// Create the commit using the tree.
@@ -271,7 +271,7 @@ func (g *GithubClient) addDeleteCommitToBranch(owner, repository, authorName, au
 		return err
 	}
 	if signedOff {
-		commitMessage = fmt.Sprintf("%s\nSigned-off-by: %s <%s>", commitMessage, authorName, authorEmail)
+		commitMessage = fmt.Sprintf("%s\n\nSigned-off-by: %s <%s>", commitMessage, authorName, authorEmail)
 	}
 
 	// Create the commit using the tree.
