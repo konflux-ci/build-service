@@ -367,12 +367,6 @@ var _ = Describe("Component build controller", func() {
 		})
 
 		It("should create PaC PR with build pipeline service account", func() {
-			// TODO remove the config map creation after migration is done
-			useNewSaConfigMap := corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{Name: "use-new-sa", Namespace: BuildServiceNamespaceName},
-			}
-			Expect(k8sClient.Create(ctx, &useNewSaConfigMap)).To(Succeed())
-
 			isCreatePaCPullRequestInvoked := false
 			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
 				defer GinkgoRecover()
