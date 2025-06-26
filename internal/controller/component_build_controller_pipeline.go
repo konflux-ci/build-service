@@ -110,25 +110,9 @@ func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigs(ctx context.Con
 		return nil, nil, err
 	}
 
-	// TODO delete the conditions after migration to the new Service Account done.
-	// If a Config Map with name "use-new-sa" exist, switch to the new Service Account.
-	useOldSA := true
-	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: BuildServiceNamespaceName, Name: "use-new-sa"}, &corev1.ConfigMap{}); err == nil {
-		useOldSA = false
-		log.Info("using new service account in pipeline")
-	} else {
-		if !errors.IsNotFound(err) {
-			return nil, nil, err
-		}
-		log.Info("using old service account in pipeline")
-	}
-
 	pipelineRunOnPush, err := generatePaCPipelineRunForComponent(component, pipelineSpec, additionalParams, pacTargetBranch, gitClient, false)
 	if err != nil {
 		return nil, nil, err
-	}
-	if useOldSA {
-		pipelineRunOnPush.Spec.TaskRunTemplate = tektonapi.PipelineTaskRunTemplate{}
 	}
 	pipelineRunOnPushYaml, err := yaml.Marshal(pipelineRunOnPush)
 	if err != nil {
@@ -138,9 +122,6 @@ func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigs(ctx context.Con
 	pipelineRunOnPR, err := generatePaCPipelineRunForComponent(component, pipelineSpec, additionalParams, pacTargetBranch, gitClient, true)
 	if err != nil {
 		return nil, nil, err
-	}
-	if useOldSA {
-		pipelineRunOnPR.Spec.TaskRunTemplate = tektonapi.PipelineTaskRunTemplate{}
 	}
 	pipelineRunOnPRYaml, err := yaml.Marshal(pipelineRunOnPR)
 	if err != nil {
