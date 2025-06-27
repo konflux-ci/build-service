@@ -8,9 +8,14 @@
       "matchPackageNames": [
         "registry.access.redhat.com/ubi9/go-toolset"
       ],
-      "allowedVersions": [
-        "<2"
-      ]
+      "allowedVersions": "<2"
+    },
+    {
+      "description": "Automerge GitHub Actions updates",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "automerge": true
     }
   ]
 }
