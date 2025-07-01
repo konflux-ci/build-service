@@ -484,8 +484,12 @@ func generateCelExpressionForPipeline(component *appstudiov1alpha1.Component, gi
 			}
 		}
 
-		pullPipelineFileName := component.Name + "-" + pipelineRunOnPRFilename
-		pathChangedSuffix = fmt.Sprintf(` && ( "%s***".pathChanged() || ".tekton/%s".pathChanged() %s)`, contextDir, pullPipelineFileName, dockerfilePathChangedSuffix)
+		pipelineFileName := component.Name + "-" + pipelineRunOnPushFilename
+		if onPull {
+			pipelineFileName = component.Name + "-" + pipelineRunOnPRFilename
+		}
+
+		pathChangedSuffix = fmt.Sprintf(` && ( "%s***".pathChanged() || ".tekton/%s".pathChanged() %s)`, contextDir, pipelineFileName, dockerfilePathChangedSuffix)
 	}
 
 	return fmt.Sprintf("%s && %s%s", eventCondition, targetBranchCondition, pathChangedSuffix), nil
