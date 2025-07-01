@@ -384,7 +384,7 @@ func TestGenerateCelExpressionForPipeline(t *testing.T) {
 			}(),
 			targetBranch: "my-branch",
 			wantOnPull:   `event == "pull_request" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/component-name-pull-request.yaml".pathChanged() )`,
-			wantOnPush:   `event == "push" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/component-name-pull-request.yaml".pathChanged() )`,
+			wantOnPush:   `event == "push" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/component-name-push.yaml".pathChanged() )`,
 		},
 		{
 			name: "should generate cel expression for component with context directory and its dockerfile in context directory",
@@ -398,7 +398,7 @@ func TestGenerateCelExpressionForPipeline(t *testing.T) {
 				return true, nil
 			},
 			wantOnPull: `event == "pull_request" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/component-name-pull-request.yaml".pathChanged() )`,
-			wantOnPush: `event == "push" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/component-name-pull-request.yaml".pathChanged() )`,
+			wantOnPush: `event == "push" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/component-name-push.yaml".pathChanged() )`,
 		},
 		{
 			name: "should generate cel expression for component with context directory and its dockerfile outside context directory",
@@ -412,7 +412,7 @@ func TestGenerateCelExpressionForPipeline(t *testing.T) {
 				return false, nil
 			},
 			wantOnPull: `event == "pull_request" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/component-name-pull-request.yaml".pathChanged() || "docker-root-dir/Dockerfile".pathChanged() )`,
-			wantOnPush: `event == "push" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/component-name-pull-request.yaml".pathChanged() || "docker-root-dir/Dockerfile".pathChanged() )`,
+			wantOnPush: `event == "push" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/component-name-push.yaml".pathChanged() || "docker-root-dir/Dockerfile".pathChanged() )`,
 		},
 		{
 			name: "should generate cel expression for component with context directory and its dockerfile outside git repository",
@@ -423,7 +423,7 @@ func TestGenerateCelExpressionForPipeline(t *testing.T) {
 			}(),
 			targetBranch: "my-branch",
 			wantOnPull:   `event == "pull_request" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/component-name-pull-request.yaml".pathChanged() )`,
-			wantOnPush:   `event == "push" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/component-name-pull-request.yaml".pathChanged() )`,
+			wantOnPush:   `event == "push" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/component-name-push.yaml".pathChanged() )`,
 		},
 		{
 			name: "should fail to generate cel expression for component if isFileExist fails",
