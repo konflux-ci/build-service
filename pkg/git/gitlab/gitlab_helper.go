@@ -270,7 +270,7 @@ func (g *GitlabClient) commitFilesIntoBranch(projectPath, branchName, commitMess
 		actions = append(actions, action)
 	}
 	if signedOff {
-		commitMessage = fmt.Sprintf("%s\nSigned-off-by: %s <%s>", commitMessage, authorName, authorEmail)
+		commitMessage = fmt.Sprintf("%s\n\nSigned-off-by: %s <%s>", commitMessage, authorName, authorEmail)
 	}
 
 	opts := &gitlab.CreateCommitOptions{
@@ -298,7 +298,7 @@ func (g *GitlabClient) addDeleteCommitToBranch(projectPath, branchName, authorNa
 		})
 	}
 	if signedOff {
-		commitMessage = fmt.Sprintf("%s\nSigned-off-by: %s <%s>", commitMessage, authorName, authorEmail)
+		commitMessage = fmt.Sprintf("%s\n\nSigned-off-by: %s <%s>", commitMessage, authorName, authorEmail)
 	}
 
 	opts := &gitlab.CreateCommitOptions{
