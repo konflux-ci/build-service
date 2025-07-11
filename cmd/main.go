@@ -192,8 +192,11 @@ func main() {
 	restConfig := ctrl.GetConfigOrDie()
 	ensureRequiredAPIGroupsAndResourcesExist(restConfig)
 
-	leaseDuration := 60 * time.Second
-	renewDeadline := 35 * time.Second
+	// The values are set according to
+	// https://github.com/openshift/enhancements/blob/master/CONVENTIONS.md#handling-kube-apiserver-disruption
+	leaseDuration := 137 * time.Second
+	renewDeadline := 107 * time.Second
+	retryPeriod := 26 * time.Second
 
 	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
 		Client:                        clientOpts,
@@ -207,6 +210,7 @@ func main() {
 		LeaderElectionReleaseOnCancel: true,
 		LeaseDuration:                 &leaseDuration,
 		RenewDeadline:                 &renewDeadline,
+		RetryPeriod:                   &retryPeriod,
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
