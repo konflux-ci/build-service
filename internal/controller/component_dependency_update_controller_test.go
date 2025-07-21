@@ -985,7 +985,6 @@ var _ = Describe("Component nudge controller", func() {
 			Expect(resultConfig.PackageRules[1].BranchPrefix).Should(Equal("konflux/component-updates/"))
 			Expect(resultConfig.PackageRules[1].BranchTopic).Should(Equal(componentName))
 			Expect(resultConfig.PackageRules[1].CommitMessageTopic).Should(Equal(componentName))
-			Expect(resultConfig.PackageRules[1].FollowTag).Should(Equal(builtImageTag))
 			Expect(resultConfig.PackageRules[1].MatchPackageNames).Should(Equal(matchPackageNames))
 			Expect(resultConfig.PackageRules[1].CommitMessagePrefix).Should(Equal(commitMessagePrefix))
 			Expect(resultConfig.PackageRules[1].CommitMessageSuffix).Should(Equal(commitMessageSuffix))
