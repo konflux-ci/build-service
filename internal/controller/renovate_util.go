@@ -120,7 +120,6 @@ type PackageRule struct {
 	RecreateWhen         string   `json:"recreateWhen,omitempty"`
 	RebaseWhen           string   `json:"rebaseWhen,omitempty"`
 	Enabled              bool     `json:"enabled"`
-	FollowTag            string   `json:"followTag,omitempty"`
 }
 
 type RenovateConfig struct {
@@ -550,7 +549,6 @@ func generateRenovateConfigForNudge(target updateTarget, buildResult *BuildResul
 		RecreateWhen:        "always",
 		RebaseWhen:          "behind-base-branch",
 		Enabled:             true,
-		FollowTag:           buildResult.BuiltImageTag,
 		CommitBody:          fmt.Sprintf("Image created from '%s'\n\nSigned-off-by: %s", gitRepoAtShaLink, target.GitAuthor),
 		CommitMessagePrefix: target.ComponentCustomRenovateOptions.CommitMessagePrefix,
 		CommitMessageSuffix: target.ComponentCustomRenovateOptions.CommitMessageSuffix,
