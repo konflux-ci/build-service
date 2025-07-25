@@ -50,6 +50,9 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 	gitProvider := gitClientConfig.GitProvider
 	secretData := gitClientConfig.PacSecretData
 	username, usernameExists := secretData["username"]
+	if usernameExists && len(username) == 0 {
+		usernameExists = false
+	}
 	password, passwordExists := secretData["password"]
 	_, sshKeyExists := secretData["ssh-privatekey"]
 
