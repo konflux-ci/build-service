@@ -296,11 +296,12 @@ func (r *ComponentBuildReconciler) TriggerPaCBuild(ctx context.Context, componen
 
 	pipelineRunName := component.Name + pipelineRunOnPushSuffix
 
-	triggerURL := fmt.Sprintf("%s/incoming?secret=%s&repository=%s&branch=%s&pipelinerun=%s", webhookTargetUrl, secretValue, repository.Name, targetBranch, pipelineRunName)
+	triggerURL := fmt.Sprintf("%s/incoming", webhookTargetUrl)
 	HttpClient := GetHttpClientFunction()
 
 	// we have to supply source_url as additional param, because PaC isn't able to resolve it for trigger
-	bytesParam := []byte(fmt.Sprintf("{\"params\": {\"source_url\": \"%s\"}}", repoUrl))
+	bytesParam := []byte(fmt.Sprintf("{\"params\": {\"source_url\": \"%s\"}, \"secret\": \"%s\", \"repository\": \"%s\", \"branch\": \"%s\", \"pipelinerun\": \"%s\"}", repoUrl, secretValue, repository.Name, targetBranch, pipelineRunName))
+
 	resp, err := HttpClient.Post(triggerURL, "application/json", bytes.NewBuffer(bytesParam))
 
 	if err != nil {
@@ -310,14 +311,14 @@ func (r *ComponentBuildReconciler) TriggerPaCBuild(ctx context.Context, componen
 
 	if resp.StatusCode != 200 && resp.StatusCode != 202 {
 		// ignore 503 and 504 for now, until PAC fixes issue https://issues.redhat.com/browse/SRVKP-4352
-		log.Info(fmt.Sprintf("PaC incoming endpoint %s returned HTTP %d", triggerURL, resp.StatusCode))
+		log.Info(fmt.Sprintf("PaC incoming endpoint %s with params %s returned HTTP %d", triggerURL, string(bytesParam), resp.StatusCode))
 		if resp.StatusCode == 503 || resp.StatusCode == 504 {
 			return false, nil
 		}
-		return false, fmt.Errorf("PaC incoming endpoint returned HTTP %d", resp.StatusCode)
+		return false, fmt.Errorf("PaC incoming endpoint %s with params %s returned HTTP %d", triggerURL, string(bytesParam), resp.StatusCode)
 	}
 
-	log.Info(fmt.Sprintf("PaC build manually triggered push pipeline for component: %s", component.Name))
+	log.Info(fmt.Sprintf("PaC build manually triggered push pipeline for component: %s, endpoint %s with params %s", component.Name, triggerURL, string(bytesParam)))
 	return false, nil
 }
 
