@@ -233,8 +233,11 @@ func (r *ComponentBuildReconciler) cleanUpNudgingPullSecrets(ctx context.Context
 		nudgedComponentBuildPipelineServiceAccountName := getBuildPipelineServiceAccountNameByComponentName(nudgedComponentName)
 		nudgedComponentBuildPipelineServiceAccount := &corev1.ServiceAccount{}
 		if err := r.Client.Get(ctx, types.NamespacedName{Name: nudgedComponentBuildPipelineServiceAccountName, Namespace: component.Namespace}, nudgedComponentBuildPipelineServiceAccount); err != nil {
-			log.Error(err, "failed to get build pipeline Service Account for Component", "Component", nudgedComponentName, l.Action, l.ActionView)
-			return err
+			if !errors.IsNotFound(err) {
+				log.Error(err, "failed to get build pipeline Service Account for Component", "Component", nudgedComponentName, l.Action, l.ActionView)
+				return err
+			}
+			continue
 		}
 
 		pullSecretIndex := getSecretReferenceIndex(nudgedComponentBuildPipelineServiceAccount, pullSecretName, false)
