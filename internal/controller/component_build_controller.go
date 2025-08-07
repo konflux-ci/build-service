@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -341,10 +342,17 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	requestedAction, requestedActionExists := component.Annotations[BuildRequestAnnotationName]
 	if !requestedActionExists {
-		if _, statusExists := component.Annotations[BuildStatusAnnotationName]; statusExists {
-			// Nothing to do
+		buildStatus := readBuildStatus(&component)
+
+		// Nothing to do when no explicit request and PaC is enabled or failed
+		if buildStatus.PaC != nil {
 			return ctrl.Result{}, nil
 		}
+		// When only message is set, unless it is waiting for ContainerImage message do nothing
+		if buildStatus.Message != "" && !strings.Contains(buildStatus.Message, waitForContainerImageMessage) {
+			return ctrl.Result{}, nil
+		}
+
 		// Automatically build component after creation
 		log.Info("automatically requesting pac provision for the new component")
 		requestedAction = BuildRequestConfigurePaCAnnotationValue
