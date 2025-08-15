@@ -21,6 +21,6 @@ configMapGenerator:
   - name: grafana-dashboard-push-pipeline-rebuild-trigger
     files:
       - grafana-dashboard-push-pipeline-rebuild-trigger.json
-  - name: grafana-dashboard-simple-build-pipeline
+  - name: grafana-dashboard-component-github-availability
     files:
-      - grafana-dashboard-simple-build-pipeline.json
+      - grafana-dashboard-component-github-availability.json
