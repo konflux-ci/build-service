@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -69,6 +70,8 @@ const (
 	defaultBuildPipelineAnnotation     = "build.appstudio.openshift.io/pipeline"
 	buildPipelineConfigMapResourceName = "build-pipeline-config"
 	buildPipelineConfigName            = "config.yaml"
+
+	waitForContainerImageMessage = "waiting for spec.containerImage to be set by ImageRepository with annotation image-controller.appstudio.redhat.com/update-component-image"
 )
 
 type BuildStatus struct {
@@ -201,6 +204,21 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if getContainerImageRepositoryForComponent(&component) == "" {
 		// Container image must be set. It's not possible to proceed without it.
 		log.Info("Waiting for ContainerImage to be set")
+
+		buildStatus := readBuildStatus(&component)
+
+		if buildStatus.Message == waitForContainerImageMessage {
+			return ctrl.Result{}, nil
+		}
+
+		buildStatus.Message = waitForContainerImageMessage
+		writeBuildStatus(&component, buildStatus)
+		if err := r.Client.Update(ctx, &component); err != nil {
+			log.Error(err, "failed to update component after waiting for containerImage", l.Action, l.ActionUpdate, l.Audit, "true")
+			return ctrl.Result{}, err
+		}
+		r.WaitForCacheUpdate(ctx, req.NamespacedName, &component)
+
 		return ctrl.Result{}, nil
 	}
 
@@ -324,10 +342,17 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	requestedAction, requestedActionExists := component.Annotations[BuildRequestAnnotationName]
 	if !requestedActionExists {
-		if _, statusExists := component.Annotations[BuildStatusAnnotationName]; statusExists {
-			// Nothing to do
+		buildStatus := readBuildStatus(&component)
+
+		// Nothing to do when no explicit request and PaC is enabled or failed
+		if buildStatus.PaC != nil {
 			return ctrl.Result{}, nil
 		}
+		// When only message is set, unless it is waiting for ContainerImage message do nothing
+		if buildStatus.Message != "" && !strings.Contains(buildStatus.Message, waitForContainerImageMessage) {
+			return ctrl.Result{}, nil
+		}
+
 		// Automatically build component after creation
 		log.Info("automatically requesting pac provision for the new component")
 		requestedAction = BuildRequestConfigurePaCAnnotationValue

@@ -120,7 +120,6 @@ type PackageRule struct {
 	RecreateWhen         string   `json:"recreateWhen,omitempty"`
 	RebaseWhen           string   `json:"rebaseWhen,omitempty"`
 	Enabled              bool     `json:"enabled"`
-	FollowTag            string   `json:"followTag,omitempty"`
 }
 
 type RenovateConfig struct {
@@ -550,7 +549,6 @@ func generateRenovateConfigForNudge(target updateTarget, buildResult *BuildResul
 		RecreateWhen:        "always",
 		RebaseWhen:          "behind-base-branch",
 		Enabled:             true,
-		FollowTag:           buildResult.BuiltImageTag,
 		CommitBody:          fmt.Sprintf("Image created from '%s'\n\nSigned-off-by: %s", gitRepoAtShaLink, target.GitAuthor),
 		CommitMessagePrefix: target.ComponentCustomRenovateOptions.CommitMessagePrefix,
 		CommitMessageSuffix: target.ComponentCustomRenovateOptions.CommitMessageSuffix,
@@ -635,7 +633,7 @@ func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Contex
 		// we are passing host rules via variable, because we can't resolve variable in json config
 		// also this way we can use custom provided config without any modifications
 		renovateCmds = append(renovateCmds,
-			fmt.Sprintf("RENOVATE_PR_HOURLY_LIMIT=0 RENOVATE_PR_CONCURRENT_LIMIT=0 RENOVATE_TOKEN=$TOKEN_%s RENOVATE_CONFIG_FILE=/configs/%s-%s.%s RENOVATE_HOST_RULES=%s renovate", randomStr2, target.ComponentName, randomStr1, configType, hostRules),
+			fmt.Sprintf("RENOVATE_X_GITLAB_MERGE_REQUEST_DELAY=5000 RENOVATE_X_GITLAB_AUTO_MERGEABLE_CHECK_ATTEMPS=7 RENOVATE_PR_HOURLY_LIMIT=0 RENOVATE_PR_CONCURRENT_LIMIT=0 RENOVATE_TOKEN=$TOKEN_%s RENOVATE_CONFIG_FILE=/configs/%s-%s.%s RENOVATE_HOST_RULES=%s renovate", randomStr2, target.ComponentName, randomStr1, configType, hostRules),
 		)
 	}
 	if len(renovateCmds) == 0 {

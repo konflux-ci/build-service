@@ -81,11 +81,11 @@
           "refId": "A"
         }
       ],
-      "title": "Initial simple builds or initial PaC provisions total count",
+      "title": "Initial PaC provisions total count",
       "type": "stat"
     },
     {
-      "description": "Each bar shows how many initial simple build pipeline runs or initial PaC provisions were prepared in the time range. For example, \"15\" bar shows the number of initial simple build pipeline runs or initial PaC provisions that took from 10 to 15 seconds.",
+      "description": "Each bar shows how many initial PaC provisions were prepared in the time range. For example, \"15\" bar shows the number of initial PaC provisions that took from 10 to 15 seconds.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -141,11 +141,11 @@
           "refId": "A"
         }
       ],
-      "title": "Initial simple build or initial PaC provisions time distribution",
+      "title": "Initial PaC provisions time distribution",
       "type": "bargauge"
     },
     {
-      "description": "Shows increase of initial simple builds or PaC provisions in each time category over time",
+      "description": "Shows increase of initial PaC provisions in each time category over time",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -226,7 +226,7 @@
           "refId": "A"
         }
       ],
-      "title": "Increase of initial simple builds or initial PaC provisions on timeline",
+      "title": "Increase of initial PaC provisions on timeline",
       "type": "heatmap"
     },
     {
@@ -311,7 +311,7 @@
           "refId": "A"
         }
       ],
-      "title": "Initial sipmle builds or initial PaC provisions average time on timeline",
+      "title": "Initial PaC provisions average time on timeline",
       "type": "heatmap"
     }
   ],
@@ -327,6 +327,6 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "Component creation (initial simple build or PaC provision)",
+  "title": "Component creation (initial PaC provision)",
   "weekStart": ""
 }

@@ -168,7 +168,10 @@ func (g *GitlabClient) deleteBranch(projectPath, branch string) (bool, error) {
 func (g *GitlabClient) getDefaultBranch(projectPath string) (string, error) {
 	projectInfo, resp, err := g.client.Projects.GetProject(projectPath, nil)
 	if err != nil {
-		return "", refineGitHostingServiceError(resp.Response, err)
+		if resp != nil {
+			err = refineGitHostingServiceError(resp.Response, err)
+		}
+		return "", err
 	}
 	if projectInfo == nil {
 		return "", fmt.Errorf("project info is empty in GitLab API response")
