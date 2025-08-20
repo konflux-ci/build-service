@@ -104,6 +104,12 @@ spec:
       description: Path to a file with build arguments for buildah, see https://www.mankier.com/1/buildah-build#--build-arg-file
       name: build-args-file
       type: string
+    - default:
+      - linux/x86_64
+      - linux/arm64
+      description: List of platforms to build the container image on
+      name: build-platforms
+      type: array
     results:
     - description: ''
       name: IMAGE_URL
@@ -215,7 +221,12 @@ spec:
         workspace: git-auth
       - name: netrc
         workspace: netrc
-    - name: build-container
+    - matrix:
+        params:
+        - name: PLATFORM
+          value:
+          - $(params.build-platforms)
+      name: build-images
       params:
       - name: IMAGE
         value: $(params.output-image)
@@ -245,9 +256,9 @@ spec:
       taskRef:
         params:
         - name: name
-          value: buildah-oci-ta
+          value: buildah-remote-oci-ta
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-buildah-oci-ta:0.4@sha256:9e9bac2044d6231b44114046b9d528c135388699365f0f210ee810c01bd4d702
+          value: quay.io/konflux-ci/tekton-catalog/task-buildah-remote-oci-ta:0.4@sha256:153d73cd52e904962ff1d3c9b13eba9e8bd4ef38bb768853db5e5b0ada3230d4
         - name: kind
           value: task
         resolver: bundles
@@ -256,7 +267,12 @@ spec:
         operator: in
         values:
         - 'true'
-    - name: build-sealights-container
+    - matrix:
+        params:
+        - name: PLATFORM
+          value:
+          - $(params.build-platforms)
+      name: build-sealights-images
       params:
       - name: IMAGE
         value: $(params.output-image).sealights
@@ -287,9 +303,9 @@ spec:
       taskRef:
         params:
         - name: name
-          value: buildah-oci-ta
+          value: buildah-remote-oci-ta
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-buildah-oci-ta:0.4@sha256:9e9bac2044d6231b44114046b9d528c135388699365f0f210ee810c01bd4d702
+          value: quay.io/konflux-ci/tekton-catalog/task-buildah-remote-oci-ta:0.4@sha256:28d8a4f7c1ff6e8bb09d89b06c7c8769093ac7e9325ad9edfe7b2d766f643b87
         - name: kind
           value: task
         resolver: bundles
@@ -307,12 +323,12 @@ spec:
       - name: IMAGE_EXPIRES_AFTER
         value: $(params.image-expires-after)
       - name: ALWAYS_BUILD_INDEX
-        value: $(params.build-image-index)
+        value: 'true'
       - name: IMAGES
         value:
-        - $(tasks.build-container.results.IMAGE_URL)@$(tasks.build-container.results.IMAGE_DIGEST)
+        - $(tasks.build-images.results.IMAGE_REF[*])
       runAfter:
-      - build-container
+      - build-images
       taskRef:
         params:
         - name: name
