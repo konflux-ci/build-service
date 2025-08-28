@@ -115,9 +115,9 @@ spec:
           value: >-
             '[{\"containerPort\":30012,\"hostPort\":8180,\"protocol\":\"TCP\"}]'
         - name: cpus
-          value: 32
-        - name: memory
           value: 64
+        - name: memory
+          value: 128
         - name: spot
           value: 'false'
     - name: deploy-konflux
