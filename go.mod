@@ -1,6 +1,8 @@
 module github.com/konflux-ci/build-service
 
-go 1.22.9
+go 1.23.0
+
+toolchain go1.24.6
 
 require (
 	github.com/bradleyfalzon/ghinstallation/v2 v2.11.0
@@ -30,8 +32,8 @@ require (
 // If you update dependencies below you must also update internal/controller/suite_test.go
 require (
 	github.com/konflux-ci/application-api v0.0.0-20240812090716-e7eb2ecfb409
-	github.com/konflux-ci/release-service v0.0.0-20240610124538-758a1d48d002
 	github.com/konflux-ci/image-controller v0.0.0-20250424143112-69ec692d353c
+	github.com/konflux-ci/release-service v0.0.0-20240610124538-758a1d48d002
 	github.com/openshift-pipelines/pipelines-as-code v0.28.2
 	github.com/tektoncd/pipeline v0.63.0
 )
@@ -73,7 +75,7 @@ require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/cel-go v0.22.0 // indirect
 	github.com/google/gnostic-models v0.6.9-0.20230804172637-c7be7c783f49 // indirect
-	github.com/google/go-cmp v0.6.0 // indirect
+	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/go-github/v62 v62.0.0 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
