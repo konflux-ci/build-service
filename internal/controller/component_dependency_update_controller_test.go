@@ -325,6 +325,20 @@ var _ = Describe("Component nudge controller", func() {
 			Expect(len(renovatePipelines)).Should(Equal(1))
 			renovateCommand := strings.Join(renovatePipelines[0].Spec.PipelineSpec.Tasks[0].TaskSpec.Steps[0].Command, ";")
 			Expect(strings.Contains(renovateCommand, `'username':'image_repo_username'`)).Should(BeTrue())
+
+			Expect(renovatePipelines[0].Labels).Should(Equal(map[string]string{
+				"build.appstudio.redhat.com/type": "nudge",
+			}))
+
+			Expect(renovatePipelines[0].Annotations).Should(Equal(map[string]string{
+				// The component names are duplicated because we run tests for both basic and app auth of each component
+				"build.appstudio.redhat.com/nudged-components": "operator1-nudges operator2-nudges operator1-nudges operator2-nudges",
+				"build.appstudio.redhat.com/nudging-pipeline":  "test-pipeline-1",
+				"build.appstudio.redhat.com/nudging-commit":    "4b00cdb6ceb84d3953d8987e3e06f967a6d86e76",
+				"build.appstudio.redhat.com/nudging-component": "base-component-nudges",
+				"build.appstudio.redhat.com/nudging-image":     "quay.io.foo/bar:latest",
+			}))
+
 			caMounted := false
 			for _, volumeMount := range renovatePipelines[0].Spec.PipelineSpec.Tasks[0].TaskSpec.TaskSpec.Steps[0].VolumeMounts {
 				if volumeMount.Name == CaVolumeMountName {
@@ -1074,7 +1088,7 @@ func createBuildPipelineRun(name, namespace, component, imageBuiltFrom string) *
 	}
 	run := tektonapi.PipelineRun{}
 	run.Labels = map[string]string{ComponentNameLabelName: component, PipelineRunTypeLabelName: PipelineRunBuildType}
-	run.Annotations = map[string]string{PacEventTypeAnnotationName: PacEventPushType, NudgeFilesAnnotationName: ".*Dockerfile.*, .*.yaml, .*Containerfile.*"}
+	run.Annotations = map[string]string{PacEventTypeAnnotationName: PacEventPushType, NudgeFilesAnnotationName: ".*Dockerfile.*, .*.yaml, .*Containerfile.*", gitRepoAtShaAnnotationName: "https://github.com/foo/bar/-/tree/4b00cdb6ceb84d3953d8987e3e06f967a6d86e76"}
 	if imageBuiltFrom != "" {
 		run.Annotations[gitRepoAtShaAnnotationName] = imageBuiltFrom
 	}

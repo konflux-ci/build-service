@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -588,6 +589,35 @@ func generateRenovateConfigForNudge(target updateTarget, buildResult *BuildResul
 	return renovateConfig, nil
 }
 
+// This function joins the component names using a space
+func joinNudgedComponentNames(targets []updateTarget) string {
+	componentNames := []string{}
+	for _, target := range targets {
+		componentNames = append(componentNames, target.ComponentName)
+	}
+	return strings.Join(componentNames, " ")
+}
+
+// This function assumes the commit url is in the format:
+// https://forge.com/project/repository/-/tree/4b00cdb6ceb84d3953d8987e3e06f967a6d86e76
+func extractCommitHash(commitUrl string) string {
+	parts := strings.Split(commitUrl, "/")
+
+	if len(parts) < 2 {
+		return ""
+	}
+
+	// check if the extracted part of the url is a valid commit hash
+	commitHash := parts[len(parts)-1]
+	commitHashRegex := regexp.MustCompile(`[a-f0-9]{40}`)
+
+	if !commitHashRegex.MatchString(commitHash) {
+		return ""
+	}
+
+	return commitHash
+}
+
 // CreateRenovaterPipeline will create a renovate pipeline in the user namespace, to update component dependencies.
 // The reasons for using a pipeline in the component namespace instead of a Job in the system namespace is as follows:
 // - The user namespace has direct access to secrets to allow updating private images
@@ -596,7 +626,7 @@ func generateRenovateConfigForNudge(target updateTarget, buildResult *BuildResul
 // - Tekton automatically provides docker config from linked service accounts for private images, with a job I would need to implement this manually
 //
 // Warning: the installation token used here should only be scoped to the individual repositories being updated
-func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Context, namespace string, targets []updateTarget, debug, simpleBranchName bool, buildResult *BuildResult, gitRepoAtShaLink string) error {
+func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Context, nudgingPipelineRun *tektonapi.PipelineRun, targets []updateTarget, debug bool, simpleBranchName bool, buildResult *BuildResult, gitRepoAtShaLink string) error {
 	log := logger.FromContext(ctx)
 	log.Info(fmt.Sprintf("Creating renovate pipeline for %d components", len(targets)))
 
@@ -606,6 +636,7 @@ func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Contex
 	timestamp := time.Now().Unix()
 	nameSuffix := fmt.Sprintf("%d-%s", timestamp, RandomString(5))
 	name := fmt.Sprintf("renovate-pipeline-%s", nameSuffix)
+	namespace := nudgingPipelineRun.Namespace
 	caConfigMapName := fmt.Sprintf("renovate-ca-%s", nameSuffix)
 	secretTokens := map[string]string{}
 	configmaps := map[string]string{}
@@ -703,10 +734,21 @@ func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Contex
 	if renovateImageUrl == "" {
 		renovateImageUrl = DefaultRenovateImageUrl
 	}
+
 	pipelineRun := &tektonapi.PipelineRun{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
+			Labels: map[string]string{
+				"build.appstudio.redhat.com/type": "nudge",
+			},
+			Annotations: map[string]string{
+				"build.appstudio.redhat.com/nudged-components": joinNudgedComponentNames(targets),
+				"build.appstudio.redhat.com/nudging-commit":    extractCommitHash(gitRepoAtShaLink),
+				"build.appstudio.redhat.com/nudging-component": buildResult.Component.Name,
+				"build.appstudio.redhat.com/nudging-image":     fmt.Sprintf("%s:%s", buildResult.BuiltImageRepository, buildResult.BuiltImageTag),
+				"build.appstudio.redhat.com/nudging-pipeline":  nudgingPipelineRun.Name,
+			},
 		},
 		Spec: tektonapi.PipelineRunSpec{
 			PipelineSpec: &tektonapi.PipelineSpec{
