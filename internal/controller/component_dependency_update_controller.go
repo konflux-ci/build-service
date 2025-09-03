@@ -356,8 +356,11 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 			data := struct {
 				Mapping struct {
 					Components []struct {
-						Name       string
-						Repository string
+						Name         string
+						Repository   string
+						Repositories []struct {
+							Url string
+						}
 					}
 				}
 			}{}
@@ -367,11 +370,23 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 			}
 			for _, compMapping := range data.Mapping.Components {
 				if compMapping.Name == updatedComponent.Name {
-					log.Info("added distribution repo for component", "repo", compMapping.Repository)
-					distibutionRepositories = append(distibutionRepositories, compMapping.Repository)
-					registryRedhatMapping := mapToRegistryRedhatIo(compMapping.Repository)
-					if registryRedhatMapping != "" {
-						distibutionRepositories = append(distibutionRepositories, registryRedhatMapping)
+					if compMapping.Repository != "" {
+						log.Info("added distribution repo for component", "repo", compMapping.Repository)
+						distibutionRepositories = append(distibutionRepositories, compMapping.Repository)
+						registryRedhatMapping := mapToRegistryRedhatIo(compMapping.Repository)
+						if registryRedhatMapping != "" {
+							distibutionRepositories = append(distibutionRepositories, registryRedhatMapping)
+						}
+					}
+					for _, repository := range compMapping.Repositories {
+						if repository.Url != "" {
+							log.Info("added distribution repo for component", "repo", repository.Url)
+							distibutionRepositories = append(distibutionRepositories, repository.Url)
+							registryRedhatMapping := mapToRegistryRedhatIo(repository.Url)
+							if registryRedhatMapping != "" {
+								distibutionRepositories = append(distibutionRepositories, registryRedhatMapping)
+							}
+						}
 					}
 				}
 			}
