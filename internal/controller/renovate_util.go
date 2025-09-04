@@ -106,20 +106,21 @@ type CustomManager struct {
 }
 
 type PackageRule struct {
-	MatchPackagePatterns []string `json:"matchPackagePatterns,omitempty"`
-	MatchPackageNames    []string `json:"matchPackageNames,omitempty"`
-	GroupName            string   `json:"groupName,omitempty"`
-	BranchPrefix         string   `json:"branchPrefix,omitempty"`
-	BranchTopic          string   `json:"branchTopic,omitempty"`
-	CommitMessageTopic   string   `json:"commitMessageTopic,omitempty"`
-	CommitMessagePrefix  string   `json:"commitMessagePrefix,omitempty"`
-	CommitMessageSuffix  string   `json:"commitMessageSuffix,omitempty"`
-	CommitBody           string   `json:"commitBody,omitempty"`
-	PRFooter             string   `json:"prFooter,omitempty"`
-	PRHeader             string   `json:"prHeader,omitempty"`
-	RecreateWhen         string   `json:"recreateWhen,omitempty"`
-	RebaseWhen           string   `json:"rebaseWhen,omitempty"`
-	Enabled              bool     `json:"enabled"`
+	MatchPackagePatterns   []string `json:"matchPackagePatterns,omitempty"`
+	MatchPackageNames      []string `json:"matchPackageNames,omitempty"`
+	GroupName              string   `json:"groupName,omitempty"`
+	BranchPrefix           string   `json:"branchPrefix,omitempty"`
+	BranchTopic            string   `json:"branchTopic,omitempty"`
+	AdditionalBranchPrefix string   `json:"additionalBranchPrefix,omitempty"`
+	CommitMessageTopic     string   `json:"commitMessageTopic,omitempty"`
+	CommitMessagePrefix    string   `json:"commitMessagePrefix,omitempty"`
+	CommitMessageSuffix    string   `json:"commitMessageSuffix,omitempty"`
+	CommitBody             string   `json:"commitBody,omitempty"`
+	PRFooter               string   `json:"prFooter,omitempty"`
+	PRHeader               string   `json:"prHeader,omitempty"`
+	RecreateWhen           string   `json:"recreateWhen,omitempty"`
+	RebaseWhen             string   `json:"rebaseWhen,omitempty"`
+	Enabled                bool     `json:"enabled"`
 }
 
 type RenovateConfig struct {
@@ -539,19 +540,20 @@ func generateRenovateConfigForNudge(target updateTarget, buildResult *BuildResul
 
 	packageRules = append(packageRules, DisableAllPackageRules)
 	packageRules = append(packageRules, PackageRule{
-		MatchPackageNames:   matchPackageNames,
-		GroupName:           fmt.Sprintf("Component Update %s", buildResult.Component.Name),
-		BranchPrefix:        BranchPrefix,
-		BranchTopic:         buildResult.Component.Name,
-		CommitMessageTopic:  buildResult.Component.Name,
-		PRFooter:            "To execute skipped test pipelines write comment `/ok-to-test`",
-		PRHeader:            fmt.Sprintf("Image created from '%s'", gitRepoAtShaLink),
-		RecreateWhen:        "always",
-		RebaseWhen:          "behind-base-branch",
-		Enabled:             true,
-		CommitBody:          fmt.Sprintf("Image created from '%s'\n\nSigned-off-by: %s", gitRepoAtShaLink, target.GitAuthor),
-		CommitMessagePrefix: target.ComponentCustomRenovateOptions.CommitMessagePrefix,
-		CommitMessageSuffix: target.ComponentCustomRenovateOptions.CommitMessageSuffix,
+		MatchPackageNames:      matchPackageNames,
+		GroupName:              fmt.Sprintf("Component Update %s", buildResult.Component.Name),
+		BranchPrefix:           BranchPrefix,
+		BranchTopic:            buildResult.Component.Name,
+		AdditionalBranchPrefix: fmt.Sprintf("%s-", target.ComponentName),
+		CommitMessageTopic:     buildResult.Component.Name,
+		PRFooter:               "To execute skipped test pipelines write comment `/ok-to-test`",
+		PRHeader:               fmt.Sprintf("Image created from '%s'", gitRepoAtShaLink),
+		RecreateWhen:           "always",
+		RebaseWhen:             "behind-base-branch",
+		Enabled:                true,
+		CommitBody:             fmt.Sprintf("Image created from '%s'\n\nSigned-off-by: %s", gitRepoAtShaLink, target.GitAuthor),
+		CommitMessagePrefix:    target.ComponentCustomRenovateOptions.CommitMessagePrefix,
+		CommitMessageSuffix:    target.ComponentCustomRenovateOptions.CommitMessageSuffix,
 	})
 
 	renovateConfig := RenovateConfig{
