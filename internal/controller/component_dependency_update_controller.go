@@ -417,7 +417,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 	if len(targets) > 0 {
 		log.Info("will create renovate job")
 		buildResult := BuildResult{BuiltImageRepository: repo, BuiltImageTag: tag, Digest: digest, Component: updatedComponent, DistributionRepositories: distibutionRepositories, FileMatches: nudgeFiles}
-		nudgeErr = r.ComponentDependenciesUpdater.CreateRenovaterPipeline(ctx, pipelineRun.Namespace, targets, true, &buildResult, gitRepoAtShaLink)
+		nudgeErr = r.ComponentDependenciesUpdater.CreateRenovaterPipeline(ctx, pipelineRun, targets, true, &buildResult, gitRepoAtShaLink)
 	} else {
 		log.Info("no targets found to update")
 	}
