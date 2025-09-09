@@ -56,32 +56,6 @@ type pipelineConfig struct {
 	Pipelines           []BuildPipeline `json:"pipelines"`
 }
 
-func (r *ComponentBuildReconciler) ensurePipelineServiceAccount(ctx context.Context, namespace string) (*corev1.ServiceAccount, error) {
-	log := ctrllog.FromContext(ctx)
-
-	pipelinesServiceAccount := &corev1.ServiceAccount{}
-	err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: namespace}, pipelinesServiceAccount)
-	if err != nil {
-		if !errors.IsNotFound(err) {
-			log.Error(err, fmt.Sprintf("Failed to read service account %s in namespace %s", buildPipelineServiceAccountName, namespace), l.Action, l.ActionView)
-			return nil, err
-		}
-		// Create service account for the build pipeline
-		buildPipelineSA := corev1.ServiceAccount{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      buildPipelineServiceAccountName,
-				Namespace: namespace,
-			},
-		}
-		if err := r.Client.Create(ctx, &buildPipelineSA); err != nil {
-			log.Error(err, fmt.Sprintf("Failed to create service account %s in namespace %s", buildPipelineServiceAccountName, namespace), l.Action, l.ActionAdd)
-			return nil, err
-		}
-		return r.ensurePipelineServiceAccount(ctx, namespace)
-	}
-	return pipelinesServiceAccount, nil
-}
-
 // generatePaCPipelineRunConfigs generates PipelineRun YAML configs for given component.
 // The generated PipelineRun Yaml content are returned in byte string and in the order of push and pull request.
 func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigs(ctx context.Context, component *appstudiov1alpha1.Component, gitClient gp.GitProviderClient, pacTargetBranch string) ([]byte, []byte, error) {

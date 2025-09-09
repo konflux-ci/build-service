@@ -74,8 +74,6 @@ const (
 
 	FailureRetryTime  = time.Minute * 5 // We retry after 5 minutes on failure
 	DefaultNudgeFiles = ".*Dockerfile.*, .*.yaml, .*Containerfile.*"
-
-	sharedBuildPipelineServiceAccountName = buildPipelineServiceAccountName
 )
 
 // The amount of time we wait before attempting to update the component, to try and avoid contention issues
@@ -566,18 +564,11 @@ func (r *ComponentDependencyUpdateReconciler) getImageRepositoryCredentials(ctx 
 	namespace := component.Namespace
 
 	// get service account and gather linked secrets
-	buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(component)
 	buildPipelineServiceAccount := &corev1.ServiceAccount{}
-	err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: namespace}, buildPipelineServiceAccount)
-	if err != nil {
-		if !errors.IsNotFound(err) {
-			log.Error(err, fmt.Sprintf("Failed to read service account %s in namespace %s", buildPipelineServiceAccountName, namespace), l.Action, l.ActionView)
-			return "", "", err
-		}
-		// Fall back to deprecated appstudio-pipline Service Account
-		if err := r.Client.Get(ctx, types.NamespacedName{Name: sharedBuildPipelineServiceAccountName, Namespace: namespace}, buildPipelineServiceAccount); err != nil {
-			return "", "", err
-		}
+	buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(component)
+	if err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: namespace}, buildPipelineServiceAccount); err != nil {
+		log.Error(err, fmt.Sprintf("Failed to read service account %s in namespace %s", buildPipelineServiceAccountName, namespace), l.Action, l.ActionView)
+		return "", "", err
 	}
 
 	linkedSecretNames := []string{}
@@ -586,7 +577,7 @@ func (r *ComponentDependencyUpdateReconciler) getImageRepositoryCredentials(ctx 
 	}
 
 	if len(linkedSecretNames) == 0 {
-		err = fmt.Errorf("no secrets linked to service account %s in namespace %s", buildPipelineServiceAccountName, namespace)
+		err := fmt.Errorf("no secrets linked to service account %s in namespace %s", buildPipelineServiceAccountName, namespace)
 		log.Error(err, "no linked secrets")
 		return "", "", err
 	}
@@ -620,7 +611,7 @@ func (r *ComponentDependencyUpdateReconciler) getImageRepositoryCredentials(ctx 
 		}
 
 		dockerConfigObject := &DockerConfigJson{}
-		if err = json.Unmarshal(secret.Data[corev1.DockerConfigJsonKey], dockerConfigObject); err != nil {
+		if err := json.Unmarshal(secret.Data[corev1.DockerConfigJsonKey], dockerConfigObject); err != nil {
 			log.Error(err, fmt.Sprintf("unable to parse docker json config in the secret %s", secret.Name))
 			continue
 		}
