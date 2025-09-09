@@ -31,7 +31,6 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
@@ -1622,8 +1621,6 @@ var _ = Describe("Component build controller", func() {
 
 			componentBuildSAKey := getComponentServiceAccountKey(resourceCleanupKey)
 			waitServiceAccount(componentBuildSAKey)
-			// waiting deprecated SA for backward compatibility
-			waitPipelineServiceAccount(resourceCleanupKey.Namespace)
 
 			// Make sure that proper cleanup was invoked
 			isRemovePaCPullRequestInvoked := false
@@ -1633,7 +1630,6 @@ var _ = Describe("Component build controller", func() {
 			}
 
 			deleteServiceAccount(componentBuildSAKey)
-			deletePipelineServiceAccount(resourceCleanupKey.Namespace)
 
 			Expect(isRemovePaCPullRequestInvoked).To(BeFalse())
 			// Clean up for the component should not recreate pipeline service account
@@ -1642,12 +1638,8 @@ var _ = Describe("Component build controller", func() {
 			// so removal of PR might not be called yet while component is already gone
 			Eventually(func() bool { return isRemovePaCPullRequestInvoked }, timeout, interval).Should(BeTrue())
 
-			pipelineServiceAccountKey := types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: resourceCleanupKey.Namespace}
 			pipelineServiceAccount := &corev1.ServiceAccount{}
-			err := k8sClient.Get(ctx, pipelineServiceAccountKey, pipelineServiceAccount)
-			Expect(k8sErrors.IsNotFound(err)).To(BeTrue())
-
-			err = k8sClient.Get(ctx, componentBuildSAKey, pipelineServiceAccount)
+			err := k8sClient.Get(ctx, componentBuildSAKey, pipelineServiceAccount)
 			Expect(k8sErrors.IsNotFound(err)).To(BeTrue())
 		})
 	})
@@ -2393,284 +2385,6 @@ var _ = Describe("Component build controller", func() {
 			Expect((*repository.Spec.Incomings)[0].Targets).To(Equal([]string{"main", "another"}))
 			Expect(len((*repository.Spec.Incomings)[0].Params)).To(Equal(1))
 			Expect((*repository.Spec.Incomings)[0].Params).To(Equal([]string{"source_url"}))
-		})
-	})
-
-	// TODO delete when migration is done
-	Context("Test Pipelines as Code Service Account migration PR", func() {
-		const (
-			mergeUrl                       = "merge-url"
-			buildStatusPaCProvisionedValue = `{"pac":{"state":"enabled","merge-url":"https://githost.com/org/repo/pull/123","configuration-time":"Wed, 06 Nov 2024 08:41:44 UTC"},"message":"done"}`
-		)
-		var (
-			namespace             = "after-migration"
-			resourceMigrationKey  = types.NamespacedName{Name: HASCompName + "-sa-migration", Namespace: namespace}
-			namespacePaCSecretKey = types.NamespacedName{Name: PipelinesAsCodeGitHubAppSecretName, Namespace: namespace}
-			webhookSecretKey      = types.NamespacedName{Name: pipelinesAsCodeWebhooksSecretName, Namespace: namespace}
-		)
-
-		_ = BeforeEach(func() {
-			createNamespace(namespace)
-			createNamespace(pipelinesAsCodeNamespace)
-			createRoute(pacRouteKey, "pac-host")
-			createNamespace(BuildServiceNamespaceName)
-			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
-			pacSecretData := map[string]string{
-				"github-application-id": "12345",
-				"github-private-key":    githubAppPrivateKey,
-			}
-			createSecret(pacSecretKey, pacSecretData)
-
-			ResetTestGitProviderClient()
-			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
-				defer GinkgoRecover()
-				Fail("should be checked")
-				return "", nil
-			}
-
-			createCustomComponentWithoutBuildRequest(componentConfig{
-				componentKey: resourceMigrationKey,
-				annotations: map[string]string{
-					defaultBuildPipelineAnnotation: defaultPipelineAnnotationValue,
-					BuildStatusAnnotationName:      buildStatusPaCProvisionedValue, // simulate PaC provision was done
-				},
-				finalizers: []string{PaCProvisionFinalizer}, // simulate PaC provision was done
-			})
-		})
-
-		_ = AfterEach(func() {
-			deleteComponent(resourceMigrationKey)
-			deletePaCRepository(resourceMigrationKey)
-
-			deleteSecret(webhookSecretKey)
-			deleteSecret(namespacePaCSecretKey)
-
-			deleteSecret(pacSecretKey)
-			deleteRoute(pacRouteKey)
-		})
-
-		It("should create migration PR", func() {
-			isCreateSAMigrationPRInvoked := false
-			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
-				defer GinkgoRecover()
-
-				Expect(len(d.Files)).To(Equal(2))
-				for _, file := range d.Files {
-					buildPipelineData := &tektonapi.PipelineRun{}
-					Expect(yaml.Unmarshal(file.Content, buildPipelineData)).To(Succeed())
-					Expect(buildPipelineData.Spec.TaskRunTemplate.ServiceAccountName).To(Equal(getComponentServiceAccountKey(resourceMigrationKey).Name))
-				}
-
-				isCreateSAMigrationPRInvoked = true
-				return mergeUrl + "-migration", nil
-			}
-			DownloadFileContentFunc = func(repoUrl, branchName, filePath string) ([]byte, error) {
-				return yaml.Marshal(tektonapi.PipelineRun{})
-			}
-
-			component := getComponent(resourceMigrationKey)
-			component.Annotations[serviceAccountMigrationAnnotationName] = "true"
-			Expect(k8sClient.Update(ctx, component)).To(Succeed())
-
-			Eventually(func() bool {
-				return isCreateSAMigrationPRInvoked
-			}, timeout, interval).Should(BeTrue())
-			waitComponentAnnotationGone(resourceMigrationKey, serviceAccountMigrationAnnotationName)
-		})
-
-		It("should create migration PR if only push pipeline present", func() {
-			isCreateSAMigrationPRInvoked := false
-			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
-				defer GinkgoRecover()
-
-				Expect(len(d.Files)).To(Equal(1))
-				buildPipelineData := &tektonapi.PipelineRun{}
-				Expect(yaml.Unmarshal(d.Files[0].Content, buildPipelineData)).To(Succeed())
-				Expect(buildPipelineData.Name).To(HaveSuffix(pipelineRunOnPushSuffix))
-				Expect(buildPipelineData.Spec.TaskRunTemplate.ServiceAccountName).To(Equal(getComponentServiceAccountKey(resourceMigrationKey).Name))
-
-				isCreateSAMigrationPRInvoked = true
-				return mergeUrl + "-migration", nil
-			}
-			DownloadFileContentFunc = func(repoUrl, branchName, filePath string) ([]byte, error) {
-				if strings.HasSuffix(filePath, pipelineRunOnPushFilename) {
-					return yaml.Marshal(
-						tektonapi.PipelineRun{
-							ObjectMeta: metav1.ObjectMeta{
-								Name: resourceMigrationKey.Name + pipelineRunOnPushSuffix,
-							},
-						})
-				}
-				return nil, k8sErrors.NewNotFound(schema.GroupResource{}, "pull pipeline")
-			}
-
-			component := getComponent(resourceMigrationKey)
-			component.Annotations[serviceAccountMigrationAnnotationName] = "true"
-			Expect(k8sClient.Update(ctx, component)).To(Succeed())
-
-			Eventually(func() bool {
-				return isCreateSAMigrationPRInvoked
-			}, timeout, interval).Should(BeTrue())
-			waitComponentAnnotationGone(resourceMigrationKey, serviceAccountMigrationAnnotationName)
-		})
-
-		It("should create migration PR if only pull pipeline present", func() {
-			isCreateSAMigrationPRInvoked := false
-			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
-				defer GinkgoRecover()
-
-				Expect(len(d.Files)).To(Equal(1))
-				buildPipelineData := &tektonapi.PipelineRun{}
-				Expect(yaml.Unmarshal(d.Files[0].Content, buildPipelineData)).To(Succeed())
-				Expect(buildPipelineData.Name).To(HaveSuffix(pipelineRunOnPRSuffix))
-				Expect(buildPipelineData.Spec.TaskRunTemplate.ServiceAccountName).To(Equal(getComponentServiceAccountKey(resourceMigrationKey).Name))
-
-				isCreateSAMigrationPRInvoked = true
-				return mergeUrl + "-migration", nil
-			}
-			DownloadFileContentFunc = func(repoUrl, branchName, filePath string) ([]byte, error) {
-				if strings.HasSuffix(filePath, pipelineRunOnPRFilename) {
-					return yaml.Marshal(
-						tektonapi.PipelineRun{
-							ObjectMeta: metav1.ObjectMeta{
-								Name: resourceMigrationKey.Name + pipelineRunOnPRSuffix,
-							},
-						})
-				}
-				return nil, k8sErrors.NewNotFound(schema.GroupResource{}, "push pipeline")
-			}
-
-			component := getComponent(resourceMigrationKey)
-			component.Annotations[serviceAccountMigrationAnnotationName] = "true"
-			Expect(k8sClient.Update(ctx, component)).To(Succeed())
-
-			Eventually(func() bool {
-				return isCreateSAMigrationPRInvoked
-			}, timeout, interval).Should(BeTrue())
-			waitComponentAnnotationGone(resourceMigrationKey, serviceAccountMigrationAnnotationName)
-		})
-
-		It("should recover after transient errors and create migration PR", func() {
-			isCreateSAMigrationPRInvoked := false
-			errorCounter := 0
-			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
-				if errorCounter < 5 {
-					errorCounter++
-					return "", fmt.Errorf("faile to do something")
-				}
-
-				defer GinkgoRecover()
-
-				Expect(len(d.Files)).To(Equal(2))
-				for _, file := range d.Files {
-					buildPipelineData := &tektonapi.PipelineRun{}
-					Expect(yaml.Unmarshal(file.Content, buildPipelineData)).To(Succeed())
-					Expect(buildPipelineData.Spec.TaskRunTemplate.ServiceAccountName).To(Equal(getComponentServiceAccountKey(resourceMigrationKey).Name))
-				}
-
-				isCreateSAMigrationPRInvoked = true
-				return mergeUrl + "-migration", nil
-			}
-			DownloadFileContentFunc = func(repoUrl, branchName, filePath string) ([]byte, error) {
-				return yaml.Marshal(tektonapi.PipelineRun{})
-			}
-
-			component := getComponent(resourceMigrationKey)
-			component.Annotations[serviceAccountMigrationAnnotationName] = "true"
-			Expect(k8sClient.Update(ctx, component)).To(Succeed())
-
-			Eventually(func() bool {
-				return isCreateSAMigrationPRInvoked
-			}, timeout, interval).Should(BeTrue())
-			waitComponentAnnotationGone(resourceMigrationKey, serviceAccountMigrationAnnotationName)
-		})
-
-		It("should not create migration PR and stop on persistent error", func() {
-			isCreateSAMigrationPRInvoked := false
-			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
-				defer GinkgoRecover()
-				isCreateSAMigrationPRInvoked = true
-				Fail("should not invoke migration PR creation")
-				return "", nil
-			}
-			DownloadFileContentFunc = func(repoUrl, branchName, filePath string) ([]byte, error) {
-				return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppNotInstalled, fmt.Errorf("error"))
-			}
-
-			component := getComponent(resourceMigrationKey)
-			component.Annotations[serviceAccountMigrationAnnotationName] = "true"
-			Expect(k8sClient.Update(ctx, component)).To(Succeed())
-
-			Consistently(func() bool {
-				return !isCreateSAMigrationPRInvoked
-			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
-			waitComponentAnnotationGone(resourceMigrationKey, serviceAccountMigrationAnnotationName)
-		})
-
-		It("should stop if persistent error occurs on migration PR creation", func() {
-			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
-				return "", boerrors.NewBuildOpError(boerrors.EGitHubAppNotInstalled, fmt.Errorf("error"))
-			}
-			DownloadFileContentFunc = func(repoUrl, branchName, filePath string) ([]byte, error) {
-				return yaml.Marshal(tektonapi.PipelineRun{})
-			}
-
-			component := getComponent(resourceMigrationKey)
-			component.Annotations[serviceAccountMigrationAnnotationName] = "true"
-			Expect(k8sClient.Update(ctx, component)).To(Succeed())
-
-			waitComponentAnnotationGone(resourceMigrationKey, serviceAccountMigrationAnnotationName)
-		})
-
-		It("should not create migration PR if pipeline definitions not found", func() {
-			isCreateSAMigrationPRInvoked := false
-			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
-				defer GinkgoRecover()
-				isCreateSAMigrationPRInvoked = true
-				Fail("should not invoke migration PR creation")
-				return "", nil
-			}
-			DownloadFileContentFunc = func(repoUrl, branchName, filePath string) ([]byte, error) {
-				return nil, k8sErrors.NewNotFound(schema.GroupResource{}, "pipeline")
-			}
-
-			component := getComponent(resourceMigrationKey)
-			component.Annotations[serviceAccountMigrationAnnotationName] = "true"
-			Expect(k8sClient.Update(ctx, component)).To(Succeed())
-
-			Consistently(func() bool {
-				return !isCreateSAMigrationPRInvoked
-			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
-			waitComponentAnnotationGone(resourceMigrationKey, serviceAccountMigrationAnnotationName)
-		})
-
-		It("should not create migration PR if custom Service Account is used", func() {
-			isCreateSAMigrationPRInvoked := false
-			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
-				defer GinkgoRecover()
-				isCreateSAMigrationPRInvoked = true
-				Fail("should not invoke migration PR creation")
-				return "", nil
-			}
-			DownloadFileContentFunc = func(repoUrl, branchName, filePath string) ([]byte, error) {
-				return yaml.Marshal(
-					tektonapi.PipelineRun{
-						Spec: tektonapi.PipelineRunSpec{
-							TaskRunTemplate: tektonapi.PipelineTaskRunTemplate{
-								ServiceAccountName: "my-sa",
-							},
-						},
-					})
-			}
-
-			component := getComponent(resourceMigrationKey)
-			component.Annotations[serviceAccountMigrationAnnotationName] = "true"
-			Expect(k8sClient.Update(ctx, component)).To(Succeed())
-
-			Consistently(func() bool {
-				return !isCreateSAMigrationPRInvoked
-			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
-			waitComponentAnnotationGone(resourceMigrationKey, serviceAccountMigrationAnnotationName)
 		})
 	})
 })

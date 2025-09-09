@@ -34,7 +34,6 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -129,14 +128,6 @@ var _ = BeforeSuite(func() {
 	})
 	Expect(k8sClient.Update(ctx, defaultNS)).Should(Succeed())
 
-	svcAccount := corev1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      buildPipelineServiceAccountName,
-			Namespace: "default",
-		},
-	}
-	Expect(k8sClient.Create(context.Background(), &svcAccount)).Should(Succeed())
-
 	clientOpts := client.Options{
 		Cache: &client.CacheOptions{
 			DisableFor: getCacheExcludedObjectsTypes(),
@@ -174,13 +165,6 @@ var _ = BeforeSuite(func() {
 		Scheme:                       k8sManager.GetScheme(),
 		EventRecorder:                k8sManager.GetEventRecorderFor("ComponentDependencyUpdateReconciler"),
 		ComponentDependenciesUpdater: *NewComponentDependenciesUpdater(k8sManager.GetClient(), k8sManager.GetScheme(), k8sManager.GetEventRecorderFor("ComponentDependencyUpdateReconciler")),
-	}).SetupWithManager(k8sManager)
-	Expect(err).ToNot(HaveOccurred())
-
-	// TODO delete the controller after migration to the new dedicated to build Service Account.
-	err = (&AppstudioPipelineServiceAccountWatcherReconciler{
-		Client: k8sManager.GetClient(),
-		Scheme: k8sManager.GetScheme(),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 

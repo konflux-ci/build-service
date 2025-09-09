@@ -776,16 +776,6 @@ func deleteServiceAccount(serviceAccountKey types.NamespacedName) {
 	}, timeout, interval).Should(BeTrue())
 }
 
-func waitPipelineServiceAccount(namespace string) {
-	pipelineServiceAccountKey := types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: namespace}
-	_ = waitServiceAccount(pipelineServiceAccountKey)
-}
-
-func deletePipelineServiceAccount(namespace string) {
-	pipelineServiceAccountkey := types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: namespace}
-	deleteServiceAccount((pipelineServiceAccountkey))
-}
-
 func getComponentServiceAccountKey(componentKey types.NamespacedName) types.NamespacedName {
 	return types.NamespacedName{
 		Name:      "build-pipeline-" + componentKey.Name,
