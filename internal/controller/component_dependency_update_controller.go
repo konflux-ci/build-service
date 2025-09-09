@@ -65,6 +65,7 @@ const (
 	NudgeFinalizer               = "build.appstudio.openshift.io/build-nudge-finalizer"
 	FailureCountAnnotationName   = "build.appstudio.openshift.io/build-nudge-failures"
 	NudgeFilesAnnotationName     = "build.appstudio.openshift.io/build-nudge-files"
+	NudgeSimpleBranchName        = "build.appstudio.openshift.io/build-nudge-simple-branch"
 
 	ComponentNudgedEventType      = "ComponentNudged"
 	ComponentNudgeFailedEventType = "ComponentNudgeFailed"
@@ -416,8 +417,13 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 	gitRepoAtShaLink := pipelineRun.Annotations[gitRepoAtShaAnnotationName]
 	if len(targets) > 0 {
 		log.Info("will create renovate job")
+		simpleBranchName := false
+		if updatedComponent.Annotations != nil && updatedComponent.Annotations[NudgeSimpleBranchName] == "true" {
+			simpleBranchName = true
+		}
+
 		buildResult := BuildResult{BuiltImageRepository: repo, BuiltImageTag: tag, Digest: digest, Component: updatedComponent, DistributionRepositories: distibutionRepositories, FileMatches: nudgeFiles}
-		nudgeErr = r.ComponentDependenciesUpdater.CreateRenovaterPipeline(ctx, pipelineRun.Namespace, targets, true, &buildResult, gitRepoAtShaLink)
+		nudgeErr = r.ComponentDependenciesUpdater.CreateRenovaterPipeline(ctx, pipelineRun.Namespace, targets, true, simpleBranchName, &buildResult, gitRepoAtShaLink)
 	} else {
 		log.Info("no targets found to update")
 	}

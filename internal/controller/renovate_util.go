@@ -149,7 +149,7 @@ type RenovateConfig struct {
 
 var DisableAllPackageRules = PackageRule{MatchPackagePatterns: []string{"*"}, Enabled: false}
 
-var GenerateRenovateConfigForNudge func(target updateTarget, buildResult *BuildResult, gitRepoAtShaLink string) (RenovateConfig, error) = generateRenovateConfigForNudge
+var GenerateRenovateConfigForNudge func(target updateTarget, buildResult *BuildResult, gitRepoAtShaLink string, simpleBranchName bool) (RenovateConfig, error) = generateRenovateConfigForNudge
 
 func NewComponentDependenciesUpdater(client client.Client, scheme *runtime.Scheme, eventRecorder record.EventRecorder) *ComponentDependenciesUpdater {
 	return &ComponentDependenciesUpdater{Client: client, Scheme: scheme, EventRecorder: eventRecorder, CredentialProvider: k8s.NewGitCredentialProvider(client)}
@@ -496,7 +496,7 @@ func readComponentCustomRenovateConfigMapAnnotation(component *v1alpha1.Componen
 }
 
 // generateRenovateConfigForNudge returns renovate config for specific component in the target
-func generateRenovateConfigForNudge(target updateTarget, buildResult *BuildResult, gitRepoAtShaLink string) (RenovateConfig, error) {
+func generateRenovateConfigForNudge(target updateTarget, buildResult *BuildResult, gitRepoAtShaLink string, simpleBranchName bool) (RenovateConfig, error) {
 	fileMatchParts := strings.Split(buildResult.FileMatches, ",")
 	for i := range fileMatchParts {
 		fileMatchParts[i] = strings.TrimSpace(fileMatchParts[i])
@@ -538,13 +538,17 @@ func generateRenovateConfigForNudge(target updateTarget, buildResult *BuildResul
 		DepNameTemplate:      buildResult.BuiltImageRepository,
 	})
 
+	nudgingBranchName := fmt.Sprintf("%s-", target.ComponentName)
+	if simpleBranchName {
+		nudgingBranchName = ""
+	}
 	packageRules = append(packageRules, DisableAllPackageRules)
 	packageRules = append(packageRules, PackageRule{
 		MatchPackageNames:      matchPackageNames,
 		GroupName:              fmt.Sprintf("Component Update %s", buildResult.Component.Name),
 		BranchPrefix:           BranchPrefix,
 		BranchTopic:            buildResult.Component.Name,
-		AdditionalBranchPrefix: fmt.Sprintf("%s-", target.ComponentName),
+		AdditionalBranchPrefix: nudgingBranchName,
 		CommitMessageTopic:     buildResult.Component.Name,
 		PRFooter:               "To execute skipped test pipelines write comment `/ok-to-test`",
 		PRHeader:               fmt.Sprintf("Image created from '%s'", gitRepoAtShaLink),
@@ -592,7 +596,7 @@ func generateRenovateConfigForNudge(target updateTarget, buildResult *BuildResul
 // - Tekton automatically provides docker config from linked service accounts for private images, with a job I would need to implement this manually
 //
 // Warning: the installation token used here should only be scoped to the individual repositories being updated
-func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Context, namespace string, targets []updateTarget, debug bool, buildResult *BuildResult, gitRepoAtShaLink string) error {
+func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Context, namespace string, targets []updateTarget, debug, simpleBranchName bool, buildResult *BuildResult, gitRepoAtShaLink string) error {
 	log := logger.FromContext(ctx)
 	log.Info(fmt.Sprintf("Creating renovate pipeline for %d components", len(targets)))
 
@@ -616,7 +620,7 @@ func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Contex
 		configString := ""
 		configType := "json"
 
-		renovateConfig, err := GenerateRenovateConfigForNudge(target, buildResult, gitRepoAtShaLink)
+		renovateConfig, err := GenerateRenovateConfigForNudge(target, buildResult, gitRepoAtShaLink, simpleBranchName)
 		if err != nil {
 			return err
 		}
