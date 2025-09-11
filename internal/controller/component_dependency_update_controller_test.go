@@ -268,6 +268,9 @@ var _ = Describe("Component nudge controller", func() {
 		})
 
 		It("Test build performs nudge on success", func() {
+			rpaKey := types.NamespacedName{Namespace: UserNamespace, Name: "testing-rpa"}
+			createReleasePlanAdmission(rpaKey, baseComponentName)
+
 			createBuildPipelineRun("test-pipeline-1", UserNamespace, baseComponentName, "")
 			Eventually(func() bool {
 				pr := getPipelineRun("test-pipeline-1", UserNamespace)
@@ -304,6 +307,12 @@ var _ = Describe("Component nudge controller", func() {
 			for _, renovateConfig := range renovateConfigMaps {
 				if strings.HasPrefix(renovateConfig.ObjectMeta.Name, "renovate-pipeline") {
 					renovateConfigMapFound = true
+					// verify that repositories from RPA mapping are used
+					for _, renovateJsonData := range renovateConfig.Data {
+						Expect(strings.Contains(renovateJsonData, rpaMappingRepository1)).Should(BeTrue())
+						Expect(strings.Contains(renovateJsonData, rpaMappingRepository2)).Should(BeTrue())
+						Expect(strings.Contains(renovateJsonData, rpaMappingRepository3)).Should(BeTrue())
+					}
 				}
 				if strings.HasPrefix(renovateConfig.ObjectMeta.Name, "renovate-ca") {
 					renovateCaConfigMapFound = true

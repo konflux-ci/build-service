@@ -17,6 +17,7 @@ limitations under the License.
 package controllers
 
 import (
+	"encoding/json"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -27,6 +28,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -36,6 +38,8 @@ import (
 
 	appstudiov1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
 	imgcv1alpha1 "github.com/konflux-ci/image-controller/api/v1alpha1"
+	releaseapi "github.com/konflux-ci/release-service/api/v1alpha1"
+	tektonutils "github.com/konflux-ci/release-service/tekton/utils"
 
 	. "github.com/konflux-ci/build-service/pkg/common"
 	"sigs.k8s.io/yaml"
@@ -61,6 +65,10 @@ const (
 
 	defaultPipelineName   = "docker-build"
 	defaultPipelineBundle = "quay.io/redhat-appstudio-tekton-catalog/pipeline-docker-build:07ec767c565b36296b4e185b01f05536848d9c12"
+
+	rpaMappingRepository1 = "test1.registry/publish"
+	rpaMappingRepository2 = "test2.registry/publish"
+	rpaMappingRepository3 = "test3.registry/publish"
 )
 
 var (
@@ -848,5 +856,62 @@ func deleteRoleBinding(roleBindingKey types.NamespacedName) {
 	}
 	Eventually(func() bool {
 		return k8sErrors.IsNotFound(k8sClient.Get(ctx, roleBindingKey, &roleBinding))
+	}, timeout, interval).Should(BeTrue())
+}
+
+func createReleasePlanAdmission(rpaKey types.NamespacedName, componentName string) {
+	data, err := json.Marshal(map[string]interface{}{
+		"mapping": map[string]interface{}{
+			"components": []map[string]interface{}{
+				{
+					"name":       componentName,
+					"repository": rpaMappingRepository1,
+					"tags":       []string{"latest"},
+					"repositories": []map[string]interface{}{
+						{
+							"url":  rpaMappingRepository2,
+							"tags": []string{"latest"},
+						},
+						{
+							"url":  rpaMappingRepository3,
+							"tags": []string{"latest"},
+						},
+					},
+				},
+			},
+		},
+	})
+	Expect(err).NotTo(HaveOccurred())
+
+	rpa := &releaseapi.ReleasePlanAdmission{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      rpaKey.Name,
+			Namespace: rpaKey.Namespace,
+		},
+		Spec: releaseapi.ReleasePlanAdmissionSpec{
+			Applications: []string{"application"},
+			Origin:       rpaKey.Namespace,
+			Environment:  "environment",
+			Policy:       "policy",
+			Pipeline: &tektonutils.Pipeline{
+				PipelineRef: tektonutils.PipelineRef{
+					Resolver: "bundles",
+					Params: []tektonutils.Param{
+						{Name: "bundle", Value: "quay.io/some/bundle"},
+						{Name: "name", Value: "release-pipeline"},
+						{Name: "kind", Value: "pipeline"},
+					},
+				},
+			},
+			Data: &runtime.RawExtension{Raw: data},
+		},
+	}
+
+	Expect(k8sClient.Create(ctx, rpa)).To(Succeed())
+	Eventually(func() bool {
+		if err := k8sClient.Get(ctx, rpaKey, rpa); err != nil {
+			return false
+		}
+		return rpa.ResourceVersion != ""
 	}, timeout, interval).Should(BeTrue())
 }
