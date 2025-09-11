@@ -816,7 +816,7 @@ var _ = Describe("Component nudge controller", func() {
 			failures = 1
 			// mock function to produce error
 
-			GenerateRenovateConfigForNudge = func(target updateTarget, buildResult *BuildResult, gitRepoAtShaAnnotation string) (RenovateConfig, error) {
+			GenerateRenovateConfigForNudge = func(target updateTarget, buildResult *BuildResult, gitRepoAtShaAnnotation string, simpleBranchName bool) (RenovateConfig, error) {
 				if failures == 0 {
 					log.Info("components nudged")
 					return RenovateConfig{}, nil
@@ -863,7 +863,7 @@ var _ = Describe("Component nudge controller", func() {
 		It("Test retries exceeded", func() {
 			failures = 10
 			// mock function to produce error
-			GenerateRenovateConfigForNudge = func(target updateTarget, buildResult *BuildResult, gitRepoAtShaAnnotation string) (RenovateConfig, error) {
+			GenerateRenovateConfigForNudge = func(target updateTarget, buildResult *BuildResult, gitRepoAtShaAnnotation string, simpleBranchName bool) (RenovateConfig, error) {
 				if failures == 0 {
 					log.Info("components nudged")
 					return RenovateConfig{}, nil
@@ -971,7 +971,7 @@ var _ = Describe("Component nudge controller", func() {
 				ImageRepositoryUsername:        imageRepositoryUsername,
 			}
 
-			resultConfig, err := generateRenovateConfigForNudge(renovateTarget, &buildResult, imageBuiltFrom)
+			resultConfig, err := generateRenovateConfigForNudge(renovateTarget, &buildResult, imageBuiltFrom, false)
 			Expect(err).Should(Succeed())
 			Expect(resultConfig.GitProvider).Should(Equal(gitProvider))
 			Expect(resultConfig.Username).Should(Equal(gitUsername))
@@ -1015,7 +1015,7 @@ var _ = Describe("Component nudge controller", func() {
 				ImageRepositoryUsername:        imageRepositoryUsername,
 			}
 
-			resultConfig2, err := generateRenovateConfigForNudge(renovateTarget2, &buildResult, imageBuiltFrom)
+			resultConfig2, err := generateRenovateConfigForNudge(renovateTarget2, &buildResult, imageBuiltFrom, false)
 			Expect(err).Should(Succeed())
 			Expect(resultConfig2.CustomManagers[0].FileMatch).Should(Equal(fileMatchesList2))
 		})
