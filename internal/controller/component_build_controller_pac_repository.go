@@ -130,7 +130,7 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 				return boerrors.NewBuildOpError(boerrors.EPaCDuplicateRepository, err)
 			}
 
-			if strings.Contains(err.Error(), "denied the request: failed to validate") {
+			if strings.Contains(err.Error(), "denied the request: failed to validate") || (strings.Contains(err.Error(), "denied request: Repository URL") && strings.Contains(err.Error(), "is not allowed on this cluster")) {
 				// PaC admission webhook denied creation of the PaC repository,
 				// because PaC repository object references not allowed git repository url.
 				log.Info("An attempt to create PaC Repository for not allowed repository url", "GitRepository", repository.Spec.URL, l.Action, l.ActionAdd, l.Audit, "true")
