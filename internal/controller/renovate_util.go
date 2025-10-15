@@ -191,10 +191,9 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsBasicAuth(ctx context.Cont
 			}
 
 			gitClient, err := gitproviderfactory.CreateGitClient(gitproviderfactory.GitClientConfig{
-				PacSecretData:             pacConfig,
-				GitProvider:               gitProvider,
-				RepoUrl:                   repoUrl,
-				IsAppInstallationExpected: true,
+				PacSecretData: pacConfig,
+				GitProvider:   gitProvider,
+				RepoUrl:       repoUrl,
 			})
 			if err != nil {
 				log.Error(err, "error create git client for component", "ComponentName", component.Name, "RepoUrl", repoUrl)
@@ -304,10 +303,9 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsGithubApp(ctx context.Cont
 		if appBotId == 0 {
 			pacConfig := map[string][]byte{PipelinesAsCodeGithubPrivateKey: []byte(privateKey), PipelinesAsCodeGithubAppIdKey: []byte(githubAppIdStr)}
 			gitClient, err := gitproviderfactory.CreateGitClient(gitproviderfactory.GitClientConfig{
-				PacSecretData:             pacConfig,
-				GitProvider:               gitProvider,
-				RepoUrl:                   url,
-				IsAppInstallationExpected: true,
+				PacSecretData: pacConfig,
+				GitProvider:   gitProvider,
+				RepoUrl:       url,
 			})
 			if err != nil {
 				log.Error(err, "error create git client for component", "ComponentName", component.Name, "RepoUrl", component.Spec.Source.GitSource.URL)

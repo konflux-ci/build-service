@@ -38,7 +38,6 @@ import (
 	appstudiov1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
 	"github.com/konflux-ci/build-service/pkg/boerrors"
 	. "github.com/konflux-ci/build-service/pkg/common"
-	"github.com/konflux-ci/build-service/pkg/git/github"
 	gp "github.com/konflux-ci/build-service/pkg/git/gitprovider"
 	gpf "github.com/konflux-ci/build-service/pkg/git/gitproviderfactory"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
@@ -96,9 +95,6 @@ var _ = Describe("Component build controller", func() {
 
 	BeforeEach(func() {
 		createNamespace(BuildServiceNamespaceName)
-		github.GetAllAppInstallations = func(githubAppIdStr string, appPrivateKeyPem []byte) ([]github.ApplicationInstallation, string, error) {
-			return nil, "slug", nil
-		}
 	})
 
 	Context("Test build pipeline Service Account", func() {

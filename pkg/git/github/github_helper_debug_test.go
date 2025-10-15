@@ -62,19 +62,6 @@ func createClient(clientType githubClientCreationWay) *GithubClient {
 			fmt.Printf("error: %v", err)
 		}
 		return ghclient
-
-	case githubAppForeignToken:
-		githubAppPrivateKey, err := os.ReadFile(githubAppPrivateKeyPath)
-		if err != nil {
-			fmt.Printf("Cannot read private key file by path: %s", githubAppPrivateKeyPath)
-			return nil
-		}
-		ghclient, err := newGithubClientForSimpleBuildByApp(githubAppId, []byte(githubAppPrivateKey))
-		if err != nil {
-			fmt.Printf("error: %v", err)
-		}
-		return ghclient
-
 	case githubToken:
 		return NewGithubClient(accessToken)
 	default:
