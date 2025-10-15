@@ -266,6 +266,7 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsGithubApp(ctx context.Cont
 	// Load GitHub App and get GitHub Installations
 	githubAppIdStr := string(pacSecret.Data[PipelinesAsCodeGithubAppIdKey])
 	privateKey := pacSecret.Data[PipelinesAsCodeGithubPrivateKey]
+	pacConfig := map[string][]byte{PipelinesAsCodeGithubPrivateKey: []byte(privateKey), PipelinesAsCodeGithubAppIdKey: []byte(githubAppIdStr)}
 
 	// Match installed repositories with Components and get custom branch if defined
 	targetsToUpdate := []updateTarget{}
@@ -292,16 +293,15 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsGithubApp(ctx context.Cont
 		url := getGitRepoUrl(component)
 		log.Info("getting app installation for component repository", "ComponentName", component.Name, "ComponentNamespace", component.Namespace, "RepositoryUrl", url)
 		githubAppInstallation, slugTmp, err := github.GetAppInstallationsForRepository(githubAppIdStr, privateKey, url)
-		if slug == "" {
-			slug = slugTmp
-		}
 		if err != nil {
 			log.Error(err, "Failed to get GitHub app installation for component", "ComponentName", component.Name, "ComponentNamespace", component.Namespace)
 			continue
 		}
+		if slug == "" {
+			slug = slugTmp
+		}
 
 		if appBotId == 0 {
-			pacConfig := map[string][]byte{PipelinesAsCodeGithubPrivateKey: []byte(privateKey), PipelinesAsCodeGithubAppIdKey: []byte(githubAppIdStr)}
 			gitClient, err := gitproviderfactory.CreateGitClient(gitproviderfactory.GitClientConfig{
 				PacSecretData: pacConfig,
 				GitProvider:   gitProvider,

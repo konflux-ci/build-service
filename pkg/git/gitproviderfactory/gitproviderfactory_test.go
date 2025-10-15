@@ -85,12 +85,10 @@ func TestGetContainerImageRepository(t *testing.T) {
 				RepoUrl:     repoUrl,
 			},
 			allowConstructors: func() {
-				github.IsAppInstalledIntoRepository = func(ghclient *github.GithubClient, repoUrl string) (bool, error) {
-					return false, nil
-				}
 				github.NewGithubClientByApp = func(appId int64, privateKeyPem []byte, repoUrl string) (*github.GithubClient, error) {
-					return &github.GithubClient{}, nil
+					return nil, fmt.Errorf("application isn't installed")
 				}
+
 			},
 			expectError: true,
 		},
@@ -104,12 +102,8 @@ func TestGetContainerImageRepository(t *testing.T) {
 				GitProvider: "github",
 				RepoUrl:     repoUrl,
 			},
-			allowConstructors: func() {
-				github.NewGithubClientByApp = func(appId int64, privateKeyPem []byte, repoUrl string) (*github.GithubClient, error) {
-					return &github.GithubClient{}, nil
-				}
-			},
-			expectError: true,
+			allowConstructors: func() {},
+			expectError:       true,
 		},
 		{
 			name: "should not create GitHub client from app if app id and private key mismatch or invalid",
@@ -124,26 +118,6 @@ func TestGetContainerImageRepository(t *testing.T) {
 			allowConstructors: func() {
 				github.NewGithubClientByApp = func(appId int64, privateKeyPem []byte, repoUrl string) (*github.GithubClient, error) {
 					return nil, fmt.Errorf("wrong key")
-				}
-			},
-			expectError: true,
-		},
-		{
-			name: "should create GitHub client, but fail when check if the application is installed into target repository fails",
-			gitClientConfig: GitClientConfig{
-				PacSecretData: map[string][]byte{
-					PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
-					PipelinesAsCodeGithubPrivateKey: []byte("private key"),
-				},
-				GitProvider: "github",
-				RepoUrl:     repoUrl,
-			},
-			allowConstructors: func() {
-				github.IsAppInstalledIntoRepository = func(ghclient *github.GithubClient, repoUrl string) (bool, error) {
-					return false, fmt.Errorf("application check failed")
-				}
-				github.NewGithubClientByApp = func(appId int64, privateKeyPem []byte, repoUrl string) (*github.GithubClient, error) {
-					return &github.GithubClient{}, nil
 				}
 			},
 			expectError: true,
@@ -271,10 +245,6 @@ func TestGetContainerImageRepository(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			github.IsAppInstalledIntoRepository = func(ghclient *github.GithubClient, repoUrl string) (bool, error) {
-				return true, nil
-			}
-
 			denyAllConstructors()
 			tt.allowConstructors()
 

@@ -43,34 +43,37 @@ type githubClientCreationWay string
 
 const (
 	githubApp             githubClientCreationWay = "github-app"
-	githubAppForeignToken githubClientCreationWay = "github-app-foreign"
 	githubToken           githubClientCreationWay = "token"
 	githubNone            githubClientCreationWay = "none"
 )
 
-func createClient(clientType githubClientCreationWay) *GithubClient {
+func createClient(clientType githubClientCreationWay) (*GithubClient, error) {
 	switch clientType {
 	case githubApp:
 		githubAppPrivateKey, err := os.ReadFile(githubAppPrivateKeyPath)
 		if err != nil {
 			fmt.Printf("Cannot read private key file by path: %s", githubAppPrivateKeyPath)
-			return nil
+			return nil, err
 		}
 		owner, _ := getOwnerAndRepoFromUrl(repoUrl)
 		ghclient, err := NewGithubClientByApp(githubAppId, []byte(githubAppPrivateKey), owner)
 		if err != nil {
 			fmt.Printf("error: %v", err)
+			return nil, err
 		}
-		return ghclient
+		return ghclient, nil
 	case githubToken:
-		return NewGithubClient(accessToken)
+		return NewGithubClient(accessToken), nil
 	default:
-		return nil
+		return nil, nil
 	}
 }
 
 func TestCreatePaCPullRequest(t *testing.T) {
-	ghclient := createClient(ghClientType)
+	ghclient, err := createClient(ghClientType)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if ghclient == nil {
 		return
 	}
@@ -103,7 +106,10 @@ func TestCreatePaCPullRequest(t *testing.T) {
 }
 
 func TestUndoPaCPullRequest(t *testing.T) {
-	ghclient := createClient(ghClientType)
+	ghclient, err := createClient(ghClientType)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if ghclient == nil {
 		return
 	}
@@ -133,7 +139,10 @@ func TestUndoPaCPullRequest(t *testing.T) {
 }
 
 func TestSetupPaCWebhook(t *testing.T) {
-	ghclient := createClient(ghClientType)
+	ghclient, err := createClient(ghClientType)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if ghclient == nil {
 		return
 	}
@@ -141,28 +150,34 @@ func TestSetupPaCWebhook(t *testing.T) {
 	targetWebhookUrl := "https://pac.route.my-cluster.net"
 	webhookSecretString := "23f29e8f7fa8c58c1e8e50ecfbd49aec314f4908"
 
-	err := ghclient.SetupPaCWebhook(repoUrl, targetWebhookUrl, webhookSecretString)
+	err = ghclient.SetupPaCWebhook(repoUrl, targetWebhookUrl, webhookSecretString)
 	if err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestDeletePaCWebhook(t *testing.T) {
-	ghclient := createClient(ghClientType)
+	ghclient, err := createClient(ghClientType)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if ghclient == nil {
 		return
 	}
 
 	targetWebhookUrl := "https://pac.route.my-cluster.net"
 
-	err := ghclient.DeletePaCWebhook(repoUrl, targetWebhookUrl)
+	err = ghclient.DeletePaCWebhook(repoUrl, targetWebhookUrl)
 	if err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestGetBranchSHA(t *testing.T) {
-	ghclient := createClient(ghClientType)
+	ghclient, err := createClient(ghClientType)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if ghclient == nil {
 		return
 	}
@@ -179,7 +194,10 @@ func TestGetBranchSHA(t *testing.T) {
 }
 
 func TestIsRepositoryPublic(t *testing.T) {
-	ghclient := createClient(ghClientType)
+	ghclient, err := createClient(ghClientType)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if ghclient == nil {
 		return
 	}
@@ -193,21 +211,20 @@ func TestIsRepositoryPublic(t *testing.T) {
 
 // Only GitHub Application client is applicable for this test
 func TestIsAppInstalledIntoRepository(t *testing.T) {
-	ghclient := createClient(ghClientType)
-	if ghclient == nil {
-		return
-	}
-
-	installed, err := ghclient.IsAppInstalledIntoRepository(repoUrl)
+	_, err := createClient(ghClientType)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("The application is installed: %t into %s", installed, repoUrl)
+
+	t.Logf("The application is installed: into %s", repoUrl)
 }
 
 // Only GitHub Application client is applicable for this test
 func TestGetGitHubAppName(t *testing.T) {
-	ghclient := createClient(ghClientType)
+	ghclient, err := createClient(ghClientType)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if ghclient == nil {
 		return
 	}
