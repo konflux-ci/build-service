@@ -40,9 +40,6 @@ type GitClientConfig struct {
 	// for example, check that the application is installed into given git repository.
 	// Ignored for some client configurations, e.g. clients created directly via a token.
 	RepoUrl string
-	// IsAppInstallationExpected shows whether to expect application installation into the target repository URL.
-	// Ignored for clients created directly via a token.
-	IsAppInstallationExpected bool
 }
 
 // createGitClient creates new git provider client for the requested config
@@ -84,33 +81,24 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 
 		privateKey := secretData[PipelinesAsCodeGithubPrivateKey]
 
-		if gitClientConfig.IsAppInstallationExpected {
-			// It's required that the configured Pipelines as Code application is installed into user's account
-			// and enabled for the given repository.
+		// It's required that the configured Pipelines as Code application is installed into user's account
+		// and enabled for the given repository.
 
-			githubClient, err := github.NewGithubClientByApp(githubAppId, privateKey, gitClientConfig.RepoUrl)
-			if err != nil {
-				return nil, err
-			}
-
-			// Check if the application is installed into target repository
-			appInstalled, err := githubClient.IsAppInstalledIntoRepository(gitClientConfig.RepoUrl)
-			if err != nil {
-				return nil, err
-			}
-			if !appInstalled {
-				return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppNotInstalled,
-					fmt.Errorf("failed to create git client: GitHub Application is not installed into the repository"))
-			}
-			return githubClient, nil
-		} else {
-			// We need to query repositories where configured Pipelines as Code application is not installed.
-			githubClient, err := github.NewGithubClientForSimpleBuildByApp(githubAppId, privateKey)
-			if err != nil {
-				return nil, err
-			}
-			return githubClient, nil
+		githubClient, err := github.NewGithubClientByApp(githubAppId, privateKey, gitClientConfig.RepoUrl)
+		if err != nil {
+			return nil, err
 		}
+
+		// Check if the application is installed into target repository
+		appInstalled, err := githubClient.IsAppInstalledIntoRepository(gitClientConfig.RepoUrl)
+		if err != nil {
+			return nil, err
+		}
+		if !appInstalled {
+			return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppNotInstalled,
+				fmt.Errorf("failed to create git client: GitHub Application is not installed into the repository"))
+		}
+		return githubClient, nil
 
 	case "gitlab":
 		if isAppUsed {

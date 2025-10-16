@@ -249,10 +249,9 @@ func (r *ComponentBuildReconciler) TriggerPaCBuild(ctx context.Context, componen
 	}
 
 	gitClient, err := gitproviderfactory.CreateGitClient(gitproviderfactory.GitClientConfig{
-		PacSecretData:             pacSecret.Data,
-		GitProvider:               gitProvider,
-		RepoUrl:                   repoUrl,
-		IsAppInstallationExpected: true,
+		PacSecretData: pacSecret.Data,
+		GitProvider:   gitProvider,
+		RepoUrl:       repoUrl,
 	})
 	if err != nil {
 		return false, err
@@ -448,10 +447,9 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 	repoUrl := getGitRepoUrl(*component)
 
 	gitClient, err := gitproviderfactory.CreateGitClient(gitproviderfactory.GitClientConfig{
-		PacSecretData:             pacConfig,
-		GitProvider:               gitProvider,
-		RepoUrl:                   repoUrl,
-		IsAppInstallationExpected: true,
+		PacSecretData: pacConfig,
+		GitProvider:   gitProvider,
+		RepoUrl:       repoUrl,
 	})
 	if err != nil {
 		return "", err
@@ -533,10 +531,9 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 	repoUrl := getGitRepoUrl(*component)
 
 	gitClient, err := gitproviderfactory.CreateGitClient(gitproviderfactory.GitClientConfig{
-		PacSecretData:             pacConfig,
-		GitProvider:               gitProvider,
-		RepoUrl:                   repoUrl,
-		IsAppInstallationExpected: true,
+		PacSecretData: pacConfig,
+		GitProvider:   gitProvider,
+		RepoUrl:       repoUrl,
 	})
 	if err != nil {
 		return "", "", "", err
