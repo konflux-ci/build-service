@@ -140,11 +140,11 @@ type RenovateConfig struct {
 	Extends               []string             `json:"extends"`
 	DependencyDashboard   bool                 `json:"dependencyDashboard"`
 	Labels                []string             `json:"labels"`
-	Automerge             bool                 `json:"automerge,omitempty"`
+	Automerge             bool                 `json:"automerge"`
 	AutomergeType         string               `json:"automergeType,omitempty"`
-	PlatformAutomerge     bool                 `json:"platformAutomerge,omitempty"`
-	IgnoreTests           bool                 `json:"ignoreTests,omitempty"`
-	GitLabIgnoreApprovals bool                 `json:"gitLabIgnoreApprovals,omitempty"`
+	PlatformAutomerge     bool                 `json:"platformAutomerge"`
+	IgnoreTests           bool                 `json:"ignoreTests"`
+	GitLabIgnoreApprovals bool                 `json:"gitLabIgnoreApprovals"`
 	AutomergeSchedule     []string             `json:"automergeSchedule,omitempty"`
 }
 
