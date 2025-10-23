@@ -49,6 +49,8 @@ type GithubClient struct {
 
 	appId            int64
 	appPrivateKeyPem []byte
+	appName          string
+	appSlug          string
 }
 
 // EnsurePaCMergeRequest creates or updates existing Pipelines as Code configuration proposal merge request

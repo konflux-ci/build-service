@@ -89,15 +89,6 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 			return nil, err
 		}
 
-		// Check if the application is installed into target repository
-		appInstalled, err := githubClient.IsAppInstalledIntoRepository(gitClientConfig.RepoUrl)
-		if err != nil {
-			return nil, err
-		}
-		if !appInstalled {
-			return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppNotInstalled,
-				fmt.Errorf("failed to create git client: GitHub Application is not installed into the repository"))
-		}
 		return githubClient, nil
 
 	case "gitlab":

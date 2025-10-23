@@ -32,11 +32,10 @@ import (
 // Allow mocking for tests
 var NewGithubClientByApp func(appId int64, privateKeyPem []byte, repoUrl string) (*GithubClient, error) = newGithubClientByApp
 
-var IsAppInstalledIntoRepository func(ghclient *GithubClient, repoUrl string) (bool, error) = isAppInstalledIntoRepository
 var GetAppInstallationsForRepository func(githubAppIdStr string, appPrivateKeyPem []byte, repoUrl string) (*ApplicationInstallation, string, error) = getAppInstallationsForRepository
 
 func newGithubClientByApp(appId int64, privateKeyPem []byte, repoUrl string) (*GithubClient, error) {
-	owner, _ := getOwnerAndRepoFromUrl(repoUrl)
+	owner, repository := getOwnerAndRepoFromUrl(repoUrl)
 
 	itr, err := ghinstallation.NewAppsTransport(http.DefaultTransport, appId, privateKeyPem)
 	if err != nil {
@@ -45,44 +44,37 @@ func newGithubClientByApp(appId int64, privateKeyPem []byte, repoUrl string) (*G
 	}
 	client := github.NewClient(&http.Client{Transport: itr})
 
-	var installId int64
-	opt := &github.RepositoryListByOrgOptions{
-		ListOptions: github.ListOptions{PerPage: 100},
-	}
-	for installId == 0 {
-		installations, resp, err := client.Apps.ListInstallations(context.Background(), &opt.ListOptions)
-		if err != nil {
-			if resp != nil && resp.Response != nil && resp.Response.StatusCode != 0 {
-				switch resp.StatusCode {
-				case 401:
-					return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppPrivateKeyNotMatched, err)
-				case 404:
-					return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppDoesNotExist, err)
-				}
-			}
-			return nil, boerrors.NewBuildOpError(boerrors.ETransientError, err)
-		}
-		for _, val := range installations {
-			if strings.EqualFold(val.GetAccount().GetLogin(), owner) {
-				installId = val.GetID()
-				break
+	// check if application exists
+	githubApp, resp, err := client.Apps.Get(context.Background(), "")
+	if err != nil {
+		if resp != nil && resp.Response != nil && resp.Response.StatusCode != 0 {
+			switch resp.StatusCode {
+			case 401:
+				return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppPrivateKeyNotMatched, err)
+			case 404:
+				return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppDoesNotExist, err)
 			}
 		}
-		if resp.NextPage == 0 {
-			break
+		return nil, boerrors.NewBuildOpError(boerrors.ETransientError, err)
+	}
+
+	// get application installation for owner & repository
+	val, resp, err := client.Apps.FindRepositoryInstallation(context.Background(), owner, repository)
+	if err != nil {
+		if resp != nil && resp.Response != nil && resp.Response.StatusCode != 0 {
+			switch resp.StatusCode {
+			case 401:
+				return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppPrivateKeyNotMatched, err)
+			case 404:
+				return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppNotInstalled, err)
+			}
 		}
-		opt.Page = resp.NextPage
+		return nil, boerrors.NewBuildOpError(boerrors.ETransientError, err)
 	}
-	if installId == 0 {
-		err := fmt.Errorf("unable to find GitHub InstallationID for user %s", owner)
-		return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppNotInstalled, err)
-	}
-	// The user has the application installed,
-	// but it doesn't guarantee that the application is installed into all user's repositories.
 
 	token, _, err := client.Apps.CreateInstallationToken(
 		context.Background(),
-		installId,
+		*val.ID,
 		&github.InstallationTokenOptions{})
 	if err != nil {
 		if strings.Contains(err.Error(), "installation has been suspended") {
@@ -95,66 +87,22 @@ func newGithubClientByApp(appId int64, privateKeyPem []byte, repoUrl string) (*G
 	githubClient := NewGithubClient(token.GetToken())
 	githubClient.appId = appId
 	githubClient.appPrivateKeyPem = privateKeyPem
+	githubClient.appName = githubApp.GetName()
+	githubClient.appSlug = githubApp.GetSlug()
 	return githubClient, nil
-}
-
-// IsAppInstalledIntoRepository finds out if the application is installed into given repository.
-// The application is identified by it's installation token, i.e. the client itself must be created
-// from an application installation token. See newGithubClientByApp for details.
-// This method should be used only with clients created by newGithubClientByApp.
-func (g *GithubClient) IsAppInstalledIntoRepository(repoUrl string) (bool, error) {
-	return IsAppInstalledIntoRepository(g, repoUrl)
-}
-
-func isAppInstalledIntoRepository(ghclient *GithubClient, repoUrl string) (bool, error) {
-	ghclient.ensureAppConfigured()
-
-	owner, repository := getOwnerAndRepoFromUrl(repoUrl)
-
-	listOpts := &github.ListOptions{PerPage: 100}
-	for {
-		repositoriesListPage, resp, err := ghclient.client.Apps.ListRepos(ghclient.ctx, listOpts)
-		if err != nil {
-			return false, err
-		}
-		for _, repo := range repositoriesListPage.Repositories {
-			if strings.EqualFold(*repo.Name, repository) && strings.EqualFold(*repo.Owner.Login, owner) {
-				return true, nil
-			}
-		}
-		if resp.NextPage == 0 {
-			break
-		}
-		listOpts.Page = resp.NextPage
-	}
-	return false, nil
 }
 
 // GetConfiguredGitAppName returns name and slug of GitHub App that created client token.
 func (g *GithubClient) GetConfiguredGitAppName() (string, string, error) {
-	g.ensureAppConfigured()
-
-	itr, err := ghinstallation.NewAppsTransport(http.DefaultTransport, g.appId, g.appPrivateKeyPem)
-	if err != nil {
-		// Inability to create transport based on a private key indicates that the key is bad formatted
-		return "", "", boerrors.NewBuildOpError(boerrors.EGitHubAppMalformedPrivateKey, err)
+	if g.isAppConfigured() {
+		return g.appName, g.appSlug, nil
+	} else {
+		return "", "", fmt.Errorf("Github application is not configured")
 	}
-	client := github.NewClient(&http.Client{Transport: itr})
-	githubApp, _, err := client.Apps.Get(g.ctx, "")
-	if err != nil {
-		return "", "", err
-	}
-	return githubApp.GetName(), githubApp.GetSlug(), nil
 }
 
 func (g *GithubClient) isAppConfigured() bool {
 	return g.appId != 0 && len(g.appPrivateKeyPem) > 0
-}
-
-func (g *GithubClient) ensureAppConfigured() {
-	if !g.isAppConfigured() {
-		panic("GitHub Application is not configured for this client")
-	}
 }
 
 type ApplicationInstallation struct {
