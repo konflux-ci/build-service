@@ -412,6 +412,9 @@ func (u ComponentDependenciesUpdater) ReadCustomRenovateConfigMap(ctx context.Co
 		} else {
 			customRenovateOptions.PlatformAutomerge = platformAutomergeValue
 		}
+	} else {
+		// renovate default is True
+		customRenovateOptions.PlatformAutomerge = true
 	}
 
 	ignoreTestsOption, ignoreTestsExists := customRenovateConfigMap.Data[RenovateConfigMapIgnoreTestsKey]
