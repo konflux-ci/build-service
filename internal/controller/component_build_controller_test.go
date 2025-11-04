@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -79,6 +80,27 @@ var (
 	defaultPipelineAnnotationValue = fmt.Sprintf("{\"name\":\"%s\",\"bundle\":\"%s\"}", defaultPipelineName, defaultPipelineBundle)
 	defaultPipelineAnnotations     = map[string]string{defaultBuildPipelineAnnotation: defaultPipelineAnnotationValue}
 )
+
+func verifyBodyJsonParams(req *http.Request, repository, branch, namespace, pipelinerun string) (bool, error) {
+	var bodyJson map[string]interface{}
+	if err := json.NewDecoder(req.Body).Decode(&bodyJson); err != nil {
+		return false, err
+	}
+
+	if bodyJson["repository"] != repository {
+		return false, nil
+	}
+	if bodyJson["branch"] != branch {
+		return false, nil
+	}
+	if bodyJson["namespace"] != namespace {
+		return false, nil
+	}
+	if bodyJson["pipelinerun"] != pipelinerun {
+		return false, nil
+	}
+	return true, nil
+}
 
 var _ = Describe("Component build controller", func() {
 
@@ -1915,6 +1937,41 @@ var _ = Describe("Component build controller", func() {
 
 			defer gock.Off()
 
+			// return 505 on the first request, so there will be new reconcile
+			// just to test that it will trigger new reconcile
+			gock.New(webhookTargetUrl).
+				BodyString("").
+				Post("/incoming").
+				Reply(505)
+
+			var (
+				requestValueSourceUrl   string
+				requestValueSecret      string
+				requestValueRepository  string
+				requestValueBranch      string
+				requestValuePipelinerun string
+				requestValueNamespace   string
+			)
+
+			req := gock.New(webhookTargetUrl).
+				Post("/incoming").
+				MatchType("json").
+				SetMatcher(gock.NewBasicMatcher()).
+				AddMatcher(gock.MatchFunc(func(req *http.Request, _ *gock.Request) (bool, error) {
+					var bodyJson map[string]interface{}
+					if err := json.NewDecoder(req.Body).Decode(&bodyJson); err != nil {
+						return false, err
+					}
+					requestValueRepository = bodyJson["repository"].(string)
+					requestValueBranch = bodyJson["branch"].(string)
+					requestValueSecret = bodyJson["secret"].(string)
+					requestValuePipelinerun = bodyJson["pipelinerun"].(string)
+					requestValueNamespace = bodyJson["namespace"].(string)
+					requestValueSourceUrl = bodyJson["params"].(map[string]interface{})["source_url"].(string)
+					return true, nil
+				})).
+				Reply(202).JSON(map[string]string{})
+
 			setComponentBuildRequest(resourcePacTriggerKey, BuildRequestTriggerPaCBuildAnnotationValue)
 
 			incomingSecretName := fmt.Sprintf("%s%s", repository.Name, pacIncomingSecretNameSuffix)
@@ -1926,16 +1983,17 @@ var _ = Describe("Component build controller", func() {
 			Expect(k8sClient.Get(ctx, incomingSecretResourceKey, &incomingSecret)).To(Succeed())
 			secretValue := string(incomingSecret.Data[pacIncomingSecretKey][:])
 
-			req := gock.New(webhookTargetUrl).
-				BodyString("").
-				Post("/incoming").
-				MatchParam("secret", secretValue).
-				MatchParam("repository", component.Name).
-				MatchParam("branch", "main").
-				MatchParam("pipelinerun", pipelineRunName)
-			req.Reply(202).JSON(map[string]string{})
-
 			waitComponentAnnotationGone(resourcePacTriggerKey, BuildRequestAnnotationName)
+			// verify that request matched
+			Expect(req.Done()).To(BeTrue())
+
+			// verify that request body json params match
+			Expect(requestValueSourceUrl).To(Equal(component.Spec.Source.GitSource.URL))
+			Expect(requestValueSecret).To(Equal(secretValue))
+			Expect(requestValueRepository).To(Equal(component.Name))
+			Expect(requestValueBranch).To(Equal("main"))
+			Expect(requestValuePipelinerun).To(Equal(pipelineRunName))
+			Expect(requestValueNamespace).To(Equal(component.Namespace))
 
 			repository = waitPaCRepositoryCreated(resourcePacTriggerKey)
 
@@ -1994,13 +2052,14 @@ var _ = Describe("Component build controller", func() {
 
 			defer gock.Off()
 
-			req := gock.New(webhookTargetUrl).
-				BodyString("").
+			req1 := gock.New(webhookTargetUrl).
 				Post("/incoming").
-				MatchParam("repository", component1.Name).
-				MatchParam("branch", "main").
-				MatchParam("pipelinerun", pipelineRunName1)
-			req.Reply(202).JSON(map[string]string{})
+				MatchType("json").
+				SetMatcher(gock.NewBasicMatcher()).
+				AddMatcher(gock.MatchFunc(func(req *http.Request, _ *gock.Request) (bool, error) {
+					return verifyBodyJsonParams(req, component1.Name, "main", component1.Namespace, pipelineRunName1)
+				})).
+				Reply(202).JSON(map[string]string{})
 
 			// trigger push pipeline for 1st component
 			setComponentBuildRequest(resourcePacTriggerKey, BuildRequestTriggerPaCBuildAnnotationValue)
@@ -2009,6 +2068,8 @@ var _ = Describe("Component build controller", func() {
 			waitSecretCreated(incomingSecretResourceKey)
 			defer deleteSecret(incomingSecretResourceKey)
 			waitComponentAnnotationGone(resourcePacTriggerKey, BuildRequestAnnotationName)
+			// verify that request matched
+			Expect(req1.Done()).To(BeTrue())
 
 			repository = waitPaCRepositoryCreated(resourcePacTriggerKey)
 			Expect(repository.Spec.Incomings).ToNot(BeNil())
@@ -2020,17 +2081,20 @@ var _ = Describe("Component build controller", func() {
 			component2 := getComponent(component2Key)
 			pipelineRunName2 := component2.Name + pipelineRunOnPushSuffix
 
-			req = gock.New(webhookTargetUrl).
-				BodyString("").
+			req2 := gock.New(webhookTargetUrl).
 				Post("/incoming").
-				MatchParam("repository", component1.Name).
-				MatchParam("branch", "another").
-				MatchParam("pipelinerun", pipelineRunName2)
-			req.Reply(202).JSON(map[string]string{})
+				MatchType("json").
+				SetMatcher(gock.NewBasicMatcher()).
+				AddMatcher(gock.MatchFunc(func(req *http.Request, _ *gock.Request) (bool, error) {
+					return verifyBodyJsonParams(req, component1.Name, "another", component1.Namespace, pipelineRunName2)
+				})).
+				Reply(202).JSON(map[string]string{})
 
 			// trigger push pipeline for 2nd component
 			setComponentBuildRequest(component2Key, BuildRequestTriggerPaCBuildAnnotationValue)
 			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
+			// verify that request matched
+			Expect(req2.Done()).To(BeTrue())
 
 			repository = waitPaCRepositoryCreated(resourcePacTriggerKey)
 			Expect(repository.Spec.Incomings).ToNot(BeNil())
@@ -2088,13 +2152,14 @@ var _ = Describe("Component build controller", func() {
 
 			defer gock.Off()
 
-			req := gock.New(webhookTargetUrl).
-				BodyString("").
+			req1 := gock.New(webhookTargetUrl).
 				Post("/incoming").
-				MatchParam("repository", component1.Name).
-				MatchParam("branch", "main").
-				MatchParam("pipelinerun", pipelineRunName1)
-			req.Reply(202).JSON(map[string]string{})
+				MatchType("json").
+				SetMatcher(gock.NewBasicMatcher()).
+				AddMatcher(gock.MatchFunc(func(req *http.Request, _ *gock.Request) (bool, error) {
+					return verifyBodyJsonParams(req, component1.Name, "main", component1.Namespace, pipelineRunName1)
+				})).
+				Reply(202).JSON(map[string]string{})
 
 			// trigger push pipeline for 1st component
 			setComponentBuildRequest(resourcePacTriggerKey, BuildRequestTriggerPaCBuildAnnotationValue)
@@ -2103,6 +2168,8 @@ var _ = Describe("Component build controller", func() {
 			waitSecretCreated(incomingSecretResourceKey)
 			defer deleteSecret(incomingSecretResourceKey)
 			waitComponentAnnotationGone(resourcePacTriggerKey, BuildRequestAnnotationName)
+			// verify that request matched
+			Expect(req1.Done()).To(BeTrue())
 
 			repository = waitPaCRepositoryCreated(resourcePacTriggerKey)
 			Expect(repository.Spec.Incomings).ToNot(BeNil())
@@ -2114,17 +2181,20 @@ var _ = Describe("Component build controller", func() {
 			component2 := getComponent(component2Key)
 			pipelineRunName2 := component2.Name + pipelineRunOnPushSuffix
 
-			req = gock.New(webhookTargetUrl).
-				BodyString("").
+			req2 := gock.New(webhookTargetUrl).
 				Post("/incoming").
-				MatchParam("repository", component1.Name).
-				MatchParam("branch", "main").
-				MatchParam("pipelinerun", pipelineRunName2)
-			req.Reply(202).JSON(map[string]string{})
+				MatchType("json").
+				SetMatcher(gock.NewBasicMatcher()).
+				AddMatcher(gock.MatchFunc(func(req *http.Request, _ *gock.Request) (bool, error) {
+					return verifyBodyJsonParams(req, component1.Name, "main", component1.Namespace, pipelineRunName2)
+				})).
+				Reply(202).JSON(map[string]string{})
 
 			// trigger push pipeline for 2nd component
 			setComponentBuildRequest(component2Key, BuildRequestTriggerPaCBuildAnnotationValue)
 			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
+			// verify that request matched
+			Expect(req2.Done()).To(BeTrue())
 
 			repository = waitPaCRepositoryCreated(resourcePacTriggerKey)
 			Expect(repository.Spec.Incomings).ToNot(BeNil())
@@ -2195,12 +2265,13 @@ var _ = Describe("Component build controller", func() {
 			pipelineRunName2 := component2.Name + pipelineRunOnPushSuffix
 
 			req := gock.New(webhookTargetUrl).
-				BodyString("").
 				Post("/incoming").
-				MatchParam("repository", repository.Name).
-				MatchParam("branch", "another").
-				MatchParam("pipelinerun", pipelineRunName2)
-			req.Reply(202).JSON(map[string]string{})
+				MatchType("json").
+				SetMatcher(gock.NewBasicMatcher()).
+				AddMatcher(gock.MatchFunc(func(req *http.Request, _ *gock.Request) (bool, error) {
+					return verifyBodyJsonParams(req, repository.Name, "another", repository.Namespace, pipelineRunName2)
+				})).
+				Reply(202).JSON(map[string]string{})
 
 			// trigger push pipeline for 2nd component
 			setComponentBuildRequest(component2Key, BuildRequestTriggerPaCBuildAnnotationValue)
@@ -2208,6 +2279,8 @@ var _ = Describe("Component build controller", func() {
 			waitSecretCreated(incomingSecretResourceKey)
 			defer deleteSecret(incomingSecretResourceKey)
 			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
+			// verify that request matched
+			Expect(req.Done()).To(BeTrue())
 
 			repository = waitPaCRepositoryCreated(resourcePacTriggerKey)
 			Expect(repository.Spec.Incomings).ToNot(BeNil())
@@ -2280,12 +2353,13 @@ var _ = Describe("Component build controller", func() {
 			pipelineRunName2 := component2.Name + pipelineRunOnPushSuffix
 
 			req := gock.New(webhookTargetUrl).
-				BodyString("").
 				Post("/incoming").
-				MatchParam("repository", repository.Name).
-				MatchParam("branch", "another").
-				MatchParam("pipelinerun", pipelineRunName2)
-			req.Reply(202).JSON(map[string]string{})
+				MatchType("json").
+				SetMatcher(gock.NewBasicMatcher()).
+				AddMatcher(gock.MatchFunc(func(req *http.Request, _ *gock.Request) (bool, error) {
+					return verifyBodyJsonParams(req, repository.Name, "another", repository.Namespace, pipelineRunName2)
+				})).
+				Reply(202).JSON(map[string]string{})
 
 			// trigger push pipeline for 2nd component
 			setComponentBuildRequest(component2Key, BuildRequestTriggerPaCBuildAnnotationValue)
@@ -2293,6 +2367,8 @@ var _ = Describe("Component build controller", func() {
 			waitSecretCreated(incomingSecretResourceKey)
 			defer deleteSecret(incomingSecretResourceKey)
 			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
+			// verify that request matched
+			Expect(req.Done()).To(BeTrue())
 
 			repository = waitPaCRepositoryCreated(resourcePacTriggerKey)
 			Expect(repository.Spec.Incomings).ToNot(BeNil())
@@ -2359,12 +2435,13 @@ var _ = Describe("Component build controller", func() {
 			pipelineRunName2 := component2.Name + pipelineRunOnPushSuffix
 
 			req := gock.New(webhookTargetUrl).
-				BodyString("").
 				Post("/incoming").
-				MatchParam("repository", repository.Name).
-				MatchParam("branch", "another").
-				MatchParam("pipelinerun", pipelineRunName2)
-			req.Reply(202).JSON(map[string]string{})
+				MatchType("json").
+				SetMatcher(gock.NewBasicMatcher()).
+				AddMatcher(gock.MatchFunc(func(req *http.Request, _ *gock.Request) (bool, error) {
+					return verifyBodyJsonParams(req, repository.Name, "another", repository.Namespace, pipelineRunName2)
+				})).
+				Reply(202).JSON(map[string]string{})
 
 			// trigger push pipeline for 2nd component
 			setComponentBuildRequest(component2Key, BuildRequestTriggerPaCBuildAnnotationValue)
@@ -2372,6 +2449,8 @@ var _ = Describe("Component build controller", func() {
 			waitSecretCreated(incomingSecretResourceKey)
 			defer deleteSecret(incomingSecretResourceKey)
 			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
+			// verify that request matched
+			Expect(req.Done()).To(BeTrue())
 
 			repository = waitPaCRepositoryCreated(resourcePacTriggerKey)
 			Expect(repository.Spec.Incomings).ToNot(BeNil())
