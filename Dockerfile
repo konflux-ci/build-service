@@ -45,4 +45,11 @@ LABEL summary="Konflux Build Service"
 LABEL name="konflux-build-service"
 LABEL com.redhat.component="konflux-build-service-operator"
 
+ENV VERSION="we don't actually version :("
+
+ARG TARGETARCH
+
+LABEL my-arch-label=$TARGETARCH
+LABEL version=${VERSION}
+
 ENTRYPOINT ["/manager"]
