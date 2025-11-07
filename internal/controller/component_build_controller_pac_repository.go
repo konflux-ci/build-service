@@ -74,12 +74,15 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 	}
 	if repository != nil {
 		pacRepositoryOwnersNumber := len(repository.OwnerReferences)
+		// preserve original for patching
+		origRepo := repository.DeepCopy()
 		if err := controllerutil.SetOwnerReference(component, repository, r.Scheme); err != nil {
 			log.Error(err, "failed to add owner reference to existing PaC repository", "PaCRepositoryName", repository.Name)
 			return err
 		}
 		if len(repository.OwnerReferences) > pacRepositoryOwnersNumber {
-			if err := r.Client.Update(ctx, repository); err != nil {
+			// use Patch to avoid overwriting other spec fields (like Spec.Settings)
+			if err := r.Client.Patch(ctx, repository, client.MergeFrom(origRepo)); err != nil {
 				log.Error(err, "failed to update existing PaC repository with component owner reference", "PaCRepositoryName", repository.Name)
 				return err
 			}
@@ -306,6 +309,8 @@ func (r *ComponentBuildReconciler) cleanupPaCRepositoryIncomingsAndSecret(ctx co
 
 	incomingSecretName := fmt.Sprintf("%s%s", repository.Name, pacIncomingSecretNameSuffix)
 	incomingUpdated := false
+	// preserve original for patching later
+	origRepo := repository.DeepCopy()
 	// update first in case there is multiple incoming entries, and it will be converted to incomings with just 1 entry
 	_ = updateIncoming(repository, incomingSecretName, pacIncomingSecretKey, baseBranch)
 
@@ -336,7 +341,8 @@ func (r *ComponentBuildReconciler) cleanupPaCRepositoryIncomingsAndSecret(ctx co
 	}
 
 	if incomingUpdated {
-		if err := r.Client.Update(ctx, repository); err != nil {
+		// use Patch to avoid overwriting other spec fields (like Spec.Settings)
+		if err := r.Client.Patch(ctx, repository, client.MergeFrom(origRepo)); err != nil {
 			log.Error(err, "failed to update existing PaC repository with incomings", "PaCRepositoryName", repository.Name)
 			return err
 		}
