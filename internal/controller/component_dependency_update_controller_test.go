@@ -20,6 +20,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -330,14 +331,19 @@ var _ = Describe("Component nudge controller", func() {
 				"build.appstudio.redhat.com/type": "nudge",
 			}))
 
-			Expect(renovatePipelines[0].Annotations).Should(Equal(map[string]string{
-				// The component names are duplicated because we run tests for both basic and app auth of each component
-				"build.appstudio.redhat.com/nudged-components": "operator1-nudges operator2-nudges operator1-nudges operator2-nudges",
-				"build.appstudio.redhat.com/nudging-pipeline":  "test-pipeline-1",
-				"build.appstudio.redhat.com/nudging-commit":    "4b00cdb6ceb84d3953d8987e3e06f967a6d86e76",
-				"build.appstudio.redhat.com/nudging-component": "base-component-nudges",
-				"build.appstudio.redhat.com/nudging-image":     "quay.io.foo/bar:latest",
-			}))
+			annotations := renovatePipelines[0].Annotations
+			Expect(annotations["build.appstudio.redhat.com/nudging-pipeline"]).Should(Equal("test-pipeline-1"))
+			Expect(annotations["build.appstudio.redhat.com/nudging-commit"]).Should(Equal("4b00cdb6ceb84d3953d8987e3e06f967a6d86e76"))
+			Expect(annotations["build.appstudio.redhat.com/nudging-component"]).Should(Equal("base-component-nudges"))
+			Expect(annotations["build.appstudio.redhat.com/nudging-image"]).Should(Equal("quay.io.foo/bar:latest"))
+
+			// The component names are duplicated because we run tests for both basic and app auth of each component
+			// The order is non-deterministic due to k8s List API not guaranteeing order
+			nudgedComponents := annotations["build.appstudio.redhat.com/nudged-components"]
+			componentsList := strings.Split(nudgedComponents, " ")
+			sort.Strings(componentsList)
+			expectedComponents := []string{"operator1-nudges", "operator1-nudges", "operator2-nudges", "operator2-nudges"}
+			Expect(componentsList).Should(Equal(expectedComponents))
 
 			caMounted := false
 			for _, volumeMount := range renovatePipelines[0].Spec.PipelineSpec.Tasks[0].TaskSpec.TaskSpec.Steps[0].VolumeMounts {

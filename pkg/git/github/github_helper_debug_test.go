@@ -42,9 +42,9 @@ var (
 type githubClientCreationWay string
 
 const (
-	githubApp             githubClientCreationWay = "github-app"
-	githubToken           githubClientCreationWay = "token"
-	githubNone            githubClientCreationWay = "none"
+	githubApp   githubClientCreationWay = "github-app"
+	githubToken githubClientCreationWay = "token"
+	githubNone  githubClientCreationWay = "none"
 )
 
 func createClient(clientType githubClientCreationWay) (*GithubClient, error) {

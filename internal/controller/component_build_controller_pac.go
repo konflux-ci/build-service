@@ -299,7 +299,7 @@ func (r *ComponentBuildReconciler) TriggerPaCBuild(ctx context.Context, componen
 	HttpClient := GetHttpClientFunction()
 
 	// we have to supply source_url as additional param, because PaC isn't able to resolve it for trigger
-	bytesParam := []byte(fmt.Sprintf("{\"params\": {\"source_url\": \"%s\"}, \"secret\": \"%s\", \"repository\": \"%s\", \"branch\": \"%s\", \"pipelinerun\": \"%s\"}", repoUrl, secretValue, repository.Name, targetBranch, pipelineRunName))
+	bytesParam := []byte(fmt.Sprintf("{\"params\": {\"source_url\": \"%s\"}, \"secret\": \"%s\", \"repository\": \"%s\", \"branch\": \"%s\", \"pipelinerun\": \"%s\", \"namespace\": \"%s\"}", repoUrl, secretValue, repository.Name, targetBranch, pipelineRunName, repository.Namespace))
 
 	resp, err := HttpClient.Post(triggerURL, "application/json", bytes.NewBuffer(bytesParam))
 
