@@ -168,7 +168,10 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context,
 
 func getHttpClient() *http.Client { // #nosec G402 // dev instances need insecure, because they have self signed certificates
 	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: gp.IsInsecureSSL()},
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: gp.IsInsecureSSL(),
+			MinVersion:         tls.VersionTLS13,
+		},
 	}
 	client := &http.Client{Transport: tr}
 	return client
