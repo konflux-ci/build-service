@@ -356,7 +356,7 @@ func generatePaCPipelineRunForComponent(
 			Params:       params,
 			Workspaces:   pipelineRunWorkspaces,
 			TaskRunTemplate: tektonapi.PipelineTaskRunTemplate{
-				ServiceAccountName: getBuildPipelineServiceAccountName(component),
+				ServiceAccountName: getBuildPipelineServiceAccountName(component.Name),
 			},
 		},
 	}

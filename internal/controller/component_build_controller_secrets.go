@@ -20,14 +20,17 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"regexp"
+	"strings"
 
 	appstudiov1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -36,6 +39,16 @@ import (
 	"github.com/konflux-ci/build-service/pkg/git"
 	l "github.com/konflux-ci/build-service/pkg/logs"
 )
+
+const InternalSecretLabelName = "appstudio.redhat.com/internal"
+
+// dockerConfigJson represents the structure of a .dockerconfigjson secret
+type dockerConfigJson struct {
+	Auths map[string]dockerConfigAuth `json:"auths"`
+}
+type dockerConfigAuth struct {
+	Auth string `json:"auth"`
+}
 
 // ensureIncomingSecret is ensuring that incoming secret for PaC trigger exists
 // if secret doesn't exists it will create it and also add repository as owner
@@ -186,6 +199,129 @@ func (r *ComponentBuildReconciler) ensureWebhookSecret(ctx context.Context, comp
 	}
 
 	return webhookSecretString, nil
+}
+
+// checkNamespacePullSecretAndSetAnnotation ensures that namespace pull secret exists and adds annotation
+func (r *ComponentBuildReconciler) checkNamespacePullSecretAndSetAnnotation(ctx context.Context, namespace types.NamespacedName, component *appstudiov1alpha1.Component) error {
+	log := ctrllog.FromContext(ctx)
+
+	if err := r.ensureNamespacePullSecret(ctx, component.Namespace); err != nil {
+		return err
+	}
+
+	checkType := "implicit"
+	ensureNamespacePullSecret, ensureNamespacePullSecretExists := component.Annotations[ensureNamespacePullSecretAnnotation]
+	if ensureNamespacePullSecretExists && ensureNamespacePullSecret == "true" {
+		checkType = "explicit"
+	}
+
+	if component.Annotations == nil {
+		component.Annotations = make(map[string]string)
+	}
+	component.Annotations[ensureNamespacePullSecretAnnotation] = "false"
+	if err := r.Client.Update(ctx, component); err != nil {
+		log.Error(err, fmt.Sprintf("failed to update component after %s ensuring namespace pull secret", checkType))
+		return err
+	}
+	log.Info(fmt.Sprintf("updated component after %s ensuring namespace pull secret", checkType))
+	r.WaitForCacheUpdate(ctx, namespace, component)
+
+	return nil
+}
+
+// ensureNamespacePullSecret ensures that namespace pull secret exists
+func (r *ComponentBuildReconciler) ensureNamespacePullSecret(ctx context.Context, namespace string) error {
+	log := ctrllog.FromContext(ctx)
+
+	namespacePullSecret := &corev1.Secret{}
+	if err := r.Client.Get(ctx, types.NamespacedName{Name: namespacePullSecretName, Namespace: namespace}, namespacePullSecret); err != nil {
+		if !errors.IsNotFound(err) {
+			log.Error(err, "failed to get namespace pull secret", "secretName", namespacePullSecretName)
+			return err
+		}
+
+		secretList := &corev1.SecretList{}
+		if err := r.Client.List(ctx, secretList, &client.ListOptions{Namespace: namespace}); err != nil {
+			log.Error(err, "failed to list secrets", l.Action, l.ActionView)
+			return err
+		}
+
+		combinedAuths := dockerConfigJson{Auths: map[string]dockerConfigAuth{}}
+
+		// add to the namespace pull secret only pull secrets from ImageRepositories
+		for _, secret := range secretList.Items {
+			shouldProcess := false
+
+			// Only process secrets of type kubernetes.io/dockerconfigjson
+			if secret.Type != corev1.SecretTypeDockerConfigJson {
+				continue
+			}
+
+			// Secret missing .dockerconfigjson key
+			dockerConfigDataBytes, ok := secret.Data[corev1.DockerConfigJsonKey]
+			if !ok {
+				continue
+			}
+
+			// Only process pull secret from ImageRepository
+			if !strings.HasSuffix(secret.Name, "-image-pull") {
+				continue
+			}
+
+			// Only process pull secret owned by ImageRepository
+			for _, owner := range secret.OwnerReferences {
+				if owner.Kind == "ImageRepository" {
+					shouldProcess = true
+					break
+				}
+			}
+
+			if !shouldProcess {
+				continue
+			}
+
+			var dcj dockerConfigJson
+			if err := json.Unmarshal(dockerConfigDataBytes, &dcj); err != nil {
+				log.Error(err, "failed to unmarshal .dockerconfigjson data from secret", "secretName", secret.Name)
+				continue
+			}
+
+			for registry, authEntry := range dcj.Auths {
+				combinedAuths.Auths[registry] = authEntry
+			}
+		}
+
+		// Marshal combined auths back into .dockerconfigjson format
+		combinedDockerConfig := dockerConfigJson{Auths: combinedAuths.Auths}
+		marshaledData, err := json.Marshal(combinedDockerConfig)
+		if err != nil {
+			log.Error(err, "failed to marshal combined docker config json")
+			return err
+		}
+
+		// Create namespace pull secret
+		namespacePullSecret = &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      namespacePullSecretName,
+				Namespace: namespace,
+				Labels: map[string]string{
+					InternalSecretLabelName: "true",
+				},
+			},
+			Type: corev1.SecretTypeDockerConfigJson,
+			Data: map[string][]byte{
+				corev1.DockerConfigJsonKey: marshaledData,
+			},
+		}
+
+		if err := r.Client.Create(ctx, namespacePullSecret); err != nil {
+			log.Error(err, "failed to create namespace pull secret", "secretName", namespacePullSecret, l.Action, l.ActionAdd)
+			return err
+		}
+		log.Info("Namespace pull secret created", "secretName", namespacePullSecretName)
+	}
+
+	return nil
 }
 
 func getWebhookSecretKeyForComponent(component appstudiov1alpha1.Component) string {

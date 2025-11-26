@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -121,10 +122,12 @@ var _ = Describe("Component build controller", func() {
 
 	Context("Test build pipeline Service Account", func() {
 		var (
-			namespace           = "sa-test"
-			component1Key       = types.NamespacedName{Name: "component-sa-1", Namespace: namespace}
-			component2Key       = types.NamespacedName{Name: "component-sa-2", Namespace: namespace}
-			buildRoleBindingKey = types.NamespacedName{Name: buildPipelineRoleBindingName, Namespace: namespace}
+			namespace              = "sa-test"
+			component1Key          = types.NamespacedName{Name: "component-sa-1", Namespace: namespace}
+			component2Key          = types.NamespacedName{Name: "component-sa-2", Namespace: namespace}
+			buildRoleBindingKey    = types.NamespacedName{Name: buildPipelineRoleBindingName, Namespace: namespace}
+			namespacePullSecretKey = types.NamespacedName{Name: namespacePullSecretName, Namespace: namespace}
+			integrationSaKey       = types.NamespacedName{Name: integrationServiceAccountName, Namespace: namespace}
 		)
 
 		_ = BeforeEach(func() {
@@ -138,6 +141,7 @@ var _ = Describe("Component build controller", func() {
 			}
 			createSecret(pacSecretKey, pacSecretData)
 			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
+			createServiceAccount(integrationSaKey)
 
 			ResetTestGitProviderClient()
 		})
@@ -149,6 +153,106 @@ var _ = Describe("Component build controller", func() {
 			deleteRoleBinding(buildRoleBindingKey)
 			deleteServiceAccount(getComponentServiceAccountKey(component1Key))
 			deleteServiceAccount(getComponentServiceAccountKey(component2Key))
+			deleteServiceAccount(integrationSaKey)
+			deleteSecret(namespacePullSecretKey)
+		})
+
+		It("should create namespace pull secret and test forced creation and check linking", func() {
+			createComponent(component1Key)
+			component1SAKey := getComponentServiceAccountKey(component1Key)
+			waitComponentAnnotationValue(component1Key, ensureNamespacePullSecretAnnotation, "false")
+			namespacePullSecret := waitSecretCreated(namespacePullSecretKey)
+			component1SA := waitServiceAccount(component1SAKey)
+			integrationSA := waitServiceAccount(integrationSaKey)
+
+			// namespace pull secret is linked to component SA
+			Expect(component1SA.ImagePullSecrets).To(HaveLen(0))
+			Expect(component1SA.Secrets).To(HaveLen(1))
+			Expect(component1SA.Secrets[0].Name).To(Equal(namespacePullSecretKey.Name))
+
+			// namespace pull secret is linked to integration SA
+			Expect(integrationSA.ImagePullSecrets).To(HaveLen(1))
+			Expect(integrationSA.ImagePullSecrets[0].Name).To(Equal(namespacePullSecretKey.Name))
+			Expect(integrationSA.Secrets).To(HaveLen(1))
+			Expect(integrationSA.Secrets[0].Name).To(Equal(namespacePullSecretKey.Name))
+
+			// namespace pull secret is created empty because there weren't any IR pull secrets
+			namespacePullSecretDockerConfigJson := string(namespacePullSecret.Data[corev1.DockerConfigJsonKey])
+			var decodedSecret dockerConfigJson
+			Expect(json.Unmarshal([]byte(namespacePullSecretDockerConfigJson), &decodedSecret)).To(Succeed())
+			Expect(decodedSecret.Auths).To(HaveLen(0))
+
+			// pull secret with IR owner will be added to namespace pull secret
+			pullSecret1Data := generateDockerConfigJson("registry1", "user1", "pass1")
+			pullSecret1Key := types.NamespacedName{Name: "pull1-image-pull", Namespace: namespace}
+			// pull secret with IR owner will be added to namespace pull secret
+			pullSecret2Data := generateDockerConfigJson("registry2", "user2", "pass2")
+			pullSecret2Key := types.NamespacedName{Name: "pull2-image-pull", Namespace: namespace}
+			// push secret with IR owner won't be added to namespace pull secret
+			pushSecretData := generateDockerConfigJson("registry3", "user3", "pass3")
+			pushSecretKey := types.NamespacedName{Name: "push3-image-push", Namespace: namespace}
+			// user secret without owner, named like IR pull secret, won't be added to namespace pull secret
+			userSecret1Data := generateDockerConfigJson("registry4", "user4", "pass4")
+			userSecret1Key := types.NamespacedName{Name: "pull4-image-pull", Namespace: namespace}
+			// user secret without owner, won't be added to namespace pull secret
+			userSecret2Data := generateDockerConfigJson("registry5", "user5", "pass5")
+			userSecret2Key := types.NamespacedName{Name: "pull5-user", Namespace: namespace}
+
+			createDockerConfigSecret(pullSecret1Key, pullSecret1Data, true)
+			defer deleteSecret(pullSecret1Key)
+			createDockerConfigSecret(pullSecret2Key, pullSecret2Data, true)
+			defer deleteSecret(pullSecret2Key)
+			createDockerConfigSecret(pushSecretKey, pushSecretData, true)
+			defer deleteSecret(pushSecretKey)
+			createDockerConfigSecret(userSecret1Key, userSecret1Data, false)
+			defer deleteSecret(userSecret1Key)
+			createDockerConfigSecret(userSecret2Key, userSecret2Data, false)
+			defer deleteSecret(userSecret2Key)
+
+			// delete namespace pull secret and force creation of it
+			deleteSecret(namespacePullSecretKey)
+			setComponentAnnotation(component1Key, ensureNamespacePullSecretAnnotation, "true")
+			waitComponentAnnotationValue(component1Key, ensureNamespacePullSecretAnnotation, "false")
+
+			namespacePullSecret = waitSecretCreated(namespacePullSecretKey)
+			// namespace pull secret is created with 2 IR pull secrets
+			namespacePullSecretDockerConfigJson = string(namespacePullSecret.Data[corev1.DockerConfigJsonKey])
+			Expect(json.Unmarshal([]byte(namespacePullSecretDockerConfigJson), &decodedSecret)).To(Succeed())
+			Expect(decodedSecret.Auths).To(HaveLen(2))
+
+			Expect(decodedSecret.Auths["registry1"].Auth).To(Equal(base64.StdEncoding.EncodeToString([]byte("user1:pass1"))))
+			Expect(decodedSecret.Auths["registry2"].Auth).To(Equal(base64.StdEncoding.EncodeToString([]byte("user2:pass2"))))
+		})
+
+		It("should create namespace pull secret and check linking for each component", func() {
+			createComponent(component1Key)
+			component1SAKey := getComponentServiceAccountKey(component1Key)
+			createComponent(component2Key)
+			component2SAKey := getComponentServiceAccountKey(component2Key)
+
+			waitComponentAnnotationValue(component1Key, ensureNamespacePullSecretAnnotation, "false")
+			waitComponentAnnotationValue(component2Key, ensureNamespacePullSecretAnnotation, "false")
+
+			waitSecretCreated(namespacePullSecretKey)
+			component1SA := waitServiceAccount(component1SAKey)
+			component2SA := waitServiceAccount(component2SAKey)
+			integrationSA := waitServiceAccount(integrationSaKey)
+
+			// namespace pull secret is linked to component SA
+			Expect(component1SA.ImagePullSecrets).To(HaveLen(0))
+			Expect(component1SA.Secrets).To(HaveLen(1))
+			Expect(component1SA.Secrets[0].Name).To(Equal(namespacePullSecretKey.Name))
+
+			// namespace pull secret is linked to component SA
+			Expect(component2SA.ImagePullSecrets).To(HaveLen(0))
+			Expect(component2SA.Secrets).To(HaveLen(1))
+			Expect(component2SA.Secrets[0].Name).To(Equal(namespacePullSecretKey.Name))
+
+			// namespace pull secret is linked to integration SA
+			Expect(integrationSA.ImagePullSecrets).To(HaveLen(1))
+			Expect(integrationSA.ImagePullSecrets[0].Name).To(Equal(namespacePullSecretKey.Name))
+			Expect(integrationSA.Secrets).To(HaveLen(1))
+			Expect(integrationSA.Secrets[0].Name).To(Equal(namespacePullSecretKey.Name))
 		})
 
 		It("should create build pipeline dedicated service account and role binding", func() {
@@ -338,6 +442,7 @@ var _ = Describe("Component build controller", func() {
 			waitServiceAccountInRoleBinding(buildRoleBindingKey, component1SAKey.Name)
 
 			deleteServiceAccount(component1SAKey)
+			waitComponentAnnotationValue(component1Key, ensureNamespacePullSecretAnnotation, "false")
 
 			// trigger a reconcile
 			component1 := getComponent(component1Key)
@@ -366,6 +471,8 @@ var _ = Describe("Component build controller", func() {
 			Expect(roleBinding.Subjects).To(HaveLen(2))
 
 			deleteRoleBinding(buildRoleBindingKey)
+			waitComponentAnnotationValue(component1Key, ensureNamespacePullSecretAnnotation, "false")
+			waitComponentAnnotationValue(component2Key, ensureNamespacePullSecretAnnotation, "false")
 
 			// trigger a reconcile for component 1
 			component1 := getComponent(component1Key)
@@ -417,6 +524,7 @@ var _ = Describe("Component build controller", func() {
 			defer deleteComponent(nudgedComponentKey)
 			nudgedComponentImageRepo := createImageRepositoryForComponent(nudgedComponentKey)
 			defer deleteImageRepository(nudgedComponentKey)
+			waitComponentAnnotationValue(nudgedComponentKey, ensureNamespacePullSecretAnnotation, "false")
 
 			// Simulate Image Controller and add push secret of nudged Component to its Service Account
 			nudgedComponentSA := waitServiceAccount(nudgedComponentSAKey)
@@ -441,6 +549,16 @@ var _ = Describe("Component build controller", func() {
 			createComponentCustom(component2)
 			component2ImageRepo := createImageRepositoryForComponent(component2Key)
 			defer deleteImageRepository(component2Key)
+
+			waitComponentAnnotationValue(component1Key, ensureNamespacePullSecretAnnotation, "false")
+			waitComponentAnnotationValue(component2Key, ensureNamespacePullSecretAnnotation, "false")
+
+			// Trigger a reconcile for nudged Component.
+			// In real environment it should be done by update of BuildNudgedBy field in the nudged Component status
+			nudgedComponent := getComponent(nudgedComponentKey)
+			nudgedComponent.Annotations["build-nudged-by"] = "component2"
+			Expect(k8sClient.Update(ctx, nudgedComponent)).To(Succeed())
+
 			// Check that the pull secret of nudging Component was linked to the nudged Component build pipeline Service Account
 			waitServiceAccountLinkedSecret(nudgedComponentSAKey, component2ImageRepo.Status.Credentials.PullSecretName, false)
 			// Check that a pull secret was not linked from a not nudging Component
@@ -458,7 +576,7 @@ var _ = Describe("Component build controller", func() {
 
 			// Trigger a reconcile for nudged Component.
 			// In real environment it should be done by update of BuildNudgedBy field in the nudged Component status
-			nudgedComponent := getComponent(nudgedComponentKey)
+			nudgedComponent = getComponent(nudgedComponentKey)
 			nudgedComponent.Annotations["build-nudged-by"] = "component1"
 			Expect(k8sClient.Update(ctx, nudgedComponent)).To(Succeed())
 
@@ -1184,6 +1302,7 @@ var _ = Describe("Component build controller", func() {
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourceCleanupKey)
+			waitComponentAnnotationValue(resourceCleanupKey, ensureNamespacePullSecretAnnotation, "false")
 
 			pacSecretData = map[string]string{}
 			deleteSecret(pacSecretKey)
@@ -1207,6 +1326,7 @@ var _ = Describe("Component build controller", func() {
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourceCleanupKey)
+			waitComponentAnnotationValue(resourceCleanupKey, ensureNamespacePullSecretAnnotation, "false")
 			UndoPaCMergeRequestFunc = func(repoUrl string, data *gp.MergeRequestData) (webUrl string, err error) {
 				return "", nil
 			}
@@ -1254,6 +1374,7 @@ var _ = Describe("Component build controller", func() {
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourceCleanupKey)
+			waitComponentAnnotationValue(resourceCleanupKey, ensureNamespacePullSecretAnnotation, "false")
 
 			repository := waitPaCRepositoryCreated(resourceCleanupKey)
 			incomingSecretName := fmt.Sprintf("%s%s", repository.Name, pacIncomingSecretNameSuffix)
@@ -1264,11 +1385,10 @@ var _ = Describe("Component build controller", func() {
 			Expect(k8sClient.Update(ctx, repository)).Should(Succeed())
 
 			// create incoming secret
-			component := getComponent(resourceCleanupKey)
 			incomingSecretData := map[string]string{
 				pacIncomingSecretKey: "secret password",
 			}
-			incomingSecretResourceKey := types.NamespacedName{Namespace: component.Namespace, Name: incomingSecretName}
+			incomingSecretResourceKey := types.NamespacedName{Namespace: namespace, Name: incomingSecretName}
 			createSecret(incomingSecretResourceKey, incomingSecretData)
 			defer deleteSecret(incomingSecretResourceKey)
 
@@ -1309,6 +1429,7 @@ var _ = Describe("Component build controller", func() {
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourceCleanupKey)
+			waitComponentAnnotationValue(resourceCleanupKey, ensureNamespacePullSecretAnnotation, "false")
 			expectPacBuildStatus(resourceCleanupKey, "enabled", 0, "", mergeUrl)
 
 			// provision 2nd component
@@ -1436,6 +1557,7 @@ var _ = Describe("Component build controller", func() {
 				gitURL:       SampleRepoLink + "-samerepo",
 			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourceCleanupKey)
+			waitComponentAnnotationValue(resourceCleanupKey, ensureNamespacePullSecretAnnotation, "false")
 
 			// create second component which uses the same url
 			secondComponentKey := types.NamespacedName{Name: HASCompName + "-cleanup-second", Namespace: namespace}
@@ -1445,6 +1567,7 @@ var _ = Describe("Component build controller", func() {
 				gitURL:       SampleRepoLink + "-samerepo",
 			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(secondComponentKey)
+			waitComponentAnnotationValue(secondComponentKey, ensureNamespacePullSecretAnnotation, "false")
 
 			// shouldn't remove webhook because another component exists for the same repo
 			setComponentBuildRequest(resourceCleanupKey, BuildRequestUnconfigurePaCAnnotationValue)
@@ -1587,6 +1710,7 @@ var _ = Describe("Component build controller", func() {
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourceCleanupKey)
+			waitComponentAnnotationValue(resourceCleanupKey, ensureNamespacePullSecretAnnotation, "false")
 			deleteSecret(pacSecretKey)
 
 			setComponentBuildRequest(resourceCleanupKey, BuildRequestUnconfigurePaCAnnotationValue)
@@ -1607,11 +1731,12 @@ var _ = Describe("Component build controller", func() {
 				componentKey: resourceCleanupKey,
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
+			waitPaCFinalizerOnComponent(resourceCleanupKey)
+			waitComponentAnnotationValue(resourceCleanupKey, ensureNamespacePullSecretAnnotation, "false")
 
 			component := getComponent(resourceCleanupKey)
 			component.Spec.Source.GitSource.URL = "wrong"
 			Expect(k8sClient.Update(ctx, component)).To(Succeed())
-			waitPaCFinalizerOnComponent(resourceCleanupKey)
 
 			setComponentBuildRequest(resourceCleanupKey, BuildRequestUnconfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponentGone(resourceCleanupKey)
@@ -1917,6 +2042,7 @@ var _ = Describe("Component build controller", func() {
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourcePacTriggerKey)
+			waitComponentAnnotationValue(resourcePacTriggerKey, ensureNamespacePullSecretAnnotation, "false")
 			expectPacBuildStatus(resourcePacTriggerKey, "enabled", 0, "", mergeUrl)
 
 			repository := waitPaCRepositoryCreated(resourcePacTriggerKey)
@@ -2039,6 +2165,7 @@ var _ = Describe("Component build controller", func() {
 			webhookTargetUrl := "https://" + pacWebhookRoute.Spec.Host
 			incomingSecretName := fmt.Sprintf("%s%s", repository.Name, pacIncomingSecretNameSuffix)
 
+			waitComponentAnnotationValue(resourcePacTriggerKey, ensureNamespacePullSecretAnnotation, "false")
 			component1 := getComponent(resourcePacTriggerKey)
 			pipelineRunName1 := component1.Name + pipelineRunOnPushSuffix
 
@@ -2078,6 +2205,7 @@ var _ = Describe("Component build controller", func() {
 			Expect((*repository.Spec.Incomings)[0].Secret.Key).To(Equal(pacIncomingSecretKey))
 			Expect((*repository.Spec.Incomings)[0].Targets).To(Equal([]string{"main"}))
 
+			waitComponentAnnotationValue(component2Key, ensureNamespacePullSecretAnnotation, "false")
 			component2 := getComponent(component2Key)
 			pipelineRunName2 := component2.Name + pipelineRunOnPushSuffix
 
@@ -2139,6 +2267,7 @@ var _ = Describe("Component build controller", func() {
 			webhookTargetUrl := "https://" + pacWebhookRoute.Spec.Host
 			incomingSecretName := fmt.Sprintf("%s%s", repository.Name, pacIncomingSecretNameSuffix)
 
+			waitComponentAnnotationValue(resourcePacTriggerKey, ensureNamespacePullSecretAnnotation, "false")
 			component1 := getComponent(resourcePacTriggerKey)
 			pipelineRunName1 := component1.Name + pipelineRunOnPushSuffix
 
@@ -2178,6 +2307,7 @@ var _ = Describe("Component build controller", func() {
 			Expect((*repository.Spec.Incomings)[0].Secret.Key).To(Equal(pacIncomingSecretKey))
 			Expect((*repository.Spec.Incomings)[0].Targets).To(Equal([]string{"main"}))
 
+			waitComponentAnnotationValue(component2Key, ensureNamespacePullSecretAnnotation, "false")
 			component2 := getComponent(component2Key)
 			pipelineRunName2 := component2.Name + pipelineRunOnPushSuffix
 
@@ -2261,6 +2391,7 @@ var _ = Describe("Component build controller", func() {
 			Expect(k8sClient.Get(ctx, pacRouteKey, pacWebhookRoute)).To(Succeed())
 			webhookTargetUrl := "https://" + pacWebhookRoute.Spec.Host
 
+			waitComponentAnnotationValue(component2Key, ensureNamespacePullSecretAnnotation, "false")
 			component2 := getComponent(component2Key)
 			pipelineRunName2 := component2.Name + pipelineRunOnPushSuffix
 
@@ -2362,6 +2493,7 @@ var _ = Describe("Component build controller", func() {
 				Reply(202).JSON(map[string]string{})
 
 			// trigger push pipeline for 2nd component
+			waitComponentAnnotationValue(component2Key, ensureNamespacePullSecretAnnotation, "false")
 			setComponentBuildRequest(component2Key, BuildRequestTriggerPaCBuildAnnotationValue)
 			incomingSecretResourceKey := types.NamespacedName{Namespace: component2.Namespace, Name: incomingSecretName}
 			waitSecretCreated(incomingSecretResourceKey)
@@ -2431,6 +2563,7 @@ var _ = Describe("Component build controller", func() {
 			Expect(k8sClient.Get(ctx, pacRouteKey, pacWebhookRoute)).To(Succeed())
 			webhookTargetUrl := "https://" + pacWebhookRoute.Spec.Host
 
+			waitComponentAnnotationValue(component2Key, ensureNamespacePullSecretAnnotation, "false")
 			component2 := getComponent(component2Key)
 			pipelineRunName2 := component2.Name + pipelineRunOnPushSuffix
 

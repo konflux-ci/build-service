@@ -565,7 +565,7 @@ func (r *ComponentDependencyUpdateReconciler) getImageRepositoryCredentials(ctx 
 
 	// get service account and gather linked secrets
 	buildPipelineServiceAccount := &corev1.ServiceAccount{}
-	buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(component)
+	buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(component.Name)
 	if err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: namespace}, buildPipelineServiceAccount); err != nil {
 		log.Error(err, fmt.Sprintf("Failed to read service account %s in namespace %s", buildPipelineServiceAccountName, namespace), l.Action, l.ActionView)
 		return "", "", err

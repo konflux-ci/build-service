@@ -47,10 +47,7 @@ const (
 
 // getBuildPipelineServiceAccountName returns name of dedicated Service Account
 // that should be used for build pipelines of the given Component.
-func getBuildPipelineServiceAccountName(component *appstudiov1alpha1.Component) string {
-	return getBuildPipelineServiceAccountNameByComponentName(component.GetName())
-}
-func getBuildPipelineServiceAccountNameByComponentName(componentName string) string {
+func getBuildPipelineServiceAccountName(componentName string) string {
 	return "build-pipeline-" + componentName
 }
 
@@ -62,7 +59,7 @@ func (r *ComponentBuildReconciler) EnsureBuildPipelineServiceAccount(ctx context
 	ctx = ctrllog.IntoContext(ctx, log)
 
 	// Verify build pipeline Service Account
-	buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(component)
+	buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(component.Name)
 	buildPipelinesServiceAccount := &corev1.ServiceAccount{}
 	if err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: component.Namespace}, buildPipelinesServiceAccount); err != nil {
 		if !errors.IsNotFound(err) {
@@ -89,6 +86,7 @@ func (r *ComponentBuildReconciler) EnsureBuildPipelineServiceAccount(ctx context
 			log.Error(err, fmt.Sprintf("failed to create Service Account %s in namespace %s", buildPipelineServiceAccountName, component.Namespace), l.Action, l.ActionAdd)
 			return err
 		}
+		log.Info("Component SA created", "saName", buildPipelineServiceAccountName)
 	}
 
 	if err := r.ensureNudgingPullSecrets(ctx, component); err != nil {
@@ -135,7 +133,7 @@ func (r *ComponentBuildReconciler) linkCommonSecretsToBuildPipelineServiceAccoun
 // has pull secrets for image repositories of Components that nudge current Component linked.
 // Note, they must be linked into Secrets section (not imagePullSecrets).
 func (r *ComponentBuildReconciler) ensureNudgingPullSecrets(ctx context.Context, component *appstudiov1alpha1.Component) error {
-	buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(component)
+	buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(component.Name)
 	log := ctrllog.FromContext(ctx).WithValues("ServiceAccountName", buildPipelineServiceAccountName)
 
 	allComponentsInNamespaceList := &appstudiov1alpha1.ComponentList{}
@@ -222,7 +220,7 @@ func (r *ComponentBuildReconciler) cleanUpNudgingPullSecrets(ctx context.Context
 	pullSecretName := imageRepository.Status.Credentials.PullSecretName
 
 	for _, nudgedComponentName := range component.Spec.BuildNudgesRef {
-		nudgedComponentBuildPipelineServiceAccountName := getBuildPipelineServiceAccountNameByComponentName(nudgedComponentName)
+		nudgedComponentBuildPipelineServiceAccountName := getBuildPipelineServiceAccountName(nudgedComponentName)
 		nudgedComponentBuildPipelineServiceAccount := &corev1.ServiceAccount{}
 		if err := r.Client.Get(ctx, types.NamespacedName{Name: nudgedComponentBuildPipelineServiceAccountName, Namespace: component.Namespace}, nudgedComponentBuildPipelineServiceAccount); err != nil {
 			if !errors.IsNotFound(err) {
@@ -282,7 +280,7 @@ func (r *ComponentBuildReconciler) getComponentImageRepository(ctx context.Conte
 func (r *ComponentBuildReconciler) ensureBuildPipelineServiceAccountBinding(ctx context.Context, component *appstudiov1alpha1.Component) error {
 	log := ctrllog.FromContext(ctx)
 
-	buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(component)
+	buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(component.Name)
 
 	// Verify Role Binding for build pipeline Service Account
 	buildPipelinesRoleBinding := &rbacv1.RoleBinding{}
@@ -373,7 +371,7 @@ func (r *ComponentBuildReconciler) removeBuildPipelineServiceAccountBinding(ctx 
 
 	subjectsNumberBefore := len(buildPipelinesRoleBinding.Subjects)
 
-	buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(component)
+	buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(component.Name)
 	subjectIndex := getRoleBindingSaSubjectIndex(buildPipelinesRoleBinding, buildPipelineServiceAccountName)
 	if subjectIndex != -1 {
 		if len(buildPipelinesRoleBinding.Subjects) == 1 {
@@ -459,4 +457,46 @@ func getSecretReferenceIndex(serviceAccount *corev1.ServiceAccount, secretName s
 
 func isSaSecretLinked(serviceAccount *corev1.ServiceAccount, secretName string, isPull bool) bool {
 	return getSecretReferenceIndex(serviceAccount, secretName, isPull) != -1
+}
+
+// updateSaWithNamespacePullSecret updates a ServiceAccount to include
+// the namespace pull secret as an imagePullSecret and as a Secret depending on bothSections param
+func (r *ComponentBuildReconciler) updateSaWithNamespacePullSecret(ctx context.Context, saName, namespace string, bothSections bool) error {
+	log := ctrllog.FromContext(ctx)
+
+	// fetch SA
+	serviceAccount := &corev1.ServiceAccount{}
+	if err := r.Client.Get(ctx, types.NamespacedName{Name: saName, Namespace: namespace}, serviceAccount); err != nil {
+		if errors.IsNotFound(err) {
+			log.Info("ServiceAccount not found", "serviceAccountName", saName, "namespace", namespace)
+			return nil
+		}
+		log.Error(err, "failed to read ServiceAccount", "serviceAccountName", saName, "namespace", namespace, l.Action, l.ActionView)
+		return err
+	}
+
+	// Check and update Secrets
+	shouldUpdateServiceAccount := false
+	if !isSaSecretLinked(serviceAccount, namespacePullSecretName, false) {
+		serviceAccount.Secrets = append(serviceAccount.Secrets, corev1.ObjectReference{Name: namespacePullSecretName})
+		shouldUpdateServiceAccount = true
+	}
+
+	// Check and update imagePullSecrets
+	if bothSections {
+		if !isSaSecretLinked(serviceAccount, namespacePullSecretName, true) {
+			serviceAccount.ImagePullSecrets = append(serviceAccount.ImagePullSecrets, corev1.LocalObjectReference{Name: namespacePullSecretName})
+			shouldUpdateServiceAccount = true
+		}
+	}
+
+	if shouldUpdateServiceAccount {
+		if err := r.Client.Update(ctx, serviceAccount); err != nil {
+			log.Error(err, "failed to update Service Account with namespace pull secret", "serviceAccountName", saName, "namespace", namespace, l.Action, l.ActionUpdate)
+			return err
+		}
+		log.Info("Service Account updated successfully with namespace pull secret.", "serviceAccountName", saName, "namespace", namespace, "secretName", namespacePullSecretName)
+	}
+
+	return nil
 }

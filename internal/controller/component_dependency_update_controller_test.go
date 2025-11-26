@@ -175,7 +175,6 @@ var _ = Describe("Component nudge controller", func() {
 				pr := getPipelineRun("test-pipeline-1", UserNamespace)
 				return pr == nil
 			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
-
 		})
 
 		It("Test finalizer removed on pipeline completion", func() {
@@ -533,11 +532,11 @@ var _ = Describe("Component nudge controller", func() {
 				component1.Annotations[CustomRenovateConfigMapAnnotation] = componentRenovateConfigName.Name
 				err = k8sClient.Update(context.TODO(), &component1)
 				Expect(err).ToNot(HaveOccurred())
-				waitComponentAnnotationExists(operator1Key, CustomRenovateConfigMapAnnotation)
+				waitComponentAnnotationValue(operator1Key, CustomRenovateConfigMapAnnotation, componentRenovateConfigName.Name)
 				component2.Annotations[CustomRenovateConfigMapAnnotation] = componentRenovateConfigName.Name
 				err = k8sClient.Update(context.TODO(), &component2)
 				Expect(err).ToNot(HaveOccurred())
-				waitComponentAnnotationExists(operator2Key, CustomRenovateConfigMapAnnotation)
+				waitComponentAnnotationValue(operator2Key, CustomRenovateConfigMapAnnotation, componentRenovateConfigName.Name)
 			}
 
 			createBuildPipelineRun("test-pipeline-1", UserNamespace, baseComponentName, imageBuiltFrom)

@@ -17,7 +17,9 @@ limitations under the License.
 package controllers
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -188,6 +190,16 @@ func setComponentBuildRequest(componentKey types.NamespacedName, buildRequest st
 		component.Annotations = make(map[string]string)
 	}
 	component.Annotations[BuildRequestAnnotationName] = buildRequest
+
+	Expect(k8sClient.Update(ctx, component)).To(Succeed())
+}
+
+func setComponentAnnotation(componentKey types.NamespacedName, annotationKey, annotationValue string) {
+	component := getComponent(componentKey)
+	if component.Annotations == nil {
+		component.Annotations = make(map[string]string)
+	}
+	component.Annotations[annotationKey] = annotationValue
 
 	Expect(k8sClient.Update(ctx, component)).To(Succeed())
 }
@@ -498,6 +510,50 @@ func createSCMSecret(resourceKey types.NamespacedName, data map[string]string, s
 	}, timeout, interval).Should(Succeed())
 }
 
+// createDockerConfigSecret creates SecretTypeDockerConfigJson secret
+func createDockerConfigSecret(secretKey types.NamespacedName, dockerConfigData string, setIrOwner bool) {
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      secretKey.Name,
+			Namespace: secretKey.Namespace,
+			Labels: map[string]string{
+				InternalSecretLabelName: "true",
+			},
+		},
+		Type: corev1.SecretTypeDockerConfigJson,
+		Data: map[string][]byte{
+			corev1.DockerConfigJsonKey: []byte(dockerConfigData),
+		},
+	}
+
+	if setIrOwner {
+		secret.ObjectMeta.OwnerReferences = []metav1.OwnerReference{{
+			APIVersion: "appstudio.redhat.com/v1alpha1",
+			Kind:       "ImageRepository",
+			Name:       "ir-name",
+			UID:        "ir-uid",
+		}}
+	}
+	Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+}
+
+// generateDockerConfigJson creates the raw JSON string for .dockerconfigjson
+func generateDockerConfigJson(registry, username, password string) string {
+	auths := map[string]dockerConfigAuth{}
+
+	// when all are empty create empty auths
+	if registry != "" && username != "" && password != "" {
+		authString := fmt.Sprintf("%s:%s", username, password)
+		encodedAuth := base64.StdEncoding.EncodeToString([]byte(authString))
+		auths[registry] = dockerConfigAuth{encodedAuth}
+	}
+
+	dcj := dockerConfigJson{Auths: auths}
+	marshaled, err := json.Marshal(dcj)
+	Expect(err).To(Succeed())
+	return string(marshaled)
+}
+
 func deleteSecret(resourceKey types.NamespacedName) {
 	secret := &corev1.Secret{}
 	if err := k8sClient.Get(ctx, resourceKey, secret); err != nil {
@@ -517,12 +573,13 @@ func deleteSecret(resourceKey types.NamespacedName) {
 	}, timeout, interval).Should(BeTrue())
 }
 
-func waitSecretCreated(resourceKey types.NamespacedName) {
+func waitSecretCreated(resourceKey types.NamespacedName) *corev1.Secret {
 	secret := &corev1.Secret{}
 	Eventually(func() bool {
 		err := k8sClient.Get(ctx, resourceKey, secret)
 		return err == nil && secret.ResourceVersion != ""
 	}, timeout, interval).Should(BeTrue())
+	return secret
 }
 
 func waitSecretGone(resourceKey types.NamespacedName) {
@@ -614,15 +671,15 @@ func waitComponentAnnotationGone(componentKey types.NamespacedName, annotationNa
 	}, timeout, interval).Should(BeTrue())
 }
 
-func waitComponentAnnotationExists(componentKey types.NamespacedName, annotationName string) {
+func waitComponentAnnotationValue(componentKey types.NamespacedName, annotationName, annotationValue string) {
 	Eventually(func() bool {
 		component := getComponent(componentKey)
 		annotations := component.GetAnnotations()
 		if annotations == nil {
 			return false
 		}
-		_, exists := annotations[annotationName]
-		return exists
+		annotation, exists := annotations[annotationName]
+		return exists && annotation == annotationValue
 	}, timeout, interval).Should(BeTrue())
 }
 
@@ -715,6 +772,17 @@ func deleteConfigMap(configMapKey types.NamespacedName) {
 	Eventually(func() bool {
 		return k8sErrors.IsNotFound(k8sClient.Get(ctx, configMapKey, &configMap))
 	}, timeout, interval).Should(BeTrue())
+}
+
+func createServiceAccount(serviceAccountKey types.NamespacedName) corev1.ServiceAccount {
+	serviceAccount := corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: serviceAccountKey.Namespace,
+			Name:      serviceAccountKey.Name,
+		},
+	}
+	Expect(k8sClient.Create(ctx, &serviceAccount)).To(Succeed())
+	return waitServiceAccount(serviceAccountKey)
 }
 
 func waitServiceAccount(serviceAccountKey types.NamespacedName) corev1.ServiceAccount {

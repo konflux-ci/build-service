@@ -719,7 +719,7 @@ func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Contex
 		}
 	}
 
-	renovatePipelineServiceAccountName := getBuildPipelineServiceAccountName(buildResult.Component)
+	renovatePipelineServiceAccountName := getBuildPipelineServiceAccountName(buildResult.Component.Name)
 	if err := u.Client.Get(ctx, types.NamespacedName{Name: renovatePipelineServiceAccountName, Namespace: namespace}, &corev1.ServiceAccount{}); err != nil {
 		log.Error(err, fmt.Sprintf("Failed to read service account %s in namespace %s", renovatePipelineServiceAccountName, namespace), l.Action, l.ActionView)
 		return err
