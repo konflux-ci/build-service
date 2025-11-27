@@ -8,7 +8,7 @@ require (
 	github.com/bradleyfalzon/ghinstallation/v2 v2.15.0
 	github.com/go-logr/logr v1.4.2
 	github.com/google/go-containerregistry v0.20.3
-	github.com/google/go-github/v45 v45.2.0
+	github.com/google/go-github/v79 v79.0.0
 	github.com/h2non/gock v1.2.0
 	github.com/onsi/ginkgo/v2 v2.22.2
 	github.com/onsi/gomega v1.36.2
@@ -118,7 +118,6 @@ require (
 	go.opentelemetry.io/otel/trace v1.35.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.5.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/crypto v0.37.0 // indirect
 	golang.org/x/net v0.39.0 // indirect
 	golang.org/x/sync v0.14.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect
