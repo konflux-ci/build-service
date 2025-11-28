@@ -414,6 +414,7 @@ func getPaCWebhookOpts(webhookTargetUrl, webhookSecret string) *gitlab.AddProjec
 	mergeRequestsEvents := true
 	pushEvents := true
 	noteEvents := true
+	tagEvents := true
 
 	return &gitlab.AddProjectHookOptions{
 		URL:                   &webhookTargetUrl,
@@ -422,6 +423,7 @@ func getPaCWebhookOpts(webhookTargetUrl, webhookSecret string) *gitlab.AddProjec
 		MergeRequestsEvents:   &mergeRequestsEvents,
 		PushEvents:            &pushEvents,
 		NoteEvents:            &noteEvents,
+		TagPushEvents:         &tagEvents,
 	}
 }
 
