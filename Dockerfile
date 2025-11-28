@@ -4,6 +4,7 @@
 FROM registry.access.redhat.com/ubi9/go-toolset:1.24.6-1762230058 AS builder
 ARG TARGETOS
 ARG TARGETARCH
+ARG ENABLE_COVERAGE=false
 
 USER 1001
 
@@ -23,7 +24,13 @@ COPY --chown=1001:0 . .
 # was called. For example, if we call make docker-build in a local env which has the Apple Silicon M1 SO
 # the docker BUILDPLATFORM arg will be linux/arm64 when for Apple x86 it will be linux/amd64. Therefore,
 # by leaving it empty we can ensure that the container and binary shipped on it will have the same platform.
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o manager cmd/main.go
+RUN if [ "$ENABLE_COVERAGE" = "true" ]; then \
+        echo "Building with coverage instrumentation..."; \
+        CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -cover -covermode=atomic -tags=coverage -o manager ./cmd; \
+    else \
+        echo "Building production binary..."; \
+        CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o manager cmd/main.go; \
+    fi
 
 # Use ubi-minimal as minimal base image to package the manager binary
 # For more details and updates, refer to
