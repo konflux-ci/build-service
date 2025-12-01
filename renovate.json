@@ -16,6 +16,12 @@
         "github-actions"
       ],
       "automerge": true
+    },
+    {
+      "matchManagers": ["gomod"],
+      "matchDepNames": ["go"],
+      "matchDepTypes": ["golang"],
+      "enabled": false
     }
   ]
 }
