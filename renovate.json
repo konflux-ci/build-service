@@ -18,10 +18,22 @@
       "automerge": true
     },
     {
+      "description": "Go minor updates",
       "matchManagers": ["gomod"],
-      "matchDepNames": ["go"],
-      "matchDepTypes": ["golang"],
-      "enabled": false
+      "matchUpdateTypes": ["minor"],
+      "groupName": "go minor dependencies"
+    },
+    {
+      "description": "Go patch updates",
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["patch"],
+      "groupName": "go patch dependencies"
+    },
+    {
+      "description": "Go digest updates",
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["digest"],
+      "groupName": "go digest dependencies"
     }
   ]
 }
