@@ -12,7 +12,7 @@ require (
 	github.com/h2non/gock v1.2.0
 	github.com/onsi/ginkgo/v2 v2.22.2
 	github.com/onsi/gomega v1.36.2
-	github.com/openshift/api v0.0.0-20221013123534-96eec44e1979
+	github.com/openshift/api a199b18e3d07
 	github.com/prometheus/client_golang v1.22.0
 	github.com/xanzy/go-gitlab v0.108.0
 	go.uber.org/zap v1.27.0
