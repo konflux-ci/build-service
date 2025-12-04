@@ -35,7 +35,7 @@ RUN if [ "$ENABLE_COVERAGE" = "true" ]; then \
 # Use ubi-minimal as minimal base image to package the manager binary
 # For more details and updates, refer to
 # https://catalog.redhat.com/software/containers/ubi9/ubi-minimal/615bd9b4075b022acc111bf5
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.6-1755695350
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.7-1764794109
 WORKDIR /
 COPY --from=builder /workspace/manager .
 USER 65532:65532
