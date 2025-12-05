@@ -8,8 +8,9 @@ require (
 	github.com/bradleyfalzon/ghinstallation/v2 v2.15.0
 	github.com/go-logr/logr v1.4.2
 	github.com/google/go-containerregistry v0.20.3
-	github.com/google/go-github/v45 v45.2.0
+	github.com/google/go-github/v80 v80.0.0
 	github.com/h2non/gock v1.2.0
+	github.com/konflux-ci/coverport/instrumentation/go v0.0.0-20251127115143-b5207b335f8b
 	github.com/onsi/ginkgo/v2 v2.22.2
 	github.com/onsi/gomega v1.36.2
 	github.com/openshift/api v0.0.0-20221013123534-96eec44e1979
@@ -86,7 +87,6 @@ require (
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
-	github.com/konflux-ci/coverport/instrumentation/go v0.0.0-20251127115143-b5207b335f8b // indirect
 	github.com/konflux-ci/operator-toolkit v0.0.0-20240402130556-ef6dcbeca69d // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/mailru/easyjson v0.9.1 // indirect
@@ -119,7 +119,6 @@ require (
 	go.opentelemetry.io/otel/trace v1.35.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.5.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/crypto v0.37.0 // indirect
 	golang.org/x/net v0.39.0 // indirect
 	golang.org/x/sync v0.14.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect

@@ -7,7 +7,7 @@ import (
 	"strconv"
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
-	"github.com/google/go-github/v45/github"
+	"github.com/google/go-github/v80/github"
 	"github.com/konflux-ci/build-service/pkg/boerrors"
 	. "github.com/konflux-ci/build-service/pkg/common"
 	"github.com/prometheus/client_golang/prometheus"

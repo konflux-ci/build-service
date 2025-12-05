@@ -24,7 +24,7 @@ import (
 	"strings"
 	"time"
 
-	gitgithub "github.com/google/go-github/v45/github"
+	gitgithub "github.com/google/go-github/v80/github"
 	applicationapi "github.com/konflux-ci/application-api/api/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
