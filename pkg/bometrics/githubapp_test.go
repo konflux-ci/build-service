@@ -3,7 +3,7 @@ package bometrics
 import (
 	"context"
 	"errors"
-	"github.com/google/go-github/v45/github"
+	"github.com/google/go-github/v80/github"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"net/http"

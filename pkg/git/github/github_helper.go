@@ -25,7 +25,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/go-github/v45/github"
+	"github.com/google/go-github/v80/github"
 	"github.com/konflux-ci/build-service/pkg/boerrors"
 	gp "github.com/konflux-ci/build-service/pkg/git/gitprovider"
 )
