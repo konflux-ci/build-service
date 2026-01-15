@@ -23,7 +23,7 @@ import (
 	"fmt"
 	"regexp"
 
-	appstudiov1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
+	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -39,18 +39,19 @@ import (
 
 // ensureIncomingSecret is ensuring that incoming secret for PaC trigger exists
 // if secret doesn't exists it will create it and also add repository as owner
+// TODO remove newModel handling after only new model is used
 // Returns:
 // pointer to secret object
 // bool which indicates if reconcile is required (which is required when we just created secret)
-func (r *ComponentBuildReconciler) ensureIncomingSecret(ctx context.Context, component *appstudiov1alpha1.Component) (*corev1.Secret, bool, error) {
+func (r *ComponentBuildReconciler) ensureIncomingSecret(ctx context.Context, component *compapiv1alpha1.Component, newModel bool) (*corev1.Secret, bool, error) {
 	log := ctrllog.FromContext(ctx)
 
-	repository, err := r.findPaCRepositoryForComponent(ctx, component)
+	repository, err := r.findPaCRepositoryForComponent(ctx, component, newModel)
 	if err != nil {
 		return nil, false, err
 	}
 
-	incomingSecretName := fmt.Sprintf("%s%s", repository.Name, pacIncomingSecretNameSuffix)
+	incomingSecretName := getPaCIncomingSecretName(repository.Name)
 	incomingSecretPassword := generatePaCWebhookSecretString()
 	incomingSecretData := map[string]string{
 		pacIncomingSecretKey: incomingSecretPassword,
@@ -88,11 +89,18 @@ func (r *ComponentBuildReconciler) ensureIncomingSecret(ctx context.Context, com
 	return &secret, false, nil
 }
 
-func (r *ComponentBuildReconciler) lookupPaCSecret(ctx context.Context, component *appstudiov1alpha1.Component, gitProvider string) (*corev1.Secret, error) {
+// TODO remove newModel handling after only new model is used
+func (r *ComponentBuildReconciler) lookupPaCSecret(ctx context.Context, component *compapiv1alpha1.Component, gitProvider string, newModel bool) (*corev1.Secret, error) {
 	log := ctrllog.FromContext(ctx)
 
-	repoUrl := getGitRepoUrl(*component)
-	scmComponent, err := git.NewScmComponent(gitProvider, repoUrl, component.Spec.Source.GitSource.Revision, component.Name, component.Namespace)
+	repoUrl := getGitRepoUrl(*component, newModel)
+	var scmComponent *git.ScmComponent
+	var err error
+	if newModel {
+		scmComponent, err = git.NewScmComponent(gitProvider, repoUrl, "", component.Name, component.Namespace)
+	} else {
+		scmComponent, err = git.NewScmComponent(gitProvider, repoUrl, component.Spec.Source.GitSource.Revision, component.Name, component.Namespace)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +129,6 @@ func (r *ComponentBuildReconciler) lookupPaCSecret(ctx context.Context, componen
 	} else {
 		return nil, boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, fmt.Errorf("no matching Pipelines as Code secrets found in %s namespace", component.Namespace))
 	}
-
 }
 
 func (r *ComponentBuildReconciler) lookupGHAppSecret(ctx context.Context) (*corev1.Secret, error) {
@@ -140,18 +147,19 @@ func (r *ComponentBuildReconciler) lookupGHAppSecret(ctx context.Context) (*core
 	return pacSecret, nil
 }
 
+// TODO remove newModel handling after only new model is used
 // Returns webhook secret for given component.
 // Generates the webhook secret and saves it in the k8s secret if it doesn't exist.
-func (r *ComponentBuildReconciler) ensureWebhookSecret(ctx context.Context, component *appstudiov1alpha1.Component) (string, error) {
+func (r *ComponentBuildReconciler) ensureWebhookSecret(ctx context.Context, component *compapiv1alpha1.Component, newModel bool) (string, error) {
 	log := ctrllog.FromContext(ctx)
 
 	webhookSecretsSecret := &corev1.Secret{}
-	if err := r.Client.Get(ctx, types.NamespacedName{Name: pipelinesAsCodeWebhooksSecretName, Namespace: component.GetNamespace()}, webhookSecretsSecret); err != nil {
+	if err := r.Client.Get(ctx, types.NamespacedName{Name: pipelinesAsCodeWebhooksSecretName, Namespace: component.Namespace}, webhookSecretsSecret); err != nil {
 		if errors.IsNotFound(err) {
 			webhookSecretsSecret = &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      pipelinesAsCodeWebhooksSecretName,
-					Namespace: component.GetNamespace(),
+					Namespace: component.Namespace,
 					Labels: map[string]string{
 						PartOfLabelName: PartOfAppStudioLabelValue,
 					},
@@ -161,14 +169,14 @@ func (r *ComponentBuildReconciler) ensureWebhookSecret(ctx context.Context, comp
 				log.Error(err, "failed to create webhooks secrets secret", l.Action, l.ActionAdd)
 				return "", err
 			}
-			return r.ensureWebhookSecret(ctx, component)
+			return r.ensureWebhookSecret(ctx, component, newModel)
 		}
 
 		log.Error(err, "failed to get webhook secrets secret", l.Action, l.ActionView)
 		return "", err
 	}
 
-	componentWebhookSecretKey := getWebhookSecretKeyForComponent(*component)
+	componentWebhookSecretKey := getWebhookSecretKeyForComponent(*component, newModel)
 	if _, exists := webhookSecretsSecret.Data[componentWebhookSecretKey]; exists {
 		// The webhook secret already exists. Use single secret for the same repository.
 		return string(webhookSecretsSecret.Data[componentWebhookSecretKey]), nil
@@ -188,8 +196,9 @@ func (r *ComponentBuildReconciler) ensureWebhookSecret(ctx context.Context, comp
 	return webhookSecretString, nil
 }
 
-func getWebhookSecretKeyForComponent(component appstudiov1alpha1.Component) string {
-	gitRepoUrl := getGitRepoUrl(component)
+// TODO remove newModel handling after only new model is used
+func getWebhookSecretKeyForComponent(component compapiv1alpha1.Component, newModel bool) string {
+	gitRepoUrl := getGitRepoUrl(component, newModel)
 
 	notAllowedCharRegex, _ := regexp.Compile("[^-._a-zA-Z0-9]{1}")
 	return notAllowedCharRegex.ReplaceAllString(gitRepoUrl, "_")
@@ -203,4 +212,9 @@ func generatePaCWebhookSecretString() string {
 		panic("Failed to read from random generator")
 	}
 	return hex.EncodeToString(tokenBytes)
+}
+
+// getPaCIncomingSecretName returns the name of the incoming secret for a PaC repository
+func getPaCIncomingSecretName(repositoryName string) string {
+	return fmt.Sprintf("%s%s", repositoryName, pacIncomingSecretNameSuffix)
 }

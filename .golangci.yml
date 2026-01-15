@@ -6,6 +6,7 @@ linters:
       checks:
         - "all"
         - "-QF1001"
+        - "-QF1003"
         - "-QF1008"
         - "-ST1000"
         - "-ST1003"

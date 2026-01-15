@@ -18,6 +18,8 @@ package controllers
 
 import (
 	"encoding/json"
+	"net/url"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -36,12 +38,13 @@ import (
 
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 
-	appstudiov1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
+	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
 	imgcv1alpha1 "github.com/konflux-ci/image-controller/api/v1alpha1"
 	releaseapi "github.com/konflux-ci/release-service/api/v1alpha1"
 	tektonutils "github.com/konflux-ci/release-service/tekton/utils"
 
 	. "github.com/konflux-ci/build-service/pkg/common"
+	gp "github.com/konflux-ci/build-service/pkg/git/gitprovider"
 	"sigs.k8s.io/yaml"
 )
 
@@ -56,12 +59,19 @@ const (
 )
 
 const (
-	HASAppName              = "test-application"
-	HASCompName             = "test-component"
+	// TODO remove after only new model is used
+	HASAppName = "test-application"
+	// TODO remove after only new model is used
+	HASCompName = "test-component"
+	// TODO remove after only new model is used
 	HASAppNamespace         = "default"
+	DefaultCompName         = "test-component"
+	DefaultCompNamespace    = "default"
 	SampleRepoLink          = "https://github.com/devfile-samples/devfile-sample-java-springboot-basic"
 	ComponentContainerImage = "registry.io/username/image:tag"
 	SelectorDefaultName     = "default"
+	DefaultRevisionName     = "main"
+	DefaultVersionName      = "version1"
 
 	defaultPipelineName   = "docker-build"
 	defaultPipelineBundle = "quay.io/redhat-appstudio-tekton-catalog/pipeline-docker-build:07ec767c565b36296b4e185b01f05536848d9c12"
@@ -76,6 +86,20 @@ var (
 )
 
 type componentConfig struct {
+	componentKey       types.NamespacedName
+	containerImage     string
+	versions           []compapiv1alpha1.ComponentVersion
+	gitURL             string
+	annotations        map[string]string
+	finalizers         []string
+	actions            compapiv1alpha1.ComponentActions
+	repositorySettings compapiv1alpha1.RepositorySettings
+	defaultPipeline    compapiv1alpha1.ComponentBuildPipeline
+	skipOffboardingPr  bool
+}
+
+// TODO remove after only new model is used
+type componentConfigOldModel struct {
 	componentKey     types.NamespacedName
 	containerImage   string
 	gitURL           string
@@ -86,7 +110,71 @@ type componentConfig struct {
 	finalizers       []string
 }
 
-func getComponentData(config componentConfig) *appstudiov1alpha1.Component {
+func getComponentData(config componentConfig) *compapiv1alpha1.Component {
+	name := config.componentKey.Name
+	if name == "" {
+		name = DefaultCompName
+	}
+	namespace := config.componentKey.Namespace
+	if namespace == "" {
+		namespace = DefaultCompNamespace
+	}
+	image := config.containerImage
+	if image == "" {
+		image = ComponentContainerImage
+	}
+	gitUrl := config.gitURL
+	if gitUrl == "" {
+		gitUrl = SampleRepoLink + "-" + name
+	}
+	versions := config.versions
+	// Only add default version if versions is nil (not set), not if it's explicitly empty []
+	if versions == nil {
+		versions = []compapiv1alpha1.ComponentVersion{
+			{Name: DefaultVersionName, Revision: DefaultRevisionName, Context: ""},
+		}
+	}
+	annotations := make(map[string]string)
+	// Always set new model annotation for components created with getComponentData
+	annotations["build.appstudio.openshift.io/component_model_version"] = "v2"
+	if config.annotations != nil {
+		for key, value := range config.annotations {
+			annotations[key] = value
+		}
+	}
+	finalizers := []string{}
+	if len(config.finalizers) != 0 {
+		finalizers = append(finalizers, config.finalizers...)
+	}
+	return &compapiv1alpha1.Component{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "appstudio.redhat.com/v1alpha1",
+			Kind:       "Component",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        name,
+			Namespace:   namespace,
+			Annotations: annotations,
+			Finalizers:  finalizers,
+		},
+		Spec: compapiv1alpha1.ComponentSpec{
+			Actions:              config.actions,
+			RepositorySettings:   config.repositorySettings,
+			DefaultBuildPipeline: config.defaultPipeline,
+			ContainerImage:       image,
+			SkipOffboardingPr:    config.skipOffboardingPr,
+			Source: compapiv1alpha1.ComponentSource{
+				ComponentSourceUnion: compapiv1alpha1.ComponentSourceUnion{
+					GitURL:   gitUrl,
+					Versions: versions,
+				},
+			},
+		},
+	}
+}
+
+// TODO remove after only new model is used
+func getComponentDataOldModel(config componentConfigOldModel) *compapiv1alpha1.Component {
 	name := config.componentKey.Name
 	if name == "" {
 		name = HASCompName
@@ -121,7 +209,7 @@ func getComponentData(config componentConfig) *appstudiov1alpha1.Component {
 	if len(config.finalizers) != 0 {
 		finalizers = append(finalizers, config.finalizers...)
 	}
-	return &appstudiov1alpha1.Component{
+	return &compapiv1alpha1.Component{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "appstudio.redhat.com/v1alpha1",
 			Kind:       "Component",
@@ -132,13 +220,13 @@ func getComponentData(config componentConfig) *appstudiov1alpha1.Component {
 			Annotations: annotations,
 			Finalizers:  finalizers,
 		},
-		Spec: appstudiov1alpha1.ComponentSpec{
+		Spec: compapiv1alpha1.ComponentSpec{
 			ComponentName:  name,
 			Application:    application,
 			ContainerImage: image,
-			Source: appstudiov1alpha1.ComponentSource{
-				ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
-					GitSource: &appstudiov1alpha1.GitSource{
+			Source: compapiv1alpha1.ComponentSource{
+				ComponentSourceUnion: compapiv1alpha1.ComponentSourceUnion{
+					GitSource: &compapiv1alpha1.GitSource{
 						URL:      gitUrl,
 						Revision: gitRevision,
 						Context:  config.gitSourceContext,
@@ -149,20 +237,27 @@ func getComponentData(config componentConfig) *appstudiov1alpha1.Component {
 	}
 }
 
-func getSampleComponentData(componentKey types.NamespacedName) *appstudiov1alpha1.Component {
+func getSampleComponentData(componentKey types.NamespacedName) *compapiv1alpha1.Component {
 	return getComponentData(componentConfig{componentKey: componentKey})
 }
 
+// TODO remove after only new model is used
+func getSampleComponentDataOldModel(componentKey types.NamespacedName) *compapiv1alpha1.Component {
+	return getComponentDataOldModel(componentConfigOldModel{componentKey: componentKey})
+}
+
+// TODO remove after only new model is used
 // createComponentAndProcessBuildRequest create a component with specified build request and
 // waits until the request annotation is removed, which means the request was processed by the operator.
 // Use createCustomComponentWithBuildRequest if there is no need to wait.
-func createComponentAndProcessBuildRequest(config componentConfig, buildRequest string) {
+func createComponentAndProcessBuildRequest(config componentConfigOldModel, buildRequest string) {
 	createCustomComponentWithBuildRequest(config, buildRequest)
 	waitComponentAnnotationGone(config.componentKey, BuildRequestAnnotationName)
 }
 
-func createCustomComponentWithoutBuildRequest(config componentConfig) {
-	component := getComponentData(config)
+// TODO remove after only new model is used
+func createCustomComponentWithoutBuildRequest(config componentConfigOldModel) {
+	component := getComponentDataOldModel(config)
 	if component.Annotations == nil {
 		component.Annotations = make(map[string]string)
 	}
@@ -171,8 +266,9 @@ func createCustomComponentWithoutBuildRequest(config componentConfig) {
 	getComponent(config.componentKey)
 }
 
-func createCustomComponentWithBuildRequest(config componentConfig, buildRequest string) {
-	component := getComponentData(config)
+// TODO remove after only new model is used
+func createCustomComponentWithBuildRequest(config componentConfigOldModel, buildRequest string) {
+	component := getComponentDataOldModel(config)
 	if component.Annotations == nil {
 		component.Annotations = make(map[string]string)
 	}
@@ -182,7 +278,8 @@ func createCustomComponentWithBuildRequest(config componentConfig, buildRequest 
 	getComponent(config.componentKey)
 }
 
-func setComponentBuildRequest(componentKey types.NamespacedName, buildRequest string) {
+// TODO remove after only new model is used
+func setComponentBuildRequestOldModel(componentKey types.NamespacedName, buildRequest string) {
 	component := getComponent(componentKey)
 	if component.Annotations == nil {
 		component.Annotations = make(map[string]string)
@@ -192,15 +289,29 @@ func setComponentBuildRequest(componentKey types.NamespacedName, buildRequest st
 	Expect(k8sClient.Update(ctx, component)).To(Succeed())
 }
 
-// createComponent creates sample component resource and verifies it was properly created
-func createComponent(componentLookupKey types.NamespacedName) {
-	component := getSampleComponentData(componentLookupKey)
+// TODO remove after only new model is used
+// createComponentOldModel creates sample component resource and verifies it was properly created
+func createComponentOldModel(componentLookupKey types.NamespacedName) {
+	component := getSampleComponentDataOldModel(componentLookupKey)
 
-	createComponentCustom(component)
+	createComponentCustomOldModel(component)
 }
 
-// createComponentCustom creates custom component resource and verifies it was properly created
-func createComponentCustom(sampleComponentData *appstudiov1alpha1.Component) {
+// createComponent creates custom component resource and verifies it was properly created
+func createComponent(sampleComponentData *compapiv1alpha1.Component) *compapiv1alpha1.Component {
+	Expect(k8sClient.Create(ctx, sampleComponentData)).Should(Succeed())
+
+	lookupKey := types.NamespacedName{
+		Name:      sampleComponentData.Name,
+		Namespace: sampleComponentData.Namespace,
+	}
+
+	return getComponent(lookupKey)
+}
+
+// TODO remove after only new model is used
+// createComponentCustomOldModel creates custom component resource and verifies it was properly created
+func createComponentCustomOldModel(sampleComponentData *compapiv1alpha1.Component) {
 	Expect(k8sClient.Create(ctx, sampleComponentData)).Should(Succeed())
 
 	lookupKey := types.NamespacedName{
@@ -211,8 +322,8 @@ func createComponentCustom(sampleComponentData *appstudiov1alpha1.Component) {
 	getComponent(lookupKey)
 }
 
-func getComponent(componentKey types.NamespacedName) *appstudiov1alpha1.Component {
-	component := &appstudiov1alpha1.Component{}
+func getComponent(componentKey types.NamespacedName) *compapiv1alpha1.Component {
+	component := &compapiv1alpha1.Component{}
 	Eventually(func() bool {
 		if err := k8sClient.Get(ctx, componentKey, component); err != nil {
 			return false
@@ -223,8 +334,70 @@ func getComponent(componentKey types.NamespacedName) *appstudiov1alpha1.Componen
 }
 
 // deleteComponent deletes the specified component resource and verifies it was properly deleted
+// deleteComponentAndOwnedResources deletes a component and all its owned resources
+// that would be deleted by garbage collection in a real cluster.
+// This includes: Repository, ServiceAccount, and incoming Secret.
+func deleteComponentAndOwnedResources(componentKey types.NamespacedName) {
+	// Get component to determine repository name before deletion
+	component := &compapiv1alpha1.Component{}
+	if err := k8sClient.Get(ctx, componentKey, component); err != nil {
+		if !k8sErrors.IsNotFound(err) {
+			Fail(err.Error())
+		}
+		// Component doesn't exist, nothing to clean up
+		return
+	}
+
+	// Delete service account
+	saKey := getComponentServiceAccountKey(componentKey)
+	deleteServiceAccount(saKey)
+
+	// Delete component
+	deleteComponent(componentKey)
+
+	// Generate repository name from component's git URL
+	if component.Spec.Source.GitURL != "" {
+		repositoryName, err := generatePaCRepositoryNameFromGitUrl(component.Spec.Source.GitURL)
+		if err == nil {
+			// Delete PaC Repository
+			repositoryKey := types.NamespacedName{Namespace: componentKey.Namespace, Name: repositoryName}
+			deletePaCRepository(repositoryKey)
+
+			// Delete incoming secret
+			incomingSecretName := getPaCIncomingSecretName(repositoryName)
+			incomingSecretKey := types.NamespacedName{Namespace: componentKey.Namespace, Name: incomingSecretName}
+			deleteSecret(incomingSecretKey)
+
+			// Delete webhook secret (used for token-based auth)
+			webhookSecretKey := types.NamespacedName{Namespace: componentKey.Namespace, Name: pipelinesAsCodeWebhooksSecretName}
+			deleteSecret(webhookSecretKey)
+		}
+	}
+
+	// Check if there are any remaining component service accounts in the namespace
+	// If not, wait for RoleBinding to be deleted (it's only deleted when the last component is removed)
+	saList := &corev1.ServiceAccountList{}
+	listOpts := &client.ListOptions{Namespace: componentKey.Namespace}
+	if err := k8sClient.List(ctx, saList, listOpts); err == nil {
+		// Check if there are any service accounts with the component SA prefix
+		// Component SA names are generated as "build-pipeline-" + componentName
+		hasComponentSAs := false
+		for _, sa := range saList.Items {
+			if strings.HasPrefix(sa.Name, "build-pipeline-") {
+				hasComponentSAs = true
+				break
+			}
+		}
+		// If no component service accounts remain, wait for RoleBinding to be deleted
+		if !hasComponentSAs {
+			buildRoleBindingKey := types.NamespacedName{Name: buildPipelineRoleBindingName, Namespace: componentKey.Namespace}
+			waitRoleBindingGone(buildRoleBindingKey)
+		}
+	}
+}
+
 func deleteComponent(componentKey types.NamespacedName) {
-	component := &appstudiov1alpha1.Component{}
+	component := &compapiv1alpha1.Component{}
 
 	// Check if the component exists
 	if err := k8sClient.Get(ctx, componentKey, component); k8sErrors.IsNotFound(err) {
@@ -246,7 +419,7 @@ func deleteComponent(componentKey types.NamespacedName) {
 }
 
 func waitFinalizerOnComponent(componentKey types.NamespacedName, finalizerName string, finalizerShouldBePresent bool) {
-	component := &appstudiov1alpha1.Component{}
+	component := &compapiv1alpha1.Component{}
 	Eventually(func() bool {
 		if err := k8sClient.Get(ctx, componentKey, component); err != nil {
 			return false
@@ -268,14 +441,16 @@ func waitPaCFinalizerOnComponentGone(componentKey types.NamespacedName) {
 	waitFinalizerOnComponent(componentKey, PaCProvisionFinalizer, false)
 }
 
-func waitDoneMessageOnComponent(componentKey types.NamespacedName) {
+// TODO remove after only new model is used
+func waitDoneMessageOnComponentOldModel(componentKey types.NamespacedName) {
 	Eventually(func() bool {
 		buildStatus := readBuildStatus(getComponent(componentKey))
 		return buildStatus.Message == "done"
 	}, timeout, interval).Should(BeTrue())
 }
 
-func expectPacBuildStatus(componentKey types.NamespacedName, state string, errID int, errMessage string, mergeURL string) {
+// TODO remove after only new model is used
+func expectPacBuildStatusOldModel(componentKey types.NamespacedName, state string, errID int, errMessage string, mergeURL string) {
 	// in 1 test component is usually created (which triggers reconcile and adds message=done)
 	// and then component is updated (and waits for message=done apart from other things)
 	// we should wait for desired state as well, as there is small time window when
@@ -464,7 +639,38 @@ func createSecret(resourceKey types.NamespacedName, data map[string]string) {
 	}, timeout, interval).Should(Succeed())
 }
 
-func createSCMSecret(resourceKey types.NamespacedName, data map[string]string, secretType corev1.SecretType, annotations map[string]string) {
+func createSCMSecret(resourceKey types.NamespacedName, data map[string]string, secretType corev1.SecretType, annotations map[string]string, labels map[string]string) {
+	secret := &corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "Secret",
+		},
+		Type: secretType,
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        resourceKey.Name,
+			Namespace:   resourceKey.Namespace,
+			Labels:      labels,
+			Annotations: annotations,
+		},
+		StringData: data,
+	}
+	if err := k8sClient.Create(ctx, secret); err != nil {
+		if !k8sErrors.IsAlreadyExists(err) {
+			Fail(err.Error())
+		}
+		deleteSecret(resourceKey)
+		secret.ResourceVersion = ""
+		Expect(k8sClient.Create(ctx, secret)).Should(Succeed())
+	}
+
+	Eventually(func() error {
+		secret := &corev1.Secret{}
+		return k8sClient.Get(ctx, resourceKey, secret)
+	}, timeout, interval).Should(Succeed())
+}
+
+// TODO remove after only new model is used
+func createSCMSecretOldModel(resourceKey types.NamespacedName, data map[string]string, secretType corev1.SecretType, annotations map[string]string) {
 	labels := map[string]string{
 		"appstudio.redhat.com/credentials": "scm",
 		"appstudio.redhat.com/scm.host":    "github.com",
@@ -574,6 +780,92 @@ func waitPaCRepositoryCreated(resourceKey types.NamespacedName) *pacv1alpha1.Rep
 	return pacRepository
 }
 
+// validatePaCRepository validates Repository CR with expected URL and optional GitProvider config.
+// When secretName is empty, it verifies GitProvider is nil (GitHub App authentication).
+// When secretName is provided, it validates token-based authentication with the secret.
+// The expected URL is determined using getGitRepoUrl, and GitProvider type using getGitProvider.
+func validatePaCRepository(component *compapiv1alpha1.Component, secretName, secretKey string) *pacv1alpha1.Repository {
+	// Generate repository name from git URL
+	expectedRepoName, err := generatePaCRepositoryNameFromGitUrl(component.Spec.Source.GitURL)
+	Expect(err).NotTo(HaveOccurred())
+	resourceKey := types.NamespacedName{Namespace: component.Namespace, Name: expectedRepoName}
+
+	repository := waitPaCRepositoryCreated(resourceKey)
+
+	// Get expected URL using getGitRepoUrl
+	expectedURL := getGitRepoUrl(*component, true)
+	Expect(repository.Spec.URL).To(Equal(expectedURL))
+
+	// Get git provider type
+	gitProvider, err := getGitProvider(*component, true)
+	Expect(err).NotTo(HaveOccurred())
+
+	// Validate GitProvider
+	if secretName == "" {
+		// GitHub App - should have no GitProvider config
+		Expect(repository.Spec.GitProvider).To(BeNil())
+	} else {
+		// Token auth - validate GitProvider config
+		Expect(repository.Spec.GitProvider).NotTo(BeNil())
+
+		// Determine expected GitProvider type (handle forgejo -> gitea mapping)
+		expectedType := gitProvider
+		if gitProvider == "forgejo" {
+			expectedType = "gitea"
+		}
+		Expect(repository.Spec.GitProvider.Type).To(Equal(expectedType))
+
+		// Determine expected GitProvider URL from source URL
+		u, err := url.Parse(component.Spec.Source.GitURL)
+		Expect(err).NotTo(HaveOccurred())
+		var expectedGitProviderURL string
+		if u.Host == "github.com" || u.Host == "gitlab.com" {
+			expectedGitProviderURL = ""
+		} else {
+			expectedGitProviderURL = u.Scheme + "://" + u.Host
+		}
+		Expect(repository.Spec.GitProvider.URL).To(Equal(expectedGitProviderURL))
+
+		// Validate Secret
+		Expect(repository.Spec.GitProvider.Secret).NotTo(BeNil())
+		Expect(repository.Spec.GitProvider.Secret.Name).To(Equal(secretName))
+		Expect(repository.Spec.GitProvider.Secret.Key).To(Equal(secretKey))
+
+		// Validate WebhookSecret
+		Expect(repository.Spec.GitProvider.WebhookSecret).NotTo(BeNil())
+		Expect(repository.Spec.GitProvider.WebhookSecret.Name).To(Equal(pipelinesAsCodeWebhooksSecretName))
+	}
+
+	return repository
+}
+
+// validatePaCRepositoryIncomings validates Repository CR Incomings configuration.
+// Verifies that the repository has the expected incoming webhook secret and targets.
+// This should be called after validatePaCRepository.
+// The secret name is automatically determined using getPaCIncomingSecretName.
+// The secret key is always pacIncomingSecretKey, and params are always ["source_url"].
+func validatePaCRepositoryIncomings(repository *pacv1alpha1.Repository, targets []string) {
+	// Validate Incomings
+	Expect(repository.Spec.Incomings).NotTo(BeNil())
+	Expect(len(*repository.Spec.Incomings)).To(Equal(1))
+
+	// Get expected secret name from repository name
+	expectedSecretName := getPaCIncomingSecretName(repository.Name)
+	Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(expectedSecretName))
+	Expect((*repository.Spec.Incomings)[0].Secret.Key).To(Equal(pacIncomingSecretKey))
+
+	// Validate targets
+	if len(targets) > 0 {
+		Expect((*repository.Spec.Incomings)[0].Targets).To(ContainElements(targets))
+	} else {
+		Expect((*repository.Spec.Incomings)[0].Targets).To(BeEmpty())
+	}
+
+	// Validate params (always source_url)
+	Expect(len((*repository.Spec.Incomings)[0].Params)).To(Equal(1))
+	Expect((*repository.Spec.Incomings)[0].Params).To(Equal([]string{"source_url"}))
+}
+
 func deletePaCRepository(resourceKey types.NamespacedName) {
 	pacRepository := &pacv1alpha1.Repository{}
 	if err := k8sClient.Get(ctx, resourceKey, pacRepository); err != nil {
@@ -624,6 +916,53 @@ func waitComponentAnnotationExists(componentKey types.NamespacedName, annotation
 		_, exists := annotations[annotationName]
 		return exists
 	}, timeout, interval).Should(BeTrue())
+}
+
+func waitForComponentStatusVersions(componentKey types.NamespacedName, expectedCount int) *compapiv1alpha1.Component {
+	var component *compapiv1alpha1.Component
+	Eventually(func() bool {
+		component = getComponent(componentKey)
+		return len(component.Status.Versions) == expectedCount
+	}, timeout, interval).Should(BeTrue())
+	return component
+}
+
+func waitForComponentStatusMessage(componentKey types.NamespacedName, shouldBeEmpty bool) *compapiv1alpha1.Component {
+	var component *compapiv1alpha1.Component
+	Eventually(func() bool {
+		component = getComponent(componentKey)
+		if shouldBeEmpty {
+			return component.Status.Message == ""
+		}
+		return component.Status.Message != ""
+	}, timeout, interval).Should(BeTrue())
+	return component
+}
+
+func waitForComponentSpecActionEmpty(componentKey types.NamespacedName, actionType string, checkType string) *compapiv1alpha1.Component {
+	var component *compapiv1alpha1.Component
+	Eventually(func() bool {
+		component = getComponent(componentKey)
+		if actionType == "create-pr" {
+			switch checkType {
+			case "allversions":
+				return !component.Spec.Actions.CreateConfiguration.AllVersions
+			case "versions":
+				return len(component.Spec.Actions.CreateConfiguration.Versions) == 0
+			case "version":
+				return component.Spec.Actions.CreateConfiguration.Version == ""
+			}
+		} else if actionType == "trigger" {
+			switch checkType {
+			case "builds":
+				return len(component.Spec.Actions.TriggerBuilds) == 0
+			case "build":
+				return component.Spec.Actions.TriggerBuild == ""
+			}
+		}
+		return false
+	}, timeout, interval).Should(BeTrue())
+	return component
 }
 
 func createRoute(routeKey types.NamespacedName, host string) {
@@ -904,4 +1243,55 @@ func createReleasePlanAdmission(rpaKey types.NamespacedName, componentName strin
 		}
 		return rpa.ResourceVersion != ""
 	}, timeout, interval).Should(BeTrue())
+}
+
+// verifyPacWebhookIncomingPostData verifies PaC webhook incoming POST data against expected parameters
+func verifyPacWebhookIncomingPostData(data map[string]interface{}, repository, secret, pipelinerun, namespace, branch, sourceUrl string) {
+	Expect(data["repository"]).To(Equal(repository))
+	Expect(data["secret"]).To(Equal(secret))
+	Expect(data["pipelinerun"]).To(Equal(pipelinerun))
+	Expect(data["namespace"]).To(Equal(namespace))
+	Expect(data["branch"]).To(Equal(branch))
+	Expect(data["params"].(map[string]interface{})["source_url"]).To(Equal(sourceUrl))
+}
+
+// verifyComponentVersionStatus verifies ComponentVersionStatus fields
+// Pass empty string for configurationMergeURL to verify it's empty
+// Pass "*" for configurationMergeURL to verify it's not empty
+// Pass any other value for configurationMergeURL to verify exact match
+// OnboardingTime is automatically verified: not empty when succeeded, empty when failed
+// message: verifies exact Message field value (empty string = verify empty)
+func verifyComponentVersionStatus(versionStatus compapiv1alpha1.ComponentVersionStatus, versionName, revision, onboardingStatus, configurationMergeURL, message string) {
+	Expect(versionStatus.Name).To(Equal(versionName))
+	Expect(versionStatus.Revision).To(Equal(revision))
+	Expect(versionStatus.OnboardingStatus).To(Equal(onboardingStatus))
+
+	// Verify OnboardingTime based on status
+	if onboardingStatus == "succeeded" {
+		Expect(versionStatus.OnboardingTime).NotTo(BeEmpty())
+	} else {
+		Expect(versionStatus.OnboardingTime).To(BeEmpty())
+	}
+
+	if configurationMergeURL == "*" {
+		Expect(versionStatus.ConfigurationMergeURL).NotTo(BeEmpty())
+	} else if configurationMergeURL != "" {
+		Expect(versionStatus.ConfigurationMergeURL).To(Equal(configurationMergeURL))
+	} else {
+		Expect(versionStatus.ConfigurationMergeURL).To(BeEmpty())
+	}
+
+	Expect(versionStatus.Message).To(Equal(message))
+}
+
+// verifyMergeRequestData verifies MergeRequestData fields for PR creation
+func verifyMergeRequestData(repoUrl string, mrData *gp.MergeRequestData, gitURL, commitMessage, title, branchName, baseBranchName string) {
+	Expect(repoUrl).To(Equal(gitURL))
+	Expect(mrData.CommitMessage).To(Equal(commitMessage))
+	Expect(mrData.Title).To(Equal(title))
+	Expect(mrData.BranchName).To(Equal(branchName))
+	Expect(mrData.BaseBranchName).To(Equal(baseBranchName))
+	Expect(mrData.Text).ToNot(BeEmpty())
+	Expect(mrData.AuthorName).ToNot(BeEmpty())
+	Expect(mrData.AuthorEmail).ToNot(BeEmpty())
 }
