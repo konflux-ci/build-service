@@ -33,7 +33,7 @@ import (
 
 const (
 	RenovateImageEnvName               = "RENOVATE_IMAGE"
-	DefaultRenovateImageUrl            = "quay.io/konflux-ci/mintmaker-renovate-image:083371d"
+	DefaultRenovateImageUrl            = "quay.io/konflux-ci/mintmaker-renovate-image:29a2f31"
 	DefaultRenovateUser                = "red-hat-konflux"
 	CaConfigMapLabel                   = "config.openshift.io/inject-trusted-cabundle"
 	CaConfigMapKey                     = "ca-bundle.crt"
