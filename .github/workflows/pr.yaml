@@ -12,8 +12,9 @@ jobs:
         with:
           go-version-file: './go.mod'
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v3
+        uses: golangci/golangci-lint-action@v9.2.0
         with:
+          only-new-issues: true
           args: --timeout=5m
 
   security_scan:
