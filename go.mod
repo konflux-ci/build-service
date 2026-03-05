@@ -1,8 +1,6 @@
 module github.com/konflux-ci/build-service
 
-go 1.24.0
-
-toolchain go1.24.6
+go 1.25.3
 
 require (
 	codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v2 v2.2.0
