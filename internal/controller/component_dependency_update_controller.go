@@ -112,7 +112,7 @@ type RepositoryConfigAuth struct {
 	Auth     string `json:"auth,omitempty"`
 }
 
-// SetupController creates a new Integration reconciler and adds it to the Manager.
+// SetupWithManager creates a new Integration reconciler and adds it to the Manager.
 func (r *ComponentDependencyUpdateReconciler) SetupWithManager(manager ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(manager).
 		For(&tektonapi.PipelineRun{}, builder.WithPredicates(predicate.Funcs{
@@ -149,6 +149,7 @@ func (r *ComponentDependencyUpdateReconciler) SetupWithManager(manager ctrl.Mana
 		Complete(r)
 }
 
+// Reconcile handles component dependency updates.
 // The following line for configmaps is informational, the actual permissions are defined in component_build_controller.
 // +kubebuilder:rbac:groups=core,resources=configmaps,verbs=create;get;list;watch;update;patch;delete
 // +kubebuilder:rbac:groups=appstudio.redhat.com,resources=components,verbs=get;list;watch;update;patch
@@ -293,9 +294,10 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 	image := ""
 	digest := ""
 	for _, r := range pipelineRun.Status.Results {
-		if r.Name == ImageDigestParamName {
+		switch r.Name {
+		case ImageDigestParamName:
 			digest = r.Value.StringVal
-		} else if r.Name == ImageUrlParamName {
+		case ImageUrlParamName:
 			image = r.Value.StringVal
 		}
 	}

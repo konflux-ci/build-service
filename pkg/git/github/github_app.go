@@ -31,7 +31,7 @@ import (
 	"github.com/konflux-ci/build-service/pkg/common"
 )
 
-// Allow mocking for tests
+// NewGithubClientByApp can be mocked in tests.
 var NewGithubClientByApp func(appId int64, privateKeyPem []byte, repoUrl string) (*GithubClient, error) = newGithubClientByApp
 
 var GetAppInstallationsForRepository func(githubAppIdStr string, appPrivateKeyPem []byte, repoUrl string) (*ApplicationInstallation, string, error) = getAppInstallationsForRepository
@@ -106,7 +106,7 @@ func (g *GithubClient) GetConfiguredGitAppName() (string, string, error) {
 	if g.isAppConfigured() {
 		return g.appName, g.appSlug, nil
 	} else {
-		return "", "", fmt.Errorf("Github application is not configured")
+		return "", "", fmt.Errorf("github application is not configured")
 	}
 }
 

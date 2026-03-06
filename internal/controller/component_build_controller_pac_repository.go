@@ -34,7 +34,7 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/konflux-ci/build-service/pkg/boerrors"
-	. "github.com/konflux-ci/build-service/pkg/common"
+	"github.com/konflux-ci/build-service/pkg/common"
 	l "github.com/konflux-ci/build-service/pkg/logs"
 )
 
@@ -114,7 +114,7 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 			return nil
 		}
 		// repository with the same name exists but with different git URL, add random string to repository name
-		repository.ObjectMeta.Name = fmt.Sprintf("%s-%s", repository.ObjectMeta.Name, RandomString(5))
+		repository.ObjectMeta.Name = fmt.Sprintf("%s-%s", repository.ObjectMeta.Name, common.RandomString(5))
 	}
 
 	// create repository if not found or when found but with different URL
@@ -197,7 +197,7 @@ func generatePACRepository(component appstudiov1alpha1.Component, config *corev1
 		return nil, err
 	}
 
-	isAppUsed := IsPaCApplicationConfigured(gitProvider, config.Data)
+	isAppUsed := common.IsPaCApplicationConfigured(gitProvider, config.Data)
 
 	var gitProviderConfig *pacv1alpha1.GitProvider = nil
 	if !isAppUsed {

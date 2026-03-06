@@ -29,7 +29,7 @@ import (
 	gp "github.com/konflux-ci/build-service/pkg/git/gitprovider"
 )
 
-// Allow mocking for tests
+// NewGithubClient can be mocked in tests.
 var NewGithubClient func(accessToken string) *GithubClient = newGithubClient
 var NewGithubClientWithBasicAuth func(username, password string) *GithubClient = newGithubClientWithBasicAuth
 
