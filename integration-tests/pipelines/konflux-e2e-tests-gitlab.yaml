@@ -2,40 +2,24 @@
 apiVersion: tekton.dev/v1beta1
 kind: Pipeline
 metadata:
-  name: konflux-e2e-tests
+  name: konflux-e2e-tests-gitlab
 spec:
   description: |-
-    This pipeline automates the process of running end-to-end tests for Konflux
-    using a Kind cluster running on AWS cluster. The pipeline provisions
-    the Kind cluster, installs Konflux using the konflux-ci repository scripts, runs the tests, collects artifacts,
-    and finally deprovisions the Kind cluster.
+    This pipeline runs GitLab provider e2e tests for Konflux build-service.
+    It provisions a Kind cluster on AWS, installs Konflux, and runs the GitLab
+    test suite. Finally it collects artifacts and deprovisions the cluster.
   params:
     - name: SNAPSHOT
       description: 'The JSON string representing the snapshot of the application under test.'
       default: '{"components": [{"name":"test-app", "containerImage": "quay.io/example/repo:latest"}]}'
       type: string
-    - name: test-name
-      description: 'The name of the test corresponding to a defined Konflux integration test.'
-      default: ''
-    - name: ocp-version
-      description: 'The OpenShift version to use for the ephemeral cluster deployment.'
-      type: string
     - name: konflux-test-infra-secret
       description: The name of secret where testing infrastructures credentials are stored.
-      type: string
-    - name: replicas
-      description: 'The number of replicas for the cluster nodes.'
-      type: string
-    - name: machine-type
-      description: 'The type of machine to use for the cluster nodes.'
+      default: "konflux-test-infra"
       type: string
     - name: oci-container-repo
       default: 'quay.io/konflux-test-storage/konflux-team/build-service'
       description: The OCI container used to store all test artifacts.
-    - name: component-image
-      default: 'none'
-      description: 'Container image built from any konflux git repo. Use this param only when you run Konflux e2e tests
-        in another Konflux component repo. Will pass the component built image from the snapshot.'
     - name: artifact-browser-url
       description: "URL to the artifact browser deployment. If provided, a link will be added to PR comments."
       default: ""
@@ -63,20 +47,20 @@ spec:
         resolver: git
         params:
           - name: url
-            value: https://github.com/konflux-ci/tekton-integration-catalog.git
+            value: https://github.com/flacatus/tekton-integration-catalog.git
           - name: revision
-            value: main
+            value: protect-control-plane
           - name: pathInRepo
             value: tasks/mapt-oci/kind-aws-spot/provision/0.2/kind-aws-provision.yaml
       params:
         - name: secret-aws-credentials
-          value: mapt-kind-secret
+          value: konflux-mapt-us-east-1
         - name: cluster-access-secret-name
           value: kfg-$(context.pipelineRun.name)
         - name: id
           value: $(context.pipelineRun.name)
         - name: tags
-          value: 'owner=konflux-devprod@redhat.com,project=Konflux,created-by=integration-pipeline,component=build-service'
+          value: 'owner=konflux-devprod@redhat.com,project=Konflux,created-by=integration-pipeline,component=build-service,provider=gitlab'
         - name: debug
           value: 'false'
         - name: ownerKind
@@ -87,7 +71,7 @@ spec:
           value: $(context.pipelineRun.uid)
         - name: oci-ref
           value: $(params.oci-container-repo):$(context.pipelineRun.name)
-        - name: credentials-secret-name
+        - name: oci-credentials
           value: $(params.konflux-test-infra-secret)
         - name: extra-port-mappings
           value: >-
@@ -98,6 +82,102 @@ spec:
           value: 64
         - name: spot
           value: 'false'
+        - name: harden-control-plane
+          value: 'true'
+    - name: pre-pull-images
+      runAfter:
+        - provision-kind-cluster
+      taskSpec:
+        volumes:
+          - name: cluster-secret
+            secret:
+              optional: true
+              secretName: kfg-$(context.pipelineRun.name)
+        steps:
+          - name: create-job
+            image: quay.io/openshift/origin-cli:latest
+            env:
+              - name: KUBECONFIG
+                value: /tmp/kubeconfig
+            volumeMounts:
+              - name: cluster-secret
+                mountPath: /tmp/kubeconfig
+                subPath: kubeconfig
+            script: |
+              #!/usr/bin/env bash
+              set -euo pipefail
+
+              cat <<EOF | kubectl apply -f -
+              apiVersion: batch/v1
+              kind: Job
+              metadata:
+                name: pre-pull-images
+                namespace: default
+              spec:
+                backoffLimit: 0
+                activeDeadlineSeconds: 600
+                ttlSecondsAfterFinished: 60
+                template:
+                  spec:
+                    nodeName: kind-mapt-control-plane
+                    restartPolicy: Never
+                    containers:
+                      - name: pull-buildah-task
+                        image: quay.io/konflux-ci/buildah-task:latest
+                        command: ['echo']
+                      - name: pull-git-clone
+                        image: quay.io/konflux-ci/git-clone
+                        command: ['echo']
+                      - name: pull-appstudio-utils
+                        image: quay.io/konflux-ci/appstudio-utils:latest
+                        command: ['echo']
+                      - name: pull-konflux-test
+                        image: quay.io/konflux-ci/konflux-test:latest
+                        command: ['echo']
+                      - name: pull-clair-in-ci
+                        image: quay.io/konflux-ci/clair-in-ci:latest
+                        command: ['echo']
+                      - name: pull-clamav-db
+                        image: quay.io/konflux-ci/clamav-db:latest
+                        command: ['echo']
+                      - name: pull-oras
+                        image: quay.io/konflux-ci/oras:latest
+                        command: ['echo']
+                      - name: pull-task-runner
+                        image: quay.io/konflux-ci/task-runner:0.2.0@sha256:ba65585f5c8b0a74dc51590e95961765322427d1d62ccd4eb742ff0442291985
+                        command: ['echo']
+                      - name: pull-mobster
+                        image: quay.io/konflux-ci/mobster:latest
+                        command: ['echo']
+                      - name: pull-hermeto
+                        image: quay.io/konflux-ci/hermeto:latest
+                        command: ['echo']
+                      - name: pull-yq
+                        image: quay.io/konflux-ci/yq:latest
+                        command: ['echo']
+                      - name: pull-konflux-build-cli
+                        image: quay.io/konflux-ci/konflux-build-cli@sha256:59f2ea93fa4d47342b54acb434422ee07ebccd927a06a00d3f3eca70f8356ddf
+                        command: ['echo']
+                      - name: pull-tools
+                        image: quay.io/konflux-ci/tools
+                        command: ['echo']
+                      - name: pull-preflight
+                        image: quay.io/opdev/preflight:stable
+                        command: ['echo']
+                      - name: pull-busybox
+                        image: cgr.dev/chainguard/busybox
+                        command: ['echo']
+                      - name: pull-ubi
+                        image: registry.access.redhat.com/ubi9/ubi
+                        command: ['echo']
+                      - name: pull-renovate
+                        image: quay.io/konflux-ci/mintmaker-renovate-image:latest
+                        command: ['echo']
+                      - name: pull-konflux-test-rh
+                        image: quay.io/redhat-appstudio/konflux-test:latest
+                        command: ['echo']
+              EOF
+              echo "==> Pre-pull Job created, images will be cached in background"
     - name: deploy-konflux
       runAfter:
         - provision-kind-cluster
@@ -105,9 +185,9 @@ spec:
         resolver: git
         params:
           - name: url
-            value: https://github.com/konflux-ci/tekton-integration-catalog
+            value: https://github.com/flacatus/tekton-integration-catalog.git
           - name: revision
-            value: main
+            value: protect-control-plane
           - name: pathInRepo
             value: tasks/konflux-ci/deploy/0.3/deploy-konflux-ci.yaml
       params:
@@ -131,6 +211,8 @@ spec:
           value: $(tasks.test-metadata.results.instrumented-container-tag)
         - name: build-credentials
           value: "konflux-e2e-secrets"
+        - name: harden-kyverno
+          value: "true"
     - name: konflux-e2e-tests
       timeout: 2h
       runAfter:
@@ -139,9 +221,9 @@ spec:
         resolver: git
         params:
           - name: url
-            value: https://github.com/konflux-ci/e2e-tests.git
+            value: https://github.com/flacatus/e2e-tests.git
           - name: revision
-            value: main
+            value: pending-retrigger-test
           - name: pathInRepo
             value: integration-tests/tasks/konflux-e2e-tests/0.2/konflux-e2e-tests.yaml
       params:
@@ -163,6 +245,10 @@ spec:
           value: kfg-$(context.pipelineRun.name)
         - name: test-environment
           value: "upstream"
+        - name: ginkgo-procs
+          value: "6"
+        - name: e2e-extra-label-filter
+          value: "gitlab"
   finally:
     - name: collect-and-upload-coverage
       params:
