@@ -37,7 +37,7 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/konflux-ci/build-service/pkg/boerrors"
-	. "github.com/konflux-ci/build-service/pkg/common"
+	"github.com/konflux-ci/build-service/pkg/common"
 	gp "github.com/konflux-ci/build-service/pkg/git/gitprovider"
 	"github.com/konflux-ci/build-service/pkg/git/gitproviderfactory"
 	l "github.com/konflux-ci/build-service/pkg/logs"
@@ -85,7 +85,7 @@ Please follow the block sequence indentation style introduced by the proprosed P
 	GitProviderAnnotationURL = "git-provider-url"
 )
 
-// That way it can be mocked in tests
+// GetHttpClientFunction can be mocked in tests.
 var GetHttpClientFunction = getHttpClient
 
 // ProvisionPaCForComponent does Pipelines as Code provision for the given component.
@@ -106,13 +106,13 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context,
 
 	if strings.HasPrefix(repoUrl, "http:") {
 		return "", boerrors.NewBuildOpError(boerrors.EHttpUsedForRepository,
-			fmt.Errorf("Git repository URL can't use insecure HTTP: %s", repoUrl))
+			fmt.Errorf("git repository URL can't use insecure HTTP: %s", repoUrl))
 	}
 
 	if url, ok := component.Annotations[GitProviderAnnotationURL]; ok {
 		if strings.HasPrefix(url, "http:") {
 			return "", boerrors.NewBuildOpError(boerrors.EHttpUsedForRepository,
-				fmt.Errorf("Git repository URL in annotation %s can't use insecure HTTP: %s", GitProviderAnnotationURL, repoUrl))
+				fmt.Errorf("git repository URL in annotation %s can't use insecure HTTP: %s", GitProviderAnnotationURL, repoUrl))
 		}
 	}
 
@@ -129,7 +129,7 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponent(ctx context.Context,
 	}
 
 	var webhookSecretString, webhookTargetUrl string
-	if !IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
+	if !common.IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
 		// Generate webhook secret for the component git repository if not yet generated
 		// and stores it in the corresponding k8s secret.
 		webhookSecretString, err = r.ensureWebhookSecret(ctx, component)
@@ -179,27 +179,27 @@ func getHttpClient() *http.Client { // #nosec G402 // dev instances need insecur
 
 // validatePaCConfiguration detects checks that all required fields is set for whatever method is used.
 func validatePaCConfiguration(gitProvider string, pacSecret corev1.Secret) error {
-	if IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
+	if common.IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
 		if gitProvider == "github" {
 			// GitHub application
-			err := checkMandatoryFieldsNotEmpty(pacSecret.Data, []string{PipelinesAsCodeGithubAppIdKey, PipelinesAsCodeGithubPrivateKey})
+			err := checkMandatoryFieldsNotEmpty(pacSecret.Data, []string{common.PipelinesAsCodeGithubAppIdKey, common.PipelinesAsCodeGithubPrivateKey})
 			if err != nil {
 				return err
 			}
 
 			// validate content of the fields
-			if _, e := strconv.ParseInt(string(pacSecret.Data[PipelinesAsCodeGithubAppIdKey]), 10, 64); e != nil {
+			if _, e := strconv.ParseInt(string(pacSecret.Data[common.PipelinesAsCodeGithubAppIdKey]), 10, 64); e != nil {
 				return fmt.Errorf(" Pipelines as Code: failed to parse GitHub application ID. Cause: %w", e)
 			}
 
-			privateKey := strings.TrimSpace(string(pacSecret.Data[PipelinesAsCodeGithubPrivateKey]))
+			privateKey := strings.TrimSpace(string(pacSecret.Data[common.PipelinesAsCodeGithubPrivateKey]))
 			if !strings.HasPrefix(privateKey, "-----BEGIN RSA PRIVATE KEY-----") || // notsecret
 				!strings.HasSuffix(privateKey, "-----END RSA PRIVATE KEY-----") {
 				return fmt.Errorf(" Pipelines as Code secret: GitHub application private key is invalid")
 			}
 			return nil
 		}
-		return fmt.Errorf("There is no applications for %s", gitProvider)
+		return fmt.Errorf("there is no applications for %s", gitProvider)
 	}
 
 	switch pacSecret.Type {
@@ -348,7 +348,7 @@ func (r *ComponentBuildReconciler) UndoPaCProvisionForComponent(ctx context.Cont
 
 	repoUrl := getGitRepoUrl(*component)
 	webhookTargetUrl := ""
-	if !IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
+	if !common.IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
 		webhookTargetUrl, err = r.getPaCWebhookTargetUrl(ctx, repoUrl, true)
 		if err != nil {
 			// Just log the error and continue with pruning merge request creation
@@ -369,13 +369,14 @@ func (r *ComponentBuildReconciler) UndoPaCProvisionForComponent(ctx context.Cont
 		return "", err
 	}
 
-	if action == "delete" {
+	switch action {
+	case "delete":
 		if mrUrl != "" {
 			log.Info(fmt.Sprintf("Pipelines as Code configuration removal merge request: %s", mrUrl))
 		} else {
 			log.Info("Pipelines as Code configuration removal merge request is not needed")
 		}
-	} else if action == "close" {
+	case "close":
 		log.Info(fmt.Sprintf("Pipelines as Code configuration merge request has been closed: %s", mrUrl))
 	}
 	return mrUrl, nil
@@ -489,7 +490,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaC(ctx context.Context
 		},
 	}
 
-	isAppUsed := IsPaCApplicationConfigured(gitProvider, pacConfig)
+	isAppUsed := common.IsPaCApplicationConfigured(gitProvider, pacConfig)
 	if isAppUsed {
 		// Customize PR data to reflect git application name
 		if appName, appSlug, err := gitClient.GetConfiguredGitAppName(); err == nil {
@@ -548,7 +549,7 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPaC(ctx context.Conte
 		return "", "", "", err
 	}
 
-	isAppUsed := IsPaCApplicationConfigured(gitProvider, pacConfig)
+	isAppUsed := common.IsPaCApplicationConfigured(gitProvider, pacConfig)
 	if !isAppUsed && webhookTargetUrl != "" {
 		componentList := &appstudiov1alpha1.ComponentList{}
 		if err := r.Client.List(ctx, componentList, &client.ListOptions{Namespace: component.Namespace}); err != nil {

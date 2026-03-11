@@ -22,12 +22,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logger "sigs.k8s.io/controller-runtime/pkg/log"
 
-	. "github.com/konflux-ci/build-service/pkg/common"
+	"github.com/konflux-ci/build-service/pkg/common"
 	"github.com/konflux-ci/build-service/pkg/git"
 	"github.com/konflux-ci/build-service/pkg/git/github"
 	"github.com/konflux-ci/build-service/pkg/git/gitproviderfactory"
 	"github.com/konflux-ci/build-service/pkg/k8s"
-	"github.com/konflux-ci/build-service/pkg/logs"
 	l "github.com/konflux-ci/build-service/pkg/logs"
 )
 
@@ -247,26 +246,26 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsGithubApp(ctx context.Cont
 	log := logger.FromContext(ctx)
 	// Check if GitHub Application is used, if not then skip
 	pacSecret := corev1.Secret{}
-	globalPaCSecretKey := types.NamespacedName{Namespace: BuildServiceNamespaceName, Name: PipelinesAsCodeGitHubAppSecretName}
+	globalPaCSecretKey := types.NamespacedName{Namespace: common.BuildServiceNamespaceName, Name: common.PipelinesAsCodeGitHubAppSecretName}
 	if err := u.Client.Get(ctx, globalPaCSecretKey, &pacSecret); err != nil {
 		u.EventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
 		if errors.IsNotFound(err) {
-			log.Error(err, "not found Pipelines as Code secret in %s namespace: %w", globalPaCSecretKey.Namespace, err, logs.Action, logs.ActionView)
+			log.Error(err, "not found Pipelines as Code secret in %s namespace: %w", globalPaCSecretKey.Namespace, err, l.Action, l.ActionView)
 		} else {
-			log.Error(err, "failed to get Pipelines as Code secret in %s namespace: %w", globalPaCSecretKey.Namespace, err, logs.Action, logs.ActionView)
+			log.Error(err, "failed to get Pipelines as Code secret in %s namespace: %w", globalPaCSecretKey.Namespace, err, l.Action, l.ActionView)
 		}
 		return nil
 	}
-	isApp := IsPaCApplicationConfigured("github", pacSecret.Data)
+	isApp := common.IsPaCApplicationConfigured("github", pacSecret.Data)
 	if !isApp {
 		log.Info("GitHub App is not set")
 		return nil
 	}
 
 	// Load GitHub App and get GitHub Installations
-	githubAppIdStr := string(pacSecret.Data[PipelinesAsCodeGithubAppIdKey])
-	privateKey := pacSecret.Data[PipelinesAsCodeGithubPrivateKey]
-	pacConfig := map[string][]byte{PipelinesAsCodeGithubPrivateKey: []byte(privateKey), PipelinesAsCodeGithubAppIdKey: []byte(githubAppIdStr)}
+	githubAppIdStr := string(pacSecret.Data[common.PipelinesAsCodeGithubAppIdKey])
+	privateKey := pacSecret.Data[common.PipelinesAsCodeGithubPrivateKey]
+	pacConfig := map[string][]byte{common.PipelinesAsCodeGithubPrivateKey: []byte(privateKey), common.PipelinesAsCodeGithubAppIdKey: []byte(githubAppIdStr)}
 
 	// Match installed repositories with Components and get custom branch if defined
 	targetsToUpdate := []updateTarget{}
@@ -368,7 +367,7 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsGithubApp(ctx context.Cont
 	return targetsToUpdate
 }
 
-// ReadCustomRenovateConfigMaps returns custom renovate options from config map which is either defined in
+// ReadCustomRenovateConfigMap returns custom renovate options from config map which is either defined in
 // component's annotation CustomRenovateConfigMapAnnotation (which takes precedence),
 // or from namespace wide config NamespaceWideRenovateConfigMapName
 func (u ComponentDependenciesUpdater) ReadCustomRenovateConfigMap(ctx context.Context, component *v1alpha1.Component) (*CustomRenovateOptions, error) {
@@ -635,7 +634,7 @@ func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Contex
 		return nil
 	}
 	timestamp := time.Now().Unix()
-	nameSuffix := fmt.Sprintf("%d-%s", timestamp, RandomString(5))
+	nameSuffix := fmt.Sprintf("%d-%s", timestamp, common.RandomString(5))
 	name := fmt.Sprintf("renovate-pipeline-%s", nameSuffix)
 	namespace := nudgingPipelineRun.Namespace
 	caConfigMapName := fmt.Sprintf("renovate-ca-%s", nameSuffix)
@@ -644,9 +643,9 @@ func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Contex
 	renovateCmds := []string{}
 
 	for _, target := range targets {
-		randomStr1 := RandomString(5)
-		randomStr2 := RandomString(10)
-		randomStr3 := RandomString(10)
+		randomStr1 := common.RandomString(5)
+		randomStr2 := common.RandomString(10)
+		randomStr3 := common.RandomString(10)
 		secretTokens[randomStr2] = target.Token
 		secretTokens[randomStr3] = target.ImageRepositoryPassword
 		configString := ""
@@ -683,8 +682,8 @@ func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Contex
 		CaConfigMapLabel: "true",
 	})
 
-	if err := u.Client.List(ctx, allCaConfigMaps, client.InNamespace(BuildServiceNamespaceName), opts); err != nil {
-		return fmt.Errorf("failed to list config maps with label %s in %s namespace: %w", CaConfigMapLabel, BuildServiceNamespaceName, err)
+	if err := u.Client.List(ctx, allCaConfigMaps, client.InNamespace(common.BuildServiceNamespaceName), opts); err != nil {
+		return fmt.Errorf("failed to list config maps with label %s in %s namespace: %w", CaConfigMapLabel, common.BuildServiceNamespaceName, err)
 	}
 	caConfigData := ""
 	if len(allCaConfigMaps.Items) > 0 {
@@ -822,8 +821,8 @@ func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Contex
 			MountPath: CaMountPath,
 			ReadOnly:  true,
 		}
-		pipelineRun.Spec.PipelineSpec.Tasks[0].TaskSpec.TaskSpec.Volumes = append(pipelineRun.Spec.PipelineSpec.Tasks[0].TaskSpec.TaskSpec.Volumes, caVolume)
-		pipelineRun.Spec.PipelineSpec.Tasks[0].TaskSpec.TaskSpec.Steps[0].VolumeMounts = append(pipelineRun.Spec.PipelineSpec.Tasks[0].TaskSpec.TaskSpec.Steps[0].VolumeMounts, caVolumeMount)
+		pipelineRun.Spec.PipelineSpec.Tasks[0].TaskSpec.Volumes = append(pipelineRun.Spec.PipelineSpec.Tasks[0].TaskSpec.Volumes, caVolume)
+		pipelineRun.Spec.PipelineSpec.Tasks[0].TaskSpec.Steps[0].VolumeMounts = append(pipelineRun.Spec.PipelineSpec.Tasks[0].TaskSpec.Steps[0].VolumeMounts, caVolumeMount)
 	}
 
 	if debug {
@@ -856,7 +855,7 @@ func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Contex
 	if err := u.Client.Create(ctx, configMap); err != nil {
 		return err
 	}
-	log.Info(fmt.Sprintf("Renovate pipeline %s triggered", pipelineRun.Name), logs.Action, logs.ActionAdd)
+	log.Info(fmt.Sprintf("Renovate pipeline %s triggered", pipelineRun.Name), l.Action, l.ActionAdd)
 
 	return nil
 }

@@ -40,7 +40,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/konflux-ci/build-service/pkg/boerrors"
-	. "github.com/konflux-ci/build-service/pkg/common"
+	"github.com/konflux-ci/build-service/pkg/common"
 	gp "github.com/konflux-ci/build-service/pkg/git/gitprovider"
 	l "github.com/konflux-ci/build-service/pkg/logs"
 )
@@ -159,7 +159,7 @@ func (r *ComponentBuildReconciler) GetBuildPipelineFromComponentAnnotation(ctx c
 	additionalParams := []string{}
 
 	pipelinesConfigMap := &corev1.ConfigMap{}
-	if err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineConfigMapResourceName, Namespace: BuildServiceNamespaceName}, pipelinesConfigMap); err != nil {
+	if err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineConfigMapResourceName, Namespace: common.BuildServiceNamespaceName}, pipelinesConfigMap); err != nil {
 		if errors.IsNotFound(err) {
 			return nil, nil, boerrors.NewBuildOpError(boerrors.EBuildPipelineConfigNotDefined, err)
 		}
@@ -223,7 +223,7 @@ func (r *ComponentBuildReconciler) SetDefaultBuildPipelineComponentAnnotation(ct
 	log := ctrllog.FromContext(ctx)
 	pipelinesConfigMap := &corev1.ConfigMap{}
 
-	if err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineConfigMapResourceName, Namespace: BuildServiceNamespaceName}, pipelinesConfigMap); err != nil {
+	if err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineConfigMapResourceName, Namespace: common.BuildServiceNamespaceName}, pipelinesConfigMap); err != nil {
 		if errors.IsNotFound(err) {
 			return boerrors.NewBuildOpError(boerrors.EBuildPipelineConfigNotDefined, err)
 		}

@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"strings"
 
-	"codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v2"
+	"codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v3"
 
 	"github.com/konflux-ci/build-service/pkg/boerrors"
 	"github.com/konflux-ci/build-service/pkg/common"
@@ -36,7 +36,7 @@ var (
 	appStudioPaCWebhookEvents = []string{"pull_request", "push", "issue_comment", "commit_comment"}
 )
 
-// Allow mocking for tests
+// NewForgejoClient can be mocked in tests.
 var NewForgejoClient func(accessToken, baseUrl string) (*ForgejoClient, error) = newForgejoClient
 var NewForgejoClientWithBasicAuth func(username, password, baseUrl string) (*ForgejoClient, error) = newForgejoClientWithBasicAuth
 
@@ -262,10 +262,7 @@ func (f *ForgejoClient) SetupPaCWebhook(repoUrl string, webhookUrl string, webho
 		return err
 	}
 
-	insecureSSL := false
-	if gp.IsInsecureSSL() {
-		insecureSSL = true
-	}
+	insecureSSL := gp.IsInsecureSSL()
 
 	if existingWebhook == nil {
 		// Create new webhook
@@ -425,14 +422,14 @@ func (f *ForgejoClient) IsRepositoryPublic(repoUrl string) (bool, error) {
 // Forgejo does not support GitHub-style Apps, so this returns an error.
 func (f *ForgejoClient) GetConfiguredGitAppName() (string, string, error) {
 	return "", "", boerrors.NewBuildOpError(boerrors.EForgejoGitAppNotSupported,
-		fmt.Errorf("Forgejo does not support GitHub-style applications"))
+		fmt.Errorf("forgejo does not support GitHub-style applications"))
 }
 
 // GetAppUserId returns the user ID of the configured Git App.
 // Forgejo does not support GitHub-style Apps, so this returns an error.
 func (f *ForgejoClient) GetAppUserId(userName string) (int64, error) {
 	return 0, boerrors.NewBuildOpError(boerrors.EForgejoGitAppNotSupported,
-		fmt.Errorf("Forgejo does not support GitHub-style applications"))
+		fmt.Errorf("forgejo does not support GitHub-style applications"))
 }
 
 // newForgejoClient creates a new Forgejo client with token authentication

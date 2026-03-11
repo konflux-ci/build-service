@@ -21,7 +21,7 @@ import (
 	"strconv"
 
 	"github.com/konflux-ci/build-service/pkg/boerrors"
-	. "github.com/konflux-ci/build-service/pkg/common"
+	"github.com/konflux-ci/build-service/pkg/common"
 	"github.com/konflux-ci/build-service/pkg/git/forgejo"
 	"github.com/konflux-ci/build-service/pkg/git/github"
 	"github.com/konflux-ci/build-service/pkg/git/gitlab"
@@ -54,7 +54,7 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 	password, passwordExists := secretData["password"]
 	_, sshKeyExists := secretData["ssh-privatekey"]
 
-	isAppUsed := IsPaCApplicationConfigured(gitProvider, secretData)
+	isAppUsed := common.IsPaCApplicationConfigured(gitProvider, secretData)
 
 	switch gitProvider {
 	case "github":
@@ -73,14 +73,14 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 				fmt.Errorf("failed to create git client:  unsupported secret data. Expected username/password or token"))
 		}
 
-		githubAppIdStr := string(secretData[PipelinesAsCodeGithubAppIdKey])
+		githubAppIdStr := string(secretData[common.PipelinesAsCodeGithubAppIdKey])
 		githubAppId, err := strconv.ParseInt(githubAppIdStr, 10, 64)
 		if err != nil {
 			return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppMalformedId,
 				fmt.Errorf("failed to create git client: failed to convert %s to int: %w", githubAppIdStr, err))
 		}
 
-		privateKey := secretData[PipelinesAsCodeGithubPrivateKey]
+		privateKey := secretData[common.PipelinesAsCodeGithubPrivateKey]
 
 		// It's required that the configured Pipelines as Code application is installed into user's account
 		// and enabled for the given repository.
@@ -116,7 +116,7 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 	case "forgejo":
 		if isAppUsed {
 			return nil, boerrors.NewBuildOpError(boerrors.EForgejoGitAppNotSupported,
-				fmt.Errorf("Forgejo does not support GitHub-style applications"))
+				fmt.Errorf("forgejo does not support GitHub-style applications"))
 		}
 		baseUrl, err := forgejo.GetBaseUrl(gitClientConfig.RepoUrl)
 		if err != nil {

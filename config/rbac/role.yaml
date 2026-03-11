@@ -7,10 +7,31 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - configmaps
+  - secrets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
   - events
   verbs:
   - create
   - patch
+- apiGroups:
+  - ""
+  resources:
+  - namespaces
+  verbs:
+  - get
+  - list
+  - watch
 - apiGroups:
   - ""
   resources:
@@ -45,27 +66,6 @@ rules:
   - imagerepositories
   - imagerepositories/status
   - releaseplanadmissions
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - configmaps
-  - secrets
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - namespaces
   verbs:
   - get
   - list

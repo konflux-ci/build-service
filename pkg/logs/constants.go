@@ -22,7 +22,7 @@ const (
 	DebugLevel = 1
 )
 
-// Action type represents all possible value of 'action' log field.
+// ActionLogValue represents all possible values of 'action' log field.
 // For more details see https://github.com/redhat-appstudio/book/blob/main/ADR/0006-log-conventions.md
 type ActionLogValue string
 

@@ -15,9 +15,9 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/konflux-ci/build-service/pkg/boerrors"
-	. "github.com/konflux-ci/build-service/pkg/common"
+	"github.com/konflux-ci/build-service/pkg/common"
 	"github.com/konflux-ci/build-service/pkg/git"
-	. "github.com/konflux-ci/build-service/pkg/git/credentials"
+	"github.com/konflux-ci/build-service/pkg/git/credentials"
 	bslices "github.com/konflux-ci/build-service/pkg/slices"
 )
 
@@ -38,18 +38,18 @@ func NewGithubAppConfigReader(client client.Client, scheme *runtime.Scheme, even
 func (k ConfigReader) GetConfig(ctx context.Context) (githubAppIdStr string, appPrivateKeyPem []byte, err error) {
 	//Check if GitHub Application is used, if not then skip
 	pacSecret := corev1.Secret{}
-	globalPaCSecretKey := types.NamespacedName{Namespace: BuildServiceNamespaceName, Name: PipelinesAsCodeGitHubAppSecretName}
+	globalPaCSecretKey := types.NamespacedName{Namespace: common.BuildServiceNamespaceName, Name: common.PipelinesAsCodeGitHubAppSecretName}
 	if err := k.client.Get(ctx, globalPaCSecretKey, &pacSecret); err != nil {
 		k.eventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
 		return "", nil, err
 	}
 
 	// validate content of the fields
-	if _, e := strconv.ParseInt(string(pacSecret.Data[PipelinesAsCodeGithubAppIdKey]), 10, 64); e != nil {
+	if _, e := strconv.ParseInt(string(pacSecret.Data[common.PipelinesAsCodeGithubAppIdKey]), 10, 64); e != nil {
 		return "", nil, fmt.Errorf(" Pipelines as Code: failed to parse GitHub application ID. Cause: %w", e)
 	}
 
-	return string(pacSecret.Data[PipelinesAsCodeGithubAppIdKey]), pacSecret.Data[PipelinesAsCodeGithubPrivateKey], err
+	return string(pacSecret.Data[common.PipelinesAsCodeGithubAppIdKey]), pacSecret.Data[common.PipelinesAsCodeGithubPrivateKey], err
 }
 
 // GitCredentialProvider is an implementation of the git.CredentialsProvider that retrieves
@@ -64,23 +64,23 @@ func NewGitCredentialProvider(client client.Client) *GitCredentialProvider {
 	}
 }
 
-func (k *GitCredentialProvider) GetBasicAuthCredentials(ctx context.Context, component *git.ScmComponent) (*BasicAuthCredentials, error) {
+func (k *GitCredentialProvider) GetBasicAuthCredentials(ctx context.Context, component *git.ScmComponent) (*credentials.BasicAuthCredentials, error) {
 	secretWithCredentials, err := k.LookupSecret(ctx, component, corev1.SecretTypeBasicAuth)
 	if err != nil {
 		return nil, err
 	}
-	return &BasicAuthCredentials{
+	return &credentials.BasicAuthCredentials{
 		Username: string(secretWithCredentials.Data[corev1.BasicAuthUsernameKey]),
 		Password: string(secretWithCredentials.Data[corev1.BasicAuthPasswordKey]),
 	}, nil
 }
 
-func (k *GitCredentialProvider) GetSSHCredentials(ctx context.Context, component *git.ScmComponent) (*SSHCredentials, error) {
+func (k *GitCredentialProvider) GetSSHCredentials(ctx context.Context, component *git.ScmComponent) (*credentials.SSHCredentials, error) {
 	secretWithCredentials, err := k.LookupSecret(ctx, component, corev1.SecretTypeSSHAuth)
 	if err == nil {
 		return nil, err
 	}
-	return &SSHCredentials{
+	return &credentials.SSHCredentials{
 		PrivateKey: secretWithCredentials.Data[corev1.SSHAuthPrivateKey],
 	}, nil
 }
@@ -92,8 +92,8 @@ func (k *GitCredentialProvider) LookupSecret(ctx context.Context, component *git
 
 	secretList := &corev1.SecretList{}
 	opts := client.ListOption(&client.MatchingLabels{
-		ScmCredentialsSecretLabel: "scm",
-		ScmSecretHostnameLabel:    component.RepositoryHost(),
+		credentials.ScmCredentialsSecretLabel: "scm",
+		credentials.ScmSecretHostnameLabel:    component.RepositoryHost(),
 	})
 
 	if err := k.client.List(ctx, secretList, client.InNamespace(component.NamespaceName()), opts); err != nil {
@@ -126,7 +126,7 @@ func bestMatchingSecret(ctx context.Context, componentRepository string, secrets
 	var potentialMatches = make(map[int]int, len(secrets))
 
 	for index, secret := range secrets {
-		repositoryAnnotation, exists := secret.Annotations[ScmSecretRepositoryAnnotation]
+		repositoryAnnotation, exists := secret.Annotations[credentials.ScmSecretRepositoryAnnotation]
 		log.Info("found secret", "repositoryAnnotation", repositoryAnnotation, "exists", exists, "secret", secret.Name)
 		if !exists || repositoryAnnotation == "" {
 			hostOnlySecrets = append(hostOnlySecrets, secret)

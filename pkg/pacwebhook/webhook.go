@@ -67,7 +67,7 @@ var _ WebhookURLLoader = ConfigWebhookURLLoader{}
 
 type FileReader func(name string) ([]byte, error)
 
-// Load the prefix to target url from a file
+// LoadMappingFromFile loads the prefix to target url mapping from a file.
 func LoadMappingFromFile(path string, fileReader FileReader) (map[string]string, error) {
 	if path == "" {
 		log.Info("Webhook config was not provided")

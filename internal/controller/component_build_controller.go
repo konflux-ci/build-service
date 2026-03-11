@@ -77,7 +77,7 @@ type BuildStatus struct {
 	Message string `json:"message,omitempty"`
 }
 
-// Describes persistent error for build request.
+// ErrorInfo describes persistent error for build request.
 type ErrorInfo struct {
 	ErrId      int    `json:"error-id,omitempty"`
 	ErrMessage string `json:"error-message,omitempty"`
