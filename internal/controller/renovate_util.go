@@ -1,3 +1,4 @@
+// TODO remove whole file after only new model is used
 package controllers
 
 import (
@@ -10,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/konflux-ci/application-api/api/v1alpha1"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -21,6 +21,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logger "sigs.k8s.io/controller-runtime/pkg/log"
+
+	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
 
 	"github.com/konflux-ci/build-service/pkg/common"
 	"github.com/konflux-ci/build-service/pkg/git"
@@ -156,19 +158,20 @@ func NewComponentDependenciesUpdater(client client.Client, scheme *runtime.Schem
 }
 
 // GetUpdateTargetsBasicAuth This method returns targets for components based on basic auth
-func (u ComponentDependenciesUpdater) GetUpdateTargetsBasicAuth(ctx context.Context, componentList []v1alpha1.Component, imageRepositoryHost, imageRepositoryUsername, imageRepositoryPassword string) []updateTarget {
+func (u ComponentDependenciesUpdater) GetUpdateTargetsBasicAuth(ctx context.Context, componentList []compapiv1alpha1.Component, imageRepositoryHost, imageRepositoryUsername, imageRepositoryPassword string) []updateTarget {
 	log := logger.FromContext(ctx)
+	newModel := false
 	targetsToUpdate := []updateTarget{}
 
 	for _, comp := range componentList {
 		component := comp
-		gitProvider, err := getGitProvider(component)
+		gitProvider, err := getGitProvider(component, newModel)
 		if err != nil {
 			log.Error(err, "error detecting git provider", "ComponentName", component.Name, "ComponentNamespace", component.Namespace)
 			continue
 		}
 
-		repoUrl := getGitRepoUrl(component)
+		repoUrl := getGitRepoUrl(component, newModel)
 		scmComponent, err := git.NewScmComponent(gitProvider, repoUrl, component.Spec.Source.GitSource.Revision, component.Name, component.Namespace)
 		if err != nil {
 			log.Error(err, "error parsing component", "ComponentName", component.Name, "ComponentNamespace", component.Namespace)
@@ -242,8 +245,9 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsBasicAuth(ctx context.Cont
 }
 
 // GetUpdateTargetsGithubApp This method returns targets for components based on github app
-func (u ComponentDependenciesUpdater) GetUpdateTargetsGithubApp(ctx context.Context, componentList []v1alpha1.Component, imageRepositoryHost, imageRepositoryUsername, imageRepositoryPassword string) []updateTarget {
+func (u ComponentDependenciesUpdater) GetUpdateTargetsGithubApp(ctx context.Context, componentList []compapiv1alpha1.Component, imageRepositoryHost, imageRepositoryUsername, imageRepositoryPassword string) []updateTarget {
 	log := logger.FromContext(ctx)
+	newModel := false
 	// Check if GitHub Application is used, if not then skip
 	pacSecret := corev1.Secret{}
 	globalPaCSecretKey := types.NamespacedName{Namespace: common.BuildServiceNamespaceName, Name: common.PipelinesAsCodeGitHubAppSecretName}
@@ -278,7 +282,7 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsGithubApp(ctx context.Cont
 			continue
 		}
 
-		gitProvider, err := getGitProvider(component)
+		gitProvider, err := getGitProvider(component, newModel)
 		if err != nil {
 			log.Error(err, "error detecting git provider", "ComponentName", component.Name, "ComponentNamespace", component.Namespace)
 			continue
@@ -289,7 +293,7 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsGithubApp(ctx context.Cont
 
 		gitSource := component.Spec.Source.GitSource
 
-		url := getGitRepoUrl(component)
+		url := getGitRepoUrl(component, newModel)
 		log.Info("getting app installation for component repository", "ComponentName", component.Name, "ComponentNamespace", component.Namespace, "RepositoryUrl", url)
 		githubAppInstallation, slugTmp, err := github.GetAppInstallationsForRepository(githubAppIdStr, privateKey, url)
 		if err != nil {
@@ -370,7 +374,7 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsGithubApp(ctx context.Cont
 // ReadCustomRenovateConfigMap returns custom renovate options from config map which is either defined in
 // component's annotation CustomRenovateConfigMapAnnotation (which takes precedence),
 // or from namespace wide config NamespaceWideRenovateConfigMapName
-func (u ComponentDependenciesUpdater) ReadCustomRenovateConfigMap(ctx context.Context, component *v1alpha1.Component) (*CustomRenovateOptions, error) {
+func (u ComponentDependenciesUpdater) ReadCustomRenovateConfigMap(ctx context.Context, component *compapiv1alpha1.Component) (*CustomRenovateOptions, error) {
 	log := logger.FromContext(ctx)
 	customRenovateOptions := CustomRenovateOptions{}
 
@@ -484,7 +488,7 @@ func (u ComponentDependenciesUpdater) ReadCustomRenovateConfigMap(ctx context.Co
 
 // readComponentCustomRenovateConfigMapAnnotation returns name of ConfigMap with custom renovate settings for nudge.
 // The ConfigMap name is taken from CustomRenovateConfigMapAnnotation annotation on the Component.
-func readComponentCustomRenovateConfigMapAnnotation(component *v1alpha1.Component) string {
+func readComponentCustomRenovateConfigMapAnnotation(component *compapiv1alpha1.Component) string {
 	if component.Annotations == nil {
 		return ""
 	}
@@ -718,7 +722,7 @@ func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Contex
 		}
 	}
 
-	renovatePipelineServiceAccountName := getBuildPipelineServiceAccountName(buildResult.Component)
+	renovatePipelineServiceAccountName := getBuildPipelineServiceAccountName(buildResult.Component.Name)
 	if err := u.Client.Get(ctx, types.NamespacedName{Name: renovatePipelineServiceAccountName, Namespace: namespace}, &corev1.ServiceAccount{}); err != nil {
 		log.Error(err, fmt.Sprintf("Failed to read service account %s in namespace %s", renovatePipelineServiceAccountName, namespace), l.Action, l.ActionView)
 		return err

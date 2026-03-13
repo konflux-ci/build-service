@@ -35,7 +35,7 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	appstudiov1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
+	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
 
 	"github.com/konflux-ci/build-service/pkg/boerrors"
 	"github.com/konflux-ci/build-service/pkg/bometrics"
@@ -63,12 +63,18 @@ const (
 
 	gitCommitShaAnnotationName = "build.appstudio.redhat.com/commit_sha"
 	gitRepoAtShaAnnotationName = "build.appstudio.openshift.io/repo"
+	ContextAnnotationName      = "appstudio.openshift.io/context"
+	VersionAnnotationName      = "appstudio.openshift.io/version"
 
 	defaultBuildPipelineAnnotation     = "build.appstudio.openshift.io/pipeline"
 	buildPipelineConfigMapResourceName = "build-pipeline-config"
 	buildPipelineConfigName            = "config.yaml"
 
 	waitForContainerImageMessage = "waiting for spec.containerImage to be set by ImageRepository with annotation image-controller.appstudio.redhat.com/update-component-image"
+
+	ComponentModelVersionAnnotation = "build.appstudio.openshift.io/component_model_version"
+	DefaultComponentModelVersion    = "v1"
+	NewComponentModelVersion        = "v2"
 )
 
 type BuildStatus struct {
@@ -109,11 +115,22 @@ type ComponentBuildReconciler struct {
 // SetupWithManager sets up the controller with the Manager.
 func (r *ComponentBuildReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&appstudiov1alpha1.Component{}, builder.WithPredicates(predicate.Funcs{
+		For(&compapiv1alpha1.Component{}, builder.WithPredicates(predicate.Funcs{
 			CreateFunc: func(e event.CreateEvent) bool {
 				return true
 			},
 			UpdateFunc: func(e event.UpdateEvent) bool {
+				component, ok := e.ObjectNew.(*compapiv1alpha1.Component)
+				if !ok {
+					return false
+				}
+
+				// TODO remove newModel handling after only new model is used
+				// For new model: only reconcile when spec changes (Generation increments), not on status-only updates
+				// For old model: always reconcile on update (old model uses annotations which don't increment Generation)
+				if isComponentUsingNewModel(component) {
+					return e.ObjectOld.GetGeneration() != e.ObjectNew.GetGeneration()
+				}
 				return true
 			},
 			DeleteFunc: func(e event.DeleteEvent) bool {
@@ -141,6 +158,13 @@ func updateMetricsTimes(componentIdForMetrics string, requestedAction string, re
 	}
 }
 
+// isComponentUsingNewModel checks if the component is configured to use the new model (v2).
+// Returns true if the component has the new model annotation set to v2 or if the default model is v2.
+func isComponentUsingNewModel(component *compapiv1alpha1.Component) bool {
+	requestedModel, requestedModelAnnotationExists := component.Annotations[ComponentModelVersionAnnotation]
+	return (requestedModelAnnotationExists && requestedModel == NewComponentModelVersion) || DefaultComponentModelVersion == NewComponentModelVersion
+}
+
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=components,verbs=get;list;watch;update;patch
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=components/status,verbs=get;list;watch
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=imagerepositories,verbs=get;list;watch
@@ -159,12 +183,12 @@ func updateMetricsTimes(componentIdForMetrics string, requestedAction string, re
 //+kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch
 
 func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := ctrllog.FromContext(ctx).WithName("ComponentOnboarding")
+	log := ctrllog.FromContext(ctx)
 	ctx = ctrllog.IntoContext(ctx, log)
 	reconcileStartTime := time.Now()
 
 	// Fetch the Component instance
-	var component appstudiov1alpha1.Component
+	var component compapiv1alpha1.Component
 	err := r.Client.Get(ctx, req.NamespacedName, &component)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -177,11 +201,17 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
+	if isComponentUsingNewModel(&component) {
+		return r.ReconcileNewModel(ctx, req)
+	}
+
+	log = ctrllog.FromContext(ctx).WithName("ComponentOnboarding")
+
 	// Don't recreate build pipeline Service Account upon component deletion.
 	if component.ObjectMeta.DeletionTimestamp.IsZero() {
 		// We need to make sure the Service Account exists before checking the Component image,
 		// because Image Controller operator expects the Service Account to exist to link push secret to it.
-		if err := r.EnsureBuildPipelineServiceAccount(ctx, &component); err != nil {
+		if err := r.EnsureBuildPipelineServiceAccount(ctx, &component, true); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
@@ -202,7 +232,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			log.Error(err, "failed to update component after waiting for containerImage", l.Action, l.ActionUpdate, l.Audit, "true")
 			return ctrl.Result{}, err
 		}
-		r.WaitForCacheUpdate(ctx, req.NamespacedName, &component)
+		r.WaitForCacheUpdateOldModel(ctx, req.NamespacedName, &component)
 
 		return ctrl.Result{}, nil
 	}
@@ -256,7 +286,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			log.Info("PaC finalizer removed", l.Action, l.ActionDelete)
 
 			// Try to clean up Pipelines as Code configuration
-			_, _ = r.UndoPaCProvisionForComponent(ctx, &component)
+			_, _ = r.UndoPaCProvisionForComponentOldModel(ctx, &component)
 		}
 
 		// Clean up common build pipelines Role Binding
@@ -305,7 +335,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return ctrl.Result{}, err
 		}
 		log.Info(fmt.Sprintf("updated component after wrong %s annotation", defaultBuildPipelineAnnotation))
-		r.WaitForCacheUpdate(ctx, req.NamespacedName, &component)
+		r.WaitForCacheUpdateOldModel(ctx, req.NamespacedName, &component)
 
 		return ctrl.Result{}, nil
 	}
@@ -338,7 +368,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return ctrl.Result{}, nil
 		}
 
-		reconcileRequired, err := r.TriggerPaCBuild(ctx, &component)
+		reconcileRequired, err := r.TriggerPaCBuildOldModel(ctx, &component)
 
 		if err != nil {
 			if boErr, ok := err.(*boerrors.BuildOpError); ok && boErr.IsPersistent() {
@@ -368,7 +398,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}()
 
 		pacBuildStatus := &PaCBuildStatus{}
-		if mergeUrl, err := r.ProvisionPaCForComponent(ctx, &component); err != nil {
+		if mergeUrl, err := r.ProvisionPaCForComponentOldModel(ctx, &component); err != nil {
 			if boErr, ok := err.(*boerrors.BuildOpError); ok && boErr.IsPersistent() {
 				log.Error(err, "Pipelines as Code provision for the Component failed")
 				pacBuildStatus.State = "error"
@@ -436,7 +466,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 
 		pacBuildStatus := &PaCBuildStatus{}
-		if mergeUrl, err := r.UndoPaCProvisionForComponent(ctx, &component); err != nil {
+		if mergeUrl, err := r.UndoPaCProvisionForComponentOldModel(ctx, &component); err != nil {
 			if boErr, ok := err.(*boerrors.BuildOpError); ok && boErr.IsPersistent() {
 				log.Error(err, "Pipelines as Code unprovision for the Component failed")
 				pacBuildStatus.State = "error"
@@ -491,12 +521,14 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// remove component from metrics map
 	delete(bometrics.ComponentTimesForMetrics, componentIdForMetrics)
 
-	r.WaitForCacheUpdate(ctx, req.NamespacedName, &component)
+	r.WaitForCacheUpdateOldModel(ctx, req.NamespacedName, &component)
 
 	return ctrl.Result{}, nil
 }
 
-func (r *ComponentBuildReconciler) WaitForCacheUpdate(ctx context.Context, namespace types.NamespacedName, component *appstudiov1alpha1.Component) {
+// WaitForCacheUpdateOldModel waits for cache update
+// TODO remove after only new model is used
+func (r *ComponentBuildReconciler) WaitForCacheUpdateOldModel(ctx context.Context, namespace types.NamespacedName, component *compapiv1alpha1.Component) {
 	log := ctrllog.FromContext(ctx)
 
 	// Here we do some trick.
@@ -532,7 +564,7 @@ func (r *ComponentBuildReconciler) WaitForCacheUpdate(ctx context.Context, names
 	}
 }
 
-func readBuildStatus(component *appstudiov1alpha1.Component) *BuildStatus {
+func readBuildStatus(component *compapiv1alpha1.Component) *BuildStatus {
 	if component.Annotations == nil {
 		return &BuildStatus{}
 	}
@@ -545,7 +577,7 @@ func readBuildStatus(component *appstudiov1alpha1.Component) *BuildStatus {
 	return &BuildStatus{}
 }
 
-func writeBuildStatus(component *appstudiov1alpha1.Component, buildStatus *BuildStatus) {
+func writeBuildStatus(component *compapiv1alpha1.Component, buildStatus *BuildStatus) {
 	if component.Annotations == nil {
 		component.Annotations = make(map[string]string)
 	}

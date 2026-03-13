@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	appstudiov1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
+	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
 	imagerepositoryapi "github.com/konflux-ci/image-controller/api/v1alpha1"
 	releaseapi "github.com/konflux-ci/release-service/api/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
@@ -79,7 +79,7 @@ var _ = BeforeSuite(func() {
 
 	By("bootstrapping test environment")
 
-	applicationApiDepVersion := "v0.0.0-20240812090716-e7eb2ecfb409"
+	applicationApiDepVersion := "v0.0.0-20260312190025-5154ad273e17"
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
 			filepath.Join("..", "..", "hack", "routecrd", "route.yaml"),
@@ -100,7 +100,7 @@ var _ = BeforeSuite(func() {
 	err = routev1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
-	err = appstudiov1alpha1.AddToScheme(scheme.Scheme)
+	err = compapiv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	err = tektonapi.AddToScheme(scheme.Scheme)

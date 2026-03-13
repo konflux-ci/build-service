@@ -32,7 +32,7 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	appstudiov1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
+	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
 	l "github.com/konflux-ci/build-service/pkg/logs"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 )
@@ -48,7 +48,7 @@ type PaCPipelineRunPrunerReconciler struct {
 // SetupWithManager sets up the controller with the Manager.
 func (r *PaCPipelineRunPrunerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&appstudiov1alpha1.Component{}, builder.WithPredicates(predicate.Funcs{
+		For(&compapiv1alpha1.Component{}, builder.WithPredicates(predicate.Funcs{
 			CreateFunc: func(e event.CreateEvent) bool {
 				return false
 			},
@@ -71,7 +71,7 @@ func (r *PaCPipelineRunPrunerReconciler) SetupWithManager(mgr ctrl.Manager) erro
 func (r *PaCPipelineRunPrunerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := ctrllog.FromContext(ctx).WithName("PaCPipelineRunPruner")
 
-	var component appstudiov1alpha1.Component
+	var component compapiv1alpha1.Component
 	err := r.Client.Get(ctx, req.NamespacedName, &component)
 	if err == nil {
 		// The Component has been recreated.

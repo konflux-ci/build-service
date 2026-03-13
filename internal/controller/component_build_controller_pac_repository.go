@@ -20,15 +20,17 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"reflect"
+	"regexp"
+	"slices"
 	"strings"
 
-	appstudiov1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
+	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/strings/slices"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
@@ -38,9 +40,10 @@ import (
 	l "github.com/konflux-ci/build-service/pkg/logs"
 )
 
+// TODO remove newModel handling after only new model is used
 // findPaCRepositoryForComponent searches for existing matching PaC repository object for given component.
 // The search makes sense only in the same namespace.
-func (r *ComponentBuildReconciler) findPaCRepositoryForComponent(ctx context.Context, component *appstudiov1alpha1.Component) (*pacv1alpha1.Repository, error) {
+func (r *ComponentBuildReconciler) findPaCRepositoryForComponent(ctx context.Context, component *compapiv1alpha1.Component, newModel bool) (*pacv1alpha1.Repository, error) {
 	log := ctrllog.FromContext(ctx)
 
 	pacRepositoriesList := &pacv1alpha1.RepositoryList{}
@@ -50,7 +53,7 @@ func (r *ComponentBuildReconciler) findPaCRepositoryForComponent(ctx context.Con
 		return nil, err
 	}
 
-	gitUrl := getGitRepoUrl(*component)
+	gitUrl := getGitRepoUrl(*component, newModel)
 	for _, pacRepository := range pacRepositoriesList.Items {
 		if pacRepository.Spec.URL == gitUrl {
 			return &pacRepository, nil
@@ -59,7 +62,35 @@ func (r *ComponentBuildReconciler) findPaCRepositoryForComponent(ctx context.Con
 	return nil, nil
 }
 
-func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, component *appstudiov1alpha1.Component, pacConfig *corev1.Secret) error {
+// equalStringSlicesAsSet compares two string slices as mathematical sets.
+// Returns true if both slices contain the same unique elements, regardless of order or duplicates.
+func equalStringSlicesAsSet(a, b []string) bool {
+	aSet := make(map[string]bool)
+	for _, item := range a {
+		aSet[item] = true
+	}
+
+	bSet := make(map[string]bool)
+	for _, item := range b {
+		bSet[item] = true
+	}
+
+	return reflect.DeepEqual(aSet, bSet)
+}
+
+// getUniqueStrings returns a slice containing only the unique elements from the input slice.
+func getUniqueStrings(items []string) []string {
+	result := []string{}
+	for _, item := range items {
+		if !slices.Contains(result, item) {
+			result = append(result, item)
+		}
+	}
+	return result
+}
+
+// TODO remove newModel handling after only new model is used
+func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, component *compapiv1alpha1.Component, pacConfig *corev1.Secret, repositorySettings *compapiv1alpha1.RepositorySettings, newModel bool) (string, error) {
 	log := ctrllog.FromContext(ctx)
 
 	// Check multi component git repository scenario.
@@ -68,38 +99,80 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 	// For example, there are several dockerfiles in the same git repository
 	// and each of them builds separate component from the common codebase.
 	// Another scenario is component per branch.
-	repository, err := r.findPaCRepositoryForComponent(ctx, component)
+	repository, err := r.findPaCRepositoryForComponent(ctx, component, newModel)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if repository != nil {
 		pacRepositoryOwnersNumber := len(repository.OwnerReferences)
 		if err := controllerutil.SetOwnerReference(component, repository, r.Scheme); err != nil {
 			log.Error(err, "failed to add owner reference to existing PaC repository", "PaCRepositoryName", repository.Name)
-			return err
+			return "", err
 		}
-		if len(repository.OwnerReferences) > pacRepositoryOwnersNumber {
+
+		repositorySettingsUpdated := false
+		if newModel {
+			// Initialize Settings if nil
+			if repository.Spec.Settings == nil {
+				repository.Spec.Settings = &pacv1alpha1.Settings{}
+			}
+			// Initialize Gitlab if nil
+			if repository.Spec.Settings.Gitlab == nil {
+				repository.Spec.Settings.Gitlab = &pacv1alpha1.GitlabSettings{}
+			}
+			// Initialize Github if nil
+			if repository.Spec.Settings.Github == nil {
+				repository.Spec.Settings.Github = &pacv1alpha1.GithubSettings{}
+			}
+
+			if repositorySettings != nil {
+				// update repository settings when changed
+				if repositorySettings.CommentStrategy != repository.Spec.Settings.Github.CommentStrategy || repositorySettings.CommentStrategy != repository.Spec.Settings.Gitlab.CommentStrategy {
+					repository.Spec.Settings.Github.CommentStrategy = repositorySettings.CommentStrategy
+					repository.Spec.Settings.Gitlab.CommentStrategy = repositorySettings.CommentStrategy
+					repositorySettingsUpdated = true
+				}
+
+				if !equalStringSlicesAsSet(repositorySettings.GithubAppTokenScopeRepos, repository.Spec.Settings.GithubAppTokenScopeRepos) {
+					repository.Spec.Settings.GithubAppTokenScopeRepos = getUniqueStrings(repositorySettings.GithubAppTokenScopeRepos)
+					repositorySettingsUpdated = true
+				}
+			} else {
+				// clean repository settings when not provided
+				if repository.Spec.Settings.Github.CommentStrategy != "" || repository.Spec.Settings.Gitlab.CommentStrategy != "" {
+					repository.Spec.Settings.Github.CommentStrategy = ""
+					repository.Spec.Settings.Gitlab.CommentStrategy = ""
+					repositorySettingsUpdated = true
+				}
+				if len(repository.Spec.Settings.GithubAppTokenScopeRepos) > 0 {
+					repository.Spec.Settings.GithubAppTokenScopeRepos = []string{}
+					repositorySettingsUpdated = true
+				}
+			}
+		}
+
+		if (len(repository.OwnerReferences) > pacRepositoryOwnersNumber) || repositorySettingsUpdated {
 			if err := r.Client.Update(ctx, repository); err != nil {
 				log.Error(err, "failed to update existing PaC repository with component owner reference", "PaCRepositoryName", repository.Name)
-				return err
+				return "", err
 			}
 			log.Info("Added current component to owners of the PaC repository", "PaCRepositoryName", repository.Name, l.Action, l.ActionUpdate)
 		} else {
 			log.Info("Using existing PaC Repository object for the component", "PaCRepositoryName", repository.Name)
 		}
-		return nil
+		return repository.Name, nil
 	}
 
 	// This is the first Component that does PaC provision for the git repository
-	repository, err = generatePACRepository(*component, pacConfig)
+	repository, err = generatePACRepository(*component, pacConfig, repositorySettings, newModel)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	ns, err := r.getNamespace(ctx, component.GetNamespace())
+	ns, err := r.getNamespace(ctx, component.Namespace)
 	if err != nil {
 		log.Error(err, "failed to get the component namespace for setting custom parameter.")
-		return err
+		return "", err
 	}
 	if val, ok := ns.Labels[appstudioWorkspaceNameLabel]; ok {
 		pacRepoAddParamWorkspaceName(repository, val)
@@ -108,10 +181,10 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 	existingRepository := &pacv1alpha1.Repository{}
 	err = r.Client.Get(ctx, types.NamespacedName{Name: repository.Name, Namespace: repository.Namespace}, existingRepository)
 	if err == nil {
-		gitUrl := getGitRepoUrl(*component)
+		gitUrl := getGitRepoUrl(*component, newModel)
 
 		if existingRepository.Spec.URL == gitUrl {
-			return nil
+			return "", nil
 		}
 		// repository with the same name exists but with different git URL, add random string to repository name
 		repository.ObjectMeta.Name = fmt.Sprintf("%s-%s", repository.ObjectMeta.Name, common.RandomString(5))
@@ -120,34 +193,34 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 	// create repository if not found or when found but with different URL
 	if (err != nil && errors.IsNotFound(err)) || err == nil {
 		if err := controllerutil.SetOwnerReference(component, repository, r.Scheme); err != nil {
-			return err
+			return "", err
 		}
 		if err := r.Client.Create(ctx, repository); err != nil {
 			if strings.Contains(err.Error(), "repository already exist") {
 				// PaC admission webhook denied creation of the PaC repository,
 				// because PaC repository object that references the same git repository already exists.
 				log.Info("An attempt to create second PaC Repository for the same git repository", "GitRepository", repository.Spec.URL, l.Action, l.ActionAdd, l.Audit, "true")
-				return boerrors.NewBuildOpError(boerrors.EPaCDuplicateRepository, err)
+				return "", boerrors.NewBuildOpError(boerrors.EPaCDuplicateRepository, err)
 			}
 
 			if strings.Contains(err.Error(), "denied the request: failed to validate") || (strings.Contains(err.Error(), "denied request: Repository URL") && strings.Contains(err.Error(), "is not allowed on this cluster")) {
 				// PaC admission webhook denied creation of the PaC repository,
 				// because PaC repository object references not allowed git repository url.
 				log.Info("An attempt to create PaC Repository for not allowed repository url", "GitRepository", repository.Spec.URL, l.Action, l.ActionAdd, l.Audit, "true")
-				return boerrors.NewBuildOpError(boerrors.EPaCNotAllowedRepositoryUrl, err)
+				return "", boerrors.NewBuildOpError(boerrors.EPaCNotAllowedRepositoryUrl, err)
 			}
 
 			log.Error(err, "failed to create Component PaC repository object", l.Action, l.ActionAdd)
-			return err
+			return "", err
 		}
 		log.Info("Created PaC Repository object for the component", "RepositoryName", repository.ObjectMeta.Name)
 
 	} else {
 		log.Error(err, "failed to get Component PaC repository object", l.Action, l.ActionView)
-		return err
+		return "", err
 	}
 
-	return nil
+	return repository.Name, nil
 }
 
 func (r *ComponentBuildReconciler) getNamespace(ctx context.Context, name string) (*corev1.Namespace, error) {
@@ -190,9 +263,16 @@ func pacRepoAddParamWorkspaceName(repository *pacv1alpha1.Repository, workspaceN
 	repository.Spec.Params = &params
 }
 
+// TODO remove newModel handling after only new model is used
 // generatePACRepository creates configuration of Pipelines as Code repository object.
-func generatePACRepository(component appstudiov1alpha1.Component, config *corev1.Secret) (*pacv1alpha1.Repository, error) {
-	gitProvider, err := getGitProvider(component)
+func generatePACRepository(component compapiv1alpha1.Component, config *corev1.Secret, repositorySettings *compapiv1alpha1.RepositorySettings, newModel bool) (*pacv1alpha1.Repository, error) {
+	gitProvider, err := getGitProvider(component, newModel)
+	if err != nil {
+		return nil, err
+	}
+
+	gitUrl := getGitRepoUrl(component, newModel)
+	repositoryName, err := generatePaCRepositoryNameFromGitUrl(gitUrl)
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +289,7 @@ func generatePACRepository(component appstudiov1alpha1.Component, config *corev1
 			},
 			WebhookSecret: &pacv1alpha1.Secret{
 				Name: pipelinesAsCodeWebhooksSecretName,
-				Key:  getWebhookSecretKeyForComponent(component),
+				Key:  getWebhookSecretKeyForComponent(component, newModel),
 			},
 		}
 
@@ -233,7 +313,13 @@ func generatePACRepository(component appstudiov1alpha1.Component, config *corev1
 			}
 		} else {
 			// Get git provider URL from source URL.
-			u, err := url.Parse(component.Spec.Source.GitSource.URL)
+			var u *url.URL
+			var err error
+			if newModel {
+				u, err = url.Parse(component.Spec.Source.GitURL)
+			} else {
+				u, err = url.Parse(component.Spec.Source.GitSource.URL)
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -253,32 +339,113 @@ func generatePACRepository(component appstudiov1alpha1.Component, config *corev1
 			APIVersion: "pipelinesascode.tekton.dev/v1alpha1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      component.Name,
+			Name:      repositoryName,
 			Namespace: component.Namespace,
 		},
 		Spec: pacv1alpha1.RepositorySpec{
-			URL:         getGitRepoUrl(component),
+			URL:         gitUrl,
 			GitProvider: gitProviderConfig,
+			Settings: &pacv1alpha1.Settings{
+				Gitlab: &pacv1alpha1.GitlabSettings{},
+				Github: &pacv1alpha1.GithubSettings{},
+			},
 		},
+	}
+
+	if newModel && repositorySettings != nil {
+		if repositorySettings.CommentStrategy != "" {
+			repository.Spec.Settings.Github.CommentStrategy = repositorySettings.CommentStrategy
+			repository.Spec.Settings.Gitlab.CommentStrategy = repositorySettings.CommentStrategy
+		}
+
+		if len(repositorySettings.GithubAppTokenScopeRepos) > 0 {
+			repository.Spec.Settings.GithubAppTokenScopeRepos = repositorySettings.GithubAppTokenScopeRepos
+		}
 	}
 
 	return repository, nil
 }
 
-// cleanupPaCRepositoryIncomingsAndSecret is cleaning up incomings in Repository
+// TODO remove newModel handling after only new model is used
+// cleanupPaCRepositoryIncomings cleans up incomings in Repository
+func (r *ComponentBuildReconciler) cleanupPaCRepositoryIncomings(ctx context.Context, component *compapiv1alpha1.Component) error {
+	log := ctrllog.FromContext(ctx)
+	newModel := true
+
+	repository, err := r.findPaCRepositoryForComponent(ctx, component, newModel)
+	if err != nil {
+		return err
+	}
+
+	if repository == nil {
+		return nil
+	}
+
+	// List all components in the namespace
+	componentList := &compapiv1alpha1.ComponentList{}
+	if err := r.Client.List(ctx, componentList, &client.ListOptions{Namespace: component.Namespace}); err != nil {
+		log.Error(err, "failed to list Components", l.Action, l.ActionView)
+		return err
+	}
+
+	repoUrl := getGitRepoUrl(*component, newModel)
+
+	// Collect unique revisions from all components using the same repository
+	usedRevisions := make([]string, 0)
+	for _, comp := range componentList.Items {
+		compRepoUrl := getGitRepoUrl(comp, newModel)
+		if compRepoUrl == repoUrl {
+			// Collect revisions from Status.Versions
+			for _, version := range comp.Status.Versions {
+				if !slices.Contains(usedRevisions, version.Revision) {
+					usedRevisions = append(usedRevisions, version.Revision)
+				}
+			}
+		}
+	}
+
+	incomingSecretName := getPaCIncomingSecretName(repository.Name)
+
+	// Consolidate multiple incoming entries into a single entry
+	// Use dummy revision if no revisions exist (it will be removed when we update Targets anyway)
+	dummyRevision := "dummy"
+	if len(usedRevisions) > 0 {
+		dummyRevision = usedRevisions[0]
+	}
+	// Ignore return value - we don't care if incomings changed, we just want to consolidate multiple entries into a single entry
+	_ = updateIncoming(repository, incomingSecretName, pacIncomingSecretKey, dummyRevision)
+
+	// Update repository incomings to only include used revisions
+	if repository.Spec.Incomings != nil && len(*repository.Spec.Incomings) > 0 {
+		// updateIncoming was called above to ensure there's only one entry, so we can safely access index [0]
+		// Set targets to used revisions (can be empty slice)
+		(*repository.Spec.Incomings)[0].Targets = usedRevisions
+
+		if err := r.Client.Update(ctx, repository); err != nil {
+			log.Error(err, "failed to update PaC repository incomings", "PaCRepositoryName", repository.Name)
+			return err
+		}
+		log.Info("Updated incomings in the PaC repository", "PaCRepositoryName", repository.Name, "Targets", usedRevisions, l.Action, l.ActionUpdate)
+	}
+
+	return nil
+}
+
+// TODO remove after only new model is used
+// cleanupPaCRepositoryIncomingsAndSecretOldModel is cleaning up incomings in Repository
 // for unprovisioned component, and also removes incoming secret when no longer required
-func (r *ComponentBuildReconciler) cleanupPaCRepositoryIncomingsAndSecret(ctx context.Context, component *appstudiov1alpha1.Component, baseBranch string) error {
+func (r *ComponentBuildReconciler) cleanupPaCRepositoryIncomingsAndSecretOldModel(ctx context.Context, component *compapiv1alpha1.Component, baseBranch string, newModel bool) error {
 	log := ctrllog.FromContext(ctx)
 
 	// check if more components are using same repo with PaC enabled for incomings removal from repository
 	incomingsRepoTargetBranchCount := 0
 	incomingsRepoAllBranchesCount := 0
-	componentList := &appstudiov1alpha1.ComponentList{}
+	componentList := &compapiv1alpha1.ComponentList{}
 	if err := r.Client.List(ctx, componentList, &client.ListOptions{Namespace: component.Namespace}); err != nil {
 		log.Error(err, "failed to list Components", l.Action, l.ActionView)
 		return err
 	}
-	repoUrl := getGitRepoUrl(*component)
+	repoUrl := getGitRepoUrl(*component, newModel)
 
 	buildStatus := &BuildStatus{}
 	for _, comp := range componentList.Items {
@@ -295,7 +462,7 @@ func (r *ComponentBuildReconciler) cleanupPaCRepositoryIncomingsAndSecret(ctx co
 		}
 	}
 
-	repository, err := r.findPaCRepositoryForComponent(ctx, component)
+	repository, err := r.findPaCRepositoryForComponent(ctx, component, newModel)
 	if err != nil {
 		return err
 	}
@@ -305,7 +472,7 @@ func (r *ComponentBuildReconciler) cleanupPaCRepositoryIncomingsAndSecret(ctx co
 		return nil
 	}
 
-	incomingSecretName := fmt.Sprintf("%s%s", repository.Name, pacIncomingSecretNameSuffix)
+	incomingSecretName := getPaCIncomingSecretName(repository.Name)
 	incomingUpdated := false
 	// update first in case there is multiple incoming entries, and it will be converted to incomings with just 1 entry
 	_ = updateIncoming(repository, incomingSecretName, pacIncomingSecretKey, baseBranch)
@@ -444,4 +611,41 @@ func updateIncoming(repository *pacv1alpha1.Repository, incomingSecretName strin
 	}
 
 	return multiple_incomings || !(foundSecretName && foundTarget) || !foundParam
+}
+
+// generatePaCRepositoryNameFromGitUrl parses a URL string, extracts the host and path, sanitizes it, and ensures it's not longer than 230 characters
+func generatePaCRepositoryNameFromGitUrl(urlStr string) (string, error) {
+	// Parse the URL
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		return "", err
+	}
+
+	// Convert to lowercase and combine host and path
+	sanitized := strings.ToLower(u.Host + u.Path)
+
+	// Replace slashes with dots
+	sanitized = strings.ReplaceAll(sanitized, "/", ".")
+
+	// Replace invalid characters with hyphens, keep only alphanumeric, hyphens, and dots
+	reg := regexp.MustCompile(`[^a-z0-9\-.]`)
+	sanitized = reg.ReplaceAllString(sanitized, "-")
+
+	// Remove duplicated dots
+	dupDotsReg := regexp.MustCompile(`\.+`)
+	sanitized = dupDotsReg.ReplaceAllString(sanitized, ".")
+
+	// Remove duplicated hyphens
+	dupHyphensReg := regexp.MustCompile(`-+`)
+	sanitized = dupHyphensReg.ReplaceAllString(sanitized, "-")
+
+	// Remove leading/trailing dots and hyphens
+	sanitized = strings.Trim(sanitized, "-.")
+
+	// Ensure length is not bigger than 230 chars
+	if len(sanitized) > 230 {
+		sanitized = sanitized[:220] + "-" + common.RandomString(10)
+	}
+
+	return sanitized, nil
 }

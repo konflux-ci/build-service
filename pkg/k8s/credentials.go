@@ -88,7 +88,7 @@ func (k *GitCredentialProvider) GetSSHCredentials(ctx context.Context, component
 func (k *GitCredentialProvider) LookupSecret(ctx context.Context, component *git.ScmComponent, secretType corev1.SecretType) (*corev1.Secret, error) {
 	log := ctrllog.FromContext(ctx)
 
-	log.Info("looking for scm secret", "component", component)
+	log.Info("looking for scm secret")
 
 	secretList := &corev1.SecretList{}
 	opts := client.ListOption(&client.MatchingLabels{
@@ -107,7 +107,7 @@ func (k *GitCredentialProvider) LookupSecret(ctx context.Context, component *git
 	if secretWithCredential != nil {
 		return secretWithCredential, nil
 	}
-	log.Info("no matching secret found for component", "component", component)
+	log.Info("no matching secret found for component")
 	return nil, boerrors.NewBuildOpError(boerrors.EComponentGitSecretMissing, nil)
 }
 

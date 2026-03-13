@@ -397,7 +397,8 @@ func (g *GithubClient) getAppUserID(userName string) (int64, error) {
 
 // CheckGitUrlError returns more specific git error
 func CheckGitUrlError(err error) error {
-	if _, isBoError := err.(*boerrors.BuildOpError); isBoError {
+	var boErr *boerrors.BuildOpError
+	if errors.As(err, &boErr) {
 		return err
 	}
 	if strings.Contains(err.Error(), "404 Not Found") || strings.Contains(err.Error(), "no such host") {
