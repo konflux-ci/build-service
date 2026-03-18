@@ -52,20 +52,20 @@ type ForgejoClient struct {
 func (f *ForgejoClient) EnsurePaCMergeRequest(repoUrl string, d *gp.MergeRequestData) (webUrl string, err error) {
 	owner, repository, err := getOwnerAndRepoFromUrl(repoUrl)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to parse repository URL %s: %w", repoUrl, err)
 	}
 
 	// Determine base branch
 	if d.BaseBranchName == "" {
 		baseBranch, err := f.getDefaultBranchWithChecks(owner, repository)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to get default branch for %s/%s: %w", owner, repository, err)
 		}
 		d.BaseBranchName = baseBranch
 	} else {
 		exists, err := f.branchExist(owner, repository, d.BaseBranchName)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to check if branch %s exists: %w", d.BaseBranchName, err)
 		}
 		if !exists {
 			return "", boerrors.NewBuildOpError(boerrors.EForgejoBranchDoesntExist, fmt.Errorf("base branch '%s' does not exist", d.BaseBranchName))
@@ -75,7 +75,7 @@ func (f *ForgejoClient) EnsurePaCMergeRequest(repoUrl string, d *gp.MergeRequest
 	// Check if files are already up to date in base branch
 	filesUpToDate, err := f.filesUpToDate(owner, repository, d.BaseBranchName, d.Files)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to check if files are up to date in branch %s: %w", d.BaseBranchName, err)
 	}
 	if filesUpToDate {
 		// Configuration is already in the base branch
@@ -85,27 +85,27 @@ func (f *ForgejoClient) EnsurePaCMergeRequest(repoUrl string, d *gp.MergeRequest
 	// Check if PR branch exists
 	prBranchExists, err := f.branchExist(owner, repository, d.BranchName)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to check if branch %s exists: %w", d.BranchName, err)
 	}
 
 	if prBranchExists {
 		// Branch exists, check if files are up to date
 		branchFilesUpToDate, err := f.filesUpToDate(owner, repository, d.BranchName, d.Files)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to check if files are up to date in branch %s: %w", d.BranchName, err)
 		}
 		if !branchFilesUpToDate {
 			// Update files in the branch
 			err := f.commitFilesIntoBranch(owner, repository, d.BranchName, d.CommitMessage, d.AuthorName, d.AuthorEmail, d.SignedOff, d.Files)
 			if err != nil {
-				return "", err
+				return "", fmt.Errorf("failed to commit files into branch %s: %w", d.BranchName, err)
 			}
 		}
 
 		// Check if PR already exists
 		pr, err := f.findPullRequestByBranches(owner, repository, d.BranchName, d.BaseBranchName)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to find pull request for branch %s: %w", d.BranchName, err)
 		}
 		if pr != nil {
 			// PR already exists
@@ -115,12 +115,12 @@ func (f *ForgejoClient) EnsurePaCMergeRequest(repoUrl string, d *gp.MergeRequest
 		// Check if there's a diff between branches
 		diffExists, err := f.diffNotEmpty(owner, repository, d.BranchName, d.BaseBranchName)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to check diff between branches %s and %s: %w", d.BranchName, d.BaseBranchName, err)
 		}
 		if !diffExists {
 			// No diff - delete stale branch and recurse
 			if _, err := f.deleteBranch(owner, repository, d.BranchName); err != nil {
-				return "", err
+				return "", fmt.Errorf("failed to delete branch %s: %w", d.BranchName, err)
 			}
 			return f.EnsurePaCMergeRequest(repoUrl, d)
 		}
@@ -130,13 +130,13 @@ func (f *ForgejoClient) EnsurePaCMergeRequest(repoUrl string, d *gp.MergeRequest
 	} else {
 		// Branch doesn't exist - create it
 		if err := f.createBranch(owner, repository, d.BranchName, d.BaseBranchName); err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to create branch %s: %w", d.BranchName, err)
 		}
 
 		// Commit files to the new branch
 		err = f.commitFilesIntoBranch(owner, repository, d.BranchName, d.CommitMessage, d.AuthorName, d.AuthorEmail, d.SignedOff, d.Files)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to commit files into branch %s: %w", d.BranchName, err)
 		}
 
 		// Create PR
@@ -148,20 +148,20 @@ func (f *ForgejoClient) EnsurePaCMergeRequest(repoUrl string, d *gp.MergeRequest
 func (f *ForgejoClient) UndoPaCMergeRequest(repoUrl string, d *gp.MergeRequestData) (webUrl string, err error) {
 	owner, repository, err := getOwnerAndRepoFromUrl(repoUrl)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to parse repository URL %s: %w", repoUrl, err)
 	}
 
 	// Determine base branch
 	if d.BaseBranchName == "" {
 		baseBranch, err := f.getDefaultBranchWithChecks(owner, repository)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to get default branch for %s/%s: %w", owner, repository, err)
 		}
 		d.BaseBranchName = baseBranch
 	} else {
 		exists, err := f.branchExist(owner, repository, d.BaseBranchName)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to check if branch %s exists: %w", d.BaseBranchName, err)
 		}
 		if !exists {
 			return "", boerrors.NewBuildOpError(boerrors.EForgejoBranchDoesntExist, fmt.Errorf("base branch '%s' does not exist", d.BaseBranchName))
@@ -173,7 +173,7 @@ func (f *ForgejoClient) UndoPaCMergeRequest(repoUrl string, d *gp.MergeRequestDa
 	for _, file := range d.Files {
 		exists, _, err := f.fileExist(owner, repository, d.BaseBranchName, file.FullPath)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to check if file %s exists: %w", file.FullPath, err)
 		}
 		if exists {
 			hasFilesToDelete = true
@@ -189,23 +189,23 @@ func (f *ForgejoClient) UndoPaCMergeRequest(repoUrl string, d *gp.MergeRequestDa
 	// Delete old branch if it exists
 	branchExists, err := f.branchExist(owner, repository, d.BranchName)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to check if branch %s exists: %w", d.BranchName, err)
 	}
 	if branchExists {
 		if _, err := f.deleteBranch(owner, repository, d.BranchName); err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to delete branch %s: %w", d.BranchName, err)
 		}
 	}
 
 	// Create new branch
 	if err := f.createBranch(owner, repository, d.BranchName, d.BaseBranchName); err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to create branch %s: %w", d.BranchName, err)
 	}
 
 	// Commit file deletions
 	err = f.commitDeletesIntoBranch(owner, repository, d.BranchName, d.CommitMessage, d.AuthorName, d.AuthorEmail, d.SignedOff, d.Files)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to commit file deletions to branch %s: %w", d.BranchName, err)
 	}
 
 	// Create PR
@@ -216,7 +216,7 @@ func (f *ForgejoClient) UndoPaCMergeRequest(repoUrl string, d *gp.MergeRequestDa
 func (f *ForgejoClient) FindUnmergedPaCMergeRequest(repoUrl string, d *gp.MergeRequestData) (*gp.MergeRequest, error) {
 	owner, repository, err := getOwnerAndRepoFromUrl(repoUrl)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse repository URL %s: %w", repoUrl, err)
 	}
 
 	// Determine base branch if not specified
@@ -224,14 +224,14 @@ func (f *ForgejoClient) FindUnmergedPaCMergeRequest(repoUrl string, d *gp.MergeR
 	if baseBranch == "" {
 		baseBranch, err = f.getDefaultBranchWithChecks(owner, repository)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to get default branch for %s/%s: %w", owner, repository, err)
 		}
 	}
 
 	// Find PR by branches
 	pr, err := f.findPullRequestByBranches(owner, repository, d.BranchName, baseBranch)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to find pull request for branch %s: %w", d.BranchName, err)
 	}
 
 	if pr == nil {
@@ -251,13 +251,13 @@ func (f *ForgejoClient) FindUnmergedPaCMergeRequest(repoUrl string, d *gp.MergeR
 func (f *ForgejoClient) SetupPaCWebhook(repoUrl string, webhookUrl string, webhookSecret string) error {
 	owner, repository, err := getOwnerAndRepoFromUrl(repoUrl)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to parse repository URL %s: %w", repoUrl, err)
 	}
 
 	// Check if webhook already exists
 	existingWebhook, err := f.getWebhookByTargetUrl(owner, repository, webhookUrl)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get webhook by target URL: %w", err)
 	}
 
 	if existingWebhook == nil {
@@ -274,8 +274,10 @@ func (f *ForgejoClient) SetupPaCWebhook(repoUrl string, webhookUrl string, webho
 			BranchFilter: "*",
 		}
 
-		_, err = f.createWebhook(owner, repository, hookOpt)
-		return err
+		if _, err = f.createWebhook(owner, repository, hookOpt); err != nil {
+			return fmt.Errorf("failed to create webhook: %w", err)
+		}
+		return nil
 	}
 
 	// Update existing webhook to ensure it has correct configuration
@@ -290,20 +292,23 @@ func (f *ForgejoClient) SetupPaCWebhook(repoUrl string, webhookUrl string, webho
 		BranchFilter: "*",
 	}
 
-	return f.updateWebhook(owner, repository, existingWebhook.ID, updateOpt)
+	if err := f.updateWebhook(owner, repository, existingWebhook.ID, updateOpt); err != nil {
+		return fmt.Errorf("failed to update webhook: %w", err)
+	}
+	return nil
 }
 
 // DeletePaCWebhook deletes the Pipelines as Code webhook from the repository.
 func (f *ForgejoClient) DeletePaCWebhook(repoUrl string, webhookUrl string) error {
 	owner, repository, err := getOwnerAndRepoFromUrl(repoUrl)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to parse repository URL %s: %w", repoUrl, err)
 	}
 
 	// Find webhook by URL
 	existingWebhook, err := f.getWebhookByTargetUrl(owner, repository, webhookUrl)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get webhook by target URL: %w", err)
 	}
 
 	if existingWebhook == nil {
@@ -312,14 +317,17 @@ func (f *ForgejoClient) DeletePaCWebhook(repoUrl string, webhookUrl string) erro
 	}
 
 	// Delete webhook
-	return f.deleteWebhook(owner, repository, existingWebhook.ID)
+	if err := f.deleteWebhook(owner, repository, existingWebhook.ID); err != nil {
+		return fmt.Errorf("failed to delete webhook: %w", err)
+	}
+	return nil
 }
 
 // GetDefaultBranchWithChecks returns the default branch of the repository with additional checks.
 func (f *ForgejoClient) GetDefaultBranchWithChecks(repoUrl string) (string, error) {
 	owner, repository, err := getOwnerAndRepoFromUrl(repoUrl)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to parse repository URL %s: %w", repoUrl, err)
 	}
 
 	return f.getDefaultBranchWithChecks(owner, repository)
@@ -329,7 +337,7 @@ func (f *ForgejoClient) GetDefaultBranchWithChecks(repoUrl string) (string, erro
 func (f *ForgejoClient) DeleteBranch(repoUrl string, branchName string) (bool, error) {
 	owner, repository, err := getOwnerAndRepoFromUrl(repoUrl)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("failed to parse repository URL %s: %w", repoUrl, err)
 	}
 
 	return f.deleteBranch(owner, repository, branchName)
@@ -339,7 +347,7 @@ func (f *ForgejoClient) DeleteBranch(repoUrl string, branchName string) (bool, e
 func (f *ForgejoClient) GetBranchSha(repoUrl string, branchName string) (string, error) {
 	owner, repository, err := getOwnerAndRepoFromUrl(repoUrl)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to parse repository URL %s: %w", repoUrl, err)
 	}
 
 	branch, resp, err := f.getBranch(owner, repository, branchName)
@@ -374,7 +382,7 @@ func (f *ForgejoClient) GetBrowseRepositoryAtShaLink(repoUrl string, sha string)
 func (f *ForgejoClient) DownloadFileContent(repoUrl, branchName, filePath string) ([]byte, error) {
 	owner, repository, err := getOwnerAndRepoFromUrl(repoUrl)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse repository URL %s: %w", repoUrl, err)
 	}
 
 	return f.downloadFileContent(owner, repository, branchName, filePath)
@@ -384,7 +392,7 @@ func (f *ForgejoClient) DownloadFileContent(repoUrl, branchName, filePath string
 func (f *ForgejoClient) IsFileExist(repoUrl, branchName, filePath string) (bool, error) {
 	owner, repository, err := getOwnerAndRepoFromUrl(repoUrl)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("failed to parse repository URL %s: %w", repoUrl, err)
 	}
 
 	exists, _, err := f.fileExist(owner, repository, branchName, filePath)
@@ -395,7 +403,7 @@ func (f *ForgejoClient) IsFileExist(repoUrl, branchName, filePath string) (bool,
 func (f *ForgejoClient) IsRepositoryPublic(repoUrl string) (bool, error) {
 	owner, repository, err := getOwnerAndRepoFromUrl(repoUrl)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("failed to parse repository URL %s: %w", repoUrl, err)
 	}
 
 	return f.isRepositoryPublic(owner, repository)
@@ -423,7 +431,7 @@ func newForgejoClient(accessToken, baseUrl string) (*ForgejoClient, error) {
 		forgejo.SetUserAgent(common.BuildServiceUserAgent),
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create Forgejo client: %w", err)
 	}
 	return &ForgejoClient{client: client}, nil
 }
@@ -436,7 +444,7 @@ func newForgejoClientWithBasicAuth(username, password, baseUrl string) (*Forgejo
 		forgejo.SetUserAgent(common.BuildServiceUserAgent),
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create Forgejo client with basic auth: %w", err)
 	}
 	return &ForgejoClient{client: client}, nil
 }

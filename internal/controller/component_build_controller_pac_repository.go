@@ -56,7 +56,7 @@ func (r *ComponentBuildReconciler) findPaCRepositoryForComponent(ctx context.Con
 	err := r.Client.List(ctx, pacRepositoriesList, &client.ListOptions{Namespace: component.Namespace})
 	if err != nil {
 		log.Error(err, "failed to list PaC repositories")
-		return nil, err
+		return nil, fmt.Errorf("failed to list PaC repositories: %w", err)
 	}
 
 	gitUrl := getGitRepoUrl(*component, newModel)
@@ -160,13 +160,13 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 	// Another scenario is component per branch.
 	repository, err := r.findPaCRepositoryForComponent(ctx, component, newModel)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to find PaC repository for component: %w", err)
 	}
 	if repository != nil {
 		pacRepositoryOwnersNumber := len(repository.OwnerReferences)
 		if err := controllerutil.SetOwnerReference(component, repository, r.Scheme); err != nil {
 			log.Error(err, "failed to add owner reference to existing PaC repository", "PaCRepositoryName", repository.Name)
-			return "", err
+			return "", fmt.Errorf("failed to set owner reference on PaC repository %s: %w", repository.Name, err)
 		}
 
 		// Normalize legacy "gitea" provider type to "forgejo" (gitea is an alias for forgejo in PaC)
@@ -225,7 +225,7 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 		if (len(repository.OwnerReferences) > pacRepositoryOwnersNumber) || repositorySettingsUpdated || repositoryParamsUpdated || gitProviderTypeUpdated {
 			if err := r.Client.Update(ctx, repository); err != nil {
 				log.Error(err, "failed to update existing PaC repository with component owner reference", "PaCRepositoryName", repository.Name)
-				return "", err
+				return "", fmt.Errorf("failed to update PaC repository %s: %w", repository.Name, err)
 			}
 			log.Info("Added current component to owners of the PaC repository", "PaCRepositoryName", repository.Name, l.Action, l.ActionUpdate)
 		} else {
@@ -237,13 +237,13 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 	// This is the first Component that does PaC provision for the git repository
 	repository, err = generatePACRepository(*component, pacConfig, repositorySettings, skipBuildsMap, newModel)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to generate PaC repository: %w", err)
 	}
 
 	ns, err := r.getNamespace(ctx, component.Namespace)
 	if err != nil {
 		log.Error(err, "failed to get the component namespace for setting custom parameter.")
-		return "", err
+		return "", fmt.Errorf("failed to get namespace %s: %w", component.Namespace, err)
 	}
 	if val, ok := ns.Labels[appstudioWorkspaceNameLabel]; ok {
 		pacRepoAddParamWorkspaceName(repository, val)
@@ -264,7 +264,7 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 	// create repository if not found or when found but with different URL
 	if (err != nil && errors.IsNotFound(err)) || err == nil {
 		if err := controllerutil.SetOwnerReference(component, repository, r.Scheme); err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to set owner reference on PaC repository: %w", err)
 		}
 		if err := r.Client.Create(ctx, repository); err != nil {
 			if strings.Contains(err.Error(), "repository already exist") {
@@ -282,13 +282,13 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 			}
 
 			log.Error(err, "failed to create Component PaC repository object", l.Action, l.ActionAdd)
-			return "", err
+			return "", fmt.Errorf("failed to create PaC repository: %w", err)
 		}
 		log.Info("Created PaC Repository object for the component", "RepositoryName", repository.ObjectMeta.Name)
 
 	} else {
 		log.Error(err, "failed to get Component PaC repository object", l.Action, l.ActionView)
-		return "", err
+		return "", fmt.Errorf("failed to get PaC repository: %w", err)
 	}
 
 	return repository.Name, nil
@@ -300,7 +300,7 @@ func (r *ComponentBuildReconciler) getNamespace(ctx context.Context, name string
 	if err == nil {
 		return ns, nil
 	} else {
-		return nil, err
+		return nil, fmt.Errorf("failed to get namespace %s: %w", name, err)
 	}
 }
 
@@ -339,13 +339,13 @@ func pacRepoAddParamWorkspaceName(repository *pacv1alpha1.Repository, workspaceN
 func generatePACRepository(component compapiv1alpha1.Component, config *corev1.Secret, repositorySettings *compapiv1alpha1.RepositorySettings, skipBuildsMap map[string]bool, newModel bool) (*pacv1alpha1.Repository, error) {
 	gitProvider, err := getGitProvider(component, newModel)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get git provider: %w", err)
 	}
 
 	gitUrl := getGitRepoUrl(component, newModel)
 	repositoryName, err := generatePaCRepositoryNameFromGitUrl(gitUrl)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to generate PaC repository name from URL %s: %w", gitUrl, err)
 	}
 
 	isAppUsed := common.IsPaCApplicationConfigured(gitProvider, config.Data)
@@ -387,7 +387,7 @@ func generatePACRepository(component compapiv1alpha1.Component, config *corev1.S
 				u, err = url.Parse(component.Spec.Source.GitSource.URL)
 			}
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to parse git source URL: %w", err)
 			}
 			if u.Host == "github.com" || u.Host == "gitlab.com" {
 				// Do not attempt to override working defaults
@@ -449,7 +449,7 @@ func (r *ComponentBuildReconciler) cleanupPaCRepositoryIncomingsAndSkipBuildPara
 
 	repository, err := r.findPaCRepositoryForComponent(ctx, component, newModel)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to find PaC repository for component: %w", err)
 	}
 
 	if repository == nil {
@@ -460,7 +460,7 @@ func (r *ComponentBuildReconciler) cleanupPaCRepositoryIncomingsAndSkipBuildPara
 	componentList := &compapiv1alpha1.ComponentList{}
 	if err := r.Client.List(ctx, componentList, &client.ListOptions{Namespace: component.Namespace}); err != nil {
 		log.Error(err, "failed to list Components", l.Action, l.ActionView)
-		return err
+		return fmt.Errorf("failed to list components: %w", err)
 	}
 
 	repoUrl := getGitRepoUrl(*component, newModel)
@@ -548,7 +548,7 @@ func (r *ComponentBuildReconciler) cleanupPaCRepositoryIncomingsAndSecretOldMode
 	componentList := &compapiv1alpha1.ComponentList{}
 	if err := r.Client.List(ctx, componentList, &client.ListOptions{Namespace: component.Namespace}); err != nil {
 		log.Error(err, "failed to list Components", l.Action, l.ActionView)
-		return err
+		return fmt.Errorf("failed to list components: %w", err)
 	}
 	repoUrl := getGitRepoUrl(*component, newModel)
 
@@ -569,7 +569,7 @@ func (r *ComponentBuildReconciler) cleanupPaCRepositoryIncomingsAndSecretOldMode
 
 	repository, err := r.findPaCRepositoryForComponent(ctx, component, newModel)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to find PaC repository for component: %w", err)
 	}
 
 	// repository is used to construct incoming secret name
@@ -611,7 +611,7 @@ func (r *ComponentBuildReconciler) cleanupPaCRepositoryIncomingsAndSecretOldMode
 	if incomingUpdated {
 		if err := r.Client.Update(ctx, repository); err != nil {
 			log.Error(err, "failed to update existing PaC repository with incomings", "PaCRepositoryName", repository.Name)
-			return err
+			return fmt.Errorf("failed to update PaC repository %s incomings: %w", repository.Name, err)
 		}
 		log.Info("Removed incomings from the PaC repository", "PaCRepositoryName", repository.Name, l.Action, l.ActionUpdate)
 	}
@@ -622,14 +622,14 @@ func (r *ComponentBuildReconciler) cleanupPaCRepositoryIncomingsAndSecretOldMode
 		if err := r.Client.Get(ctx, types.NamespacedName{Namespace: component.Namespace, Name: incomingSecretName}, secret); err != nil {
 			if !errors.IsNotFound(err) {
 				log.Error(err, "failed to get incoming secret", l.Action, l.ActionView)
-				return err
+				return fmt.Errorf("failed to get incoming secret %s: %w", incomingSecretName, err)
 			}
 			log.Info("incoming secret doesn't exist anymore, removal isn't required")
 		} else {
 			if err := r.Client.Delete(ctx, secret); err != nil {
 				if !errors.IsNotFound(err) {
 					log.Error(err, "failed to remove incoming secret", l.Action, l.ActionView)
-					return err
+					return fmt.Errorf("failed to delete incoming secret: %w", err)
 				}
 			}
 			log.Info("incoming secret removed")
@@ -724,7 +724,7 @@ func generatePaCRepositoryNameFromGitUrl(urlStr string) (string, error) {
 	// Parse the URL
 	u, err := url.Parse(urlStr)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to parse URL %s: %w", urlStr, err)
 	}
 
 	// Convert to lowercase and combine host and path

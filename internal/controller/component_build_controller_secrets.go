@@ -48,7 +48,7 @@ func (r *ComponentBuildReconciler) ensureIncomingSecret(ctx context.Context, com
 
 	repository, err := r.findPaCRepositoryForComponent(ctx, component, newModel)
 	if err != nil {
-		return nil, false, err
+		return nil, false, fmt.Errorf("failed to find PaC repository for component: %w", err)
 	}
 
 	incomingSecretName := getPaCIncomingSecretName(repository.Name)
@@ -61,7 +61,7 @@ func (r *ComponentBuildReconciler) ensureIncomingSecret(ctx context.Context, com
 	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: component.Namespace, Name: incomingSecretName}, &secret); err != nil {
 		if !errors.IsNotFound(err) {
 			log.Error(err, "failed to get incoming secret", l.Action, l.ActionView)
-			return nil, false, err
+			return nil, false, fmt.Errorf("failed to get incoming secret %s: %w", incomingSecretName, err)
 		}
 		// Create incoming secret
 		secret = corev1.Secret{
@@ -75,12 +75,12 @@ func (r *ComponentBuildReconciler) ensureIncomingSecret(ctx context.Context, com
 
 		if err := controllerutil.SetOwnerReference(repository, &secret, r.Scheme); err != nil {
 			log.Error(err, "failed to set owner for incoming secret")
-			return nil, false, err
+			return nil, false, fmt.Errorf("failed to set owner reference on incoming secret: %w", err)
 		}
 
 		if err := r.Client.Create(ctx, &secret); err != nil {
 			log.Error(err, "failed to create incoming secret", l.Action, l.ActionAdd)
-			return nil, false, err
+			return nil, false, fmt.Errorf("failed to create incoming secret %s: %w", incomingSecretName, err)
 		}
 
 		log.Info("incoming secret created")
@@ -102,13 +102,13 @@ func (r *ComponentBuildReconciler) lookupPaCSecret(ctx context.Context, componen
 		scmComponent, err = git.NewScmComponent(gitProvider, repoUrl, component.Spec.Source.GitSource.Revision, component.Name, component.Namespace)
 	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create SCM component: %w", err)
 	}
 	// find the best matching secret, starting from SSH type
 	secret, err := r.CredentialProvider.LookupSecret(ctx, scmComponent, corev1.SecretTypeSSHAuth)
 	if err != nil && !boerrors.IsBuildOpError(err, boerrors.EComponentGitSecretMissing) {
 		log.Error(err, "failed to get Pipelines as Code SSH secret", "scmComponent", scmComponent)
-		return nil, err
+		return nil, fmt.Errorf("failed to lookup SSH secret: %w", err)
 	}
 	if secret != nil {
 		return secret, nil
@@ -117,7 +117,7 @@ func (r *ComponentBuildReconciler) lookupPaCSecret(ctx context.Context, componen
 	secret, err = r.CredentialProvider.LookupSecret(ctx, scmComponent, corev1.SecretTypeBasicAuth)
 	if err != nil && !boerrors.IsBuildOpError(err, boerrors.EComponentGitSecretMissing) {
 		log.Error(err, "failed to get Pipelines as Code BasicAuth secret", "scmComponent", scmComponent)
-		return nil, err
+		return nil, fmt.Errorf("failed to lookup BasicAuth secret: %w", err)
 	}
 	if secret != nil {
 		return secret, nil
@@ -167,13 +167,13 @@ func (r *ComponentBuildReconciler) ensureWebhookSecret(ctx context.Context, comp
 			}
 			if err := r.Client.Create(ctx, webhookSecretsSecret); err != nil {
 				log.Error(err, "failed to create webhooks secrets secret", l.Action, l.ActionAdd)
-				return "", err
+				return "", fmt.Errorf("failed to create webhook secrets secret: %w", err)
 			}
 			return r.ensureWebhookSecret(ctx, component, newModel)
 		}
 
 		log.Error(err, "failed to get webhook secrets secret", l.Action, l.ActionView)
-		return "", err
+		return "", fmt.Errorf("failed to get webhook secrets secret: %w", err)
 	}
 
 	componentWebhookSecretKey := getWebhookSecretKeyForComponent(*component, newModel)
@@ -190,7 +190,7 @@ func (r *ComponentBuildReconciler) ensureWebhookSecret(ctx context.Context, comp
 	webhookSecretsSecret.Data[componentWebhookSecretKey] = []byte(webhookSecretString)
 	if err := r.Client.Update(ctx, webhookSecretsSecret); err != nil {
 		log.Error(err, "failed to update webhook secrets secret", l.Action, l.ActionUpdate)
-		return "", err
+		return "", fmt.Errorf("failed to update webhook secrets secret: %w", err)
 	}
 
 	return webhookSecretString, nil

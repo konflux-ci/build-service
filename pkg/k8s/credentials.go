@@ -41,7 +41,7 @@ func (k ConfigReader) GetConfig(ctx context.Context) (githubAppIdStr string, app
 	globalPaCSecretKey := types.NamespacedName{Namespace: common.BuildServiceNamespaceName, Name: common.PipelinesAsCodeGitHubAppSecretName}
 	if err := k.client.Get(ctx, globalPaCSecretKey, &pacSecret); err != nil {
 		k.eventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
-		return "", nil, err
+		return "", nil, fmt.Errorf("failed to get PaC GitHub App secret: %w", err)
 	}
 
 	// validate content of the fields
@@ -67,7 +67,7 @@ func NewGitCredentialProvider(client client.Client) *GitCredentialProvider {
 func (k *GitCredentialProvider) GetBasicAuthCredentials(ctx context.Context, component *git.ScmComponent) (*credentials.BasicAuthCredentials, error) {
 	secretWithCredentials, err := k.LookupSecret(ctx, component, corev1.SecretTypeBasicAuth)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to lookup basic auth credentials: %w", err)
 	}
 	return &credentials.BasicAuthCredentials{
 		Username: string(secretWithCredentials.Data[corev1.BasicAuthUsernameKey]),
@@ -78,7 +78,7 @@ func (k *GitCredentialProvider) GetBasicAuthCredentials(ctx context.Context, com
 func (k *GitCredentialProvider) GetSSHCredentials(ctx context.Context, component *git.ScmComponent) (*credentials.SSHCredentials, error) {
 	secretWithCredentials, err := k.LookupSecret(ctx, component, corev1.SecretTypeSSHAuth)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to lookup SSH credentials: %w", err)
 	}
 	return &credentials.SSHCredentials{
 		PrivateKey: secretWithCredentials.Data[corev1.SSHAuthPrivateKey],
