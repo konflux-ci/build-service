@@ -80,7 +80,7 @@ func (g *GithubClient) branchExist(owner, repository, branch string) (bool, erro
 		return false, nil
 	}
 
-	return false, err
+	return false, fmt.Errorf("failed to check if branch %s exists: %w", branch, err)
 }
 
 func (g *GithubClient) getBranch(owner, repository, branch string) (*github.Reference, error) {
@@ -91,7 +91,7 @@ func (g *GithubClient) getBranch(owner, repository, branch string) (*github.Refe
 func (g *GithubClient) createBranch(owner, repository, branch, baseBranch string) (*github.Reference, error) {
 	baseBranchRef, err := g.getBranch(owner, repository, baseBranch)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get base branch %s: %w", baseBranch, err)
 	}
 	newBranchRef := &github.Reference{
 		Ref:    github.String("refs/heads/" + branch),
@@ -154,7 +154,7 @@ func (g *GithubClient) filesUpToDate(owner, repository, branch string, files []g
 				// File not found
 				return false, nil
 			}
-			return false, err
+			return false, fmt.Errorf("failed to download file %s: %w", file.FullPath, err)
 		}
 
 		if !bytes.Equal(fileContent, file.Content) {
@@ -180,7 +180,7 @@ func (g *GithubClient) filesExistInDirectory(owner, repository, branch, director
 		case 404:
 			return existingFiles, nil
 		}
-		return existingFiles, err
+		return existingFiles, fmt.Errorf("failed to list directory %s contents: %w", directoryPath, err)
 	}
 
 	for _, file := range dirContent {
@@ -235,7 +235,7 @@ func (g *GithubClient) addCommitToBranch(owner, repository, authorName, authorEm
 
 	tree, err := g.createTree(owner, repository, ref, files)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create tree: %w", err)
 	}
 	if signedOff {
 		commitMessage = fmt.Sprintf("%s\n\nSigned-off-by: %s <%s>", commitMessage, authorName, authorEmail)
@@ -268,7 +268,7 @@ func (g *GithubClient) addDeleteCommitToBranch(owner, repository, authorName, au
 
 	tree, err := g.deleteFromTree(owner, repository, ref, files)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to delete from tree: %w", err)
 	}
 	if signedOff {
 		commitMessage = fmt.Sprintf("%s\n\nSigned-off-by: %s <%s>", commitMessage, authorName, authorEmail)
@@ -382,7 +382,7 @@ func (g *GithubClient) getRepositoryInfo(owner, repository string) (*github.Repo
 		if resp.StatusCode == 404 {
 			return nil, nil
 		}
-		return nil, err
+		return nil, fmt.Errorf("failed to get repository %s/%s info: %w", owner, repository, err)
 	}
 	return repo, nil
 }
@@ -390,7 +390,7 @@ func (g *GithubClient) getRepositoryInfo(owner, repository string) (*github.Repo
 func (g *GithubClient) getAppUserID(userName string) (int64, error) {
 	user, _, err := g.client.Users.Get(g.ctx, userName)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("failed to get user %s: %w", userName, err)
 	}
 	return *user.ID, nil
 }

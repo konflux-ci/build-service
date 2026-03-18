@@ -69,31 +69,31 @@ func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigs(ctx context.Con
 	// Get pull pipeline spec
 	pipelineSpecPull, err := getPipelineSpec(ctx, pipelineDefinition.Pull, component, versionInfo, gitClient, newModel, "pull")
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to get pull pipeline spec: %w", err)
 	}
 
 	// Get push pipeline spec
 	pipelineSpecPush, err := getPipelineSpec(ctx, pipelineDefinition.Push, component, versionInfo, gitClient, newModel, "push")
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to get push pipeline spec: %w", err)
 	}
 
 	pipelineRunOnPush, err := generatePaCPipelineRunForComponent(component, pipelineSpecPush, pipelineDefinition.Push, versionInfo, gitClient, false)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to generate push pipeline run: %w", err)
 	}
 	pipelineRunOnPushYaml, err := yaml.Marshal(pipelineRunOnPush)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to marshal push pipeline run: %w", err)
 	}
 
 	pipelineRunOnPR, err := generatePaCPipelineRunForComponent(component, pipelineSpecPull, pipelineDefinition.Pull, versionInfo, gitClient, true)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to generate pull request pipeline run: %w", err)
 	}
 	pipelineRunOnPRYaml, err := yaml.Marshal(pipelineRunOnPR)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to marshal pull request pipeline run: %w", err)
 	}
 
 	return pipelineRunOnPushYaml, pipelineRunOnPRYaml, nil
@@ -110,20 +110,20 @@ func getPipelineSpec(ctx context.Context, pipelineDef *PipelineDef, component *c
 		bundleUri := pipelineDef.PipelineSpecFromBundle.Bundle
 		pipelineName := pipelineDef.PipelineSpecFromBundle.Name
 		if pipelineSpec, err = retrievePipelineSpec(ctx, bundleUri, pipelineName); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to retrieve %s pipeline %s from bundle %s: %w", pipelineType, pipelineName, bundleUri, err)
 		}
 		log.Info(fmt.Sprintf("Got %s pipeline spec from bundle for %s component, %s pipeline from %s bundle", pipelineType, component.Name, pipelineName, bundleUri), l.Audit, "true")
 
 	} else if pipelineDef.PipelineRefGit != nil {
 		if pipelineSpec, err = retrievePipelineSpecFromGit(ctx, pipelineDef.PipelineRefGit, gitClient); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to retrieve %s pipeline from git: %w", pipelineType, err)
 		}
 		log.Info(fmt.Sprintf("Got %s pipeline spec from GitRef for %s component, %s url, revision %s, pathInRepo %s",
 			pipelineType, component.Name, pipelineDef.PipelineRefGit.Url, pipelineDef.PipelineRefGit.Revision, pipelineDef.PipelineRefGit.PathInRepo), l.Audit, "true")
 	} else {
 		repoUrl := getGitRepoUrl(*component, newModel)
 		if pipelineSpec, err = retrievePipelineSpecByName(ctx, repoUrl, versionInfo.Revision, pipelineDef.PipelineRefName, gitClient); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to retrieve %s pipeline by name %s: %w", pipelineType, pipelineDef.PipelineRefName, err)
 		}
 		log.Info(fmt.Sprintf("Got %s pipeline spec from Pipeline Name for %s component, pipeline name %s", pipelineType, component.Name, pipelineDef.PipelineRefName), l.Audit, "true")
 	}
@@ -147,7 +147,7 @@ func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigsOldModel(ctx con
 	pipelineRef, additionalParams, _ = r.GetBuildPipelineFromComponentAnnotation(ctx, component)
 	pipelineName, pipelineBundle, err = getPipelineNameAndBundle(pipelineRef)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to get pipeline name and bundle: %w", err)
 	}
 	log.Info(fmt.Sprintf("Selected %s pipeline from %s bundle for %s component",
 		pipelineName, pipelineBundle, component.Name),
@@ -157,25 +157,25 @@ func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigsOldModel(ctx con
 	pipelineSpec, err := retrievePipelineSpec(ctx, pipelineBundle, pipelineName)
 	if err != nil {
 		r.EventRecorder.Event(component, "Warning", "ErrorGettingPipelineFromBundle", err.Error())
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to retrieve pipeline %s from bundle %s: %w", pipelineName, pipelineBundle, err)
 	}
 
 	pipelineRunOnPush, err := generatePaCPipelineRunForComponentOldModel(component, pipelineSpec, additionalParams, pacTargetBranch, gitClient, false)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to generate push pipeline run: %w", err)
 	}
 	pipelineRunOnPushYaml, err := yaml.Marshal(pipelineRunOnPush)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to marshal push pipeline run: %w", err)
 	}
 
 	pipelineRunOnPR, err := generatePaCPipelineRunForComponentOldModel(component, pipelineSpec, additionalParams, pacTargetBranch, gitClient, true)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to generate pull request pipeline run: %w", err)
 	}
 	pipelineRunOnPRYaml, err := yaml.Marshal(pipelineRunOnPR)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to marshal pull request pipeline run: %w", err)
 	}
 
 	return pipelineRunOnPushYaml, pipelineRunOnPRYaml, nil
@@ -274,7 +274,7 @@ func retrievePipelineSpec(ctx context.Context, bundleUri, pipelineName string) (
 	resolver := oci.NewResolver(bundleUri, authn.DefaultKeychain)
 
 	if obj, _, err = resolver.Get(ctx, "pipeline", pipelineName); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to retrieve pipeline %s from bundle %s: %w", pipelineName, bundleUri, err)
 	}
 
 	var pipelineSpec tektonapi.PipelineSpec
@@ -297,7 +297,7 @@ func (r *ComponentBuildReconciler) GetDefaultBuildPipelinesFromConfig(ctx contex
 		if errors.IsNotFound(err) {
 			return nil, boerrors.NewBuildOpError(boerrors.EBuildPipelineConfigNotDefined, err)
 		}
-		return nil, err
+		return nil, fmt.Errorf("failed to get build pipeline config map: %w", err)
 	}
 
 	buildPipelineData := &pipelineConfig{}
@@ -312,7 +312,7 @@ func (r *ComponentBuildReconciler) GetDefaultBuildPipelinesFromConfig(ctx contex
 func (r *ComponentBuildReconciler) GetBuildPipelineFromComponentAnnotation(ctx context.Context, component *compapiv1alpha1.Component) (*tektonapi.PipelineRef, []string, error) {
 	buildPipeline, err := readBuildPipelineAnnotation(component)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to read build pipeline annotation: %w", err)
 	}
 	if buildPipeline == nil {
 		err := fmt.Errorf("missing or empty pipeline annotation: %s, will add default one to the component", component.Annotations[defaultBuildPipelineAnnotation])
@@ -330,7 +330,7 @@ func (r *ComponentBuildReconciler) GetBuildPipelineFromComponentAnnotation(ctx c
 		if errors.IsNotFound(err) {
 			return nil, nil, boerrors.NewBuildOpError(boerrors.EBuildPipelineConfigNotDefined, err)
 		}
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to get build pipeline config map: %w", err)
 	}
 
 	buildPipelineData := &pipelineConfig{}
@@ -394,7 +394,7 @@ func (r *ComponentBuildReconciler) SetDefaultBuildPipelineComponentAnnotation(ct
 		if errors.IsNotFound(err) {
 			return boerrors.NewBuildOpError(boerrors.EBuildPipelineConfigNotDefined, err)
 		}
-		return err
+		return fmt.Errorf("failed to get build pipeline config map: %w", err)
 	}
 
 	buildPipelineData := &pipelineConfig{}
@@ -410,7 +410,7 @@ func (r *ComponentBuildReconciler) SetDefaultBuildPipelineComponentAnnotation(ct
 
 	if err := r.Client.Update(ctx, component); err != nil {
 		log.Error(err, fmt.Sprintf("failed to update component with default pipeline annotation %s", defaultBuildPipelineAnnotation))
-		return err
+		return fmt.Errorf("failed to update component with default pipeline annotation: %w", err)
 	}
 	log.Info(fmt.Sprintf("updated component with default pipeline annotation %s", defaultBuildPipelineAnnotation))
 	return nil
@@ -791,7 +791,7 @@ func generateCelExpressionForPipeline(component *compapiv1alpha1.Component, gitC
 			dockerfilePath := contextDir + dockerfile
 			isDockerfileInContextDir, err := gitClient.IsFileExist(repoUrl, branch, dockerfilePath)
 			if err != nil {
-				return "", err
+				return "", fmt.Errorf("failed to check if Dockerfile %s exists in context directory: %w", dockerfilePath, err)
 			}
 			// If the Dockerfile is inside context directory, no changes to event filter needed.
 			if !isDockerfileInContextDir {
@@ -847,7 +847,7 @@ func generateCelExpressionForPipelineOldModel(component *compapiv1alpha1.Compone
 				dockerfilePath := contextDir + dockerfile
 				isDockerfileInContextDir, err := gitClient.IsFileExist(repoUrl, branch, dockerfilePath)
 				if err != nil {
-					return "", err
+					return "", fmt.Errorf("failed to check if Dockerfile %s exists in context directory: %w", dockerfilePath, err)
 				}
 				// If the Dockerfile is inside context directory, no changes to event filter needed.
 				if !isDockerfileInContextDir {

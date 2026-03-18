@@ -89,7 +89,7 @@ func newGithubClientByApp(appId int64, privateKeyPem []byte, repoUrl string) (*G
 		if strings.Contains(err.Error(), "installation has been suspended") {
 			return nil, boerrors.NewBuildOpError(boerrors.EGitHubAppSuspended, err)
 		} else {
-			return nil, err
+			return nil, fmt.Errorf("failed to create installation token: %w", err)
 		}
 	}
 
@@ -129,7 +129,7 @@ func getAppInstallationsForRepository(githubAppIdStr string, appPrivateKeyPem []
 
 	ghUrlRegex, err := regexp.Compile(`github.com/([^/]+)/([^/]+)(\.git)?$`)
 	if err != nil {
-		return nil, "", err
+		return nil, "", fmt.Errorf("failed to compile GitHub URL regex: %w", err)
 	}
 
 	match := ghUrlRegex.FindStringSubmatch(repoUrl)
@@ -166,13 +166,13 @@ func getAppInstallationsForRepository(githubAppIdStr string, appPrivateKeyPem []
 		*val.ID,
 		&github.InstallationTokenOptions{})
 	if err != nil {
-		return nil, "", err
+		return nil, "", fmt.Errorf("failed to create installation token: %w", err)
 	}
 	installationClient := NewGithubClient(token.GetToken())
 
 	repoStruct, _, err := installationClient.client.Repositories.Get(context.TODO(), owner, repo)
 	if err != nil {
-		return nil, "", err
+		return nil, "", fmt.Errorf("failed to get repository %s/%s: %w", owner, repo, err)
 	}
 	// Create a new token, that is only valid for this repo
 	token, _, err = client.Apps.CreateInstallationToken(
@@ -181,7 +181,7 @@ func getAppInstallationsForRepository(githubAppIdStr string, appPrivateKeyPem []
 		&github.InstallationTokenOptions{RepositoryIDs: []int64{*repoStruct.ID}})
 
 	if err != nil {
-		return nil, "", err
+		return nil, "", fmt.Errorf("failed to create repository-scoped installation token: %w", err)
 	}
 	return &ApplicationInstallation{
 		Token:        token.GetToken(),

@@ -17,6 +17,7 @@ package webhook
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/go-logr/logr"
@@ -76,13 +77,13 @@ func LoadMappingFromFile(path string, fileReader FileReader) (map[string]string,
 
 	content, err := fileReader(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read webhook config file %s: %w", path, err)
 	}
 
 	var mapping map[string]string
 	err = json.Unmarshal(content, &mapping)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse webhook config file %s: %w", path, err)
 	}
 
 	log.Info("Using webhook config", "config", mapping)
