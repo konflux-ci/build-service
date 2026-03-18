@@ -122,86 +122,18 @@ spec:
     - name: pre-pull-images
       runAfter:
         - deploy-konflux
-      taskSpec:
-        volumes:
-          - name: cluster-secret
-            secret:
-              optional: true
-              secretName: kfg-$(context.pipelineRun.name)
-        steps:
-          - name: create-job
-            image: quay.io/konflux-ci/tekton-integration-catalog/utils:latest
-            env:
-              - name: KUBECONFIG
-                value: /tmp/kubeconfig
-            volumeMounts:
-              - name: cluster-secret
-                mountPath: /tmp/kubeconfig
-                subPath: kubeconfig
-            script: |
-              #!/usr/bin/env bash
-              set -uo pipefail
-              trap 'echo "[WARN] Pre-pull failed but continuing (non-blocking)"; exit 0' ERR
-
-              echo "==> Resolving step images from build pipeline bundles..."
-
-              BUILD_BUNDLE=$(kubectl get configmap build-pipeline-config -n build-service \
-                -o jsonpath='{.data.config\.yaml}' 2>/dev/null \
-                | yq e '.pipelines[] | select(.name == "docker-build-oci-ta") | .bundle' -)
-
-              if [ -z "$BUILD_BUNDLE" ]; then
-                echo "[WARN] Could not resolve build pipeline bundle, skipping"
-                exit 0
-              fi
-              echo "  Pipeline: $(echo $BUILD_BUNDLE | sed 's|.*/||')"
-
-              TASK_BUNDLES=$(tkn bundle list "$BUILD_BUNDLE" -o yaml 2>/dev/null \
-                | grep 'value:.*quay.io/konflux-ci/tekton-catalog/task' \
-                | sed 's/.*value: //')
-              echo "  $(echo "$TASK_BUNDLES" | wc -l | tr -d ' ') task bundles, resolving in parallel..."
-
-              STEP_IMAGES=$(echo "$TASK_BUNDLES" \
-                | xargs -P10 -I{} sh -c 'tkn bundle list "{}" -o yaml 2>/dev/null | grep "^\s*image:" | sed "s/.*image: //"' \
-                | sed 's/@sha256:[a-f0-9]*//' | sort -u \
-                | grep ':' | grep -v 'redhat-services-prod')
-
-              EXTRA_IMAGES="
-              quay.io/konflux-ci/mintmaker-renovate-image:latest
-              quay.io/redhat-appstudio/konflux-test:latest
-              registry.access.redhat.com/ubi9/ubi:latest"
-
-              ALL_IMAGES=$(echo -e "$STEP_IMAGES\n$EXTRA_IMAGES" | sed 's/^ *//' | sort -u | grep -v '^$')
-              COUNT=$(echo "$ALL_IMAGES" | wc -l | tr -d ' ')
-              echo "  $COUNT images to pre-pull"
-
-              CONTAINERS=""
-              IDX=0
-              while IFS= read -r img; do
-                CONTAINERS="${CONTAINERS}
-                      - name: pull-${IDX}
-                        image: ${img}
-                        command: ['echo']"
-                IDX=$((IDX + 1))
-              done <<< "$ALL_IMAGES"
-
-              cat <<JOBEOF | kubectl apply -f -
-              apiVersion: batch/v1
-              kind: Job
-              metadata:
-                name: pre-pull-images
-                namespace: default
-              spec:
-                backoffLimit: 0
-                activeDeadlineSeconds: 600
-                ttlSecondsAfterFinished: 60
-                template:
-                  spec:
-                    nodeName: kind-mapt-control-plane
-                    restartPolicy: Never
-                    containers:${CONTAINERS}
-              JOBEOF
-
-              echo "==> Pre-pull Job created with $IDX containers"
+      taskRef:
+        resolver: git
+        params:
+          - name: url
+            value: https://github.com/konflux-ci/tekton-integration-catalog.git
+          - name: revision
+            value: prep
+          - name: pathInRepo
+            value: tasks/pre-pull-images/0.1/pre-pull-images.yaml
+      params:
+        - name: cluster-access-secret-name
+          value: kfg-$(context.pipelineRun.name)
     - name: konflux-e2e-tests
       timeout: 2h
       runAfter:
