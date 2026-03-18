@@ -13,6 +13,8 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+
+// TODO remove whole file after only new model is used
 package controllers
 
 import (
@@ -25,7 +27,7 @@ import (
 	"time"
 
 	gitgithub "github.com/google/go-github/v45/github"
-	applicationapi "github.com/konflux-ci/application-api/api/v1alpha1"
+	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
@@ -69,14 +71,14 @@ var _ = Describe("Component nudge controller", func() {
 		basicSecretData := map[string]string{
 			"password": "12345",
 		}
-		createSCMSecret(basicSecretKey, basicSecretData, v1.SecretTypeBasicAuth, map[string]string{})
+		createSCMSecretOldModel(basicSecretKey, basicSecretData, v1.SecretTypeBasicAuth, map[string]string{})
 
 		imageRepoSecretKey := types.NamespacedName{Name: "dockerconfigjsonsecret", Namespace: UserNamespace}
 		dockerConfigJson := fmt.Sprintf(`{"auths":{"quay.io/organization/repo":{"auth":"%s"}}}`, base64.StdEncoding.EncodeToString([]byte("image_repo_username:image_repo_password")))
 		imageRepoSecretData := map[string]string{
 			".dockerconfigjson": dockerConfigJson,
 		}
-		createSCMSecret(imageRepoSecretKey, imageRepoSecretData, v1.SecretTypeDockerConfigJson, map[string]string{})
+		createSCMSecretOldModel(imageRepoSecretKey, imageRepoSecretData, v1.SecretTypeDockerConfigJson, map[string]string{})
 
 		caConfigMapKey := types.NamespacedName{Name: "trusted-ca", Namespace: BuildServiceNamespaceName}
 		createCAConfigMap(caConfigMapKey)
@@ -104,7 +106,7 @@ var _ = Describe("Component nudge controller", func() {
 			ListOptions: deleteListOptions,
 		}
 
-		_ = k8sClient.DeleteAllOf(context.TODO(), &applicationapi.Component{}, &deleteOptionsNamespace)
+		_ = k8sClient.DeleteAllOf(context.TODO(), &compapiv1alpha1.Component{}, &deleteOptionsNamespace)
 		_ = k8sClient.DeleteAllOf(context.TODO(), &tektonapi.PipelineRun{}, &deleteOptionsNamespace)
 		_ = k8sClient.DeleteAllOf(context.TODO(), &v1.ConfigMap{}, &deleteOptionsNamespace)
 
@@ -125,7 +127,7 @@ var _ = Describe("Component nudge controller", func() {
 		)
 
 		_ = BeforeEach(func() {
-			createCustomComponentWithoutBuildRequest(componentConfig{
+			createCustomComponentWithoutBuildRequest(componentConfigOldModel{
 				componentKey:   baseComponentKey,
 				containerImage: "quay.io/organization/repo:tag",
 				annotations: map[string]string{
@@ -133,7 +135,7 @@ var _ = Describe("Component nudge controller", func() {
 					BuildStatusAnnotationName:      buildStatusPaCProvisionedValue, // simulate PaC provision was done, so when we update BuildNudgesRef there won't be any new object
 				},
 			})
-			createCustomComponentWithoutBuildRequest(componentConfig{
+			createCustomComponentWithoutBuildRequest(componentConfigOldModel{
 				componentKey:   operator1Key,
 				containerImage: "quay.io/organization/repo1:tag",
 				annotations: map[string]string{
@@ -141,7 +143,7 @@ var _ = Describe("Component nudge controller", func() {
 					BuildStatusAnnotationName:      buildStatusPaCProvisionedValue, // simulate PaC provision was done
 				},
 			})
-			createCustomComponentWithoutBuildRequest(componentConfig{
+			createCustomComponentWithoutBuildRequest(componentConfigOldModel{
 				componentKey:   operator2Key,
 				containerImage: "quay.io/organization/repo2:tag",
 				annotations: map[string]string{
@@ -149,7 +151,7 @@ var _ = Describe("Component nudge controller", func() {
 					BuildStatusAnnotationName:      buildStatusPaCProvisionedValue, // simulate PaC provision was done
 				},
 			})
-			baseComponent := applicationapi.Component{}
+			baseComponent := compapiv1alpha1.Component{}
 			err := k8sClient.Get(context.TODO(), baseComponentKey, &baseComponent)
 			Expect(err).ToNot(HaveOccurred())
 			baseComponent.Spec.BuildNudgesRef = []string{operator1Key.Name, operator2Key.Name}
@@ -206,7 +208,7 @@ var _ = Describe("Component nudge controller", func() {
 				return controllerutil.ContainsFinalizer(pr, NudgeFinalizer)
 			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 
-			componentList := applicationapi.ComponentList{}
+			componentList := compapiv1alpha1.ComponentList{}
 			err := k8sClient.List(context.TODO(), &componentList)
 			Expect(err).ToNot(HaveOccurred())
 			for i := range componentList.Items {
@@ -231,7 +233,7 @@ var _ = Describe("Component nudge controller", func() {
 		)
 
 		_ = BeforeEach(func() {
-			createCustomComponentWithoutBuildRequest(componentConfig{
+			createCustomComponentWithoutBuildRequest(componentConfigOldModel{
 				componentKey:   baseComponentKey,
 				containerImage: "quay.io/organization/repo:tag",
 				annotations: map[string]string{
@@ -239,7 +241,7 @@ var _ = Describe("Component nudge controller", func() {
 					BuildStatusAnnotationName:      buildStatusPaCProvisionedValue, // simulate PaC provision was done, so when we update BuildNudgesRef there won't be any new object
 				},
 			})
-			createCustomComponentWithoutBuildRequest(componentConfig{
+			createCustomComponentWithoutBuildRequest(componentConfigOldModel{
 				componentKey:   operator1Key,
 				containerImage: "quay.io/organization/repo1:tag",
 				annotations: map[string]string{
@@ -247,7 +249,7 @@ var _ = Describe("Component nudge controller", func() {
 					BuildStatusAnnotationName:      buildStatusPaCProvisionedValue, // simulate PaC provision was done
 				},
 			})
-			createCustomComponentWithoutBuildRequest(componentConfig{
+			createCustomComponentWithoutBuildRequest(componentConfigOldModel{
 				componentKey:   operator2Key,
 				containerImage: "quay.io/organization/repo2:tag",
 				annotations: map[string]string{
@@ -255,7 +257,7 @@ var _ = Describe("Component nudge controller", func() {
 					BuildStatusAnnotationName:      buildStatusPaCProvisionedValue, // simulate PaC provision was done
 				},
 			})
-			baseComponent := applicationapi.Component{}
+			baseComponent := compapiv1alpha1.Component{}
 			err := k8sClient.Get(context.TODO(), baseComponentKey, &baseComponent)
 			Expect(err).ToNot(HaveOccurred())
 			baseComponent.Spec.BuildNudgesRef = []string{operator1Key.Name, operator2Key.Name}
@@ -363,7 +365,7 @@ var _ = Describe("Component nudge controller", func() {
 				".dockerconfigjson": dockerConfigJson,
 			}
 			deleteSecret(imageRepoSecretKey)
-			createSCMSecret(imageRepoSecretKey, imageRepoSecretData, v1.SecretTypeDockerConfigJson, map[string]string{})
+			createSCMSecretOldModel(imageRepoSecretKey, imageRepoSecretData, v1.SecretTypeDockerConfigJson, map[string]string{})
 
 			serviceAccountKey := getComponentServiceAccountKey(baseComponentKey)
 			sa := waitServiceAccount(serviceAccountKey)
@@ -412,7 +414,7 @@ var _ = Describe("Component nudge controller", func() {
 			}
 			imageRepoSecretKey := types.NamespacedName{Name: "dockerconfigjsonsecret", Namespace: UserNamespace}
 			deleteSecret(imageRepoSecretKey)
-			createSCMSecret(imageRepoSecretKey, imageRepoSecretData, v1.SecretTypeDockerConfigJson, map[string]string{})
+			createSCMSecretOldModel(imageRepoSecretKey, imageRepoSecretData, v1.SecretTypeDockerConfigJson, map[string]string{})
 
 			// create secret with another partial repository match, this one will be used (because has more complete path)
 			dockerConfigJson = fmt.Sprintf(`{"auths":{"quay.io/organization":{"auth":"%s"}}}`, base64.StdEncoding.EncodeToString([]byte("image_repo_username_2:image_repo_password")))
@@ -420,7 +422,7 @@ var _ = Describe("Component nudge controller", func() {
 				".dockerconfigjson": dockerConfigJson,
 			}
 			imageRepoSecretKey = types.NamespacedName{Name: "dockerconfigjsonsecret2", Namespace: UserNamespace}
-			createSCMSecret(imageRepoSecretKey, imageRepoSecretData, v1.SecretTypeDockerConfigJson, map[string]string{})
+			createSCMSecretOldModel(imageRepoSecretKey, imageRepoSecretData, v1.SecretTypeDockerConfigJson, map[string]string{})
 
 			// create secret with path which doesn't match at all
 			dockerConfigJson = fmt.Sprintf(`{"auths":{"registry.io":{"auth":"%s"}}}`, base64.StdEncoding.EncodeToString([]byte("image_repo_username_3:image_repo_password")))
@@ -428,7 +430,7 @@ var _ = Describe("Component nudge controller", func() {
 				".dockerconfigjson": dockerConfigJson,
 			}
 			imageRepoSecretKey = types.NamespacedName{Name: "dockerconfigjsonsecret3", Namespace: UserNamespace}
-			createSCMSecret(imageRepoSecretKey, imageRepoSecretData, v1.SecretTypeDockerConfigJson, map[string]string{})
+			createSCMSecretOldModel(imageRepoSecretKey, imageRepoSecretData, v1.SecretTypeDockerConfigJson, map[string]string{})
 
 			serviceAccountKey := getComponentServiceAccountKey(baseComponentKey)
 			sa := waitServiceAccount(serviceAccountKey)
@@ -515,8 +517,8 @@ var _ = Describe("Component nudge controller", func() {
 			if componentRenovateConfigName != nil && componentRenovateConfigData != nil {
 				createCustomRenovateConfigMap(*componentRenovateConfigName, componentRenovateConfigData)
 
-				component1 := applicationapi.Component{}
-				component2 := applicationapi.Component{}
+				component1 := compapiv1alpha1.Component{}
+				component2 := compapiv1alpha1.Component{}
 				err := k8sClient.Get(context.TODO(), operator1Key, &component1)
 				Expect(err).ToNot(HaveOccurred())
 				err = k8sClient.Get(context.TODO(), operator2Key, &component2)
@@ -804,7 +806,7 @@ var _ = Describe("Component nudge controller", func() {
 		)
 
 		_ = BeforeEach(func() {
-			createCustomComponentWithoutBuildRequest(componentConfig{
+			createCustomComponentWithoutBuildRequest(componentConfigOldModel{
 				componentKey:   baseComponentKey,
 				containerImage: "quay.io/organization/repo:tag",
 				annotations: map[string]string{
@@ -812,7 +814,7 @@ var _ = Describe("Component nudge controller", func() {
 					BuildStatusAnnotationName:      buildStatusPaCProvisionedValue, // simulate PaC provision was done, so when we update BuildNudgesRef there won't be any new object
 				},
 			})
-			createCustomComponentWithoutBuildRequest(componentConfig{
+			createCustomComponentWithoutBuildRequest(componentConfigOldModel{
 				componentKey:   operator1Key,
 				containerImage: "quay.io/organization/repo1:tag",
 				annotations: map[string]string{
@@ -820,7 +822,7 @@ var _ = Describe("Component nudge controller", func() {
 					BuildStatusAnnotationName:      buildStatusPaCProvisionedValue, // simulate PaC provision was done
 				},
 			})
-			createCustomComponentWithoutBuildRequest(componentConfig{
+			createCustomComponentWithoutBuildRequest(componentConfigOldModel{
 				componentKey:   operator2Key,
 				containerImage: "quay.io/organization/repo2:tag",
 				annotations: map[string]string{
@@ -828,7 +830,7 @@ var _ = Describe("Component nudge controller", func() {
 					BuildStatusAnnotationName:      buildStatusPaCProvisionedValue, // simulate PaC provision was done
 				},
 			})
-			baseComponent := applicationapi.Component{}
+			baseComponent := compapiv1alpha1.Component{}
 			err := k8sClient.Get(context.TODO(), baseComponentKey, &baseComponent)
 			Expect(err).ToNot(HaveOccurred())
 			baseComponent.Spec.BuildNudgesRef = []string{operator1Key.Name, operator2Key.Name}
@@ -933,7 +935,7 @@ var _ = Describe("Component nudge controller", func() {
 	Context("Test renovate config template", func() {
 		It("test template output", func() {
 			componentName := "test-component"
-			component := &applicationapi.Component{}
+			component := &compapiv1alpha1.Component{}
 			component.Name = componentName
 
 			gitProvider := "github"

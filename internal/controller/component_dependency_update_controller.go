@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// TODO remove whole file after only new model is used
 package controllers
 
 import (
@@ -26,7 +27,7 @@ import (
 	"strings"
 	"time"
 
-	applicationapi "github.com/konflux-ci/application-api/api/v1alpha1"
+	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
 	releaseapi "github.com/konflux-ci/release-service/api/v1alpha1"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	"golang.org/x/exp/slices"
@@ -95,7 +96,7 @@ type BuildResult struct {
 	Digest                   string
 	DistributionRepositories []string
 	FileMatches              string
-	Component                *applicationapi.Component
+	Component                *compapiv1alpha1.Component
 }
 
 type RepositoryCredentials struct {
@@ -163,7 +164,6 @@ func (r *ComponentDependencyUpdateReconciler) Reconcile(ctx context.Context, req
 	ctx, cancel = context.WithTimeout(ctx, contextTimeout)
 	defer cancel()
 	log := ctrllog.FromContext(ctx).WithName("ComponentNudge")
-	ctx = ctrllog.IntoContext(ctx, log)
 
 	pipelineRun := &tektonapi.PipelineRun{}
 	err := r.Client.Get(ctx, req.NamespacedName, pipelineRun)
@@ -207,7 +207,7 @@ func (r *ComponentDependencyUpdateReconciler) Reconcile(ctx context.Context, req
 	log.Info("component has BuildNudgesRef set", "ComponentName", component.Name, "BuildNudgesRef", component.Spec.BuildNudgesRef)
 
 	// verify that there exist some components to be nudged
-	allComponents := applicationapi.ComponentList{}
+	allComponents := compapiv1alpha1.ComponentList{}
 	err = r.Client.List(ctx, &allComponents, client.InNamespace(pipelineRun.Namespace))
 	if err != nil {
 		log.Error(err, "failed to list components in namespace")
@@ -283,7 +283,7 @@ func (r *ComponentDependencyUpdateReconciler) verifyUpToDate(ctx context.Context
 
 // handleCompletedBuild will perform a 'nudge' updating dependent downstream components.
 // This will involve creating a PR updating their references to our images to the newly produced image
-func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.Context, pipelineRun *tektonapi.PipelineRun, updatedComponent *applicationapi.Component, patch client.Patch) (ctrl.Result, error) {
+func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.Context, pipelineRun *tektonapi.PipelineRun, updatedComponent *compapiv1alpha1.Component, patch client.Patch) (ctrl.Result, error) {
 	log := ctrllog.FromContext(ctx)
 	success := pipelineRun.Status.GetCondition(apis.ConditionSucceeded).IsTrue()
 	if !success {
@@ -330,7 +330,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 		log.Info("custom nudging files specified in the annotation", "AnnotationName", NudgeFilesAnnotationName, "NudgeFiles", nudgeFiles)
 	}
 
-	components := applicationapi.ComponentList{}
+	components := compapiv1alpha1.ComponentList{}
 	err := r.Client.List(ctx, &components, client.InNamespace(pipelineRun.Namespace))
 	if err != nil {
 		log.Error(err, "failed to list components in namespace")
@@ -342,7 +342,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 	retryTime := FailureRetryTime
 	immediateRetry := false
 
-	componentsToUpdate := []applicationapi.Component{}
+	componentsToUpdate := []compapiv1alpha1.Component{}
 
 	distibutionRepositories := []string{}
 	releasePlanAdmissions := releaseapi.ReleasePlanAdmissionList{}
@@ -559,7 +559,7 @@ func (r *ComponentDependencyUpdateReconciler) removePipelineFinalizer(ctx contex
 
 // getImageRepositoryCredentials returns username and password for image repository
 // it is searching all dockerconfigjson type secrets which are linked to the service account
-func (r *ComponentDependencyUpdateReconciler) getImageRepositoryCredentials(ctx context.Context, component *applicationapi.Component) (string, string, error) {
+func (r *ComponentDependencyUpdateReconciler) getImageRepositoryCredentials(ctx context.Context, component *compapiv1alpha1.Component) (string, string, error) {
 	log := ctrllog.FromContext(ctx)
 
 	updatedOutputImage := component.Spec.ContainerImage
@@ -567,7 +567,7 @@ func (r *ComponentDependencyUpdateReconciler) getImageRepositoryCredentials(ctx 
 
 	// get service account and gather linked secrets
 	buildPipelineServiceAccount := &corev1.ServiceAccount{}
-	buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(component)
+	buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(component.Name)
 	if err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: namespace}, buildPipelineServiceAccount); err != nil {
 		log.Error(err, fmt.Sprintf("Failed to read service account %s in namespace %s", buildPipelineServiceAccountName, namespace), l.Action, l.ActionView)
 		return "", "", err
@@ -727,9 +727,9 @@ func IsBuildPushPipelineRun(object client.Object) bool {
 
 // GetComponentFromPipelineRun loads from the cluster the Component referenced in the given PipelineRun. If the PipelineRun doesn't
 // specify a Component we return nil, if the component is not specified we return an error
-func GetComponentFromPipelineRun(c client.Client, ctx context.Context, pipelineRun *tektonapi.PipelineRun) (*applicationapi.Component, error) {
+func GetComponentFromPipelineRun(c client.Client, ctx context.Context, pipelineRun *tektonapi.PipelineRun) (*compapiv1alpha1.Component, error) {
 	if componentName, found := pipelineRun.Labels[ComponentNameLabelName]; found {
-		component := &applicationapi.Component{}
+		component := &compapiv1alpha1.Component{}
 		err := c.Get(ctx, types.NamespacedName{
 			Namespace: pipelineRun.Namespace,
 			Name:      componentName,

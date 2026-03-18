@@ -31,9 +31,9 @@ import (
 
 	"github.com/konflux-ci/build-service/pkg/bometrics"
 	. "github.com/konflux-ci/build-service/pkg/common"
-	"github.com/konflux-ci/build-service/pkg/slices"
+	pkgslices "github.com/konflux-ci/build-service/pkg/slices"
 
-	appstudiov1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
+	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 )
@@ -52,169 +52,22 @@ func TestGetProvisionTimeMetricsBuckets(t *testing.T) {
 	}
 }
 
-func TestReadBuildStatus(t *testing.T) {
-	tests := []struct {
-		name                       string
-		buildStatusAnnotationValue string
-		want                       *BuildStatus
-	}{
-		{
-			name:                       "should be able to read build status with all fields",
-			buildStatusAnnotationValue: "{\"pac\":{\"state\":\"enabled\",\"configuration-time\":\"time\",\"error-id\":5,\"error-message\":\"pac-error\"},\"message\":\"done\"}",
-			want: &BuildStatus{
-				PaC: &PaCBuildStatus{
-					State:             "enabled",
-					ConfigurationTime: "time",
-					ErrorInfo: ErrorInfo{
-						ErrId:      5,
-						ErrMessage: "pac-error",
-					},
-				},
-				Message: "done",
-			},
-		},
-		{
-			name:                       "should return empty build status if annotation is empty or not set",
-			buildStatusAnnotationValue: "",
-			want:                       &BuildStatus{},
-		},
-		{
-			name:                       "should return empty build status if curent one is not valid JSON",
-			buildStatusAnnotationValue: "{\"pac\":{\"build-start-time\":\"time\"}",
-			want:                       &BuildStatus{},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			component := &appstudiov1alpha1.Component{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "my-component",
-					Namespace: "my-namespace",
-					Annotations: map[string]string{
-						BuildStatusAnnotationName: tt.buildStatusAnnotationValue,
-					},
-				},
-			}
-			got := readBuildStatus(component)
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("readBuildStatus(): actual: %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestWriteBuildStatus(t *testing.T) {
-	tests := []struct {
-		name        string
-		component   *appstudiov1alpha1.Component
-		buildStatus *BuildStatus
-		want        string
-	}{
-		{
-			name: "should be able to write build status with all fields",
-			component: &appstudiov1alpha1.Component{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        "my-component",
-					Namespace:   "my-namespace",
-					Annotations: map[string]string{},
-				},
-			},
-			buildStatus: &BuildStatus{
-				PaC: &PaCBuildStatus{
-					State: "enabled",
-					ErrorInfo: ErrorInfo{
-						ErrId:      5,
-						ErrMessage: "pac-error",
-					},
-					ConfigurationTime: "time",
-				},
-				Message: "done",
-			},
-			want: "{\"pac\":{\"state\":\"enabled\",\"configuration-time\":\"time\",\"error-id\":5,\"error-message\":\"pac-error\"},\"message\":\"done\"}",
-		},
-		{
-			name: "should be able to write build status when annotations is nil",
-			component: &appstudiov1alpha1.Component{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "my-component",
-					Namespace: "my-namespace",
-				},
-			},
-			buildStatus: &BuildStatus{
-				PaC: &PaCBuildStatus{
-					State: "enabled",
-					ErrorInfo: ErrorInfo{
-						ErrId:      5,
-						ErrMessage: "pac-error",
-					},
-					ConfigurationTime: "time",
-				},
-				Message: "done",
-			},
-			want: "{\"pac\":{\"state\":\"enabled\",\"configuration-time\":\"time\",\"error-id\":5,\"error-message\":\"pac-error\"},\"message\":\"done\"}",
-		},
-		{
-			name: "should be able to overwrite build status",
-			component: &appstudiov1alpha1.Component{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "my-component",
-					Namespace: "my-namespace",
-					Annotations: map[string]string{
-						BuildStatusAnnotationName: "{\"pac\":{\"state\":\"error\"},\"message\":\"done\"}",
-					},
-				},
-			},
-			buildStatus: &BuildStatus{
-				PaC: &PaCBuildStatus{
-					State: "error",
-					ErrorInfo: ErrorInfo{
-						ErrId:      10,
-						ErrMessage: "error-ion-pac",
-					},
-					ConfigurationTime: "time",
-				},
-				Message: "done",
-			},
-			want: "{\"pac\":{\"state\":\"error\",\"configuration-time\":\"time\",\"error-id\":10,\"error-message\":\"error-ion-pac\"},\"message\":\"done\"}",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			writeBuildStatus(tt.component, tt.buildStatus)
-			got := tt.component.Annotations[BuildStatusAnnotationName]
-			if got != tt.want {
-				t.Errorf("writeBuildStatus(): actual: %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestGeneratePaCPipelineRunForComponent(t *testing.T) {
-	component := &appstudiov1alpha1.Component{
+	component := &compapiv1alpha1.Component{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "my-component",
 			Namespace: "my-namespace",
-			Annotations: map[string]string{
-				"skip-initial-checks":          "true",
-				GitProviderAnnotationName:      "github",
-				defaultBuildPipelineAnnotation: testPipelineAnnotation,
-			},
 		},
-		Spec: appstudiov1alpha1.ComponentSpec{
-			Application:    "my-application",
+		Spec: compapiv1alpha1.ComponentSpec{
 			ContainerImage: "registry.io/username/image:tag",
-			Source: appstudiov1alpha1.ComponentSource{
-				ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
-					GitSource: &appstudiov1alpha1.GitSource{
-						URL:           "https://githost.com/user/repo.git",
-						Context:       "./base_context",
-						DockerfileURL: "containerFile",
-					},
+			Source: compapiv1alpha1.ComponentSource{
+				ComponentSourceUnion: compapiv1alpha1.ComponentSourceUnion{
+					GitURL: "https://githost.com/user/repo.git",
 				},
 			},
 		},
-		Status: appstudiov1alpha1.ComponentStatus{},
 	}
+	versionInfo := &VersionInfo{Revision: "custom-branch", OriginalVersion: "version1", SanitizedVersion: "version1", Context: "./base_context", DockerfileURI: "containerFile"}
 	param1_value := "param1_value"
 	param2_value := []string{"param2_value1", "param2_value2"}
 	pipelineSpec := &tektonapi.PipelineSpec{
@@ -229,26 +82,27 @@ func TestGeneratePaCPipelineRunForComponent(t *testing.T) {
 		Params: tektonapi.ParamSpecs{
 			{Name: "add-param1", Type: "string", Default: &tektonapi.ParamValue{Type: "string", StringVal: param1_value}},
 			{Name: "add-param2", Type: "array", Default: &tektonapi.ParamValue{Type: "array", ArrayVal: param2_value}},
+			{Name: "output-image", Type: "string", Default: &tektonapi.ParamValue{Type: "string", StringVal: ""}},
+			{Name: "image-expires-after", Type: "string", Default: &tektonapi.ParamValue{Type: "string", StringVal: ""}},
+			{Name: "dockerfile", Type: "string", Default: &tektonapi.ParamValue{Type: "string", StringVal: ""}},
+			{Name: "path-context", Type: "string", Default: &tektonapi.ParamValue{Type: "string", StringVal: ""}},
 		},
 	}
-	branchName := "custom-branch"
+	pipelineDefinition := &PipelineDef{AdditionalParams: []string{"add-param1", "add-param2", "non-existing"}}
 	ResetTestGitProviderClient()
 
-	pipelineRun, err := generatePaCPipelineRunForComponent(component, pipelineSpec, []string{"add-param1", "add-param2", "non-existing"}, branchName, testGitProviderClient, true)
+	pipelineRun, err := generatePaCPipelineRunForComponent(component, pipelineSpec, pipelineDefinition, versionInfo, testGitProviderClient, true)
 	if err != nil {
-		t.Error("generatePaCPipelineRunForComponent(): Failed to genertate pipeline run")
+		t.Error("generatePaCPipelineRunForComponent(): Failed to generate pipeline run")
 	}
 
-	if pipelineRun.Name != component.Name+pipelineRunOnPRSuffix {
+	if pipelineRun.Name != component.Name+"-"+versionInfo.SanitizedVersion+pipelineRunOnPRSuffix {
 		t.Error("generatePaCPipelineRunForComponent(): wrong pipeline name")
 	}
 	if pipelineRun.Namespace != "my-namespace" {
 		t.Error("generatePaCPipelineRunForComponent(): pipeline namespace doesn't match")
 	}
 
-	if pipelineRun.Labels[ApplicationNameLabelName] != "my-application" {
-		t.Errorf("generatePaCPipelineRunForComponent(): wrong %s label value", ApplicationNameLabelName)
-	}
 	if pipelineRun.Labels[ComponentNameLabelName] != "my-component" {
 		t.Errorf("generatePaCPipelineRunForComponent(): wrong %s label value", ComponentNameLabelName)
 	}
@@ -256,7 +110,7 @@ func TestGeneratePaCPipelineRunForComponent(t *testing.T) {
 		t.Error("generatePaCPipelineRunForComponent(): wrong pipelines.appstudio.openshift.io/type label value")
 	}
 
-	onCel := `event == "pull_request" && target_branch == "custom-branch" && ( "./base_context/***".pathChanged() || ".tekton/my-component-pull-request.yaml".pathChanged() )`
+	onCel := `event == "pull_request" && target_branch == "custom-branch" && ( "./base_context/***".pathChanged() || ".tekton/my-component-version1-pull-request.yaml".pathChanged() )`
 	if pipelineRun.Annotations["pipelinesascode.tekton.dev/on-cel-expression"] != onCel {
 		t.Errorf("generatePaCPipelineRunForComponent(): wrong pipelinesascode.tekton.dev/on-cel-expression annotation value")
 	}
@@ -277,6 +131,9 @@ func TestGeneratePaCPipelineRunForComponent(t *testing.T) {
 	}
 	if pipelineRun.Annotations["build.appstudio.redhat.com/pull_request_number"] != "{{pull_request_number}}" {
 		t.Errorf("generatePaCPipelineRunForComponent(): wrong build.appstudio.redhat.com/pull_request_number annotation value")
+	}
+	if pipelineRun.Annotations[VersionAnnotationName] != versionInfo.OriginalVersion {
+		t.Errorf("generatePaCPipelineRunForComponent(): wrong %s annotation value", VersionAnnotationName)
 	}
 
 	if len(pipelineRun.Spec.Params) != 8 {
@@ -343,101 +200,118 @@ func TestGeneratePaCPipelineRunForComponent(t *testing.T) {
 	if pipelineRun.Spec.TaskRunTemplate.ServiceAccountName != "build-pipeline-"+component.Name {
 		t.Error("generatePaCPipelineRunForComponent(): build pipeline service account is incorrect")
 	}
+
+	// test that if default params aren't in the spec, we won't add them
+	pipelineSpec2 := &tektonapi.PipelineSpec{
+		Params: tektonapi.ParamSpecs{
+			{Name: "add-param1", Type: "string", Default: &tektonapi.ParamValue{Type: "string", StringVal: param1_value}},
+			{Name: "add-param2", Type: "array", Default: &tektonapi.ParamValue{Type: "array", ArrayVal: param2_value}},
+			{Name: "output-image", Type: "string", Default: &tektonapi.ParamValue{Type: "string", StringVal: ""}},
+			{Name: "image-expires-after", Type: "string", Default: &tektonapi.ParamValue{Type: "string", StringVal: ""}},
+		},
+	}
+	pipelineRun2, err := generatePaCPipelineRunForComponent(component, pipelineSpec2, pipelineDefinition, versionInfo, testGitProviderClient, true)
+	if err != nil {
+		t.Error("generatePaCPipelineRunForComponent(): Failed to generate pipeline run 2")
+	}
+
+	for _, param := range pipelineRun2.Spec.Params {
+		switch param.Name {
+		case "git-url":
+			if param.Value.StringVal != "{{source_url}}" {
+				t.Errorf("generatePaCPipelineRunForComponent(): wrong pipeline parameter %s", param.Name)
+			}
+		case "revision":
+			if param.Value.StringVal != "{{revision}}" {
+				t.Errorf("generatePaCPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
+			}
+		case "output-image":
+			if !strings.HasPrefix(param.Value.StringVal, "registry.io/username/image:on-pr-{{revision}}") {
+				t.Errorf("generatePaCPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
+			}
+		case "image-expires-after":
+			if param.Value.StringVal != "5d" {
+				t.Errorf("generatePaCPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
+			}
+		case "add-param1":
+			if param.Value.StringVal != param1_value {
+				t.Errorf("generatePaCPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
+			}
+		case "add-param2":
+			if len(param.Value.ArrayVal) != len(param2_value) {
+				t.Errorf("generatePaCPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
+			}
+			for idx := range param2_value {
+				if param2_value[idx] != param.Value.ArrayVal[idx] {
+					t.Errorf("generatePaCPipelineRunForComponent(): wrong pipeline parameter %s value", param.Name)
+
+				}
+			}
+		default:
+			t.Errorf("generatePaCPipelineRunForComponent(): unexpected pipeline parameter %v", param)
+		}
+	}
 }
 
 func TestGeneratePaCPipelineRunForComponent_ShouldStopIfTargetBranchIsNotSet(t *testing.T) {
-	_, err := generatePaCPipelineRunForComponent(nil, nil, nil, "", nil, true)
+	_, err := generatePaCPipelineRunForComponent(&compapiv1alpha1.Component{ObjectMeta: metav1.ObjectMeta{Name: "my-component", Namespace: "my-namespace"}},
+		nil, nil, &VersionInfo{}, nil, true)
 	if err == nil {
 		t.Errorf("generatePaCPipelineRunForComponent(): expected error")
 	}
 }
 
 func TestGenerateCelExpressionForPipeline(t *testing.T) {
-	componentKey := types.NamespacedName{Namespace: "test-ns", Name: "component-name"}
+	componentKey := types.NamespacedName{Namespace: "test-ns", Name: "comp1"}
 	ResetTestGitProviderClient()
 
 	tests := []struct {
 		name              string
-		component         *appstudiov1alpha1.Component
-		targetBranch      string
 		isDockerfileExist func(repoUrl, branch, dockerfilePath string) (bool, error)
 		wantOnPullError   bool
 		wantOnPushError   bool
 		wantOnPull        string
 		wantOnPush        string
+		versionInfo       *VersionInfo
 	}{
 		{
-			name: "should generate cel expression for component that occupies whole git repository",
-			component: func() *appstudiov1alpha1.Component {
-				component := getSampleComponentData(componentKey)
-				return component
-			}(),
-			targetBranch: "my-branch",
-			wantOnPull:   `event == "pull_request" && target_branch == "my-branch"`,
-			wantOnPush:   `event == "push" && target_branch == "my-branch"`,
+			name:        "should generate cel expression for component that occupies whole git repository",
+			wantOnPull:  `event == "pull_request" && target_branch == "my-branch"`,
+			wantOnPush:  `event == "push" && target_branch == "my-branch"`,
+			versionInfo: &VersionInfo{Revision: "my-branch", SanitizedVersion: "version1"},
 		},
 		{
-			name: "should generate cel expression for component with context directory, without dokerfile",
-			component: func() *appstudiov1alpha1.Component {
-				component := getComponentData(componentConfig{componentKey: componentKey, gitSourceContext: "component-dir"})
-				return component
-			}(),
-			targetBranch: "my-branch",
-			wantOnPull:   `event == "pull_request" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/component-name-pull-request.yaml".pathChanged() )`,
-			wantOnPush:   `event == "push" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/component-name-push.yaml".pathChanged() )`,
+			name:        "should generate cel expression for component with context directory, without dokerfile",
+			wantOnPull:  `event == "pull_request" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/comp1-version1-pull-request.yaml".pathChanged() )`,
+			wantOnPush:  `event == "push" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/comp1-version1-push.yaml".pathChanged() )`,
+			versionInfo: &VersionInfo{Revision: "my-branch", Context: "component-dir", SanitizedVersion: "version1"},
 		},
 		{
 			name: "should generate cel expression for component with context directory and its dockerfile in context directory",
-			component: func() *appstudiov1alpha1.Component {
-				component := getComponentData(componentConfig{componentKey: componentKey, gitSourceContext: "component-dir"})
-				component.Spec.Source.GitSource.DockerfileURL = "dockerfile/Dockerfile"
-				return component
-			}(),
-			targetBranch: "my-branch",
 			isDockerfileExist: func(repoUrl, branch, dockerfilePath string) (bool, error) {
 				return true, nil
 			},
-			wantOnPull: `event == "pull_request" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/component-name-pull-request.yaml".pathChanged() )`,
-			wantOnPush: `event == "push" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/component-name-push.yaml".pathChanged() )`,
+			wantOnPull:  `event == "pull_request" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/comp1-version1-pull-request.yaml".pathChanged() )`,
+			wantOnPush:  `event == "push" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/comp1-version1-push.yaml".pathChanged() )`,
+			versionInfo: &VersionInfo{Revision: "my-branch", Context: "component-dir", DockerfileURI: "dockerfile/Dockerfile", SanitizedVersion: "version1"},
 		},
 		{
 			name: "should generate cel expression for component with context directory and its dockerfile outside context directory",
-			component: func() *appstudiov1alpha1.Component {
-				component := getComponentData(componentConfig{componentKey: componentKey, gitSourceContext: "component-dir"})
-				component.Spec.Source.GitSource.DockerfileURL = "docker-root-dir/Dockerfile"
-				return component
-			}(),
-			targetBranch: "my-branch",
 			isDockerfileExist: func(repoUrl, branch, dockerfilePath string) (bool, error) {
 				return false, nil
 			},
-			wantOnPull: `event == "pull_request" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/component-name-pull-request.yaml".pathChanged() || "docker-root-dir/Dockerfile".pathChanged() )`,
-			wantOnPush: `event == "push" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/component-name-push.yaml".pathChanged() || "docker-root-dir/Dockerfile".pathChanged() )`,
-		},
-		{
-			name: "should generate cel expression for component with context directory and its dockerfile outside git repository",
-			component: func() *appstudiov1alpha1.Component {
-				component := getComponentData(componentConfig{componentKey: componentKey, gitSourceContext: "component-dir"})
-				component.Spec.Source.GitSource.DockerfileURL = "https://host.com:1234/files/Dockerfile"
-				return component
-			}(),
-			targetBranch: "my-branch",
-			wantOnPull:   `event == "pull_request" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/component-name-pull-request.yaml".pathChanged() )`,
-			wantOnPush:   `event == "push" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/component-name-push.yaml".pathChanged() )`,
+			wantOnPull:  `event == "pull_request" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/comp1-version1-pull-request.yaml".pathChanged() || "docker-root-dir/Dockerfile".pathChanged() )`,
+			wantOnPush:  `event == "push" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/comp1-version1-push.yaml".pathChanged() || "docker-root-dir/Dockerfile".pathChanged() )`,
+			versionInfo: &VersionInfo{Revision: "my-branch", Context: "component-dir", DockerfileURI: "docker-root-dir/Dockerfile", SanitizedVersion: "version1"},
 		},
 		{
 			name: "should fail to generate cel expression for component if isFileExist fails",
-			component: func() *appstudiov1alpha1.Component {
-				component := getComponentData(componentConfig{componentKey: componentKey, gitSourceContext: "component-dir"})
-				component.Spec.Source.GitSource.DockerfileURL = "non-existing/Dockerfile"
-				return component
-			}(),
-			targetBranch: "my-branch",
 			isDockerfileExist: func(repoUrl, branch, dockerfilePath string) (bool, error) {
 				return false, fmt.Errorf("Failed to check file existance")
 			},
 			wantOnPullError: true,
 			wantOnPushError: true,
+			versionInfo:     &VersionInfo{Revision: "my-branch", Context: "component-dir", DockerfileURI: "non-existing/Dockerfile", SanitizedVersion: "version1"},
 		},
 	}
 
@@ -451,8 +325,8 @@ func TestGenerateCelExpressionForPipeline(t *testing.T) {
 					return false, nil
 				}
 			}
-
-			got, err := generateCelExpressionForPipeline(tt.component, testGitProviderClient, tt.targetBranch, true)
+			component := getSampleComponentData(componentKey)
+			got, err := generateCelExpressionForPipeline(component, testGitProviderClient, tt.versionInfo, true)
 			if err != nil {
 				if !tt.wantOnPullError {
 					t.Errorf("generateCelExpressionForPipeline(on pull): got err: %v", err)
@@ -463,7 +337,7 @@ func TestGenerateCelExpressionForPipeline(t *testing.T) {
 				}
 			}
 
-			got, err = generateCelExpressionForPipeline(tt.component, testGitProviderClient, tt.targetBranch, false)
+			got, err = generateCelExpressionForPipeline(component, testGitProviderClient, tt.versionInfo, false)
 			if err != nil {
 				if !tt.wantOnPushError {
 					t.Errorf("generateCelExpressionForPipeline(on push): got err: %v", err)
@@ -939,7 +813,7 @@ func TestSlicesIntersection(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run("intersection test", func(t *testing.T) {
-			got := slices.Intersection(tt.in1, tt.in2)
+			got := pkgslices.Intersection(tt.in1, tt.in2)
 			if got != tt.intersection {
 				t.Errorf("Got slice intersection %d but expected length is %d", got, tt.intersection)
 			}
@@ -948,31 +822,36 @@ func TestSlicesIntersection(t *testing.T) {
 }
 
 func TestGeneratePACRepository(t *testing.T) {
-	getComponent := func(repoUrl string, annotations map[string]string) appstudiov1alpha1.Component {
-		return appstudiov1alpha1.Component{
+	getComponent := func(repoUrl string, annotations map[string]string, repoSettings *compapiv1alpha1.RepositorySettings) compapiv1alpha1.Component {
+		component := compapiv1alpha1.Component{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:        "testcomponent",
 				Namespace:   "workspace-name",
 				Annotations: annotations,
 			},
-			Spec: appstudiov1alpha1.ComponentSpec{
-				Source: appstudiov1alpha1.ComponentSource{
-					ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
-						GitSource: &appstudiov1alpha1.GitSource{
-							URL: repoUrl,
-						},
+			Spec: compapiv1alpha1.ComponentSpec{
+				Source: compapiv1alpha1.ComponentSource{
+					ComponentSourceUnion: compapiv1alpha1.ComponentSourceUnion{
+						GitURL: repoUrl,
 					},
 				},
 			},
 		}
+		if repoSettings != nil {
+			component.Spec.RepositorySettings = *repoSettings
+		}
+		return component
 	}
 
 	tests := []struct {
-		name                      string
-		repoUrl                   string
-		componentAnnotations      map[string]string
-		pacConfig                 map[string][]byte
-		expectedGitProviderConfig *pacv1alpha1.GitProvider
+		name                             string
+		repoUrl                          string
+		componentAnnotations             map[string]string
+		pacConfig                        map[string][]byte
+		expectedGitProviderConfig        *pacv1alpha1.GitProvider
+		repoSettings                     *compapiv1alpha1.RepositorySettings
+		expectedGithubAppTokenScopeRepos *[]string
+		expectedCommentStrategy          string
 	}{
 		{
 			name:    "should create PaC repository for GitHub application",
@@ -981,7 +860,10 @@ func TestGeneratePACRepository(t *testing.T) {
 				PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
 				PipelinesAsCodeGithubPrivateKey: []byte("private-key"),
 			},
-			expectedGitProviderConfig: nil,
+			expectedGitProviderConfig:        nil,
+			repoSettings:                     nil,
+			expectedGithubAppTokenScopeRepos: nil,
+			expectedCommentStrategy:          "",
 		},
 		{
 			name:    "should create PaC repository for GitHub application even if Github webhook configured",
@@ -991,7 +873,10 @@ func TestGeneratePACRepository(t *testing.T) {
 				PipelinesAsCodeGithubPrivateKey: []byte("private-key"),
 				"password":                      []byte("ghp_token"),
 			},
-			expectedGitProviderConfig: nil,
+			expectedGitProviderConfig:        nil,
+			repoSettings:                     nil,
+			expectedGithubAppTokenScopeRepos: nil,
+			expectedCommentStrategy:          "",
 		},
 		{
 			name:    "should create PaC repository for GitHub webhook",
@@ -1006,11 +891,14 @@ func TestGeneratePACRepository(t *testing.T) {
 				},
 				WebhookSecret: &pacv1alpha1.Secret{
 					Name: pipelinesAsCodeWebhooksSecretName,
-					Key:  getWebhookSecretKeyForComponent(getComponent("https://github.com/user/test-component-repository", nil)),
+					Key:  getWebhookSecretKeyForComponent(getComponent("https://github.com/user/test-component-repository", nil, nil), true),
 				},
 				URL:  "",
 				Type: "github",
 			},
+			repoSettings:                     nil,
+			expectedGithubAppTokenScopeRepos: nil,
+			expectedCommentStrategy:          "",
 		},
 		{
 			name:    "should create PaC repository for GitHub application on self-hosted GitHub",
@@ -1023,7 +911,10 @@ func TestGeneratePACRepository(t *testing.T) {
 				PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
 				PipelinesAsCodeGithubPrivateKey: []byte("private-key"),
 			},
-			expectedGitProviderConfig: nil,
+			expectedGitProviderConfig:        nil,
+			repoSettings:                     nil,
+			expectedGithubAppTokenScopeRepos: nil,
+			expectedCommentStrategy:          "",
 		},
 		{
 			name:    "should create PaC repository for self-hosted GitHub webhook and figure out provider URL from source URL",
@@ -1041,11 +932,14 @@ func TestGeneratePACRepository(t *testing.T) {
 				},
 				WebhookSecret: &pacv1alpha1.Secret{
 					Name: pipelinesAsCodeWebhooksSecretName,
-					Key:  getWebhookSecretKeyForComponent(getComponent("https://github.self-hosted.com/user/test-component-repository/", nil)),
+					Key:  getWebhookSecretKeyForComponent(getComponent("https://github.self-hosted.com/user/test-component-repository/", nil, nil), true),
 				},
 				URL:  "https://github.self-hosted.com",
 				Type: "github",
 			},
+			repoSettings:                     nil,
+			expectedGithubAppTokenScopeRepos: nil,
+			expectedCommentStrategy:          "",
 		},
 		{
 			name:    "should create PaC repository for self-hosted GitHub webhook and use provider URL from annotation",
@@ -1064,11 +958,14 @@ func TestGeneratePACRepository(t *testing.T) {
 				},
 				WebhookSecret: &pacv1alpha1.Secret{
 					Name: pipelinesAsCodeWebhooksSecretName,
-					Key:  getWebhookSecretKeyForComponent(getComponent("https://github.self-hosted.com/user/test-component-repository/", nil)),
+					Key:  getWebhookSecretKeyForComponent(getComponent("https://github.self-hosted.com/user/test-component-repository/", nil, nil), true),
 				},
 				URL:  "https://github.self-hosted-proxy.com",
 				Type: "github",
 			},
+			repoSettings:                     nil,
+			expectedGithubAppTokenScopeRepos: nil,
+			expectedCommentStrategy:          "",
 		},
 		{
 			name:    "should create PaC repository for GitLab webhook",
@@ -1083,11 +980,14 @@ func TestGeneratePACRepository(t *testing.T) {
 				},
 				WebhookSecret: &pacv1alpha1.Secret{
 					Name: pipelinesAsCodeWebhooksSecretName,
-					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.com/user/test-component-repository/", nil)),
+					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.com/user/test-component-repository/", nil, nil), true),
 				},
 				URL:  "",
 				Type: "gitlab",
 			},
+			repoSettings:                     nil,
+			expectedGithubAppTokenScopeRepos: nil,
+			expectedCommentStrategy:          "",
 		},
 		{
 			name:    "should create PaC repository for GitLab webhook even if GitHub application configured",
@@ -1104,10 +1004,13 @@ func TestGeneratePACRepository(t *testing.T) {
 				},
 				WebhookSecret: &pacv1alpha1.Secret{
 					Name: pipelinesAsCodeWebhooksSecretName,
-					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.com/user/test-component-repository", nil)),
+					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.com/user/test-component-repository", nil, nil), true),
 				},
 				Type: "gitlab",
 			},
+			repoSettings:                     nil,
+			expectedGithubAppTokenScopeRepos: nil,
+			expectedCommentStrategy:          "",
 		},
 		{
 			name:    "should create PaC repository for self-hosted GitLab webhook and figure out provider URL from source URL",
@@ -1125,11 +1028,14 @@ func TestGeneratePACRepository(t *testing.T) {
 				},
 				WebhookSecret: &pacv1alpha1.Secret{
 					Name: pipelinesAsCodeWebhooksSecretName,
-					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.self-hosted.com/user/test-component-repository/", nil)),
+					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.self-hosted.com/user/test-component-repository/", nil, nil), true),
 				},
 				URL:  "https://gitlab.self-hosted.com",
 				Type: "gitlab",
 			},
+			repoSettings:                     nil,
+			expectedGithubAppTokenScopeRepos: nil,
+			expectedCommentStrategy:          "",
 		},
 		{
 			name:    "should create PaC repository for self-hosted GitLab webhook and use provider URL from annotation",
@@ -1148,11 +1054,14 @@ func TestGeneratePACRepository(t *testing.T) {
 				},
 				WebhookSecret: &pacv1alpha1.Secret{
 					Name: pipelinesAsCodeWebhooksSecretName,
-					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.self-hosted.com/user/test-component-repository/", nil)),
+					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.self-hosted.com/user/test-component-repository/", nil, nil), true),
 				},
 				URL:  "https://gitlab.self-hosted-proxy.com",
 				Type: "gitlab",
 			},
+			repoSettings:                     nil,
+			expectedGithubAppTokenScopeRepos: nil,
+			expectedCommentStrategy:          "",
 		},
 		{
 			name:    "should create PaC repository for self-hosted GitLab webhook and use provider URL from annotation that has no protocol",
@@ -1171,11 +1080,14 @@ func TestGeneratePACRepository(t *testing.T) {
 				},
 				WebhookSecret: &pacv1alpha1.Secret{
 					Name: pipelinesAsCodeWebhooksSecretName,
-					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.self-hosted.com/user/test-component-repository/", nil)),
+					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.self-hosted.com/user/test-component-repository/", nil, nil), true),
 				},
 				URL:  "https://gitlab.self-hosted-proxy.com",
 				Type: "gitlab",
 			},
+			repoSettings:                     nil,
+			expectedGithubAppTokenScopeRepos: nil,
+			expectedCommentStrategy:          "",
 		},
 		{
 			name:    "should create PaC repository for Forgejo webhook with gitea type for PaC compatibility",
@@ -1193,17 +1105,58 @@ func TestGeneratePACRepository(t *testing.T) {
 				},
 				WebhookSecret: &pacv1alpha1.Secret{
 					Name: pipelinesAsCodeWebhooksSecretName,
-					Key:  getWebhookSecretKeyForComponent(getComponent("https://forgejo.example.com/user/test-component-repository/", nil)),
+					Key:  getWebhookSecretKeyForComponent(getComponent("https://forgejo.example.com/user/test-component-repository/", nil, nil), true),
 				},
 				URL:  "https://forgejo.example.com",
 				Type: "gitea",
 			},
+			repoSettings:                     nil,
+			expectedGithubAppTokenScopeRepos: nil,
+			expectedCommentStrategy:          "",
+		},
+		{
+			name:    "should create PaC repository for GitHub application with repo settings CommentStrategy",
+			repoUrl: "https://github.com/user/test-component-repository",
+			pacConfig: map[string][]byte{
+				PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
+				PipelinesAsCodeGithubPrivateKey: []byte("private-key"),
+			},
+			expectedGitProviderConfig:        nil,
+			repoSettings:                     &compapiv1alpha1.RepositorySettings{CommentStrategy: "disable_all"},
+			expectedGithubAppTokenScopeRepos: nil,
+			expectedCommentStrategy:          "disable_all",
+		},
+		{
+			name:    "should create PaC repository for GitHub application with repo settings GithubAppTokenScopeRepos",
+			repoUrl: "https://github.com/user/test-component-repository",
+			pacConfig: map[string][]byte{
+				PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
+				PipelinesAsCodeGithubPrivateKey: []byte("private-key"),
+			},
+			expectedGitProviderConfig:        nil,
+			repoSettings:                     &compapiv1alpha1.RepositorySettings{GithubAppTokenScopeRepos: []string{"scope1", "scope2"}},
+			expectedGithubAppTokenScopeRepos: &[]string{"scope1", "scope2"},
+			expectedCommentStrategy:          "",
+		},
+		{
+			name:    "should create PaC repository for GitHub application with repo settings CommentStrategy and GithubAppTokenScopeRepos",
+			repoUrl: "https://github.com/user/test-component-repository",
+			pacConfig: map[string][]byte{
+				PipelinesAsCodeGithubAppIdKey:   []byte("12345"),
+				PipelinesAsCodeGithubPrivateKey: []byte("private-key"),
+			},
+			expectedGitProviderConfig: nil,
+			repoSettings: &compapiv1alpha1.RepositorySettings{
+				CommentStrategy:          "disable_all",
+				GithubAppTokenScopeRepos: []string{"scope1", "scope2"}},
+			expectedGithubAppTokenScopeRepos: &[]string{"scope1", "scope2"},
+			expectedCommentStrategy:          "disable_all",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			component := getComponent(tt.repoUrl, tt.componentAnnotations)
+			component := getComponent(tt.repoUrl, tt.componentAnnotations, tt.repoSettings)
 			secret := &corev1.Secret{
 				TypeMeta: metav1.TypeMeta{
 					APIVersion: "v1",
@@ -1215,25 +1168,41 @@ func TestGeneratePACRepository(t *testing.T) {
 				},
 				Data: tt.pacConfig,
 			}
-			pacRepo, err := generatePACRepository(component, secret)
+			pacRepo, err := generatePACRepository(component, secret, &component.Spec.RepositorySettings, true)
 
 			if err != nil {
 				t.Errorf("Failed to generate PaC repository object. Cause: %v", err)
 			}
 
-			if pacRepo.Name != component.Name {
-				t.Errorf("Generated PaC repository must have the same name as corresponding component")
+			expectedRepo := strings.TrimSuffix(strings.TrimSuffix(tt.repoUrl, ".git"), "/")
+			repositoryName, _ := generatePaCRepositoryNameFromGitUrl(expectedRepo)
+			if pacRepo.Name != repositoryName {
+				t.Errorf("Generated PaC repository must have name based on component's git url")
 			}
 			if pacRepo.Namespace != component.Namespace {
 				t.Errorf("Generated PaC repository must have the same namespace as corresponding component")
 			}
 
-			expectedRepo := strings.TrimSuffix(strings.TrimSuffix(tt.repoUrl, ".git"), "/")
 			if pacRepo.Spec.URL != expectedRepo {
 				t.Errorf("Wrong git repository URL in PaC repository: %s, want %s", pacRepo.Spec.URL, expectedRepo)
 			}
 			if !reflect.DeepEqual(pacRepo.Spec.GitProvider, tt.expectedGitProviderConfig) {
 				t.Errorf("Wrong git provider config in PaC repository: %#v, want %#v", pacRepo.Spec.GitProvider, tt.expectedGitProviderConfig)
+			}
+
+			if tt.expectedGithubAppTokenScopeRepos == nil {
+				if len(pacRepo.Spec.Settings.GithubAppTokenScopeRepos) != 0 {
+					t.Errorf("Wrong settings GithubAppTokenScopeRepos in PaC repository: %#v, want %#v", pacRepo.Spec.Settings.GithubAppTokenScopeRepos, []string{})
+				}
+			} else if !reflect.DeepEqual(pacRepo.Spec.Settings.GithubAppTokenScopeRepos, *tt.expectedGithubAppTokenScopeRepos) {
+				t.Errorf("Wrong settings GithubAppTokenScopeRepos in PaC repository: %#v, want %#v", pacRepo.Spec.Settings.GithubAppTokenScopeRepos, *tt.expectedGithubAppTokenScopeRepos)
+			}
+
+			if pacRepo.Spec.Settings.Github.CommentStrategy != tt.expectedCommentStrategy {
+				t.Errorf("Wrong settings Github.CommentStrategy in PaC repository: %s, want %s", pacRepo.Spec.Settings.Github.CommentStrategy, tt.expectedCommentStrategy)
+			}
+			if pacRepo.Spec.Settings.Gitlab.CommentStrategy != tt.expectedCommentStrategy {
+				t.Errorf("Wrong settings Gitlab.CommentStrategy in PaC repository: %s, want %s", pacRepo.Spec.Settings.Gitlab.CommentStrategy, tt.expectedCommentStrategy)
 			}
 		})
 	}
@@ -1259,7 +1228,19 @@ func TestPaCRepoAddParamWorkspace(t *testing.T) {
 		Data: pacConfig,
 	}
 
-	component := getComponentData(componentConfig{})
+	component := &compapiv1alpha1.Component{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-component",
+			Namespace: "my-namespace",
+		},
+		Spec: compapiv1alpha1.ComponentSpec{
+			Source: compapiv1alpha1.ComponentSource{
+				ComponentSourceUnion: compapiv1alpha1.ComponentSourceUnion{
+					GitURL: "https://github.com/user/repo.git",
+				},
+			},
+		},
+	}
 
 	convertCustomParamsToMap := func(repository *pacv1alpha1.Repository) map[string]pacv1alpha1.Params {
 		result := map[string]pacv1alpha1.Params{}
@@ -1270,7 +1251,7 @@ func TestPaCRepoAddParamWorkspace(t *testing.T) {
 	}
 
 	t.Run("add to Spec.Params", func(t *testing.T) {
-		repository, _ := generatePACRepository(*component, secret)
+		repository, _ := generatePACRepository(*component, secret, nil, true)
 		pacRepoAddParamWorkspaceName(repository, workspaceName)
 
 		params := convertCustomParamsToMap(repository)
@@ -1280,7 +1261,7 @@ func TestPaCRepoAddParamWorkspace(t *testing.T) {
 	})
 
 	t.Run("override existing workspace parameter, unset other fields btw", func(t *testing.T) {
-		repository, _ := generatePACRepository(*component, secret)
+		repository, _ := generatePACRepository(*component, secret, nil, true)
 		params := []pacv1alpha1.Params{
 			{
 				Name:      pacCustomParamAppstudioWorkspace,
@@ -1304,28 +1285,24 @@ func TestPaCRepoAddParamWorkspace(t *testing.T) {
 }
 
 func TestGetGitProvider(t *testing.T) {
-	getComponent := func(repoUrl, annotationValue string) appstudiov1alpha1.Component {
-		componentMeta := metav1.ObjectMeta{
-			Name:      "testcomponent",
-			Namespace: "workspace-name",
-		}
-		if annotationValue != "" {
-			componentMeta.Annotations = map[string]string{
-				GitProviderAnnotationName: annotationValue,
-			}
-		}
-
-		component := appstudiov1alpha1.Component{
-			ObjectMeta: componentMeta,
-			Spec: appstudiov1alpha1.ComponentSpec{
-				Source: appstudiov1alpha1.ComponentSource{
-					ComponentSourceUnion: appstudiov1alpha1.ComponentSourceUnion{
-						GitSource: &appstudiov1alpha1.GitSource{
-							URL: repoUrl,
-						},
+	getComponent := func(repoUrl, annotationValue string) compapiv1alpha1.Component {
+		component := compapiv1alpha1.Component{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "testcomponent",
+				Namespace: "workspace-name",
+			},
+			Spec: compapiv1alpha1.ComponentSpec{
+				Source: compapiv1alpha1.ComponentSource{
+					ComponentSourceUnion: compapiv1alpha1.ComponentSourceUnion{
+						GitURL: repoUrl,
 					},
 				},
 			},
+		}
+		if annotationValue != "" {
+			component.ObjectMeta.Annotations = map[string]string{
+				GitProviderAnnotationName: annotationValue,
+			}
 		}
 		return component
 	}
@@ -1338,7 +1315,7 @@ func TestGetGitProvider(t *testing.T) {
 		expectError                    bool
 	}{
 		{
-			name:             "should detect github provider via http url",
+			name:             "should detect github provider via https url",
 			componentRepoUrl: "https://github.com/user/test-component-repository",
 			want:             "github",
 		},
@@ -1349,7 +1326,7 @@ func TestGetGitProvider(t *testing.T) {
 			want:             "github",
 		},
 		{
-			name:             "should detect non-standard github provider via http url",
+			name:             "should detect non-standard github provider via https url",
 			componentRepoUrl: "https://cooler.github.my-company.com/user/test-component-repository",
 			want:             "github",
 		},
@@ -1359,7 +1336,7 @@ func TestGetGitProvider(t *testing.T) {
 			expectError:      true,
 		},
 		{
-			name:             "should detect gitlab provider via http url",
+			name:             "should detect gitlab provider via https url",
 			componentRepoUrl: "https://gitlab.com/user/test-component-repository",
 			want:             "gitlab",
 		},
@@ -1369,7 +1346,7 @@ func TestGetGitProvider(t *testing.T) {
 			expectError:      true,
 		},
 		{
-			name:             "should detect non-standard gitlab provider via http url",
+			name:             "should detect non-standard gitlab provider via https url",
 			componentRepoUrl: "https://cooler.gitlab.my-company.com/user/test-component-repository",
 			want:             "gitlab",
 		},
@@ -1477,7 +1454,7 @@ func TestGetGitProvider(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			component := getComponent(tt.componentRepoUrl, tt.componentGitProviderAnnotation)
-			got, err := getGitProvider(component)
+			got, err := getGitProvider(component, true)
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("Detecting git provider for component with '%s' url and '%s' annotation value should fail", tt.componentRepoUrl, tt.componentGitProviderAnnotation)
@@ -1492,8 +1469,8 @@ func TestGetGitProvider(t *testing.T) {
 
 	t.Run("should return error if git source is nil", func(t *testing.T) {
 		component := getComponent("", "")
-		component.Spec.Source.GitSource = nil
-		_, err := getGitProvider(component)
+		component.Spec.Source.GitURL = ""
+		_, err := getGitProvider(component, true)
 		if err == nil {
 			t.Error("Expected error for nil source URL")
 		}

@@ -31,7 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
-	appstudiov1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
+	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
 	l "github.com/konflux-ci/build-service/pkg/logs"
 	imgcv1alpha1 "github.com/konflux-ci/image-controller/api/v1alpha1"
 )
@@ -47,22 +47,18 @@ const (
 
 // getBuildPipelineServiceAccountName returns name of dedicated Service Account
 // that should be used for build pipelines of the given Component.
-func getBuildPipelineServiceAccountName(component *appstudiov1alpha1.Component) string {
-	return getBuildPipelineServiceAccountNameByComponentName(component.GetName())
-}
-func getBuildPipelineServiceAccountNameByComponentName(componentName string) string {
+func getBuildPipelineServiceAccountName(componentName string) string {
 	return "build-pipeline-" + componentName
 }
 
 // EnsureBuildPipelineServiceAccount checks if dedicated Service Account for Component build pipelines and
 // corresponding Role Binding to appstudio-pipeline-runner Cluster Role exists.
 // If a resource missing, it will be created.
-func (r *ComponentBuildReconciler) EnsureBuildPipelineServiceAccount(ctx context.Context, component *appstudiov1alpha1.Component) error {
+func (r *ComponentBuildReconciler) EnsureBuildPipelineServiceAccount(ctx context.Context, component *compapiv1alpha1.Component, ensureNudging bool) error {
 	log := ctrllog.FromContext(ctx).WithName("buildSA-provision")
-	ctx = ctrllog.IntoContext(ctx, log)
 
 	// Verify build pipeline Service Account
-	buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(component)
+	buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(component.Name)
 	buildPipelinesServiceAccount := &corev1.ServiceAccount{}
 	if err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: component.Namespace}, buildPipelinesServiceAccount); err != nil {
 		if !errors.IsNotFound(err) {
@@ -91,9 +87,12 @@ func (r *ComponentBuildReconciler) EnsureBuildPipelineServiceAccount(ctx context
 		}
 	}
 
-	if err := r.ensureNudgingPullSecrets(ctx, component); err != nil {
-		log.Error(err, "failed to ensure nudge secrets linked")
-		return err
+	// TODO remove after for new component model
+	if ensureNudging {
+		if err := r.ensureNudgingPullSecrets(ctx, component); err != nil {
+			log.Error(err, "failed to ensure nudge secrets linked")
+			return err
+		}
 	}
 
 	if err := r.ensureBuildPipelineServiceAccountBinding(ctx, component); err != nil {
@@ -131,14 +130,15 @@ func (r *ComponentBuildReconciler) linkCommonSecretsToBuildPipelineServiceAccoun
 	return nil
 }
 
+// TODO remove after for new component model
 // ensureNudgingPullSecrets makes sure that Component build pipeline Service Account
 // has pull secrets for image repositories of Components that nudge current Component linked.
 // Note, they must be linked into Secrets section (not imagePullSecrets).
-func (r *ComponentBuildReconciler) ensureNudgingPullSecrets(ctx context.Context, component *appstudiov1alpha1.Component) error {
-	buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(component)
+func (r *ComponentBuildReconciler) ensureNudgingPullSecrets(ctx context.Context, component *compapiv1alpha1.Component) error {
+	buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(component.Name)
 	log := ctrllog.FromContext(ctx).WithValues("ServiceAccountName", buildPipelineServiceAccountName)
 
-	allComponentsInNamespaceList := &appstudiov1alpha1.ComponentList{}
+	allComponentsInNamespaceList := &compapiv1alpha1.ComponentList{}
 	if err := r.Client.List(ctx, allComponentsInNamespaceList, client.InNamespace(component.Namespace)); err != nil {
 		log.Error(err, "failed to list all Components in namespace", l.Action, l.ActionView)
 		return err
@@ -202,7 +202,7 @@ func (r *ComponentBuildReconciler) ensureNudgingPullSecrets(ctx context.Context,
 
 // cleanUpNudgingPullSecrets removes the current Component pull secret from the linked secrets list
 // of the nudged Components build pipeline Service Account.
-func (r *ComponentBuildReconciler) cleanUpNudgingPullSecrets(ctx context.Context, component *appstudiov1alpha1.Component) error {
+func (r *ComponentBuildReconciler) cleanUpNudgingPullSecrets(ctx context.Context, component *compapiv1alpha1.Component) error {
 	if len(component.Spec.BuildNudgesRef) == 0 {
 		// No nudge relations, nothing to do.
 		return nil
@@ -222,7 +222,7 @@ func (r *ComponentBuildReconciler) cleanUpNudgingPullSecrets(ctx context.Context
 	pullSecretName := imageRepository.Status.Credentials.PullSecretName
 
 	for _, nudgedComponentName := range component.Spec.BuildNudgesRef {
-		nudgedComponentBuildPipelineServiceAccountName := getBuildPipelineServiceAccountNameByComponentName(nudgedComponentName)
+		nudgedComponentBuildPipelineServiceAccountName := getBuildPipelineServiceAccountName(nudgedComponentName)
 		nudgedComponentBuildPipelineServiceAccount := &corev1.ServiceAccount{}
 		if err := r.Client.Get(ctx, types.NamespacedName{Name: nudgedComponentBuildPipelineServiceAccountName, Namespace: component.Namespace}, nudgedComponentBuildPipelineServiceAccount); err != nil {
 			if !errors.IsNotFound(err) {
@@ -279,10 +279,10 @@ func (r *ComponentBuildReconciler) getComponentImageRepository(ctx context.Conte
 
 // ensureBuildPipelineServiceAccountBinding makes sure that a common for all build pipelines Service Accounts
 // Role Binding exists and contains a subject record for the given component.
-func (r *ComponentBuildReconciler) ensureBuildPipelineServiceAccountBinding(ctx context.Context, component *appstudiov1alpha1.Component) error {
+func (r *ComponentBuildReconciler) ensureBuildPipelineServiceAccountBinding(ctx context.Context, component *compapiv1alpha1.Component) error {
 	log := ctrllog.FromContext(ctx)
 
-	buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(component)
+	buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(component.Name)
 
 	// Verify Role Binding for build pipeline Service Account
 	buildPipelinesRoleBinding := &rbacv1.RoleBinding{}
@@ -357,7 +357,7 @@ func getRoleBindingSaSubjectIndex(roleBinding *rbacv1.RoleBinding, serviceAccoun
 // removeBuildPipelineServiceAccountBinding deletes subject record for build pipleine Service Account
 // of the given Component from the common build pipelines Role Binding.
 // Deletes the common Role Binding if no subjects are left.
-func (r *ComponentBuildReconciler) removeBuildPipelineServiceAccountBinding(ctx context.Context, component *appstudiov1alpha1.Component) error {
+func (r *ComponentBuildReconciler) removeBuildPipelineServiceAccountBinding(ctx context.Context, component *compapiv1alpha1.Component) error {
 	log := ctrllog.FromContext(ctx)
 	log.Info("requested to remove build pipeline Service Account binding")
 
@@ -373,7 +373,7 @@ func (r *ComponentBuildReconciler) removeBuildPipelineServiceAccountBinding(ctx 
 
 	subjectsNumberBefore := len(buildPipelinesRoleBinding.Subjects)
 
-	buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(component)
+	buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(component.Name)
 	subjectIndex := getRoleBindingSaSubjectIndex(buildPipelinesRoleBinding, buildPipelineServiceAccountName)
 	if subjectIndex != -1 {
 		if len(buildPipelinesRoleBinding.Subjects) == 1 {

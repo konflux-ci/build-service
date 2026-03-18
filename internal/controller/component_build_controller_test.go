@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// TODO remove whole file after only new model is used
 package controllers
 
 import (
@@ -36,44 +37,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	appstudiov1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
+	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
 	"github.com/konflux-ci/build-service/pkg/boerrors"
 	. "github.com/konflux-ci/build-service/pkg/common"
 	gp "github.com/konflux-ci/build-service/pkg/git/gitprovider"
 	gpf "github.com/konflux-ci/build-service/pkg/git/gitproviderfactory"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	//+kubebuilder:scaffold:imports
-)
-
-const (
-	githubAppPrivateKey = `-----BEGIN RSA PRIVATE KEY-----` + // notsecret
-		`
-MIIEogIBAAKCAQEAtSwZCtZ0Tnepuezo/TL9vhdP00fOedCpN3HsKjqz7zXTnqkq
-foxemrDvRSg5n73sZhZMYX6NKY1FBLTE6OazvJQg0eXu7Bf5+5sg5ZZIthX1wbPU
-wk18S5HsC1NTDGHVlQ2pQEuXmpxi/FAKgHaYbhx2J2SzD2gdKEOAufBZ14o8btF2
-x64wi0VHX2JAmPXjodYQ2jYbH27lik5kS8wMDRKq0Kt3ABJkxULxUB4xuEbl2gWt
-osDrhFTtDWEYtmtL0R5mLoK61FfZmZElvHELQObBcEpJu9F/Bi0mcjle/TuVc69e
-tuVbmVg5Bn5iQKtw2hPEMqTLDVPbhhSAXhtJOwIDAQABAoIBAD+XEdce/MXJ9JXg
-1MqCilOdZRRYoN1a4vomD2mnHx74OqX25IZ0iIQtVF5mxwsNo5sVeovB2pRaFH6Z
-YIAK8c1gBMEHvru5krHAemR7Qlw/CvqJP0VP4y+3MS2senrfIBNoLx71KWpIN+ot
-wfHjLo9/h+09yCfBOHK4dsdM2IvxTw9Md6ivipQC7rZmg0lpupNVRKwsx+VQoHCr
-wzyPN14w+3tAJA2QoSdsqZLWkfY5YgxYmGuEG7L1A4Ynsjq6lEJyoclbZ6Gp+JML
-G9MB0llXz9AV2k+BuNZWQO4cBPeKYtiQ1O5iYohghjSgPIx0iFa/GAvIrZscF2cf
-Y43bN/ECgYEA3pKZ55L+oZIym0P2t9tqUaFhFewLdc54WhoMBrjKDQ7PL5n/avG5
-Tac1RKA7AoknLYkqWilwRAzSBzNDjYsFVbfxRA10LagP61WhgGAPtEsDM3gbwuNw
-HayYowutQ6422Ri4+ujWSeMMSrvx7RcHMPpr3hDSm8ihxbqsWkDNGQMCgYEA0GG/
-cdtidDZ0aPwIqBdx6DHwKraYMt1fIzkw1qG59X7jc/Rym2aPUzDob99q8BieBRB3
-6djzn+X97z40/87DRFACj/YQPkGvumSdRUtP88b0x87UhbHoOfEIkDeVYyxkbfl0
-Mo6H9tlw+QSTaU13AzIBaWOB4nsQaKAM9isHrWkCgYAO0F8iBKyiAGMR5oIjVp1K
-9ZzKor1Yh/eGt7kZMW9xUw0DNBLGAXS98GUhPjDvSEWtSDXjbmKkhN3t0MGsSBaA
-0A9k4ihbaZY1qatoKfyhmWSLJnFilVS/BN/b6kkL+ip4ZKbbPGgW3t/QkZXWm/PE
-lMZdL211JPNvf689CpccFQKBgGXJGUZ4LuMtJjeRxHi22wDcQ7/ZaQaPc0U1TlHI
-tZjg3iFpqgGWWzP7k83xh763h5hZrvke7AGSyjLuY90AFglsO5QuUUjXtQqK0vdi
-Di+5Yx+mO9ECUbjbr58iR2ol6Ph+/O8lB+zf0XsRbR/moteAuYfM/0itbBpu82Xb
-JujhAoGAVdNMYdamHOJlkjYjYJmWOHPIFBMTDYk8pDATLOlqthV+fzlD2SlF0wxm
-OlxbwEr3BSQlE3GFPHe+J3JV3BbJFsVkM8KdMUpQCl+aD/3nWaGBYHz4yvJc0i9h
-duAFIZgXeivAZQAqys4JanG81cg4/d4urI3Qk9stlhB5CNCJR4k=
------END RSA PRIVATE KEY-----`
 )
 
 var (
@@ -102,6 +72,7 @@ func verifyBodyJsonParams(req *http.Request, repository, branch, namespace, pipe
 	return true, nil
 }
 
+// TODO remove after only new model is used
 var _ = Describe("Component build controller", func() {
 
 	const (
@@ -119,9 +90,10 @@ var _ = Describe("Component build controller", func() {
 		createNamespace(BuildServiceNamespaceName)
 	})
 
+	// TODO remove after only new model is used
 	Context("Test build pipeline Service Account", func() {
 		var (
-			namespace           = "sa-test"
+			namespace           = "sa-test-old"
 			component1Key       = types.NamespacedName{Name: "component-sa-1", Namespace: namespace}
 			component2Key       = types.NamespacedName{Name: "component-sa-2", Namespace: namespace}
 			buildRoleBindingKey = types.NamespacedName{Name: buildPipelineRoleBindingName, Namespace: namespace}
@@ -152,7 +124,7 @@ var _ = Describe("Component build controller", func() {
 		})
 
 		It("should create build pipeline dedicated service account and role binding", func() {
-			createComponent(component1Key)
+			createComponentOldModel(component1Key)
 			component1SAKey := getComponentServiceAccountKey(component1Key)
 			waitServiceAccount(component1SAKey)
 			roleBinding := waitServiceAccountInRoleBinding(buildRoleBindingKey, component1SAKey.Name)
@@ -162,7 +134,7 @@ var _ = Describe("Component build controller", func() {
 		})
 
 		It("should create build pipeline dedicated service account for each component and common role binding", func() {
-			createComponent(component1Key)
+			createComponentOldModel(component1Key)
 			component1SAKey := getComponentServiceAccountKey(component1Key)
 			waitServiceAccount(component1SAKey)
 			roleBinding := waitServiceAccountInRoleBinding(buildRoleBindingKey, component1SAKey.Name)
@@ -170,7 +142,7 @@ var _ = Describe("Component build controller", func() {
 			Expect(roleBinding.RoleRef.Name).To(Equal(BuildPipelineClusterRoleName))
 			Expect(roleBinding.Subjects).To(HaveLen(1))
 
-			createComponent(component2Key)
+			createComponentOldModel(component2Key)
 			component2SAKey := getComponentServiceAccountKey(component2Key)
 			waitServiceAccount(component2SAKey)
 			roleBinding = waitServiceAccountInRoleBinding(buildRoleBindingKey, component2SAKey.Name)
@@ -180,7 +152,7 @@ var _ = Describe("Component build controller", func() {
 		})
 
 		It("should remove build pipeline dedicated service account for each component and common role binding when the last service account removed", func() {
-			component1Config := getComponentData(componentConfig{componentKey: component1Key})
+			component1Config := getComponentDataOldModel(componentConfigOldModel{componentKey: component1Key})
 			// Simulate PaC provision was done
 			component1Config.Finalizers = append(component1Config.Finalizers, PaCProvisionFinalizer)
 			Expect(k8sClient.Create(ctx, component1Config)).To(Succeed())
@@ -195,7 +167,7 @@ var _ = Describe("Component build controller", func() {
 			Expect(roleBinding.RoleRef.Kind).To(Equal("ClusterRole"))
 			Expect(roleBinding.RoleRef.Name).To(Equal(BuildPipelineClusterRoleName))
 
-			component2Config := getComponentData(componentConfig{componentKey: component2Key})
+			component2Config := getComponentDataOldModel(componentConfigOldModel{componentKey: component2Key})
 			// Simulate PaC provision was done
 			component2Config.Finalizers = append(component1Config.Finalizers, PaCProvisionFinalizer)
 			Expect(k8sClient.Create(ctx, component2Config)).To(Succeed())
@@ -226,7 +198,7 @@ var _ = Describe("Component build controller", func() {
 		})
 
 		It("should clean up dangling role binding subjects and delete role binding", func() {
-			createCustomComponentWithoutBuildRequest(componentConfig{
+			createCustomComponentWithoutBuildRequest(componentConfigOldModel{
 				componentKey: component1Key,
 				finalizers:   []string{PaCProvisionFinalizer}, // simulate PaC provision was done
 			})
@@ -243,7 +215,7 @@ var _ = Describe("Component build controller", func() {
 			Expect(roleBinding.Subjects).To(HaveLen(1))
 
 			// Create another component without successful PaC provison, so the finalizer won't exist.
-			createComponent(component2Key)
+			createComponentOldModel(component2Key)
 			component2SAKey := getComponentServiceAccountKey(component2Key)
 			component2SA := waitServiceAccount(component2SAKey)
 			Expect(component2SA.OwnerReferences).To(HaveLen(1))
@@ -281,7 +253,7 @@ var _ = Describe("Component build controller", func() {
 		})
 
 		It("should clean up dangling role binding subjects and keep role binding", func() {
-			createCustomComponentWithoutBuildRequest(componentConfig{
+			createCustomComponentWithoutBuildRequest(componentConfigOldModel{
 				componentKey: component1Key,
 				finalizers:   []string{PaCProvisionFinalizer}, // simulate PaC provision was done
 			})
@@ -297,7 +269,7 @@ var _ = Describe("Component build controller", func() {
 			Expect(roleBinding.RoleRef.Name).To(Equal(BuildPipelineClusterRoleName))
 			Expect(roleBinding.Subjects).To(HaveLen(1))
 
-			createCustomComponentWithoutBuildRequest(componentConfig{
+			createCustomComponentWithoutBuildRequest(componentConfigOldModel{
 				componentKey: component2Key,
 				finalizers:   []string{PaCProvisionFinalizer}, // simulate PaC provision was done
 			})
@@ -332,7 +304,7 @@ var _ = Describe("Component build controller", func() {
 		})
 
 		It("should restore build pipeline dedicated service account on reconcile", func() {
-			createComponent(component1Key)
+			createComponentOldModel(component1Key)
 			component1SAKey := getComponentServiceAccountKey(component1Key)
 			waitServiceAccount(component1SAKey)
 			waitServiceAccountInRoleBinding(buildRoleBindingKey, component1SAKey.Name)
@@ -349,7 +321,7 @@ var _ = Describe("Component build controller", func() {
 		})
 
 		It("should restore build pipelines role binding on reconcile", func() {
-			createComponent(component1Key)
+			createComponentOldModel(component1Key)
 			component1SAKey := getComponentServiceAccountKey(component1Key)
 			waitServiceAccount(component1SAKey)
 			roleBinding := waitServiceAccountInRoleBinding(buildRoleBindingKey, component1SAKey.Name)
@@ -357,7 +329,7 @@ var _ = Describe("Component build controller", func() {
 			Expect(roleBinding.RoleRef.Name).To(Equal(BuildPipelineClusterRoleName))
 			Expect(roleBinding.Subjects).To(HaveLen(1))
 
-			createComponent(component2Key)
+			createComponentOldModel(component2Key)
 			component2SAKey := getComponentServiceAccountKey(component2Key)
 			waitServiceAccount(component2SAKey)
 			roleBinding = waitServiceAccountInRoleBinding(buildRoleBindingKey, component2SAKey.Name)
@@ -399,7 +371,7 @@ var _ = Describe("Component build controller", func() {
 				return "merge-url", nil
 			}
 
-			createCustomComponentWithBuildRequest(componentConfig{
+			createCustomComponentWithBuildRequest(componentConfigOldModel{
 				componentKey: component1Key,
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
@@ -413,7 +385,7 @@ var _ = Describe("Component build controller", func() {
 			nudgedComponentKey := types.NamespacedName{Namespace: namespace, Name: "nudged-component"}
 			nudgedComponentSAKey := getComponentServiceAccountKey(nudgedComponentKey)
 
-			createComponent(nudgedComponentKey)
+			createComponentOldModel(nudgedComponentKey)
 			defer deleteComponent(nudgedComponentKey)
 			nudgedComponentImageRepo := createImageRepositoryForComponent(nudgedComponentKey)
 			defer deleteImageRepository(nudgedComponentKey)
@@ -424,7 +396,7 @@ var _ = Describe("Component build controller", func() {
 			Expect(k8sClient.Update(ctx, &nudgedComponentSA)).To(Succeed())
 
 			component1SAKey := getComponentServiceAccountKey(component1Key)
-			createCustomComponentWithoutBuildRequest(componentConfig{
+			createCustomComponentWithoutBuildRequest(componentConfigOldModel{
 				componentKey: component1Key,
 				finalizers:   []string{PaCProvisionFinalizer}, // Simulate PaC provision done
 			})
@@ -433,12 +405,12 @@ var _ = Describe("Component build controller", func() {
 
 			// Create a component with nudge reference
 			component2SAKey := getComponentServiceAccountKey(component2Key)
-			component2 := getSampleComponentData(component2Key)
+			component2 := getSampleComponentDataOldModel(component2Key)
 			component2.Finalizers = append(component2.Finalizers, PaCProvisionFinalizer) // Simulate PaC provision done
 			component2.Spec.BuildNudgesRef = []string{
 				nudgedComponentKey.Name,
 			}
-			createComponentCustom(component2)
+			createComponentCustomOldModel(component2)
 			component2ImageRepo := createImageRepositoryForComponent(component2Key)
 			defer deleteImageRepository(component2Key)
 			// Check that the pull secret of nudging Component was linked to the nudged Component build pipeline Service Account
@@ -487,6 +459,7 @@ var _ = Describe("Component build controller", func() {
 		})
 	})
 
+	// TODO remove after only new model is used
 	Context("Test Pipelines as Code build preparation", func() {
 		var (
 			namespace             = "pac-preparation"
@@ -494,6 +467,8 @@ var _ = Describe("Component build controller", func() {
 			namespacePaCSecretKey = types.NamespacedName{Name: PipelinesAsCodeGitHubAppSecretName, Namespace: namespace}
 			webhookSecretKey      = types.NamespacedName{Name: pipelinesAsCodeWebhooksSecretName, Namespace: namespace}
 			buildRoleBindingKey   = types.NamespacedName{Name: buildPipelineRoleBindingName, Namespace: namespace}
+			repositoryName, _     = generatePaCRepositoryNameFromGitUrl(SampleRepoLink + "-" + resourcePacPrepKey.Name)
+			repositoryNameKey     = types.NamespacedName{Name: repositoryName, Namespace: namespace}
 		)
 
 		_ = BeforeEach(func() {
@@ -522,7 +497,7 @@ var _ = Describe("Component build controller", func() {
 			deleteComponent(resourcePacPrepKey)
 			deleteRoleBinding(buildRoleBindingKey)
 			deleteServiceAccount(getComponentServiceAccountKey(resourcePacPrepKey))
-			deletePaCRepository(resourcePacPrepKey)
+			deletePaCRepository(repositoryNameKey)
 
 			deleteSecret(webhookSecretKey)
 			deleteSecret(namespacePaCSecretKey)
@@ -557,12 +532,12 @@ var _ = Describe("Component build controller", func() {
 				return nil
 			}
 
-			createCustomComponentWithoutBuildRequest(componentConfig{
+			createCustomComponentWithoutBuildRequest(componentConfigOldModel{
 				componentKey: resourcePacPrepKey,
 				annotations:  defaultPipelineAnnotations,
 			})
 
-			pacRepo := waitPaCRepositoryCreated(resourcePacPrepKey)
+			pacRepo := waitPaCRepositoryCreated(repositoryNameKey)
 			Expect(pacRepo.Spec.Params).ShouldNot(BeNil())
 			existingParams := map[string]string{}
 			for _, param := range *pacRepo.Spec.Params {
@@ -577,7 +552,7 @@ var _ = Describe("Component build controller", func() {
 				return isCreatePaCPullRequestInvoked
 			}, timeout, interval).Should(BeTrue())
 
-			expectPacBuildStatus(resourcePacPrepKey, "enabled", 0, "", mergeUrl)
+			expectPacBuildStatusOldModel(resourcePacPrepKey, "enabled", 0, "", mergeUrl)
 		})
 
 		It("should successfully submit PR with PaC definitions using GitHub application", func() {
@@ -606,12 +581,12 @@ var _ = Describe("Component build controller", func() {
 				return nil
 			}
 
-			createCustomComponentWithBuildRequest(componentConfig{
+			createCustomComponentWithBuildRequest(componentConfigOldModel{
 				componentKey: resourcePacPrepKey,
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
 
-			pacRepo := waitPaCRepositoryCreated(resourcePacPrepKey)
+			pacRepo := waitPaCRepositoryCreated(repositoryNameKey)
 			Expect(pacRepo.Spec.Params).ShouldNot(BeNil())
 			existingParams := map[string]string{}
 			for _, param := range *pacRepo.Spec.Params {
@@ -626,7 +601,7 @@ var _ = Describe("Component build controller", func() {
 				return isCreatePaCPullRequestInvoked
 			}, timeout, interval).Should(BeTrue())
 
-			expectPacBuildStatus(resourcePacPrepKey, "enabled", 0, "", mergeUrl)
+			expectPacBuildStatusOldModel(resourcePacPrepKey, "enabled", 0, "", mergeUrl)
 		})
 
 		It("should successfully submit PR with PaC definitions using GitHub application, even when pipeline annotation is missing, will add default one", func() {
@@ -656,12 +631,12 @@ var _ = Describe("Component build controller", func() {
 			}
 
 			annotations := map[string]string{}
-			createCustomComponentWithBuildRequest(componentConfig{
+			createCustomComponentWithBuildRequest(componentConfigOldModel{
 				componentKey: resourcePacPrepKey,
 				annotations:  annotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
 
-			pacRepo := waitPaCRepositoryCreated(resourcePacPrepKey)
+			pacRepo := waitPaCRepositoryCreated(repositoryNameKey)
 			Expect(pacRepo.Spec.Params).ShouldNot(BeNil())
 			existingParams := map[string]string{}
 			for _, param := range *pacRepo.Spec.Params {
@@ -676,7 +651,7 @@ var _ = Describe("Component build controller", func() {
 				return isCreatePaCPullRequestInvoked
 			}, timeout, interval).Should(BeTrue())
 
-			expectPacBuildStatus(resourcePacPrepKey, "enabled", 0, "", mergeUrl)
+			expectPacBuildStatusOldModel(resourcePacPrepKey, "enabled", 0, "", mergeUrl)
 		})
 
 		It("should successfully submit PR with PaC definitions using GitHub application, using 'latest' bundle", func() {
@@ -707,12 +682,12 @@ var _ = Describe("Component build controller", func() {
 
 			annotationValue := fmt.Sprintf("{\"name\":\"%s\",\"bundle\":\"%s\"}", defaultPipelineName, "latest")
 			annotations := map[string]string{defaultBuildPipelineAnnotation: annotationValue}
-			createCustomComponentWithBuildRequest(componentConfig{
+			createCustomComponentWithBuildRequest(componentConfigOldModel{
 				componentKey: resourcePacPrepKey,
 				annotations:  annotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
 
-			pacRepo := waitPaCRepositoryCreated(resourcePacPrepKey)
+			pacRepo := waitPaCRepositoryCreated(repositoryNameKey)
 			Expect(pacRepo.Spec.Params).ShouldNot(BeNil())
 			existingParams := map[string]string{}
 			for _, param := range *pacRepo.Spec.Params {
@@ -727,12 +702,12 @@ var _ = Describe("Component build controller", func() {
 				return isCreatePaCPullRequestInvoked
 			}, timeout, interval).Should(BeTrue())
 
-			expectPacBuildStatus(resourcePacPrepKey, "enabled", 0, "", mergeUrl)
+			expectPacBuildStatusOldModel(resourcePacPrepKey, "enabled", 0, "", mergeUrl)
 		})
 
 		It("should fail to submit PR if build pipeline annotation isn't valid json", func() {
 			annotations := map[string]string{defaultBuildPipelineAnnotation: "wrong"}
-			createCustomComponentWithBuildRequest(componentConfig{
+			createCustomComponentWithBuildRequest(componentConfigOldModel{
 				componentKey: resourcePacPrepKey,
 				annotations:  annotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
@@ -749,7 +724,7 @@ var _ = Describe("Component build controller", func() {
 		It("should fail to submit PR if build pipeline annotation has non existing pipeline", func() {
 			annotationValue := fmt.Sprintf("{\"name\":\"%s\",\"bundle\":\"%s\"}", "wrong-pipeline", "latest")
 			annotations := map[string]string{defaultBuildPipelineAnnotation: annotationValue}
-			createCustomComponentWithBuildRequest(componentConfig{
+			createCustomComponentWithBuildRequest(componentConfigOldModel{
 				componentKey: resourcePacPrepKey,
 				annotations:  annotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
@@ -766,7 +741,7 @@ var _ = Describe("Component build controller", func() {
 		It("should fail to submit PR if build pipeline annotation is missing bundle and name", func() {
 			annotationValue := "{\"some\":\"wrong\"}"
 			annotations := map[string]string{defaultBuildPipelineAnnotation: annotationValue}
-			createCustomComponentWithBuildRequest(componentConfig{
+			createCustomComponentWithBuildRequest(componentConfigOldModel{
 				componentKey: resourcePacPrepKey,
 				annotations:  annotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
@@ -791,13 +766,13 @@ var _ = Describe("Component build controller", func() {
 				Fail("Should not invoke merge request creation if GitHub application is not installed into the repository")
 				return "url", nil
 			}
-			createComponentAndProcessBuildRequest(componentConfig{
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
 				componentKey: resourcePacPrepKey,
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
 
 			expectError := boerrors.NewBuildOpError(boerrors.EGitHubAppNotInstalled, nil)
-			expectPacBuildStatus(resourcePacPrepKey, "error", expectError.GetErrorId(), expectError.ShortError(), "")
+			expectPacBuildStatusOldModel(resourcePacPrepKey, "error", expectError.GetErrorId(), expectError.ShortError(), "")
 		})
 
 		It("should fail to submit PR if unknown git provider is used", func() {
@@ -807,7 +782,7 @@ var _ = Describe("Component build controller", func() {
 				return "url", nil
 			}
 
-			createCustomComponentWithBuildRequest(componentConfig{
+			createCustomComponentWithBuildRequest(componentConfigOldModel{
 				componentKey: resourcePacPrepKey,
 				gitURL:       "https://my-git-instance.com/devfile-samples/devfile-sample-java-springboot-basic",
 				annotations:  defaultPipelineAnnotations,
@@ -815,7 +790,7 @@ var _ = Describe("Component build controller", func() {
 			waitComponentAnnotationGone(resourcePacPrepKey, BuildRequestAnnotationName)
 
 			expectError := boerrors.NewBuildOpError(boerrors.EUnknownGitProvider, nil)
-			expectPacBuildStatus(resourcePacPrepKey, "error", expectError.GetErrorId(), expectError.ShortError(), "")
+			expectPacBuildStatusOldModel(resourcePacPrepKey, "error", expectError.GetErrorId(), expectError.ShortError(), "")
 		})
 
 		It("should fail to submit PR if PaC secret is invalid", func() {
@@ -833,13 +808,13 @@ var _ = Describe("Component build controller", func() {
 			}
 			createSecret(pacSecretKey, pacSecretData)
 
-			createComponentAndProcessBuildRequest(componentConfig{
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
 				componentKey: resourcePacPrepKey,
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
 
 			expectError := boerrors.NewBuildOpError(boerrors.EPaCSecretInvalid, nil)
-			expectPacBuildStatus(resourcePacPrepKey, "error", expectError.GetErrorId(), expectError.ShortError(), "")
+			expectPacBuildStatusOldModel(resourcePacPrepKey, "error", expectError.GetErrorId(), expectError.ShortError(), "")
 		})
 
 		It("should fail to submit PR if PaC secret is missing", func() {
@@ -852,13 +827,13 @@ var _ = Describe("Component build controller", func() {
 			deleteSecret(pacSecretKey)
 			deleteSecret(namespacePaCSecretKey)
 
-			createComponentAndProcessBuildRequest(componentConfig{
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
 				componentKey: resourcePacPrepKey,
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
 
 			expectError := boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, nil)
-			expectPacBuildStatus(resourcePacPrepKey, "error", expectError.GetErrorId(), expectError.ShortError(), "")
+			expectPacBuildStatusOldModel(resourcePacPrepKey, "error", expectError.GetErrorId(), expectError.ShortError(), "")
 		})
 
 		It("should successfully do PaC provision after error (when PaC GitHub Application was not installed)", func() {
@@ -874,7 +849,7 @@ var _ = Describe("Component build controller", func() {
 				return "", nil
 			}
 
-			createComponentAndProcessBuildRequest(componentConfig{
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
 				componentKey: resourcePacPrepKey,
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
@@ -890,7 +865,7 @@ var _ = Describe("Component build controller", func() {
 				return nil, nil
 			}
 			Consistently(func() bool {
-				expectPacBuildStatus(resourcePacPrepKey, "error", appNotInstalledErr.GetErrorId(), appNotInstalledErr.ShortError(), "")
+				expectPacBuildStatusOldModel(resourcePacPrepKey, "error", appNotInstalledErr.GetErrorId(), appNotInstalledErr.ShortError(), "")
 				return true
 			}, ensureTimeout, interval).Should(BeTrue())
 
@@ -906,14 +881,14 @@ var _ = Describe("Component build controller", func() {
 			}
 
 			// Retry
-			setComponentBuildRequest(resourcePacPrepKey, BuildRequestConfigurePaCAnnotationValue)
+			setComponentBuildRequestOldModel(resourcePacPrepKey, BuildRequestConfigurePaCAnnotationValue)
 			waitComponentAnnotationGone(resourcePacPrepKey, BuildRequestAnnotationName)
 
 			Eventually(func() bool {
 				return isCreatePaCPullRequestInvoked
 			}, timeout, interval).Should(BeTrue())
 
-			expectPacBuildStatus(resourcePacPrepKey, "enabled", 0, "", mergeUrl)
+			expectPacBuildStatusOldModel(resourcePacPrepKey, "enabled", 0, "", mergeUrl)
 		})
 
 		It("should successfully submit PR with PaC definitions using token", func() {
@@ -936,15 +911,15 @@ var _ = Describe("Component build controller", func() {
 			}
 
 			pacSecretData := map[string]string{"password": "ghp_token"}
-			createSCMSecret(namespacePaCSecretKey, pacSecretData, corev1.SecretTypeBasicAuth, map[string]string{})
+			createSCMSecretOldModel(namespacePaCSecretKey, pacSecretData, corev1.SecretTypeBasicAuth, map[string]string{})
 
-			createComponentAndProcessBuildRequest(componentConfig{
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
 				componentKey: resourcePacPrepKey,
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
 
 			waitSecretCreated(namespacePaCSecretKey)
-			waitPaCRepositoryCreated(resourcePacPrepKey)
+			waitPaCRepositoryCreated(repositoryNameKey)
 			Eventually(func() bool {
 				return isCreatePaCPullRequestInvoked
 			}, timeout, interval).Should(BeTrue())
@@ -968,15 +943,15 @@ var _ = Describe("Component build controller", func() {
 			}
 
 			pacSecretData := map[string]string{"password": "ghp_token"}
-			createSCMSecret(namespacePaCSecretKey, pacSecretData, corev1.SecretTypeBasicAuth, map[string]string{})
+			createSCMSecretOldModel(namespacePaCSecretKey, pacSecretData, corev1.SecretTypeBasicAuth, map[string]string{})
 
-			createComponentAndProcessBuildRequest(componentConfig{
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
 				componentKey: resourcePacPrepKey,
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCNoMrAnnotationValue)
 
 			waitSecretCreated(namespacePaCSecretKey)
-			waitPaCRepositoryCreated(resourcePacPrepKey)
+			waitPaCRepositoryCreated(repositoryNameKey)
 			Eventually(func() bool {
 				return isSetupPaCWebhookInvoked
 			}, timeout, interval).Should(BeTrue())
@@ -993,30 +968,29 @@ var _ = Describe("Component build controller", func() {
 			}
 
 			pacSecretData := map[string]string{"password": "ghp_token"}
-			createSCMSecret(namespacePaCSecretKey, pacSecretData, corev1.SecretTypeBasicAuth, map[string]string{})
+			createSCMSecretOldModel(namespacePaCSecretKey, pacSecretData, corev1.SecretTypeBasicAuth, map[string]string{})
 
 			component1Key := resourcePacPrepKey
 			component2Key := types.NamespacedName{Name: "component2", Namespace: namespace}
 			deleteAllPaCRepositories(component1Key.Namespace)
 
-			createCustomComponentWithBuildRequest(componentConfig{
+			createCustomComponentWithBuildRequest(componentConfigOldModel{
 				componentKey: component1Key,
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
-			createCustomComponentWithBuildRequest(componentConfig{
+			createCustomComponentWithBuildRequest(componentConfigOldModel{
 				componentKey: component2Key,
 				annotations:  defaultPipelineAnnotations,
 				gitURL:       SampleRepoLink + "-" + resourcePacPrepKey.Name,
 				gitRevision:  "main",
 			}, BuildRequestConfigurePaCAnnotationValue)
 
-			defer deletePaCRepository(component2Key)
 			defer deleteComponent(component2Key)
 
 			waitComponentAnnotationGone(component1Key, BuildRequestAnnotationName)
 			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
 
-			pacRepository := waitPaCRepositoryCreated(component1Key)
+			pacRepository := waitPaCRepositoryCreated(repositoryNameKey)
 			Expect(pacRepository.OwnerReferences).To(HaveLen(2))
 
 			waitSecretCreated(namespacePaCSecretKey)
@@ -1036,29 +1010,35 @@ var _ = Describe("Component build controller", func() {
 			}
 
 			pacSecretData := map[string]string{"password": "ghp_token"}
-			createSCMSecret(namespacePaCSecretKey, pacSecretData, corev1.SecretTypeBasicAuth, map[string]string{})
+			createSCMSecretOldModel(namespacePaCSecretKey, pacSecretData, corev1.SecretTypeBasicAuth, map[string]string{})
 
 			component1Key := resourcePacPrepKey
 			component2Key := types.NamespacedName{Name: "component2", Namespace: namespace}
 
-			createCustomComponentWithBuildRequest(componentConfig{
+			createCustomComponentWithBuildRequest(componentConfigOldModel{
 				componentKey: component1Key,
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
-			createCustomComponentWithBuildRequest(componentConfig{
+
+			comp2GitUrl := "https://github.com/devfile-samples/devfile-sample-go-basic"
+			createCustomComponentWithBuildRequest(componentConfigOldModel{
 				componentKey:   component2Key,
 				annotations:    defaultPipelineAnnotations,
 				containerImage: "registry.io/username/image2:tag2",
-				gitURL:         "https://github.com/devfile-samples/devfile-sample-go-basic",
+				gitURL:         comp2GitUrl,
 			}, BuildRequestConfigurePaCAnnotationValue)
-			defer deletePaCRepository(component2Key)
+
+			repositoryNameComp2, _ := generatePaCRepositoryNameFromGitUrl(comp2GitUrl)
+			repositoryNameComp2Key := types.NamespacedName{Name: repositoryNameComp2, Namespace: namespace}
+
+			defer deletePaCRepository(repositoryNameComp2Key)
 			defer deleteComponent(component2Key)
 
 			waitSecretCreated(namespacePaCSecretKey)
 			waitSecretCreated(webhookSecretKey)
 
-			waitPaCRepositoryCreated(component1Key)
-			waitPaCRepositoryCreated(component2Key)
+			waitPaCRepositoryCreated(repositoryNameKey)
+			waitPaCRepositoryCreated(repositoryNameComp2Key)
 
 			waitComponentAnnotationGone(component1Key, BuildRequestAnnotationName)
 			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
@@ -1068,7 +1048,7 @@ var _ = Describe("Component build controller", func() {
 		})
 
 		It("should set error in status if invalid build action requested", func() {
-			createCustomComponentWithBuildRequest(componentConfig{
+			createCustomComponentWithBuildRequest(componentConfigOldModel{
 				componentKey: resourcePacPrepKey,
 				annotations:  defaultPipelineAnnotations,
 			}, "non-existing-build-request")
@@ -1086,7 +1066,7 @@ var _ = Describe("Component build controller", func() {
 				return "", nil
 			}
 
-			component := &appstudiov1alpha1.Component{
+			component := &compapiv1alpha1.Component{
 				TypeMeta: metav1.TypeMeta{
 					APIVersion: "appstudio.redhat.com/v1alpha1",
 					Kind:       "Component",
@@ -1096,14 +1076,14 @@ var _ = Describe("Component build controller", func() {
 					Namespace:   namespace,
 					Annotations: defaultPipelineAnnotations,
 				},
-				Spec: appstudiov1alpha1.ComponentSpec{
+				Spec: compapiv1alpha1.ComponentSpec{
 					ComponentName:  resourcePacPrepKey.Name,
 					Application:    HASAppName,
 					ContainerImage: "quay.io/test/image:latest",
 				},
 			}
-			createComponentCustom(component)
-			setComponentBuildRequest(resourcePacPrepKey, BuildRequestConfigurePaCAnnotationValue)
+			createComponentCustomOldModel(component)
+			setComponentBuildRequestOldModel(resourcePacPrepKey, BuildRequestConfigurePaCAnnotationValue)
 
 			ensureNoPipelineRunsCreated(resourcePacPrepKey)
 		})
@@ -1130,14 +1110,14 @@ var _ = Describe("Component build controller", func() {
 				return "url", nil
 			}
 
-			component := getSampleComponentData(resourcePacPrepKey)
+			component := getSampleComponentDataOldModel(resourcePacPrepKey)
 			// Unset Revision so that GetDefaultBranch function is called to use the default branch
 			// set in the remote component repository
 			component.Spec.Source.GitSource.Revision = ""
 			component.Annotations[BuildRequestAnnotationName] = BuildRequestConfigurePaCAnnotationValue
 			component.Annotations[defaultBuildPipelineAnnotation] = defaultPipelineAnnotationValue
 
-			createComponentCustom(component)
+			createComponentCustomOldModel(component)
 			waitComponentAnnotationGone(resourcePacPrepKey, BuildRequestAnnotationName)
 
 			Eventually(func() bool {
@@ -1146,12 +1126,15 @@ var _ = Describe("Component build controller", func() {
 		})
 	})
 
+	// TODO remove after only new model is used
 	Context("Test Pipelines as Code build clean up", func() {
 		var (
 			namespace             = "build-cleanup"
 			resourceCleanupKey    = types.NamespacedName{Name: HASCompName + "-cleanup", Namespace: namespace}
 			namespacePaCSecretKey = types.NamespacedName{Name: PipelinesAsCodeGitHubAppSecretName, Namespace: namespace}
 			webhookSecretKey      = types.NamespacedName{Name: pipelinesAsCodeWebhooksSecretName, Namespace: namespace}
+			repositoryName, _     = generatePaCRepositoryNameFromGitUrl(SampleRepoLink + "-" + resourceCleanupKey.Name)
+			repositoryNameKey     = types.NamespacedName{Name: repositoryName, Namespace: namespace}
 		)
 
 		_ = BeforeEach(func() {
@@ -1179,7 +1162,7 @@ var _ = Describe("Component build controller", func() {
 				"github-private-key":    githubAppPrivateKey,
 			}
 			createSecret(pacSecretKey, pacSecretData)
-			createComponentAndProcessBuildRequest(componentConfig{
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
 				componentKey: resourceCleanupKey,
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
@@ -1190,10 +1173,10 @@ var _ = Describe("Component build controller", func() {
 			createSecret(pacSecretKey, pacSecretData)
 			deleteRoute(pacRouteKey)
 
-			setComponentBuildRequest(resourceCleanupKey, BuildRequestUnconfigurePaCAnnotationValue)
+			setComponentBuildRequestOldModel(resourceCleanupKey, BuildRequestUnconfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponentGone(resourceCleanupKey)
-			waitDoneMessageOnComponent(resourceCleanupKey)
-			expectPacBuildStatus(resourceCleanupKey, "disabled", 0, "", UndoPacMergeRequestURL)
+			waitDoneMessageOnComponentOldModel(resourceCleanupKey)
+			expectPacBuildStatusOldModel(resourceCleanupKey, "disabled", 0, "", UndoPacMergeRequestURL)
 		})
 
 		It("should successfully unconfigure PaC, removal MR not needed", func() {
@@ -1202,7 +1185,7 @@ var _ = Describe("Component build controller", func() {
 				"github-private-key":    githubAppPrivateKey,
 			}
 			createSecret(pacSecretKey, pacSecretData)
-			createComponentAndProcessBuildRequest(componentConfig{
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
 				componentKey: resourceCleanupKey,
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
@@ -1211,10 +1194,10 @@ var _ = Describe("Component build controller", func() {
 				return "", nil
 			}
 
-			setComponentBuildRequest(resourceCleanupKey, BuildRequestUnconfigurePaCAnnotationValue)
+			setComponentBuildRequestOldModel(resourceCleanupKey, BuildRequestUnconfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponentGone(resourceCleanupKey)
-			waitDoneMessageOnComponent(resourceCleanupKey)
-			expectPacBuildStatus(resourceCleanupKey, "disabled", 0, "", "")
+			waitDoneMessageOnComponentOldModel(resourceCleanupKey)
+			expectPacBuildStatusOldModel(resourceCleanupKey, "disabled", 0, "", "")
 		})
 
 		It("should successfully submit PR with PaC definitions removal using GitHub application, remove all incomings and incoming secret (only current component is using)", func() {
@@ -1249,14 +1232,14 @@ var _ = Describe("Component build controller", func() {
 			createSecret(pacSecretKey, pacSecretData)
 
 			// provision component
-			createComponentAndProcessBuildRequest(componentConfig{
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
 				componentKey: resourceCleanupKey,
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourceCleanupKey)
 
-			repository := waitPaCRepositoryCreated(resourceCleanupKey)
-			incomingSecretName := fmt.Sprintf("%s%s", repository.Name, pacIncomingSecretNameSuffix)
+			repository := waitPaCRepositoryCreated(repositoryNameKey)
+			incomingSecretName := getPaCIncomingSecretName(repository.Name)
 
 			// update repository with multiple incomings
 			incoming := []pacv1alpha1.Incoming{{Type: "webhook-url", Secret: pacv1alpha1.Secret{Name: incomingSecretName, Key: pacIncomingSecretKey}, Targets: []string{"main"}}}
@@ -1273,17 +1256,17 @@ var _ = Describe("Component build controller", func() {
 			defer deleteSecret(incomingSecretResourceKey)
 
 			// unprovision
-			setComponentBuildRequest(resourceCleanupKey, BuildRequestUnconfigurePaCAnnotationValue)
+			setComponentBuildRequestOldModel(resourceCleanupKey, BuildRequestUnconfigurePaCAnnotationValue)
 
 			Eventually(func() bool {
 				return isRemovePaCPullRequestInvoked
 			}, timeout, interval).Should(BeTrue())
 
-			expectPacBuildStatus(resourceCleanupKey, "disabled", 0, "", mergeUrl)
+			expectPacBuildStatusOldModel(resourceCleanupKey, "disabled", 0, "", mergeUrl)
 			waitComponentAnnotationGone(resourceCleanupKey, BuildRequestAnnotationName)
 			waitSecretGone(incomingSecretResourceKey)
 
-			repository = waitPaCRepositoryCreated(resourceCleanupKey)
+			repository = waitPaCRepositoryCreated(repositoryNameKey)
 			Expect(repository.Spec.Incomings).To(BeNil())
 		})
 
@@ -1304,28 +1287,28 @@ var _ = Describe("Component build controller", func() {
 			createSecret(pacSecretKey, pacSecretData)
 
 			// provision 1st component
-			createComponentAndProcessBuildRequest(componentConfig{
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
 				componentKey: resourceCleanupKey,
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourceCleanupKey)
-			expectPacBuildStatus(resourceCleanupKey, "enabled", 0, "", mergeUrl)
+			expectPacBuildStatusOldModel(resourceCleanupKey, "enabled", 0, "", mergeUrl)
 
 			// provision 2nd component
 			component2Key := types.NamespacedName{Name: "component2", Namespace: namespace}
-			createComponentAndProcessBuildRequest(componentConfig{
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
 				componentKey: component2Key,
 				annotations:  defaultPipelineAnnotations,
 				gitURL:       SampleRepoLink + "-" + resourceCleanupKey.Name,
 				gitRevision:  "another",
 			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(component2Key)
-			expectPacBuildStatus(component2Key, "enabled", 0, "", mergeUrl)
+			expectPacBuildStatusOldModel(component2Key, "enabled", 0, "", mergeUrl)
 			defer deleteComponent(component2Key)
 
 			component := getComponent(resourceCleanupKey)
-			repository := waitPaCRepositoryCreated(resourceCleanupKey)
-			incomingSecretName := fmt.Sprintf("%s%s", repository.Name, pacIncomingSecretNameSuffix)
+			repository := waitPaCRepositoryCreated(repositoryNameKey)
+			incomingSecretName := getPaCIncomingSecretName(repository.Name)
 
 			// update repository with multiple incomings
 			incoming := []pacv1alpha1.Incoming{
@@ -1344,14 +1327,14 @@ var _ = Describe("Component build controller", func() {
 			defer deleteSecret(incomingSecretResourceKey)
 
 			// unprovision 1st component
-			setComponentBuildRequest(resourceCleanupKey, BuildRequestUnconfigurePaCAnnotationValue)
-			expectPacBuildStatus(resourceCleanupKey, "disabled", 0, "", mergeUrl)
+			setComponentBuildRequestOldModel(resourceCleanupKey, BuildRequestUnconfigurePaCAnnotationValue)
+			expectPacBuildStatusOldModel(resourceCleanupKey, "disabled", 0, "", mergeUrl)
 			waitComponentAnnotationGone(resourceCleanupKey, BuildRequestAnnotationName)
 
 			// secret will still be there for another component
 			waitSecretCreated(incomingSecretResourceKey)
 
-			repository = waitPaCRepositoryCreated(resourceCleanupKey)
+			repository = waitPaCRepositoryCreated(repositoryNameKey)
 			Expect(repository.Spec.Incomings).ToNot(BeNil())
 			Expect(len(*repository.Spec.Incomings)).To(Equal(1))
 			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
@@ -1389,7 +1372,7 @@ var _ = Describe("Component build controller", func() {
 			}
 			createSecret(pacSecretKey, pacSecretData)
 
-			createComponentAndProcessBuildRequest(componentConfig{
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
 				componentKey: resourceCleanupKey,
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
@@ -1428,9 +1411,9 @@ var _ = Describe("Component build controller", func() {
 			}
 
 			pacSecretData := map[string]string{"password": "ghp_token"}
-			createSCMSecret(namespacePaCSecretKey, pacSecretData, corev1.SecretTypeBasicAuth, map[string]string{})
+			createSCMSecretOldModel(namespacePaCSecretKey, pacSecretData, corev1.SecretTypeBasicAuth, map[string]string{})
 
-			createComponentAndProcessBuildRequest(componentConfig{
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
 				componentKey: resourceCleanupKey,
 				annotations:  defaultPipelineAnnotations,
 				gitURL:       SampleRepoLink + "-samerepo",
@@ -1439,7 +1422,7 @@ var _ = Describe("Component build controller", func() {
 
 			// create second component which uses the same url
 			secondComponentKey := types.NamespacedName{Name: HASCompName + "-cleanup-second", Namespace: namespace}
-			createComponentAndProcessBuildRequest(componentConfig{
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
 				componentKey: secondComponentKey,
 				annotations:  defaultPipelineAnnotations,
 				gitURL:       SampleRepoLink + "-samerepo",
@@ -1447,13 +1430,13 @@ var _ = Describe("Component build controller", func() {
 			waitPaCFinalizerOnComponent(secondComponentKey)
 
 			// shouldn't remove webhook because another component exists for the same repo
-			setComponentBuildRequest(resourceCleanupKey, BuildRequestUnconfigurePaCAnnotationValue)
+			setComponentBuildRequestOldModel(resourceCleanupKey, BuildRequestUnconfigurePaCAnnotationValue)
 
 			Eventually(func() bool {
 				return isRemovePaCPullRequestInvoked
 			}, timeout, interval).Should(BeTrue())
 
-			expectPacBuildStatus(resourceCleanupKey, "disabled", 0, "", mergeUrl)
+			expectPacBuildStatusOldModel(resourceCleanupKey, "disabled", 0, "", mergeUrl)
 			// delete component so there will be just 1 component using the repository
 			deleteComponent(resourceCleanupKey)
 
@@ -1467,7 +1450,7 @@ var _ = Describe("Component build controller", func() {
 			}
 
 			// should remove webhook because there isn't another component which uses the same repo
-			setComponentBuildRequest(secondComponentKey, BuildRequestUnconfigurePaCAnnotationValue)
+			setComponentBuildRequestOldModel(secondComponentKey, BuildRequestUnconfigurePaCAnnotationValue)
 
 			Eventually(func() bool {
 				return isRemovePaCPullRequestInvoked
@@ -1476,7 +1459,7 @@ var _ = Describe("Component build controller", func() {
 				return isDeletePaCWebhookInvoked
 			}, timeout, interval).Should(BeTrue())
 
-			expectPacBuildStatus(secondComponentKey, "disabled", 0, "", mergeUrl)
+			expectPacBuildStatusOldModel(secondComponentKey, "disabled", 0, "", mergeUrl)
 		})
 
 		It("should not block component deletion if PaC definitions removal failed", func() {
@@ -1488,9 +1471,9 @@ var _ = Describe("Component build controller", func() {
 			}
 
 			pacSecretData := map[string]string{"password": "ghp_token"}
-			createSCMSecret(namespacePaCSecretKey, pacSecretData, corev1.SecretTypeBasicAuth, map[string]string{})
+			createSCMSecretOldModel(namespacePaCSecretKey, pacSecretData, corev1.SecretTypeBasicAuth, map[string]string{})
 
-			createComponentAndProcessBuildRequest(componentConfig{
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
 				componentKey: resourceCleanupKey,
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
@@ -1507,7 +1490,7 @@ var _ = Describe("Component build controller", func() {
 				return "", nil
 			}
 
-			component := getSampleComponentData(resourceCleanupKey)
+			component := getSampleComponentDataOldModel(resourceCleanupKey)
 			if expectedBaseBranch == "" {
 				expectedBaseBranch = component.Spec.Source.GitSource.Revision
 			} else {
@@ -1543,7 +1526,7 @@ var _ = Describe("Component build controller", func() {
 			}
 			createSecret(pacSecretKey, pacSecretData)
 
-			createComponentCustom(component)
+			createComponentCustomOldModel(component)
 			waitComponentAnnotationGone(resourceCleanupKey, BuildRequestAnnotationName)
 			waitPaCFinalizerOnComponent(resourceCleanupKey)
 
@@ -1582,19 +1565,19 @@ var _ = Describe("Component build controller", func() {
 			}
 			createSecret(pacSecretKey, pacSecretData)
 
-			createComponentAndProcessBuildRequest(componentConfig{
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
 				componentKey: resourceCleanupKey,
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourceCleanupKey)
 			deleteSecret(pacSecretKey)
 
-			setComponentBuildRequest(resourceCleanupKey, BuildRequestUnconfigurePaCAnnotationValue)
+			setComponentBuildRequestOldModel(resourceCleanupKey, BuildRequestUnconfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponentGone(resourceCleanupKey)
-			waitDoneMessageOnComponent(resourceCleanupKey)
+			waitDoneMessageOnComponentOldModel(resourceCleanupKey)
 
 			expectError := boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, nil)
-			expectPacBuildStatus(resourceCleanupKey, "error", expectError.GetErrorId(), expectError.ShortError(), "")
+			expectPacBuildStatusOldModel(resourceCleanupKey, "error", expectError.GetErrorId(), expectError.ShortError(), "")
 		})
 
 		It("should fail to unconfigure PaC if it isn't able to detect git provider", func() {
@@ -1603,7 +1586,7 @@ var _ = Describe("Component build controller", func() {
 				"github-private-key":    githubAppPrivateKey,
 			}
 			createSecret(pacSecretKey, pacSecretData)
-			createComponentAndProcessBuildRequest(componentConfig{
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
 				componentKey: resourceCleanupKey,
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
@@ -1613,12 +1596,12 @@ var _ = Describe("Component build controller", func() {
 			Expect(k8sClient.Update(ctx, component)).To(Succeed())
 			waitPaCFinalizerOnComponent(resourceCleanupKey)
 
-			setComponentBuildRequest(resourceCleanupKey, BuildRequestUnconfigurePaCAnnotationValue)
+			setComponentBuildRequestOldModel(resourceCleanupKey, BuildRequestUnconfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponentGone(resourceCleanupKey)
-			waitDoneMessageOnComponent(resourceCleanupKey)
+			waitDoneMessageOnComponentOldModel(resourceCleanupKey)
 
 			expectError := boerrors.NewBuildOpError(boerrors.EUnknownGitProvider, nil)
-			expectPacBuildStatus(resourceCleanupKey, "error", expectError.GetErrorId(), expectError.ShortError(), "")
+			expectPacBuildStatusOldModel(resourceCleanupKey, "error", expectError.GetErrorId(), expectError.ShortError(), "")
 		})
 
 		It("should not attempt to create service account on component deletion", func() {
@@ -1627,7 +1610,7 @@ var _ = Describe("Component build controller", func() {
 				"github-private-key":    githubAppPrivateKey,
 			}
 			createSecret(pacSecretKey, pacSecretData)
-			createCustomComponentWithoutBuildRequest(componentConfig{
+			createCustomComponentWithoutBuildRequest(componentConfigOldModel{
 				componentKey: resourceCleanupKey,
 				finalizers:   []string{PaCProvisionFinalizer}, // simulate PaC provision was done
 				annotations: map[string]string{
@@ -1662,6 +1645,7 @@ var _ = Describe("Component build controller", func() {
 		})
 	})
 
+	// TODO remove after only new model is used
 	Context("Test Pipelines as Code multi component git repository", func() {
 		const (
 			multiComponentGitRepositoryUrl = "https://github.com/samples/multi-component-repository"
@@ -1669,6 +1653,8 @@ var _ = Describe("Component build controller", func() {
 		var (
 			namespace           = "multi-component"
 			anotherComponentKey = types.NamespacedName{Name: HASCompName + "-multicomp", Namespace: namespace}
+			repositoryName, _   = generatePaCRepositoryNameFromGitUrl(SampleRepoLink + "-" + anotherComponentKey.Name)
+			repositoryNameKey   = types.NamespacedName{Name: repositoryName, Namespace: namespace}
 		)
 
 		_ = BeforeEach(func() {
@@ -1687,12 +1673,12 @@ var _ = Describe("Component build controller", func() {
 			}
 			createSecret(pacSecretKey, pacSecretData)
 
-			createComponentAndProcessBuildRequest(componentConfig{
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
 				componentKey: anotherComponentKey,
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
 			waitComponentAnnotationGone(anotherComponentKey, BuildRequestAnnotationName)
-			waitPaCRepositoryCreated(anotherComponentKey)
+			waitPaCRepositoryCreated(repositoryNameKey)
 		})
 
 		_ = AfterEach(func() {
@@ -1701,7 +1687,7 @@ var _ = Describe("Component build controller", func() {
 			deleteComponent(anotherComponentKey)
 			deleteSecret(pacSecretKey)
 			deleteRoute(pacRouteKey)
-			deletePaCRepository(anotherComponentKey)
+			deletePaCRepository(repositoryNameKey)
 		})
 
 		It("should reuse existing PaC repository for multi component git repository", func() {
@@ -1710,9 +1696,10 @@ var _ = Describe("Component build controller", func() {
 
 			pacRepositoriesList := &pacv1alpha1.RepositoryList{}
 			pacRepository := &pacv1alpha1.Repository{}
-			err := k8sClient.Get(ctx, component1Key, pacRepository)
-			Expect(k8sErrors.IsNotFound(err)).To(BeTrue())
-			err = k8sClient.Get(ctx, component2Key, pacRepository)
+			repositoryNameComp1, _ := generatePaCRepositoryNameFromGitUrl(multiComponentGitRepositoryUrl)
+			repositoryNameComp1Key := types.NamespacedName{Name: repositoryNameComp1, Namespace: namespace}
+
+			err := k8sClient.Get(ctx, repositoryNameComp1Key, pacRepository)
 			Expect(k8sErrors.IsNotFound(err)).To(BeTrue())
 
 			component1PaCMergeRequestCreated := false
@@ -1731,7 +1718,7 @@ var _ = Describe("Component build controller", func() {
 				return "", nil
 			}
 
-			createCustomComponentWithBuildRequest(componentConfig{
+			createCustomComponentWithBuildRequest(componentConfigOldModel{
 				componentKey: component1Key,
 				annotations:  defaultPipelineAnnotations,
 				gitURL:       multiComponentGitRepositoryUrl,
@@ -1739,18 +1726,16 @@ var _ = Describe("Component build controller", func() {
 			defer deleteComponent(component1Key)
 			waitComponentAnnotationGone(component1Key, BuildRequestAnnotationName)
 			Eventually(func() bool { return component1PaCMergeRequestCreated }, timeout, interval).Should(BeTrue())
-			waitPaCRepositoryCreated(component1Key)
-			defer deletePaCRepository(component1Key)
-			Expect(k8sClient.Get(ctx, component1Key, pacRepository)).To(Succeed())
+			waitPaCRepositoryCreated(repositoryNameComp1Key)
+			defer deletePaCRepository(repositoryNameComp1Key)
+			Expect(k8sClient.Get(ctx, repositoryNameComp1Key, pacRepository)).To(Succeed())
 			Expect(pacRepository.OwnerReferences).To(HaveLen(1))
 			Expect(pacRepository.OwnerReferences[0].Name).To(Equal(component1Key.Name))
 			Expect(pacRepository.OwnerReferences[0].Kind).To(Equal("Component"))
-			err = k8sClient.Get(ctx, component2Key, pacRepository)
-			Expect(k8sErrors.IsNotFound(err)).To(BeTrue())
 			Expect(k8sClient.List(ctx, pacRepositoriesList, &client.ListOptions{Namespace: component1Key.Namespace})).To(Succeed())
 			Expect(pacRepositoriesList.Items).To(HaveLen(2)) // 2-nd repository for the anotherComponentKey component
 
-			createCustomComponentWithBuildRequest(componentConfig{
+			createCustomComponentWithBuildRequest(componentConfigOldModel{
 				componentKey: component2Key,
 				annotations:  defaultPipelineAnnotations,
 				gitURL:       multiComponentGitRepositoryUrl,
@@ -1758,21 +1743,19 @@ var _ = Describe("Component build controller", func() {
 			defer deleteComponent(component2Key)
 			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
 			Eventually(func() bool { return component2PaCMergeRequestCreated }, timeout, interval).Should(BeTrue())
-			Expect(k8sClient.Get(ctx, component1Key, pacRepository)).To(Succeed())
+			Expect(k8sClient.Get(ctx, repositoryNameComp1Key, pacRepository)).To(Succeed())
 			Expect(pacRepository.OwnerReferences).To(HaveLen(2))
 			Expect(pacRepository.OwnerReferences[0].Name).To(Equal(component1Key.Name))
 			Expect(pacRepository.OwnerReferences[0].Kind).To(Equal("Component"))
 			Expect(pacRepository.OwnerReferences[1].Name).To(Equal(component2Key.Name))
 			Expect(pacRepository.OwnerReferences[1].Kind).To(Equal("Component"))
-			err = k8sClient.Get(ctx, component2Key, pacRepository)
-			Expect(k8sErrors.IsNotFound(err)).To(BeTrue())
 			Expect(k8sClient.List(ctx, pacRepositoriesList, &client.ListOptions{Namespace: component1Key.Namespace})).To(Succeed())
 			Expect(pacRepositoriesList.Items).To(HaveLen(2)) // 2-nd repository for the anotherComponentKey component
 		})
 
 		It("when 2 components are created with the same url, Pac Repository will be reused, when 1st component is removed and created with new URL, new repository is created", func() {
 			deleteComponent(anotherComponentKey)
-			deletePaCRepository(anotherComponentKey)
+			deletePaCRepository(repositoryNameKey)
 			component1Key := types.NamespacedName{Name: "test-multi-component1", Namespace: namespace}
 			component2Key := types.NamespacedName{Name: "test-multi-component2", Namespace: namespace}
 			pacRepositoriesList := &pacv1alpha1.RepositoryList{}
@@ -1798,31 +1781,35 @@ var _ = Describe("Component build controller", func() {
 			}
 
 			// create 1st component with shared URL
-			createCustomComponentWithBuildRequest(componentConfig{
+			createCustomComponentWithBuildRequest(componentConfigOldModel{
 				componentKey: component1Key,
 				annotations:  defaultPipelineAnnotations,
 				gitURL:       multiComponentGitRepositoryUrl,
 			}, BuildRequestConfigurePaCAnnotationValue)
 			waitComponentAnnotationGone(component1Key, BuildRequestAnnotationName)
 			Eventually(func() bool { return component1PaCMergeRequestCreated }, timeout, interval).Should(BeTrue())
-			waitPaCRepositoryCreated(component1Key)
+			repositoryNameComp1, _ := generatePaCRepositoryNameFromGitUrl(multiComponentGitRepositoryUrl)
+			repositoryNameComp1Key := types.NamespacedName{Name: repositoryNameComp1, Namespace: namespace}
+			waitPaCRepositoryCreated(repositoryNameComp1Key)
+			defer deletePaCRepository(repositoryNameComp1Key)
 
-			Expect(k8sClient.Get(ctx, component1Key, pacRepository)).To(Succeed())
+			Expect(k8sClient.Get(ctx, repositoryNameComp1Key, pacRepository)).To(Succeed())
 			Expect(pacRepository.OwnerReferences).To(HaveLen(1))
 			Expect(pacRepository.Spec.URL).To(Equal(multiComponentGitRepositoryUrl))
 			Expect(k8sClient.List(ctx, pacRepositoriesList, &client.ListOptions{Namespace: component1Key.Namespace})).To(Succeed())
 			Expect(pacRepositoriesList.Items).To(HaveLen(1))
 
 			// create 2nd component with shared URL
-			createCustomComponentWithBuildRequest(componentConfig{
+			createCustomComponentWithBuildRequest(componentConfigOldModel{
 				componentKey: component2Key,
 				annotations:  defaultPipelineAnnotations,
 				gitURL:       multiComponentGitRepositoryUrl,
 			}, BuildRequestConfigurePaCAnnotationValue)
+			defer deleteComponent(component2Key)
 			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
 			Eventually(func() bool { return component2PaCMergeRequestCreated }, timeout, interval).Should(BeTrue())
 
-			Expect(k8sClient.Get(ctx, component1Key, pacRepository)).To(Succeed())
+			Expect(k8sClient.Get(ctx, repositoryNameComp1Key, pacRepository)).To(Succeed())
 			Expect(pacRepository.OwnerReferences).To(HaveLen(2))
 			Expect(pacRepository.OwnerReferences[0].Name).To(Equal(component1Key.Name))
 			Expect(pacRepository.OwnerReferences[0].Kind).To(Equal("Component"))
@@ -1833,31 +1820,36 @@ var _ = Describe("Component build controller", func() {
 
 			// remove 1st component
 			deleteComponent(component1Key)
-			Expect(k8sClient.Get(ctx, component1Key, pacRepository)).To(Succeed())
+			Expect(k8sClient.Get(ctx, repositoryNameComp1Key, pacRepository)).To(Succeed())
 
-			// create 1st component again, but with different URL, which will create new Pac repository and not use the one which has same name as component
+			// create 1st component again, but with different URL, which will create new Pac repository and not use any existing one
 			differentGitRepositoryUrl := "https://github.com/samples/multi-different-component-repository"
-			createCustomComponentWithBuildRequest(componentConfig{
+			createCustomComponentWithBuildRequest(componentConfigOldModel{
 				componentKey: component1Key,
 				annotations:  defaultPipelineAnnotations,
 				gitURL:       differentGitRepositoryUrl,
 			}, BuildRequestConfigurePaCAnnotationValue)
+			defer deleteComponent(component1Key)
 			waitComponentAnnotationGone(component1Key, BuildRequestAnnotationName)
 			Eventually(func() bool { return component1PaCMergeRequestCreated }, timeout, interval).Should(BeTrue())
+			repositoryNameComp1New, _ := generatePaCRepositoryNameFromGitUrl(differentGitRepositoryUrl)
+			repositoryNameComp1NewKey := types.NamespacedName{Name: repositoryNameComp1New, Namespace: namespace}
+			waitPaCRepositoryCreated(repositoryNameComp1NewKey)
+			defer deletePaCRepository(repositoryNameComp1NewKey)
 
 			Expect(k8sClient.List(ctx, pacRepositoriesList, &client.ListOptions{Namespace: component1Key.Namespace})).To(Succeed())
-			Expect(pacRepositoriesList.Items).To(HaveLen(2)) // new repository will be created with added randomStr suffix
+			Expect(pacRepositoriesList.Items).To(HaveLen(2)) // new repository will be created for new component1 because it has different git url
 			originalRepositoryFound := false
 			newRepositoryFound := false
 			for _, repo := range pacRepositoriesList.Items {
-				// original repository will be still named after component1 even though component1 was removed, because component2 was using it
-				if repo.Name == component1Key.Name {
+				// original repository will be still named after git url from original component1 even though component1 was removed, because component2 was using it
+				if repo.Name == repositoryNameComp1 {
 					Expect(repo.Spec.URL).To(Equal(multiComponentGitRepositoryUrl))
 					// not testing ownerReferences because it will still have 2 references even after component1 removal, because
 					// in tests we aren't running controller which removes references from Repository upon component removal
 					originalRepositoryFound = true
-					// new repository for component1 will be named with prefix of component1 and random string, because component1 name repository has different url
-				} else if strings.HasPrefix(repo.Name, fmt.Sprintf("%s-", component1Key.Name)) {
+					// new repository for component1 will be named based on new git url of component1
+				} else if repo.Name == repositoryNameComp1New {
 					Expect(repo.Spec.URL).To(Equal(differentGitRepositoryUrl))
 					Expect(repo.OwnerReferences).To(HaveLen(1))
 					Expect(repo.OwnerReferences[0].Name).To(Equal(component1Key.Name))
@@ -1871,12 +1863,15 @@ var _ = Describe("Component build controller", func() {
 
 	})
 
+	// TODO remove after only new model is used
 	Context("Test Pipelines as Code trigger build", func() {
 		var (
 			namespace             = "trigger-build"
 			resourcePacTriggerKey = types.NamespacedName{Name: HASCompName + "-pactrigger", Namespace: namespace}
 			namespacePaCSecretKey = types.NamespacedName{Name: PipelinesAsCodeGitHubAppSecretName, Namespace: namespace}
 			webhookSecretKey      = types.NamespacedName{Name: pipelinesAsCodeWebhooksSecretName, Namespace: namespace}
+			repositoryName, _     = generatePaCRepositoryNameFromGitUrl(SampleRepoLink + "-" + resourcePacTriggerKey.Name)
+			repositoryNameKey     = types.NamespacedName{Name: repositoryName, Namespace: namespace}
 		)
 
 		_ = BeforeEach(func() {
@@ -1896,7 +1891,7 @@ var _ = Describe("Component build controller", func() {
 
 		_ = AfterEach(func() {
 			deleteComponent(resourcePacTriggerKey)
-			deletePaCRepository(resourcePacTriggerKey)
+			deletePaCRepository(repositoryNameKey)
 
 			deleteSecret(webhookSecretKey)
 			deleteSecret(namespacePaCSecretKey)
@@ -1912,14 +1907,14 @@ var _ = Describe("Component build controller", func() {
 				return mergeUrl, nil
 			}
 
-			createComponentAndProcessBuildRequest(componentConfig{
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
 				componentKey: resourcePacTriggerKey,
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourcePacTriggerKey)
-			expectPacBuildStatus(resourcePacTriggerKey, "enabled", 0, "", mergeUrl)
+			expectPacBuildStatusOldModel(resourcePacTriggerKey, "enabled", 0, "", mergeUrl)
 
-			repository := waitPaCRepositoryCreated(resourcePacTriggerKey)
+			repository := waitPaCRepositoryCreated(repositoryNameKey)
 			component := getComponent(resourcePacTriggerKey)
 
 			pacWebhookRoute := &routev1.Route{}
@@ -1972,16 +1967,16 @@ var _ = Describe("Component build controller", func() {
 				})).
 				Reply(202).JSON(map[string]string{})
 
-			setComponentBuildRequest(resourcePacTriggerKey, BuildRequestTriggerPaCBuildAnnotationValue)
+			setComponentBuildRequestOldModel(resourcePacTriggerKey, BuildRequestTriggerPaCBuildAnnotationValue)
 
-			incomingSecretName := fmt.Sprintf("%s%s", repository.Name, pacIncomingSecretNameSuffix)
+			incomingSecretName := getPaCIncomingSecretName(repository.Name)
 			incomingSecretResourceKey := types.NamespacedName{Namespace: component.Namespace, Name: incomingSecretName}
 			waitSecretCreated(incomingSecretResourceKey)
 			defer deleteSecret(incomingSecretResourceKey)
 
 			incomingSecret := corev1.Secret{}
 			Expect(k8sClient.Get(ctx, incomingSecretResourceKey, &incomingSecret)).To(Succeed())
-			secretValue := string(incomingSecret.Data[pacIncomingSecretKey][:])
+			secretValue := string(incomingSecret.Data[pacIncomingSecretKey])
 
 			waitComponentAnnotationGone(resourcePacTriggerKey, BuildRequestAnnotationName)
 			// verify that request matched
@@ -1990,12 +1985,12 @@ var _ = Describe("Component build controller", func() {
 			// verify that request body json params match
 			Expect(requestValueSourceUrl).To(Equal(component.Spec.Source.GitSource.URL))
 			Expect(requestValueSecret).To(Equal(secretValue))
-			Expect(requestValueRepository).To(Equal(component.Name))
+			Expect(requestValueRepository).To(Equal(repositoryName))
 			Expect(requestValueBranch).To(Equal("main"))
 			Expect(requestValuePipelinerun).To(Equal(pipelineRunName))
 			Expect(requestValueNamespace).To(Equal(component.Namespace))
 
-			repository = waitPaCRepositoryCreated(resourcePacTriggerKey)
+			repository = waitPaCRepositoryCreated(repositoryNameKey)
 
 			Expect(repository.Spec.Incomings).ToNot(BeNil())
 			Expect(len(*repository.Spec.Incomings)).To(Equal(1))
@@ -2014,30 +2009,30 @@ var _ = Describe("Component build controller", func() {
 			}
 
 			// provision 1st component
-			createComponentAndProcessBuildRequest(componentConfig{
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
 				componentKey: resourcePacTriggerKey,
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourcePacTriggerKey)
-			expectPacBuildStatus(resourcePacTriggerKey, "enabled", 0, "", mergeUrl)
-			repository := waitPaCRepositoryCreated(resourcePacTriggerKey)
+			expectPacBuildStatusOldModel(resourcePacTriggerKey, "enabled", 0, "", mergeUrl)
+			repository := waitPaCRepositoryCreated(repositoryNameKey)
 
 			// provision 2nd component
 			component2Key := types.NamespacedName{Name: "component2", Namespace: namespace}
-			createComponentAndProcessBuildRequest(componentConfig{
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
 				componentKey: component2Key,
 				annotations:  defaultPipelineAnnotations,
 				gitURL:       SampleRepoLink + "-" + resourcePacTriggerKey.Name,
 				gitRevision:  "another",
 			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(component2Key)
-			expectPacBuildStatus(component2Key, "enabled", 0, "", mergeUrl)
+			expectPacBuildStatusOldModel(component2Key, "enabled", 0, "", mergeUrl)
 			defer deleteComponent(component2Key)
 
 			pacWebhookRoute := &routev1.Route{}
 			Expect(k8sClient.Get(ctx, pacRouteKey, pacWebhookRoute)).To(Succeed())
 			webhookTargetUrl := "https://" + pacWebhookRoute.Spec.Host
-			incomingSecretName := fmt.Sprintf("%s%s", repository.Name, pacIncomingSecretNameSuffix)
+			incomingSecretName := getPaCIncomingSecretName(repository.Name)
 
 			component1 := getComponent(resourcePacTriggerKey)
 			pipelineRunName1 := component1.Name + pipelineRunOnPushSuffix
@@ -2057,12 +2052,12 @@ var _ = Describe("Component build controller", func() {
 				MatchType("json").
 				SetMatcher(gock.NewBasicMatcher()).
 				AddMatcher(gock.MatchFunc(func(req *http.Request, _ *gock.Request) (bool, error) {
-					return verifyBodyJsonParams(req, component1.Name, "main", component1.Namespace, pipelineRunName1)
+					return verifyBodyJsonParams(req, repositoryName, "main", component1.Namespace, pipelineRunName1)
 				})).
 				Reply(202).JSON(map[string]string{})
 
 			// trigger push pipeline for 1st component
-			setComponentBuildRequest(resourcePacTriggerKey, BuildRequestTriggerPaCBuildAnnotationValue)
+			setComponentBuildRequestOldModel(resourcePacTriggerKey, BuildRequestTriggerPaCBuildAnnotationValue)
 
 			incomingSecretResourceKey := types.NamespacedName{Namespace: component1.Namespace, Name: incomingSecretName}
 			waitSecretCreated(incomingSecretResourceKey)
@@ -2071,7 +2066,7 @@ var _ = Describe("Component build controller", func() {
 			// verify that request matched
 			Expect(req1.Done()).To(BeTrue())
 
-			repository = waitPaCRepositoryCreated(resourcePacTriggerKey)
+			repository = waitPaCRepositoryCreated(repositoryNameKey)
 			Expect(repository.Spec.Incomings).ToNot(BeNil())
 			Expect(len(*repository.Spec.Incomings)).To(Equal(1))
 			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
@@ -2086,17 +2081,17 @@ var _ = Describe("Component build controller", func() {
 				MatchType("json").
 				SetMatcher(gock.NewBasicMatcher()).
 				AddMatcher(gock.MatchFunc(func(req *http.Request, _ *gock.Request) (bool, error) {
-					return verifyBodyJsonParams(req, component1.Name, "another", component1.Namespace, pipelineRunName2)
+					return verifyBodyJsonParams(req, repositoryName, "another", component1.Namespace, pipelineRunName2)
 				})).
 				Reply(202).JSON(map[string]string{})
 
 			// trigger push pipeline for 2nd component
-			setComponentBuildRequest(component2Key, BuildRequestTriggerPaCBuildAnnotationValue)
+			setComponentBuildRequestOldModel(component2Key, BuildRequestTriggerPaCBuildAnnotationValue)
 			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
 			// verify that request matched
 			Expect(req2.Done()).To(BeTrue())
 
-			repository = waitPaCRepositoryCreated(resourcePacTriggerKey)
+			repository = waitPaCRepositoryCreated(repositoryNameKey)
 			Expect(repository.Spec.Incomings).ToNot(BeNil())
 			Expect(len(*repository.Spec.Incomings)).To(Equal(1))
 			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
@@ -2114,30 +2109,30 @@ var _ = Describe("Component build controller", func() {
 			}
 
 			// provision 1st component
-			createComponentAndProcessBuildRequest(componentConfig{
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
 				componentKey: resourcePacTriggerKey,
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourcePacTriggerKey)
-			expectPacBuildStatus(resourcePacTriggerKey, "enabled", 0, "", mergeUrl)
-			repository := waitPaCRepositoryCreated(resourcePacTriggerKey)
+			expectPacBuildStatusOldModel(resourcePacTriggerKey, "enabled", 0, "", mergeUrl)
+			repository := waitPaCRepositoryCreated(repositoryNameKey)
 
 			// provision 2nd component
 			component2Key := types.NamespacedName{Name: "component2", Namespace: namespace}
-			createComponentAndProcessBuildRequest(componentConfig{
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
 				componentKey: component2Key,
 				annotations:  defaultPipelineAnnotations,
 				gitURL:       SampleRepoLink + "-" + resourcePacTriggerKey.Name,
 				gitRevision:  "main",
 			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(component2Key)
-			expectPacBuildStatus(component2Key, "enabled", 0, "", mergeUrl)
+			expectPacBuildStatusOldModel(component2Key, "enabled", 0, "", mergeUrl)
 			defer deleteComponent(component2Key)
 
 			pacWebhookRoute := &routev1.Route{}
 			Expect(k8sClient.Get(ctx, pacRouteKey, pacWebhookRoute)).To(Succeed())
 			webhookTargetUrl := "https://" + pacWebhookRoute.Spec.Host
-			incomingSecretName := fmt.Sprintf("%s%s", repository.Name, pacIncomingSecretNameSuffix)
+			incomingSecretName := getPaCIncomingSecretName(repository.Name)
 
 			component1 := getComponent(resourcePacTriggerKey)
 			pipelineRunName1 := component1.Name + pipelineRunOnPushSuffix
@@ -2157,12 +2152,12 @@ var _ = Describe("Component build controller", func() {
 				MatchType("json").
 				SetMatcher(gock.NewBasicMatcher()).
 				AddMatcher(gock.MatchFunc(func(req *http.Request, _ *gock.Request) (bool, error) {
-					return verifyBodyJsonParams(req, component1.Name, "main", component1.Namespace, pipelineRunName1)
+					return verifyBodyJsonParams(req, repositoryName, "main", component1.Namespace, pipelineRunName1)
 				})).
 				Reply(202).JSON(map[string]string{})
 
 			// trigger push pipeline for 1st component
-			setComponentBuildRequest(resourcePacTriggerKey, BuildRequestTriggerPaCBuildAnnotationValue)
+			setComponentBuildRequestOldModel(resourcePacTriggerKey, BuildRequestTriggerPaCBuildAnnotationValue)
 
 			incomingSecretResourceKey := types.NamespacedName{Namespace: component1.Namespace, Name: incomingSecretName}
 			waitSecretCreated(incomingSecretResourceKey)
@@ -2171,7 +2166,7 @@ var _ = Describe("Component build controller", func() {
 			// verify that request matched
 			Expect(req1.Done()).To(BeTrue())
 
-			repository = waitPaCRepositoryCreated(resourcePacTriggerKey)
+			repository = waitPaCRepositoryCreated(repositoryNameKey)
 			Expect(repository.Spec.Incomings).ToNot(BeNil())
 			Expect(len(*repository.Spec.Incomings)).To(Equal(1))
 			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
@@ -2186,17 +2181,17 @@ var _ = Describe("Component build controller", func() {
 				MatchType("json").
 				SetMatcher(gock.NewBasicMatcher()).
 				AddMatcher(gock.MatchFunc(func(req *http.Request, _ *gock.Request) (bool, error) {
-					return verifyBodyJsonParams(req, component1.Name, "main", component1.Namespace, pipelineRunName2)
+					return verifyBodyJsonParams(req, repositoryName, "main", component1.Namespace, pipelineRunName2)
 				})).
 				Reply(202).JSON(map[string]string{})
 
 			// trigger push pipeline for 2nd component
-			setComponentBuildRequest(component2Key, BuildRequestTriggerPaCBuildAnnotationValue)
+			setComponentBuildRequestOldModel(component2Key, BuildRequestTriggerPaCBuildAnnotationValue)
 			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
 			// verify that request matched
 			Expect(req2.Done()).To(BeTrue())
 
-			repository = waitPaCRepositoryCreated(resourcePacTriggerKey)
+			repository = waitPaCRepositoryCreated(repositoryNameKey)
 			Expect(repository.Spec.Incomings).ToNot(BeNil())
 			Expect(len(*repository.Spec.Incomings)).To(Equal(1))
 			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
@@ -2214,15 +2209,15 @@ var _ = Describe("Component build controller", func() {
 			}
 
 			// provision 1st component
-			createComponentAndProcessBuildRequest(componentConfig{
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
 				componentKey: resourcePacTriggerKey,
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourcePacTriggerKey)
-			expectPacBuildStatus(resourcePacTriggerKey, "enabled", 0, "", mergeUrl)
+			expectPacBuildStatusOldModel(resourcePacTriggerKey, "enabled", 0, "", mergeUrl)
 
-			repository := waitPaCRepositoryCreated(resourcePacTriggerKey)
-			incomingSecretName := fmt.Sprintf("%s%s", repository.Name, pacIncomingSecretNameSuffix)
+			repository := waitPaCRepositoryCreated(repositoryNameKey)
+			incomingSecretName := getPaCIncomingSecretName(repository.Name)
 
 			// update repository with multiple incomings, even with wrong secret
 			incoming := []pacv1alpha1.Incoming{
@@ -2237,14 +2232,14 @@ var _ = Describe("Component build controller", func() {
 
 			// provision 2nd component
 			component2Key := types.NamespacedName{Name: "component2", Namespace: namespace}
-			createComponentAndProcessBuildRequest(componentConfig{
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
 				componentKey: component2Key,
 				annotations:  defaultPipelineAnnotations,
 				gitURL:       SampleRepoLink + "-" + resourcePacTriggerKey.Name,
 				gitRevision:  "another",
 			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(component2Key)
-			expectPacBuildStatus(component2Key, "enabled", 0, "", mergeUrl)
+			expectPacBuildStatusOldModel(component2Key, "enabled", 0, "", mergeUrl)
 			defer deleteComponent(component2Key)
 
 			client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
@@ -2274,7 +2269,7 @@ var _ = Describe("Component build controller", func() {
 				Reply(202).JSON(map[string]string{})
 
 			// trigger push pipeline for 2nd component
-			setComponentBuildRequest(component2Key, BuildRequestTriggerPaCBuildAnnotationValue)
+			setComponentBuildRequestOldModel(component2Key, BuildRequestTriggerPaCBuildAnnotationValue)
 			incomingSecretResourceKey := types.NamespacedName{Namespace: component2.Namespace, Name: incomingSecretName}
 			waitSecretCreated(incomingSecretResourceKey)
 			defer deleteSecret(incomingSecretResourceKey)
@@ -2282,7 +2277,7 @@ var _ = Describe("Component build controller", func() {
 			// verify that request matched
 			Expect(req.Done()).To(BeTrue())
 
-			repository = waitPaCRepositoryCreated(resourcePacTriggerKey)
+			repository = waitPaCRepositoryCreated(repositoryNameKey)
 			Expect(repository.Spec.Incomings).ToNot(BeNil())
 			Expect(len(*repository.Spec.Incomings)).To(Equal(1))
 			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
@@ -2300,15 +2295,15 @@ var _ = Describe("Component build controller", func() {
 			}
 
 			// provision 1st component
-			createComponentAndProcessBuildRequest(componentConfig{
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
 				componentKey: resourcePacTriggerKey,
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourcePacTriggerKey)
-			expectPacBuildStatus(resourcePacTriggerKey, "enabled", 0, "", mergeUrl)
+			expectPacBuildStatusOldModel(resourcePacTriggerKey, "enabled", 0, "", mergeUrl)
 
-			repository := waitPaCRepositoryCreated(resourcePacTriggerKey)
-			incomingSecretName := fmt.Sprintf("%s%s", repository.Name, pacIncomingSecretNameSuffix)
+			repository := waitPaCRepositoryCreated(repositoryNameKey)
+			incomingSecretName := getPaCIncomingSecretName(repository.Name)
 
 			// update repository with multiple incomings, even with wrong secret
 			incoming := []pacv1alpha1.Incoming{
@@ -2325,14 +2320,14 @@ var _ = Describe("Component build controller", func() {
 
 			// provision 2nd component
 			component2Key := types.NamespacedName{Name: "component2", Namespace: namespace}
-			createComponentAndProcessBuildRequest(componentConfig{
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
 				componentKey: component2Key,
 				annotations:  defaultPipelineAnnotations,
 				gitURL:       SampleRepoLink + "-" + resourcePacTriggerKey.Name,
 				gitRevision:  "another",
 			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(component2Key)
-			expectPacBuildStatus(component2Key, "enabled", 0, "", mergeUrl)
+			expectPacBuildStatusOldModel(component2Key, "enabled", 0, "", mergeUrl)
 			defer deleteComponent(component2Key)
 
 			client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
@@ -2362,7 +2357,7 @@ var _ = Describe("Component build controller", func() {
 				Reply(202).JSON(map[string]string{})
 
 			// trigger push pipeline for 2nd component
-			setComponentBuildRequest(component2Key, BuildRequestTriggerPaCBuildAnnotationValue)
+			setComponentBuildRequestOldModel(component2Key, BuildRequestTriggerPaCBuildAnnotationValue)
 			incomingSecretResourceKey := types.NamespacedName{Namespace: component2.Namespace, Name: incomingSecretName}
 			waitSecretCreated(incomingSecretResourceKey)
 			defer deleteSecret(incomingSecretResourceKey)
@@ -2370,7 +2365,7 @@ var _ = Describe("Component build controller", func() {
 			// verify that request matched
 			Expect(req.Done()).To(BeTrue())
 
-			repository = waitPaCRepositoryCreated(resourcePacTriggerKey)
+			repository = waitPaCRepositoryCreated(repositoryNameKey)
 			Expect(repository.Spec.Incomings).ToNot(BeNil())
 			Expect(len(*repository.Spec.Incomings)).To(Equal(1))
 			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
@@ -2388,15 +2383,15 @@ var _ = Describe("Component build controller", func() {
 			}
 
 			// provision 1st component
-			createComponentAndProcessBuildRequest(componentConfig{
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
 				componentKey: resourcePacTriggerKey,
 				annotations:  defaultPipelineAnnotations,
 			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(resourcePacTriggerKey)
-			expectPacBuildStatus(resourcePacTriggerKey, "enabled", 0, "", mergeUrl)
+			expectPacBuildStatusOldModel(resourcePacTriggerKey, "enabled", 0, "", mergeUrl)
 
-			repository := waitPaCRepositoryCreated(resourcePacTriggerKey)
-			incomingSecretName := fmt.Sprintf("%s%s", repository.Name, pacIncomingSecretNameSuffix)
+			repository := waitPaCRepositoryCreated(repositoryNameKey)
+			incomingSecretName := getPaCIncomingSecretName(repository.Name)
 
 			// update repository with multiple incomings, even with wrong secret
 			incoming := []pacv1alpha1.Incoming{
@@ -2407,14 +2402,14 @@ var _ = Describe("Component build controller", func() {
 
 			// provision 2nd component
 			component2Key := types.NamespacedName{Name: "component2", Namespace: namespace}
-			createComponentAndProcessBuildRequest(componentConfig{
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
 				componentKey: component2Key,
 				annotations:  defaultPipelineAnnotations,
 				gitURL:       SampleRepoLink + "-" + resourcePacTriggerKey.Name,
 				gitRevision:  "another",
 			}, BuildRequestConfigurePaCAnnotationValue)
 			waitPaCFinalizerOnComponent(component2Key)
-			expectPacBuildStatus(component2Key, "enabled", 0, "", mergeUrl)
+			expectPacBuildStatusOldModel(component2Key, "enabled", 0, "", mergeUrl)
 			defer deleteComponent(component2Key)
 
 			client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
@@ -2444,7 +2439,7 @@ var _ = Describe("Component build controller", func() {
 				Reply(202).JSON(map[string]string{})
 
 			// trigger push pipeline for 2nd component
-			setComponentBuildRequest(component2Key, BuildRequestTriggerPaCBuildAnnotationValue)
+			setComponentBuildRequestOldModel(component2Key, BuildRequestTriggerPaCBuildAnnotationValue)
 			incomingSecretResourceKey := types.NamespacedName{Namespace: component2.Namespace, Name: incomingSecretName}
 			waitSecretCreated(incomingSecretResourceKey)
 			defer deleteSecret(incomingSecretResourceKey)
@@ -2452,7 +2447,7 @@ var _ = Describe("Component build controller", func() {
 			// verify that request matched
 			Expect(req.Done()).To(BeTrue())
 
-			repository = waitPaCRepositoryCreated(resourcePacTriggerKey)
+			repository = waitPaCRepositoryCreated(repositoryNameKey)
 			Expect(repository.Spec.Incomings).ToNot(BeNil())
 			Expect(len(*repository.Spec.Incomings)).To(Equal(1))
 			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))

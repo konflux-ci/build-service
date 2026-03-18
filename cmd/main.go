@@ -61,7 +61,7 @@ import (
 	l "github.com/konflux-ci/build-service/pkg/logs"
 	pacwebhook "github.com/konflux-ci/build-service/pkg/pacwebhook"
 
-	appstudiov1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
+	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
 	imagerepositoryapi "github.com/konflux-ci/image-controller/api/v1alpha1"
 	releaseapi "github.com/konflux-ci/release-service/api/v1alpha1"
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
@@ -78,7 +78,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
-	utilruntime.Must(appstudiov1alpha1.AddToScheme(scheme))
+	utilruntime.Must(compapiv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
