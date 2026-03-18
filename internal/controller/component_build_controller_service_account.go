@@ -63,7 +63,7 @@ func (r *ComponentBuildReconciler) EnsureBuildPipelineServiceAccount(ctx context
 	if err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: component.Namespace}, buildPipelinesServiceAccount); err != nil {
 		if !errors.IsNotFound(err) {
 			log.Error(err, fmt.Sprintf("failed to read build pipeline Service Account %s in namespace %s", buildPipelineServiceAccountName, component.Namespace), l.Action, l.ActionView)
-			return err
+			return fmt.Errorf("failed to get build pipeline service account %s: %w", buildPipelineServiceAccountName, err)
 		}
 
 		// Service Account for Component build pipelines doesn't exist.
@@ -76,14 +76,14 @@ func (r *ComponentBuildReconciler) EnsureBuildPipelineServiceAccount(ctx context
 		}
 		if err := controllerutil.SetOwnerReference(component, buildPipelineSA, r.Scheme); err != nil {
 			log.Error(err, "failed to add owner reference to build pipeline Service Account")
-			return err
+			return fmt.Errorf("failed to set owner reference on build pipeline service account: %w", err)
 		}
 		if err := r.linkCommonSecretsToBuildPipelineServiceAccount(ctx, buildPipelineSA); err != nil {
-			return err
+			return fmt.Errorf("failed to link common secrets to build pipeline service account: %w", err)
 		}
 		if err := r.Client.Create(ctx, buildPipelineSA); err != nil {
 			log.Error(err, fmt.Sprintf("failed to create Service Account %s in namespace %s", buildPipelineServiceAccountName, component.Namespace), l.Action, l.ActionAdd)
-			return err
+			return fmt.Errorf("failed to create build pipeline service account %s: %w", buildPipelineServiceAccountName, err)
 		}
 	}
 
@@ -91,13 +91,13 @@ func (r *ComponentBuildReconciler) EnsureBuildPipelineServiceAccount(ctx context
 	if ensureNudging {
 		if err := r.ensureNudgingPullSecrets(ctx, component); err != nil {
 			log.Error(err, "failed to ensure nudge secrets linked")
-			return err
+			return fmt.Errorf("failed to ensure nudging pull secrets: %w", err)
 		}
 	}
 
 	if err := r.ensureBuildPipelineServiceAccountBinding(ctx, component); err != nil {
 		log.Error(err, "failed to ensure role binding for build pipleine Service Account")
-		return err
+		return fmt.Errorf("failed to ensure build pipeline service account binding: %w", err)
 	}
 
 	return nil
@@ -111,7 +111,7 @@ func (r *ComponentBuildReconciler) linkCommonSecretsToBuildPipelineServiceAccoun
 
 	commonBuildSecretRequirement, err := labels.NewRequirement(commonBuildSecretLabelName, selection.Equals, []string{"true"})
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create label selector for common build secrets: %w", err)
 	}
 	commonBuildSecretsSelector := labels.NewSelector().Add(*commonBuildSecretRequirement)
 	commonBuildSecretsListOptions := client.ListOptions{
@@ -119,7 +119,7 @@ func (r *ComponentBuildReconciler) linkCommonSecretsToBuildPipelineServiceAccoun
 		Namespace:     serviceAccount.Namespace,
 	}
 	if err := r.Client.List(ctx, commonSecretsList, &commonBuildSecretsListOptions); err != nil {
-		return err
+		return fmt.Errorf("failed to list common build secrets: %w", err)
 	}
 
 	// Add found secrets to the Service Account Secrets section
@@ -141,7 +141,7 @@ func (r *ComponentBuildReconciler) ensureNudgingPullSecrets(ctx context.Context,
 	allComponentsInNamespaceList := &compapiv1alpha1.ComponentList{}
 	if err := r.Client.List(ctx, allComponentsInNamespaceList, client.InNamespace(component.Namespace)); err != nil {
 		log.Error(err, "failed to list all Components in namespace", l.Action, l.ActionView)
-		return err
+		return fmt.Errorf("failed to list components in namespace %s: %w", component.Namespace, err)
 	}
 
 	// TODO use Component.Status.BuildNudgedBy when KONFLUX-6841 is resolved and the data in status will be reliable.
@@ -164,7 +164,7 @@ func (r *ComponentBuildReconciler) ensureNudgingPullSecrets(ctx context.Context,
 	buildPipelineServiceAccount := &corev1.ServiceAccount{}
 	if err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: component.Namespace}, buildPipelineServiceAccount); err != nil {
 		log.Error(err, "failed to get build pipeline Service Account", l.Action, l.ActionView)
-		return err
+		return fmt.Errorf("failed to get build pipeline service account %s: %w", buildPipelineServiceAccountName, err)
 	}
 
 	isServiceAccountUpdated := false
@@ -172,7 +172,7 @@ func (r *ComponentBuildReconciler) ensureNudgingPullSecrets(ctx context.Context,
 		imageRepository, err := r.getComponentImageRepository(ctx, componentName, component.Namespace)
 		if err != nil {
 			log.Error(err, "failed to get Image Repository for Component", "Component", componentName, l.Action, l.ActionView)
-			return err
+			return fmt.Errorf("failed to get image repository for component %s: %w", componentName, err)
 		}
 		if imageRepository == nil {
 			// The Component doesn't have related Image Repository object.
@@ -192,7 +192,7 @@ func (r *ComponentBuildReconciler) ensureNudgingPullSecrets(ctx context.Context,
 	if isServiceAccountUpdated {
 		if err := r.Client.Update(ctx, buildPipelineServiceAccount); err != nil {
 			log.Error(err, "failed to update build pipeline Service Account", l.Action, l.ActionUpdate)
-			return err
+			return fmt.Errorf("failed to update build pipeline service account %s: %w", buildPipelineServiceAccountName, err)
 		}
 		log.Info("Updated Service Account pull secrets")
 	}
@@ -213,7 +213,7 @@ func (r *ComponentBuildReconciler) cleanUpNudgingPullSecrets(ctx context.Context
 	imageRepository, err := r.getComponentImageRepository(ctx, component.Name, component.Namespace)
 	if err != nil {
 		log.Error(err, "failed to get Image Repository", l.Action, l.ActionView)
-		return err
+		return fmt.Errorf("failed to get image repository for component %s: %w", component.Name, err)
 	}
 	if imageRepository == nil {
 		// The Component doesn't have related Image Repository object.
@@ -227,7 +227,7 @@ func (r *ComponentBuildReconciler) cleanUpNudgingPullSecrets(ctx context.Context
 		if err := r.Client.Get(ctx, types.NamespacedName{Name: nudgedComponentBuildPipelineServiceAccountName, Namespace: component.Namespace}, nudgedComponentBuildPipelineServiceAccount); err != nil {
 			if !errors.IsNotFound(err) {
 				log.Error(err, "failed to get build pipeline Service Account for Component", "Component", nudgedComponentName, l.Action, l.ActionView)
-				return err
+				return fmt.Errorf("failed to get build pipeline service account for component %s: %w", nudgedComponentName, err)
 			}
 			continue
 		}
@@ -244,7 +244,7 @@ func (r *ComponentBuildReconciler) cleanUpNudgingPullSecrets(ctx context.Context
 
 		if err := r.Client.Update(ctx, nudgedComponentBuildPipelineServiceAccount); err != nil {
 			log.Error(err, "failed to remove pull secret link from build pipeline Service Account for Component", "Component", nudgedComponentName, l.Action, l.ActionUpdate)
-			return err
+			return fmt.Errorf("failed to update service account for component %s: %w", nudgedComponentName, err)
 		}
 	}
 
@@ -259,7 +259,7 @@ func (r *ComponentBuildReconciler) getComponentImageRepository(ctx context.Conte
 	imageRepositoryList := &imgcv1alpha1.ImageRepositoryList{}
 	componentImageRepositoryRequirement, err := labels.NewRequirement(imageRepositoryComponentLabelName, selection.Equals, []string{componentName})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create label selector for image repository: %w", err)
 	}
 	componentImageRepositorySelector := labels.NewSelector().Add(*componentImageRepositoryRequirement)
 	componentImageRepositoryListOptions := client.ListOptions{
@@ -268,7 +268,7 @@ func (r *ComponentBuildReconciler) getComponentImageRepository(ctx context.Conte
 	}
 	if err := r.Client.List(ctx, imageRepositoryList, &componentImageRepositoryListOptions); err != nil {
 		log.Error(err, "failed to list Component Image Repository")
-		return nil, err
+		return nil, fmt.Errorf("failed to list image repositories for component %s: %w", componentName, err)
 	}
 	if len(imageRepositoryList.Items) > 0 {
 		// Each Component can have only one Image Repository
@@ -289,7 +289,7 @@ func (r *ComponentBuildReconciler) ensureBuildPipelineServiceAccountBinding(ctx 
 	if err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineRoleBindingName, Namespace: component.Namespace}, buildPipelinesRoleBinding); err != nil {
 		if !errors.IsNotFound(err) {
 			log.Error(err, "failed to read common build pipelines Role Binding", l.Action, l.ActionView)
-			return err
+			return fmt.Errorf("failed to get build pipelines role binding: %w", err)
 		}
 
 		// This is the first Component in the namespace being onboarded.
@@ -316,7 +316,7 @@ func (r *ComponentBuildReconciler) ensureBuildPipelineServiceAccountBinding(ctx 
 		if err := r.Client.Create(ctx, buildPipelinesRoleBinding); err != nil {
 			// errors.IsNotFound(err) will always be false because appstudio-pipelines-runner Cluster Role exists.
 			log.Error(err, "failed to create common build pipelines Role Binding", l.Action, l.ActionAdd)
-			return err
+			return fmt.Errorf("failed to create build pipelines role binding: %w", err)
 		}
 		return nil
 	}
@@ -335,7 +335,7 @@ func (r *ComponentBuildReconciler) ensureBuildPipelineServiceAccountBinding(ctx 
 	})
 	if err := r.Client.Update(ctx, buildPipelinesRoleBinding); err != nil {
 		log.Error(err, "failed to add a subject to common build pipelines Role Binding", l.Action, l.ActionUpdate)
-		return err
+		return fmt.Errorf("failed to update build pipelines role binding: %w", err)
 	}
 	log.Info("Added Service Account to common build pipelines Role Binding", "ServiceAccountName", buildPipelineServiceAccountName, l.Action, l.ActionUpdate)
 
@@ -368,7 +368,7 @@ func (r *ComponentBuildReconciler) removeBuildPipelineServiceAccountBinding(ctx 
 			return nil
 		}
 		log.Error(err, "failed to read common build pipelines Role Binding", l.Action, l.ActionView)
-		return err
+		return fmt.Errorf("failed to get build pipelines role binding: %w", err)
 	}
 
 	subjectsNumberBefore := len(buildPipelinesRoleBinding.Subjects)
@@ -403,7 +403,7 @@ func (r *ComponentBuildReconciler) removeBuildPipelineServiceAccountBinding(ctx 
 		if len(buildPipelinesRoleBinding.Subjects) != subjectsNumberBefore {
 			if err := r.Client.Update(ctx, buildPipelinesRoleBinding); err != nil {
 				log.Error(err, "failed to remove subject from common build pipelines Role Binding")
-				return err
+				return fmt.Errorf("failed to update build pipelines role binding: %w", err)
 			}
 			log.Info("removed subject from common build pipelines Role Binding")
 		}
@@ -411,7 +411,7 @@ func (r *ComponentBuildReconciler) removeBuildPipelineServiceAccountBinding(ctx 
 		// No subjects left, remove whole Role Binding
 		if err := r.Client.Delete(ctx, buildPipelinesRoleBinding); err != nil {
 			log.Error(err, "failed to delete common build pipelines Role Binding", l.Action, l.ActionDelete)
-			return err
+			return fmt.Errorf("failed to delete build pipelines role binding: %w", err)
 		}
 		log.Info("deleted common build pipelines Role Binding")
 	}

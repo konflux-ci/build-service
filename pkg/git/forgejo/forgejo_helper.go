@@ -61,7 +61,7 @@ func (e MissingHostError) Error() string {
 func getOwnerAndRepoFromUrl(repoUrl string) (owner string, repository string, err error) {
 	parsedUrl, err := url.Parse(strings.TrimSuffix(repoUrl, ".git"))
 	if err != nil {
-		return "", "", err
+		return "", "", fmt.Errorf("failed to parse repository URL %s: %w", repoUrl, err)
 	}
 
 	pathParts := strings.Split(strings.TrimPrefix(parsedUrl.Path, "/"), "/")
@@ -121,7 +121,7 @@ func (f *ForgejoClient) getBranch(owner, repository, branchName string) (*forgej
 		if resp != nil && resp.StatusCode == http.StatusNotFound {
 			return nil, resp, nil
 		}
-		return nil, resp, err
+		return nil, resp, fmt.Errorf("failed to get branch %s: %w", branchName, err)
 	}
 	return branch, resp, nil
 }
@@ -132,7 +132,7 @@ func (f *ForgejoClient) branchExist(owner, repository, branchName string) (bool,
 		if resp != nil && resp.StatusCode == http.StatusNotFound {
 			return false, nil
 		}
-		return false, err
+		return false, fmt.Errorf("failed to check if branch %s exists: %w", branchName, err)
 	}
 	return true, nil
 }
@@ -209,7 +209,7 @@ func (f *ForgejoClient) filesUpToDate(owner, repository, branch string, files []
 				// File doesn't exist in the repository
 				return false, nil
 			}
-			return false, err
+			return false, fmt.Errorf("failed to download file %s: %w", file.FullPath, err)
 		}
 
 		if !bytes.Equal(file.Content, remoteFileBytes) {
@@ -223,13 +223,13 @@ func (f *ForgejoClient) filesUpToDate(owner, repository, branch string, files []
 func (f *ForgejoClient) getDefaultBranchWithChecks(owner, repository string) (string, error) {
 	defaultBranch, err := f.getDefaultBranch(owner, repository)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to get default branch: %w", err)
 	}
 
 	// Verify the branch exists
 	exists, err := f.branchExist(owner, repository, defaultBranch)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to verify default branch %s exists: %w", defaultBranch, err)
 	}
 	if !exists {
 		return "", fmt.Errorf("default branch '%s' does not exist", defaultBranch)
@@ -274,7 +274,7 @@ func (f *ForgejoClient) commitFilesIntoBranch(owner, repository, branchName, com
 		// Check if file exists to determine if we should create or update
 		exists, sha, err := f.fileExist(owner, repository, branchName, file.FullPath)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to check if file %s exists: %w", file.FullPath, err)
 		}
 
 		author := forgejo.Identity{
