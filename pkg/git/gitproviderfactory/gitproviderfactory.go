@@ -87,7 +87,7 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 
 		githubClient, err := github.NewGithubClientByApp(githubAppId, privateKey, gitClientConfig.RepoUrl)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to create GitHub client by app: %w", err)
 		}
 
 		return githubClient, nil
@@ -98,7 +98,7 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 		}
 		baseUrl, err := gitlab.GetBaseUrl(gitClientConfig.RepoUrl)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to get GitLab base URL: %w", err)
 		}
 		if usernameExists && passwordExists {
 			return gitlab.NewGitlabClientWithBasicAuth(string(username), string(password), baseUrl)
@@ -120,7 +120,7 @@ func createGitClient(gitClientConfig GitClientConfig) (gitprovider.GitProviderCl
 		}
 		baseUrl, err := forgejo.GetBaseUrl(gitClientConfig.RepoUrl)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to get Forgejo base URL: %w", err)
 		}
 		if usernameExists && passwordExists {
 			return forgejo.NewForgejoClientWithBasicAuth(string(username), string(password), baseUrl)

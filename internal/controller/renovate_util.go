@@ -393,7 +393,7 @@ func (u ComponentDependenciesUpdater) ReadCustomRenovateConfigMap(ctx context.Co
 			// no need to fail if custom renovate config map doesn't exist
 			return &customRenovateOptions, nil
 		}
-		return &customRenovateOptions, err
+		return &customRenovateOptions, fmt.Errorf("failed to get custom renovate config map %s: %w", customRenovateConfigMapName, err)
 	}
 	log.Info("will use custom renovate config map", "configMapName", customRenovateConfigMapName)
 
@@ -657,12 +657,12 @@ func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Contex
 
 		renovateConfig, err := GenerateRenovateConfigForNudge(target, buildResult, gitRepoAtShaLink, simpleBranchName)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to generate renovate config for component %s: %w", target.ComponentName, err)
 		}
 
 		config, err := json.Marshal(renovateConfig)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to marshal renovate config for component %s: %w", target.ComponentName, err)
 		}
 		configString = string(config)
 
@@ -725,7 +725,7 @@ func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Contex
 	renovatePipelineServiceAccountName := getBuildPipelineServiceAccountName(buildResult.Component.Name)
 	if err := u.Client.Get(ctx, types.NamespacedName{Name: renovatePipelineServiceAccountName, Namespace: namespace}, &corev1.ServiceAccount{}); err != nil {
 		log.Error(err, fmt.Sprintf("Failed to read service account %s in namespace %s", renovatePipelineServiceAccountName, namespace), l.Action, l.ActionView)
-		return err
+		return fmt.Errorf("failed to get service account %s for renovate pipeline: %w", renovatePipelineServiceAccountName, err)
 	}
 
 	trueBool := true
@@ -834,30 +834,30 @@ func (u ComponentDependenciesUpdater) CreateRenovaterPipeline(ctx context.Contex
 	}
 
 	if err := u.Client.Create(ctx, pipelineRun); err != nil {
-		return err
+		return fmt.Errorf("failed to create renovate pipeline run: %w", err)
 	}
 	// We create the PipelineRun first, and it will wait for the secret and configmap to be created
 	if err := controllerutil.SetOwnerReference(pipelineRun, configMap, u.Scheme); err != nil {
-		return err
+		return fmt.Errorf("failed to set owner reference on renovate config map: %w", err)
 	}
 	if err := controllerutil.SetOwnerReference(pipelineRun, secret, u.Scheme); err != nil {
-		return err
+		return fmt.Errorf("failed to set owner reference on renovate secret: %w", err)
 	}
 
 	if caConfigData != "" {
 		if err := controllerutil.SetOwnerReference(pipelineRun, caConfigMap, u.Scheme); err != nil {
-			return err
+			return fmt.Errorf("failed to set owner reference on CA config map: %w", err)
 		}
 		if err := u.Client.Create(ctx, caConfigMap); err != nil {
-			return err
+			return fmt.Errorf("failed to create CA config map: %w", err)
 		}
 	}
 
 	if err := u.Client.Create(ctx, secret); err != nil {
-		return err
+		return fmt.Errorf("failed to create renovate secret: %w", err)
 	}
 	if err := u.Client.Create(ctx, configMap); err != nil {
-		return err
+		return fmt.Errorf("failed to create renovate config map: %w", err)
 	}
 	log.Info(fmt.Sprintf("Renovate pipeline %s triggered", pipelineRun.Name), l.Action, l.ActionAdd)
 

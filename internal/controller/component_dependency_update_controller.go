@@ -272,7 +272,7 @@ func (r *ComponentDependencyUpdateReconciler) verifyUpToDate(ctx context.Context
 	currentPipelineRun := &tektonapi.PipelineRun{}
 	err := r.ApiReader.Get(ctx, types.NamespacedName{Namespace: pipelineRun.Namespace, Name: pipelineRun.Name}, currentPipelineRun)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get pipeline run %s/%s: %w", pipelineRun.Namespace, pipelineRun.Name, err)
 	}
 	if currentPipelineRun.ResourceVersion != pipelineRun.ResourceVersion {
 		ctrllog.FromContext(ctx).Info("returning early as resource is out of date")
@@ -736,7 +736,7 @@ func GetComponentFromPipelineRun(c client.Client, ctx context.Context, pipelineR
 		}, component)
 
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to get component %s: %w", componentName, err)
 		}
 
 		return component, nil

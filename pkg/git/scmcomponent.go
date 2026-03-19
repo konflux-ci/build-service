@@ -1,6 +1,7 @@
 package git
 
 import (
+	"fmt"
 	"net/url"
 	"strings"
 )
@@ -18,7 +19,7 @@ type ScmComponent struct {
 func NewScmComponent(platform string, repositoryUrl string, revision string, componentName string, namespaceName string) (*ScmComponent, error) {
 	url, err := url.Parse(strings.TrimSuffix(strings.TrimSuffix(repositoryUrl, ".git"), "/"))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse repository URL %s: %w", repositoryUrl, err)
 	}
 	branch := revision
 	if branch == "" {

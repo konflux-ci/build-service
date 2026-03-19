@@ -19,6 +19,7 @@ package controllers
 import (
 	"context"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"strings"
 	"time"
@@ -301,8 +302,9 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err != nil {
 		buildStatus := readBuildStatus(&component)
 		// when reading pipeline annotation fails, we should end reconcile, unless transient error
-		if boErr, ok := err.(*boerrors.BuildOpError); ok && boErr.IsPersistent() {
-			buildStatus.Message = fmt.Sprintf("%d: %s", err.(*boerrors.BuildOpError).GetErrorId(), err.(*boerrors.BuildOpError).ShortError())
+		var boErr *boerrors.BuildOpError
+		if stderrors.As(err, &boErr) && boErr.IsPersistent() {
+			buildStatus.Message = fmt.Sprintf("%d: %s", boErr.GetErrorId(), boErr.ShortError())
 		} else {
 			// transient error, retry
 			return ctrl.Result{}, err
@@ -312,14 +314,15 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		// so this reconcile will finish without error, and updated component will trigger new reconcile which already has pipeline annotation
 		// we don't want to update neither status or remove annotation, because that will be handled by next reconcile
 		missingPipelineAnnotationError := boerrors.NewBuildOpError(boerrors.EMissingPipelineAnnotation, nil)
-		if err.(*boerrors.BuildOpError).GetErrorId() == missingPipelineAnnotationError.GetErrorId() {
+		if boErr.GetErrorId() == missingPipelineAnnotationError.GetErrorId() {
 			err = r.SetDefaultBuildPipelineComponentAnnotation(ctx, &component)
 			if err == nil {
 				return ctrl.Result{}, nil
 			}
 
-			if boErr, ok := err.(*boerrors.BuildOpError); ok && boErr.IsPersistent() {
-				buildStatus.Message = fmt.Sprintf("%d: %s", err.(*boerrors.BuildOpError).GetErrorId(), err.(*boerrors.BuildOpError).ShortError())
+			var boErr2 *boerrors.BuildOpError
+			if stderrors.As(err, &boErr2) && boErr2.IsPersistent() {
+				buildStatus.Message = fmt.Sprintf("%d: %s", boErr2.GetErrorId(), boErr2.ShortError())
 			} else {
 				// transient error, retry
 				return ctrl.Result{}, err
@@ -371,7 +374,8 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		reconcileRequired, err := r.TriggerPaCBuildOldModel(ctx, &component)
 
 		if err != nil {
-			if boErr, ok := err.(*boerrors.BuildOpError); ok && boErr.IsPersistent() {
+			var boErr *boerrors.BuildOpError
+			if stderrors.As(err, &boErr) && boErr.IsPersistent() {
 				log.Error(err, "Failed to rerun push pipeline for the Component")
 				buildStatus := readBuildStatus(&component)
 				buildStatus.PaC.ErrId = boErr.GetErrorId()
@@ -399,7 +403,8 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 		pacBuildStatus := &PaCBuildStatus{}
 		if mergeUrl, err := r.ProvisionPaCForComponentOldModel(ctx, &component); err != nil {
-			if boErr, ok := err.(*boerrors.BuildOpError); ok && boErr.IsPersistent() {
+			var boErr *boerrors.BuildOpError
+			if stderrors.As(err, &boErr) && boErr.IsPersistent() {
 				log.Error(err, "Pipelines as Code provision for the Component failed")
 				pacBuildStatus.State = "error"
 				pacBuildStatus.ErrId = boErr.GetErrorId()
@@ -467,7 +472,8 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 		pacBuildStatus := &PaCBuildStatus{}
 		if mergeUrl, err := r.UndoPaCProvisionForComponentOldModel(ctx, &component); err != nil {
-			if boErr, ok := err.(*boerrors.BuildOpError); ok && boErr.IsPersistent() {
+			var boErr *boerrors.BuildOpError
+			if stderrors.As(err, &boErr) && boErr.IsPersistent() {
 				log.Error(err, "Pipelines as Code unprovision for the Component failed")
 				pacBuildStatus.State = "error"
 				pacBuildStatus.ErrId = boErr.GetErrorId()

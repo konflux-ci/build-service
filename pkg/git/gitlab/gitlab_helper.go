@@ -59,7 +59,7 @@ func (e MissingHostError) Error() string {
 func getProjectPathFromRepoUrl(repoUrl string) (string, error) {
 	url, err := url.Parse(repoUrl)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to parse repository URL %s: %w", repoUrl, err)
 	}
 
 	return strings.TrimPrefix(
@@ -119,12 +119,12 @@ func (g *GitlabClient) getBranch(projectPath, branchName string) (*gitlab.Branch
 	branch, resp, err := g.client.Branches.GetBranch(projectPath, branchName)
 	if err != nil {
 		if resp == nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to get branch %s: %w", branchName, err)
 		}
 		if resp.StatusCode == 404 {
 			return nil, nil
 		}
-		return nil, err
+		return nil, fmt.Errorf("failed to get branch %s: %w", branchName, err)
 	}
 	return branch, nil
 }
@@ -133,12 +133,12 @@ func (g *GitlabClient) branchExist(projectPath, branchName string) (bool, error)
 	_, resp, err := g.client.Branches.GetBranch(projectPath, branchName)
 	if err != nil {
 		if resp == nil {
-			return false, err
+			return false, fmt.Errorf("failed to check if branch %s exists: %w", branchName, err)
 		}
 		if resp.StatusCode == 404 {
 			return false, nil
 		}
-		return false, err
+		return false, fmt.Errorf("failed to check if branch %s exists: %w", branchName, err)
 	}
 	return true, nil
 }
@@ -171,7 +171,7 @@ func (g *GitlabClient) getDefaultBranch(projectPath string) (string, error) {
 		if resp != nil {
 			err = refineGitHostingServiceError(resp.Response, err)
 		}
-		return "", err
+		return "", fmt.Errorf("failed to get default branch for %s: %w", projectPath, err)
 	}
 	if projectInfo == nil {
 		return "", fmt.Errorf("project info is empty in GitLab API response")
@@ -188,7 +188,7 @@ func (g *GitlabClient) downloadFileContent(projectPath, branchName, filePath str
 	fileContent, resp, err := g.client.RepositoryFiles.GetRawFile(projectPath, filePath, opts)
 	if err != nil {
 		if resp == nil || resp.StatusCode != 404 {
-			return nil, err
+			return nil, fmt.Errorf("failed to download file %s: %w", filePath, err)
 		}
 		return nil, errors.New("not found")
 	}
@@ -203,7 +203,7 @@ func (g *GitlabClient) filesUpToDate(projectPath, branchName string, files []gp.
 				// File not found
 				return false, nil
 			}
-			return false, err
+			return false, fmt.Errorf("failed to download file %s: %w", file.FullPath, err)
 		}
 		if !bytes.Equal(fileContent, file.Content) {
 			return false, nil
@@ -225,12 +225,12 @@ func (g *GitlabClient) filesExistInDirectory(projectPath, branchName, directoryP
 	dirContent, resp, err := g.client.Repositories.ListTree(projectPath, opts)
 	if err != nil {
 		if resp == nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to list directory %s: %w", directoryPath, err)
 		}
 		if resp.StatusCode == 404 {
 			return existingFiles, nil
 		}
-		return existingFiles, err
+		return existingFiles, fmt.Errorf("failed to list directory %s: %w", directoryPath, err)
 	}
 
 	for _, file := range dirContent {
@@ -257,7 +257,7 @@ func (g *GitlabClient) commitFilesIntoBranch(projectPath, branchName, commitMess
 		_, resp, err := g.client.RepositoryFiles.GetRawFile(projectPath, file.FullPath, opts)
 		if err != nil {
 			if resp == nil || resp.StatusCode != 404 {
-				return err
+				return fmt.Errorf("failed to check file %s existence: %w", file.FullPath, err)
 			}
 			fileAction = gitlab.FileCreate
 		} else {
@@ -312,7 +312,10 @@ func (g *GitlabClient) addDeleteCommitToBranch(projectPath, branchName, authorNa
 		Actions:       actions,
 	}
 	_, _, err := g.client.Commits.CreateCommit(projectPath, opts)
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to create delete commit in branch %s: %w", branchName, err)
+	}
+	return nil
 }
 
 func (g *GitlabClient) diffNotEmpty(projectPath, branchName, baseBranchName string) (bool, error) {
@@ -324,7 +327,7 @@ func (g *GitlabClient) diffNotEmpty(projectPath, branchName, baseBranchName stri
 	}
 	cmpres, _, err := g.client.Repositories.Compare(projectPath, opts)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("failed to compare branches %s and %s: %w", baseBranchName, branchName, err)
 	}
 	return len(cmpres.Diffs) > 0, nil
 }
@@ -341,7 +344,7 @@ func (g *GitlabClient) findMergeRequestByBranches(projectPath, branch, targetBra
 	}
 	mrs, _, err := g.client.MergeRequests.ListProjectMergeRequests(projectPath, opts)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to list merge requests: %w", err)
 	}
 	switch len(mrs) {
 	case 0:
@@ -362,7 +365,7 @@ func (g *GitlabClient) createMergeRequestWithinRepository(projectPath, branchNam
 	}
 	mr, _, err := g.client.MergeRequests.CreateMergeRequest(projectPath, opts)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to create merge request: %w", err)
 	}
 	return mr.WebURL, nil
 }
@@ -372,7 +375,7 @@ func (g *GitlabClient) getWebhookByTargetUrl(projectPath, webhookTargetUrl strin
 	webhooks, resp, err := g.client.Projects.ListProjectHooks(projectPath, opts)
 	if err != nil {
 		if resp == nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to list webhooks: %w", err)
 		}
 		return nil, refineGitHostingServiceError(resp.Response, err)
 	}
@@ -400,7 +403,10 @@ func (g *GitlabClient) updatePaCWebhook(projectPath string, webhookId int, webho
 func (g *GitlabClient) deleteWebhook(projectPath string, webhookId int) error {
 	resp, err := g.client.Projects.DeleteProjectHook(projectPath, webhookId)
 	if resp == nil {
-		return err
+		if err != nil {
+			return fmt.Errorf("failed to delete webhook: %w", err)
+		}
+		return nil
 	}
 	if resp.StatusCode == 404 {
 		return nil
@@ -431,12 +437,12 @@ func (g *GitlabClient) getProjectInfo(projectPath string) (*gitlab.Project, erro
 	project, resp, err := g.client.Projects.GetProject(projectPath, &gitlab.GetProjectOptions{})
 	if err != nil {
 		if resp == nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to get project info for %s: %w", projectPath, err)
 		}
 		if resp.StatusCode == 404 {
 			return nil, nil
 		}
-		return nil, err
+		return nil, fmt.Errorf("failed to get project info for %s: %w", projectPath, err)
 	}
 	return project, nil
 }

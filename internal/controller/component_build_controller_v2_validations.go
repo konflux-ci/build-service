@@ -528,7 +528,7 @@ func (r *ComponentBuildReconciler) processDefaultPipelineConfig(
 			return []string{errMsg}, nil
 		}
 		// Transient error - return error to reconcile again
-		return nil, err
+		return nil, fmt.Errorf("failed to get default pipelines from config: %w", err)
 	}
 
 	// Collect all validation errors

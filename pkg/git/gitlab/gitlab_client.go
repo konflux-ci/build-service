@@ -44,20 +44,20 @@ type GitlabClient struct {
 func (g *GitlabClient) EnsurePaCMergeRequest(repoUrl string, d *gp.MergeRequestData) (webUrl string, err error) {
 	projectPath, err := getProjectPathFromRepoUrl(repoUrl)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to parse repository URL %s: %w", repoUrl, err)
 	}
 
 	// Fallback to the default branch if base branch is not set
 	if d.BaseBranchName == "" {
 		baseBranch, err := g.getDefaultBranch(projectPath)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to get default branch for %s: %w", projectPath, err)
 		}
 		d.BaseBranchName = baseBranch
 	} else {
 		baseBranchExists, err := g.branchExist(projectPath, d.BaseBranchName)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to check if branch %s exists: %w", d.BaseBranchName, err)
 		}
 		if !baseBranchExists {
 			return "", boerrors.NewBuildOpError(boerrors.EGitLabBranchDoesntExist, fmt.Errorf("branch '%s' does not exist", d.BaseBranchName))
@@ -66,7 +66,7 @@ func (g *GitlabClient) EnsurePaCMergeRequest(repoUrl string, d *gp.MergeRequestD
 
 	pacConfigurationUpToDate, err := g.filesUpToDate(projectPath, d.BaseBranchName, d.Files)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to check if files are up to date in branch %s: %w", d.BaseBranchName, err)
 	}
 	if pacConfigurationUpToDate {
 		// Nothing to do, the configuration is alredy in the main branch of the repository
@@ -75,24 +75,24 @@ func (g *GitlabClient) EnsurePaCMergeRequest(repoUrl string, d *gp.MergeRequestD
 
 	mrBranchExists, err := g.branchExist(projectPath, d.BranchName)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to check if branch %s exists: %w", d.BranchName, err)
 	}
 
 	if mrBranchExists {
 		mrBranchUpToDate, err := g.filesUpToDate(projectPath, d.BranchName, d.Files)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to check if files are up to date in branch %s: %w", d.BranchName, err)
 		}
 		if !mrBranchUpToDate {
 			err := g.commitFilesIntoBranch(projectPath, d.BranchName, d.CommitMessage, d.AuthorName, d.AuthorEmail, d.SignedOff, d.Files)
 			if err != nil {
-				return "", err
+				return "", fmt.Errorf("failed to commit files into branch %s: %w", d.BranchName, err)
 			}
 		}
 
 		mr, err := g.findMergeRequestByBranches(projectPath, d.BranchName, d.BaseBranchName)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to find merge request for branch %s: %w", d.BranchName, err)
 		}
 		if mr != nil {
 			// Merge request already exists
@@ -101,14 +101,14 @@ func (g *GitlabClient) EnsurePaCMergeRequest(repoUrl string, d *gp.MergeRequestD
 
 		diffExists, err := g.diffNotEmpty(projectPath, d.BranchName, d.BaseBranchName)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to check diff between branches %s and %s: %w", d.BranchName, d.BaseBranchName, err)
 		}
 		if !diffExists {
 			// This situation occurs if an MR was merged but the branch was not deleted and main is changed after the merge.
 			// Despite the fact that there is actual diff between branches, git treats it as no diff,
 			// because the branch is already "included" in main.
 			if _, err := g.deleteBranch(projectPath, d.BranchName); err != nil {
-				return "", err
+				return "", fmt.Errorf("failed to delete branch %s: %w", d.BranchName, err)
 			}
 			return g.EnsurePaCMergeRequest(repoUrl, d)
 		}
@@ -118,12 +118,12 @@ func (g *GitlabClient) EnsurePaCMergeRequest(repoUrl string, d *gp.MergeRequestD
 		// Need to create branch and MR with Pipelines as Code configuration
 		err = g.createBranch(projectPath, d.BranchName, d.BaseBranchName)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to create branch %s: %w", d.BranchName, err)
 		}
 
 		err = g.commitFilesIntoBranch(projectPath, d.BranchName, d.CommitMessage, d.AuthorName, d.AuthorEmail, d.SignedOff, d.Files)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to commit files into branch %s: %w", d.BranchName, err)
 		}
 
 		return g.createMergeRequestWithinRepository(projectPath, d.BranchName, d.BaseBranchName, d.Title, d.Text)
@@ -136,20 +136,20 @@ func (g *GitlabClient) EnsurePaCMergeRequest(repoUrl string, d *gp.MergeRequestD
 func (g *GitlabClient) UndoPaCMergeRequest(repoUrl string, d *gp.MergeRequestData) (webUrl string, err error) {
 	projectPath, err := getProjectPathFromRepoUrl(repoUrl)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to parse repository URL %s: %w", repoUrl, err)
 	}
 
 	// Fallback to the default branch if base branch is not set
 	if d.BaseBranchName == "" {
 		baseBranchName, err := g.getDefaultBranch(projectPath)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to get default branch for %s: %w", projectPath, err)
 		}
 		d.BaseBranchName = baseBranchName
 	} else {
 		baseBranchExists, err := g.branchExist(projectPath, d.BaseBranchName)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to check if branch %s exists: %w", d.BaseBranchName, err)
 		}
 		if !baseBranchExists {
 			// when base branch doesn't exist, there is nothing to cleanup
@@ -159,7 +159,7 @@ func (g *GitlabClient) UndoPaCMergeRequest(repoUrl string, d *gp.MergeRequestDat
 
 	files, err := g.filesExistInDirectory(projectPath, d.BaseBranchName, ".tekton", d.Files)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to check existing files in .tekton directory: %w", err)
 	}
 	if len(files) == 0 {
 		// Nothing to prune
@@ -170,17 +170,17 @@ func (g *GitlabClient) UndoPaCMergeRequest(repoUrl string, d *gp.MergeRequestDat
 
 	// Delete old branch, if any
 	if _, err := g.deleteBranch(projectPath, d.BranchName); err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to delete branch %s: %w", d.BranchName, err)
 	}
 
 	// Create branch, commit and pull request
 	if err := g.createBranch(projectPath, d.BranchName, d.BaseBranchName); err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to create branch %s: %w", d.BranchName, err)
 	}
 
 	err = g.addDeleteCommitToBranch(projectPath, d.BranchName, d.AuthorName, d.AuthorEmail, d.CommitMessage, d.SignedOff, files)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to add delete commit to branch %s: %w", d.BranchName, err)
 	}
 
 	return g.createMergeRequestWithinRepository(projectPath, d.BranchName, d.BaseBranchName, d.Title, d.Text)
@@ -190,7 +190,7 @@ func (g *GitlabClient) UndoPaCMergeRequest(repoUrl string, d *gp.MergeRequestDat
 func (g *GitlabClient) FindUnmergedPaCMergeRequest(repoUrl string, d *gp.MergeRequestData) (*gp.MergeRequest, error) {
 	projectPath, err := getProjectPathFromRepoUrl(repoUrl)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse repository URL %s: %w", repoUrl, err)
 	}
 
 	opts := &gitlab.ListProjectMergeRequestsOptions{
@@ -219,33 +219,37 @@ func (g *GitlabClient) FindUnmergedPaCMergeRequest(repoUrl string, d *gp.MergeRe
 func (g *GitlabClient) SetupPaCWebhook(repoUrl, webhookUrl, webhookSecret string) error {
 	projectPath, err := getProjectPathFromRepoUrl(repoUrl)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to parse repository URL %s: %w", repoUrl, err)
 	}
 
 	existingWebhook, err := g.getWebhookByTargetUrl(projectPath, webhookUrl)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get webhook by target URL: %w", err)
 	}
 
 	if existingWebhook == nil {
-		_, err = g.createPaCWebhook(projectPath, webhookUrl, webhookSecret)
-		return err
+		if _, err = g.createPaCWebhook(projectPath, webhookUrl, webhookSecret); err != nil {
+			return fmt.Errorf("failed to create PaC webhook: %w", err)
+		}
+		return nil
 	}
 
-	_, err = g.updatePaCWebhook(projectPath, existingWebhook.ID, webhookUrl, webhookSecret)
-	return err
+	if _, err = g.updatePaCWebhook(projectPath, existingWebhook.ID, webhookUrl, webhookSecret); err != nil {
+		return fmt.Errorf("failed to update PaC webhook: %w", err)
+	}
+	return nil
 }
 
 // DeletePaCWebhook deletes Pipelines as Code webhook in the given repository
 func (g *GitlabClient) DeletePaCWebhook(repoUrl, webhookUrl string) error {
 	projectPath, err := getProjectPathFromRepoUrl(repoUrl)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to parse repository URL %s: %w", repoUrl, err)
 	}
 
 	existingWebhook, err := g.getWebhookByTargetUrl(projectPath, webhookUrl)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get webhook by target URL: %w", err)
 	}
 
 	if existingWebhook == nil {
@@ -253,7 +257,10 @@ func (g *GitlabClient) DeletePaCWebhook(repoUrl, webhookUrl string) error {
 		return nil
 	}
 
-	return g.deleteWebhook(projectPath, existingWebhook.ID)
+	if err := g.deleteWebhook(projectPath, existingWebhook.ID); err != nil {
+		return fmt.Errorf("failed to delete webhook: %w", err)
+	}
+	return nil
 }
 
 // GetDefaultBranchWithChecks returns name of default branch in the given repository
@@ -261,7 +268,7 @@ func (g *GitlabClient) DeletePaCWebhook(repoUrl, webhookUrl string) error {
 func (g *GitlabClient) GetDefaultBranchWithChecks(repoUrl string) (string, error) {
 	projectPath, err := getProjectPathFromRepoUrl(repoUrl)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to parse repository URL %s: %w", repoUrl, err)
 	}
 
 	defaultBranch, err := g.getDefaultBranch(projectPath)
@@ -275,7 +282,7 @@ func (g *GitlabClient) GetDefaultBranchWithChecks(repoUrl string) (string, error
 func (g *GitlabClient) DeleteBranch(repoUrl, branchName string) (bool, error) {
 	projectPath, err := getProjectPathFromRepoUrl(repoUrl)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("failed to parse repository URL %s: %w", repoUrl, err)
 	}
 	return g.deleteBranch(projectPath, branchName)
 }
@@ -284,12 +291,12 @@ func (g *GitlabClient) DeleteBranch(repoUrl, branchName string) (bool, error) {
 func (g *GitlabClient) GetBranchSha(repoUrl, branchName string) (string, error) {
 	projectPath, err := getProjectPathFromRepoUrl(repoUrl)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to parse repository URL %s: %w", repoUrl, err)
 	}
 
 	branch, err := g.getBranch(projectPath, branchName)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to get branch %s: %w", branchName, err)
 	}
 	if branch.Commit == nil {
 		return "", fmt.Errorf("unexpected response while getting branch top commit SHA")
@@ -301,14 +308,14 @@ func (g *GitlabClient) GetBranchSha(repoUrl, branchName string) (string, error) 
 func (g *GitlabClient) DownloadFileContent(repoUrl, branchName, filePath string) ([]byte, error) {
 	projectPath, err := getProjectPathFromRepoUrl(repoUrl)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse repository URL %s: %w", repoUrl, err)
 	}
 
 	if branchName == "" {
 		var err error
 		branchName, err = g.getDefaultBranch(projectPath)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to get default branch for %s: %w", projectPath, err)
 		}
 	}
 
@@ -320,21 +327,21 @@ func (g *GitlabClient) DownloadFileContent(repoUrl, branchName, filePath string)
 func (g *GitlabClient) IsFileExist(repoUrl, branchName, filePath string) (bool, error) {
 	projectPath, err := getProjectPathFromRepoUrl(repoUrl)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("failed to parse repository URL %s: %w", repoUrl, err)
 	}
 
 	if branchName == "" {
 		var err error
 		branchName, err = g.getDefaultBranch(projectPath)
 		if err != nil {
-			return false, err
+			return false, fmt.Errorf("failed to get default branch for %s: %w", projectPath, err)
 		}
 	}
 
 	directory := filepath.Dir(filePath)
 	files, err := g.filesExistInDirectory(projectPath, branchName, directory, []gp.RepositoryFile{{FullPath: filePath}})
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("failed to check if file %s exists: %w", filePath, err)
 	}
 	return len(files) > 0, nil
 }
@@ -343,12 +350,12 @@ func (g *GitlabClient) IsFileExist(repoUrl, branchName, filePath string) (bool, 
 func (g *GitlabClient) IsRepositoryPublic(repoUrl string) (bool, error) {
 	projectPath, err := getProjectPathFromRepoUrl(repoUrl)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("failed to parse repository URL %s: %w", repoUrl, err)
 	}
 
 	projectInfo, err := g.getProjectInfo(projectPath)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("failed to get project info for %s: %w", projectPath, err)
 	}
 	if projectInfo == nil {
 		return false, nil
@@ -374,7 +381,7 @@ func newGitlabClient(accessToken, baseUrl string) (*GitlabClient, error) {
 	glc := &GitlabClient{}
 	c, err := gitlab.NewClient(accessToken, gitlab.WithBaseURL(baseUrl))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create GitLab client: %w", err)
 	}
 	c.UserAgent = common.BuildServiceUserAgent
 	glc.client = c
@@ -386,7 +393,7 @@ func newGitlabClientWithBasicAuth(username, password, baseUrl string) (*GitlabCl
 	glc := &GitlabClient{}
 	c, err := gitlab.NewBasicAuthClient(username, password, gitlab.WithBaseURL(baseUrl))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create GitLab client with basic auth: %w", err)
 	}
 	c.UserAgent = common.BuildServiceUserAgent
 	glc.client = c
