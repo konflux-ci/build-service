@@ -247,7 +247,7 @@ spec:
           - name: url
             value: https://github.com/konflux-ci/tekton-integration-catalog.git
           - name: revision
-            value: main
+            value: prep
           - name: pathInRepo
             value: tasks/pull-request-comment/0.1/pull-request-comment.yaml
       params:

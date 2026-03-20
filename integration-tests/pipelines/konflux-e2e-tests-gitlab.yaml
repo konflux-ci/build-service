@@ -126,9 +126,9 @@ spec:
         resolver: git
         params:
           - name: url
-            value: https://github.com/flacatus/tekton-integration-catalog.git
+            value: https://github.com/konflux-ci/tekton-integration-catalog.git
           - name: revision
-            value: protect-control-plane
+            value: prep
           - name: pathInRepo
             value: tasks/pre-pull-images/0.1/pre-pull-images.yaml
       params:
@@ -247,7 +247,7 @@ spec:
           - name: url
             value: https://github.com/konflux-ci/tekton-integration-catalog.git
           - name: revision
-            value: main
+            value: prep
           - name: pathInRepo
             value: tasks/pull-request-comment/0.1/pull-request-comment.yaml
       params:
