@@ -249,7 +249,7 @@ spec:
           - name: revision
             value: prep
           - name: pathInRepo
-            value: tasks/pull-request-comment/0.1/pull-request-comment.yaml
+            value: tasks/pull-request-comment/0.2/pull-request-comment.yaml
       params:
         - name: test-name
           value: $(context.pipelineRun.name)
