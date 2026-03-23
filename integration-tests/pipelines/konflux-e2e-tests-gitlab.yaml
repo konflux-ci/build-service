@@ -128,12 +128,14 @@ spec:
           - name: url
             value: https://github.com/konflux-ci/tekton-integration-catalog.git
           - name: revision
-            value: prep
+            value: main
           - name: pathInRepo
             value: tasks/pre-pull-images/0.1/pre-pull-images.yaml
       params:
         - name: cluster-access-secret-name
           value: kfg-$(context.pipelineRun.name)
+        - name: pipeline-name
+          value: "docker-build"
     - name: konflux-e2e-tests
       timeout: 2h
       runAfter:
@@ -247,7 +249,7 @@ spec:
           - name: url
             value: https://github.com/konflux-ci/tekton-integration-catalog.git
           - name: revision
-            value: prep
+            value: main
           - name: pathInRepo
             value: tasks/pull-request-comment/0.1/pull-request-comment.yaml
       params:
