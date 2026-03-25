@@ -98,6 +98,8 @@ spec:
           value: 64
         - name: spot
           value: 'false'
+        - name: harden-control-plane
+          value: 'true'
     - name: deploy-konflux
       runAfter:
         - provision-kind-cluster
@@ -131,6 +133,25 @@ spec:
           value: $(tasks.test-metadata.results.instrumented-container-tag)
         - name: build-credentials
           value: "konflux-e2e-secrets"
+        - name: harden-kyverno
+          value: "true"
+    - name: pre-pull-images
+      runAfter:
+        - deploy-konflux
+      taskRef:
+        resolver: git
+        params:
+          - name: url
+            value: https://github.com/konflux-ci/tekton-integration-catalog.git
+          - name: revision
+            value: main
+          - name: pathInRepo
+            value: tasks/pre-pull-images/0.1/pre-pull-images.yaml
+      params:
+        - name: cluster-access-secret-name
+          value: kfg-$(context.pipelineRun.name)
+        - name: pipeline-name
+          value: "docker-build"
     - name: konflux-e2e-tests
       timeout: 2h
       runAfter:
