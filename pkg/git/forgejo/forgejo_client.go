@@ -262,8 +262,6 @@ func (f *ForgejoClient) SetupPaCWebhook(repoUrl string, webhookUrl string, webho
 		return err
 	}
 
-	insecureSSL := gp.IsInsecureSSL()
-
 	if existingWebhook == nil {
 		// Create new webhook
 		hookOpt := &forgejo.CreateHookOption{
@@ -276,12 +274,6 @@ func (f *ForgejoClient) SetupPaCWebhook(repoUrl string, webhookUrl string, webho
 			Events:       appStudioPaCWebhookEvents,
 			Active:       true,
 			BranchFilter: "*",
-		}
-
-		if insecureSSL {
-			hookOpt.Config["insecure_ssl"] = "1"
-		} else {
-			hookOpt.Config["insecure_ssl"] = "0"
 		}
 
 		_, err = f.createWebhook(owner, repository, hookOpt)
@@ -298,12 +290,6 @@ func (f *ForgejoClient) SetupPaCWebhook(repoUrl string, webhookUrl string, webho
 		Events:       appStudioPaCWebhookEvents,
 		Active:       forgejo.OptionalBool(true),
 		BranchFilter: "*",
-	}
-
-	if insecureSSL {
-		updateOpt.Config["insecure_ssl"] = "1"
-	} else {
-		updateOpt.Config["insecure_ssl"] = "0"
 	}
 
 	_, err = f.updateWebhook(owner, repository, existingWebhook.ID, updateOpt)
