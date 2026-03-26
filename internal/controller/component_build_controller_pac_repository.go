@@ -169,6 +169,13 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 			return "", err
 		}
 
+		// Normalize legacy "gitea" provider type to "forgejo" (gitea is an alias for forgejo in PaC)
+		gitProviderTypeUpdated := false
+		if repository.Spec.GitProvider != nil && repository.Spec.GitProvider.Type == "gitea" {
+			repository.Spec.GitProvider.Type = "forgejo"
+			gitProviderTypeUpdated = true
+		}
+
 		repositorySettingsUpdated := false
 		repositoryParamsUpdated := false
 		if newModel {
@@ -215,7 +222,7 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 			}
 		}
 
-		if (len(repository.OwnerReferences) > pacRepositoryOwnersNumber) || repositorySettingsUpdated || repositoryParamsUpdated {
+		if (len(repository.OwnerReferences) > pacRepositoryOwnersNumber) || repositorySettingsUpdated || repositoryParamsUpdated || gitProviderTypeUpdated {
 			if err := r.Client.Update(ctx, repository); err != nil {
 				log.Error(err, "failed to update existing PaC repository with component owner reference", "PaCRepositoryName", repository.Name)
 				return "", err
@@ -359,11 +366,6 @@ func generatePACRepository(component compapiv1alpha1.Component, config *corev1.S
 
 		// gitProviderType is needed for incoming webhook handling
 		gitProviderType := gitProvider
-		// TODO it's a temp workaround; PaC will release full support in March 2026; drop this then
-		if gitProvider == "forgejo" {
-			// Forgejo is API-compatible with Gitea, and PaC supports Gitea
-			gitProviderType = "gitea"
-		}
 		gitProviderConfig.Type = gitProviderType
 
 		var gitProviderUrl string

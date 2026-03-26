@@ -1194,6 +1194,10 @@ func getGitProvider(component compapiv1alpha1.Component, newModel bool) (string,
 	}
 
 	gitProvider := component.GetAnnotations()[GitProviderAnnotationName]
+	// Gitea is API-compatible with Forgejo, treat "gitea" as "forgejo"
+	if gitProvider == "gitea" {
+		gitProvider = "forgejo"
+	}
 	if gitProvider != "" && !slices.Contains(allowedGitProviders, gitProvider) {
 		return "", boerrors.NewBuildOpError(boerrors.EUnknownGitProvider, fmt.Errorf(`unsupported "%s" annotation value: %s`, GitProviderAnnotationName, gitProvider))
 	}
@@ -1219,6 +1223,10 @@ func getGitProvider(component compapiv1alpha1.Component, newModel bool) (string,
 				gitProvider = provider
 				break
 			}
+		}
+		// Gitea is API-compatible with Forgejo, detect "gitea" in hostname as "forgejo"
+		if gitProvider == "" && strings.Contains(host, "gitea") {
+			gitProvider = "forgejo"
 		}
 	}
 
