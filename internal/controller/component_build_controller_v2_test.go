@@ -570,7 +570,7 @@ var _ = Describe("Component build controller new model", func() {
 			component = waitForComponentStatusVersions(componentKey, 1)
 
 			// Verify component status fields
-			verifyComponentVersionStatus(component.Status.Versions[0], versionName, "main", "succeeded", "", "")
+			verifyComponentVersionStatus(component.Status.Versions[0], versionName, "main", "succeeded", "", "", false)
 
 			expectedRepoName, err := generatePaCRepositoryNameFromGitUrl(component.Spec.Source.GitURL)
 			Expect(err).NotTo(HaveOccurred())
@@ -692,7 +692,7 @@ var _ = Describe("Component build controller new model", func() {
 
 			// Verify v1 is onboarded in status
 			Expect(len(component.Status.Versions)).To(Equal(1))
-			verifyComponentVersionStatus(component.Status.Versions[0], versionName, "main", "succeeded", "*", "")
+			verifyComponentVersionStatus(component.Status.Versions[0], versionName, "main", "succeeded", "*", "", false)
 		})
 
 		It("should remove invalid versions from TriggerBuilds action", func() {
@@ -723,7 +723,7 @@ var _ = Describe("Component build controller new model", func() {
 
 			// Verify v1 is still onboarded in status
 			Expect(len(component.Status.Versions)).To(Equal(1))
-			verifyComponentVersionStatus(component.Status.Versions[0], versionName, "main", "succeeded", "", "")
+			verifyComponentVersionStatus(component.Status.Versions[0], versionName, "main", "succeeded", "", "", false)
 		})
 	})
 
@@ -785,9 +785,9 @@ var _ = Describe("Component build controller new model", func() {
 			}
 
 			Expect(versionMap).To(HaveKey("v1"))
-			verifyComponentVersionStatus(versionMap["v1"], "v1", "main", "succeeded", "", "")
+			verifyComponentVersionStatus(versionMap["v1"], "v1", "main", "succeeded", "", "", false)
 			Expect(versionMap).To(HaveKey("v2"))
-			verifyComponentVersionStatus(versionMap["v2"], "v2", "develop", "succeeded", "", "")
+			verifyComponentVersionStatus(versionMap["v2"], "v2", "develop", "succeeded", "", "", false)
 
 			Expect(component.Finalizers).To(ContainElement(PaCProvisionFinalizer))
 
@@ -797,8 +797,9 @@ var _ = Describe("Component build controller new model", func() {
 			roleBinding := waitServiceAccountInRoleBinding(buildRoleBindingKey, saKey.Name)
 			Expect(roleBinding.RoleRef.Kind).To(Equal("ClusterRole"))
 
+			skipBuildsMap := map[string]bool{"main": false, "develop": false}
 			// Verify Repository CR was created with correct URL and no GitProvider (GitHub App)
-			validatePaCRepository(component, "", "")
+			validatePaCRepository(component, "", "", skipBuildsMap)
 		})
 
 		It("should onboard new version when added to existing component", func() {
@@ -816,7 +817,7 @@ var _ = Describe("Component build controller new model", func() {
 
 			// Add v2
 			component.Spec.Source.Versions = append(component.Spec.Source.Versions,
-				compapiv1alpha1.ComponentVersion{Name: "v2", Revision: "develop"})
+				compapiv1alpha1.ComponentVersion{Name: "v2", Revision: "develop", SkipBuilds: true})
 			Expect(k8sClient.Update(ctx, component)).To(Succeed())
 
 			// Wait for v2 to be onboarded
@@ -829,9 +830,9 @@ var _ = Describe("Component build controller new model", func() {
 			}
 
 			Expect(versionMap).To(HaveKey("v1"))
-			verifyComponentVersionStatus(versionMap["v1"], "v1", "main", "succeeded", "", "")
+			verifyComponentVersionStatus(versionMap["v1"], "v1", "main", "succeeded", "", "", false)
 			Expect(versionMap).To(HaveKey("v2"))
-			verifyComponentVersionStatus(versionMap["v2"], "v2", "develop", "succeeded", "", "")
+			verifyComponentVersionStatus(versionMap["v2"], "v2", "develop", "succeeded", "", "", true)
 
 			Expect(component.Finalizers).To(ContainElement(PaCProvisionFinalizer))
 
@@ -841,8 +842,19 @@ var _ = Describe("Component build controller new model", func() {
 
 			waitServiceAccountInRoleBinding(buildRoleBindingKey, saKey.Name)
 
+			repositoryName, err := generatePaCRepositoryNameFromGitUrl(component.Spec.Source.GitURL)
+			Expect(err).NotTo(HaveOccurred())
+			repositoryKey := types.NamespacedName{Namespace: component.Namespace, Name: repositoryName}
+
+			// Wait for skip builds param for v2 added to repository
+			Eventually(func() bool {
+				repository := waitPaCRepositoryCreated(repositoryKey)
+				return len(*repository.Spec.Params) == 2
+			}, timeout, interval).Should(BeTrue())
+
+			skipBuildsMap := map[string]bool{"main": false, "develop": true}
 			// Verify Repository CR was created with correct URL and no GitProvider (GitHub App)
-			validatePaCRepository(component, "", "")
+			validatePaCRepository(component, "", "", skipBuildsMap)
 		})
 
 		It("should remove version while others remain", func() {
@@ -854,13 +866,19 @@ var _ = Describe("Component build controller new model", func() {
 				componentKey: componentKey,
 				versions: []compapiv1alpha1.ComponentVersion{
 					{Name: version1Name, Revision: "main"},
-					{Name: version2Name, Revision: "develop"},
+					{Name: version2Name, Revision: "develop", SkipBuilds: true},
 				},
 			})
 			createComponent(component)
 
 			// Wait for both to be onboarded
 			component = waitForComponentStatusVersions(componentKey, 2)
+
+			skipBuildsMap := map[string]bool{"main": false, "develop": true}
+			validatePaCRepository(component, "", "", skipBuildsMap)
+
+			verifyComponentVersionStatus(component.Status.Versions[0], version1Name, "main", "succeeded", "", "", false)
+			verifyComponentVersionStatus(component.Status.Versions[1], version2Name, "develop", "succeeded", "", "", true)
 
 			// Remove v2
 			component.Spec.Source.Versions = []compapiv1alpha1.ComponentVersion{
@@ -872,7 +890,7 @@ var _ = Describe("Component build controller new model", func() {
 			component = waitForComponentStatusVersions(componentKey, 1)
 
 			// Verify only v1 remains with all correct status fields
-			verifyComponentVersionStatus(component.Status.Versions[0], version1Name, "main", "succeeded", "", "")
+			verifyComponentVersionStatus(component.Status.Versions[0], version1Name, "main", "succeeded", "", "", false)
 
 			Expect(component.Finalizers).To(ContainElement(PaCProvisionFinalizer))
 
@@ -882,8 +900,19 @@ var _ = Describe("Component build controller new model", func() {
 
 			waitServiceAccountInRoleBinding(buildRoleBindingKey, saKey.Name)
 
+			repositoryName, err := generatePaCRepositoryNameFromGitUrl(component.Spec.Source.GitURL)
+			Expect(err).NotTo(HaveOccurred())
+			repositoryKey := types.NamespacedName{Namespace: component.Namespace, Name: repositoryName}
+
+			// Wait for skip builds param for v2 to be removed from repository
+			Eventually(func() bool {
+				repository := waitPaCRepositoryCreated(repositoryKey)
+				return len(*repository.Spec.Params) == 1
+			}, timeout, interval).Should(BeTrue())
+
+			skipBuildsMap = map[string]bool{"main": false}
 			// Verify Repository CR was created with correct URL and no GitProvider (GitHub App)
-			validatePaCRepository(component, "", "")
+			validatePaCRepository(component, "", "", skipBuildsMap)
 		})
 
 		It("should reuse PaC repository for multiple components with same git URL", func() {
@@ -895,7 +924,7 @@ var _ = Describe("Component build controller new model", func() {
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
 				versions: []compapiv1alpha1.ComponentVersion{
-					{Name: versionName, Revision: "main"},
+					{Name: versionName, Revision: "main", SkipBuilds: true},
 				},
 			})
 			component = createComponent(component)
@@ -906,15 +935,17 @@ var _ = Describe("Component build controller new model", func() {
 				return len(component.Status.Versions) == 1 && component.Status.PacRepository != ""
 			}, timeout, interval).Should(BeTrue())
 
+			verifyComponentVersionStatus(component.Status.Versions[0], versionName, "main", "succeeded", "", "", true)
+			skipBuildsMap := map[string]bool{"main": true}
 			// Verify Repository CR for component has correct URL and no GitProvider (GitHub App)
-			validatePaCRepository(component, "", "")
+			validatePaCRepository(component, "", "", skipBuildsMap)
 
 			// Create first component with shared git URL
 			component1 := getComponentData(componentConfig{
 				componentKey: component1Key,
 				gitURL:       sharedGitURL,
 				versions: []compapiv1alpha1.ComponentVersion{
-					{Name: versionName, Revision: "main"},
+					{Name: versionName, Revision: "main", SkipBuilds: true},
 				},
 			})
 			createComponent(component1)
@@ -928,8 +959,10 @@ var _ = Describe("Component build controller new model", func() {
 			// Verify the shared repository is different from default component's repository
 			Expect(component.Status.PacRepository).NotTo(Equal(component1.Status.PacRepository))
 
+			verifyComponentVersionStatus(component1.Status.Versions[0], versionName, "main", "succeeded", "", "", true)
+			skipBuildsMap = map[string]bool{"main": true}
 			// Verify Repository CR for component1 has correct URL and no GitProvider (GitHub App)
-			sharedPacRepository := validatePaCRepository(component1, "", "")
+			sharedPacRepository := validatePaCRepository(component1, "", "", skipBuildsMap)
 			Expect(sharedPacRepository.OwnerReferences).To(HaveLen(1))
 			Expect(sharedPacRepository.OwnerReferences[0].Name).To(Equal(component1Key.Name))
 			Expect(sharedPacRepository.OwnerReferences[0].Kind).To(Equal("Component"))
@@ -953,8 +986,24 @@ var _ = Describe("Component build controller new model", func() {
 			// Both components with shared URL should reference the same PaC repository
 			Expect(component1.Status.PacRepository).To(Equal(component2.Status.PacRepository))
 
+			verifyComponentVersionStatus(component2.Status.Versions[0], versionName, "main", "succeeded", "", "", false)
+
+			repositoryName, err := generatePaCRepositoryNameFromGitUrl(component2.Spec.Source.GitURL)
+			Expect(err).NotTo(HaveOccurred())
+			repositoryKey := types.NamespacedName{Namespace: component2.Namespace, Name: repositoryName}
+
+			// Wait for skip builds param updated for in repository
+			Eventually(func() bool {
+				repository := waitPaCRepositoryCreated(repositoryKey)
+				if len(*repository.Spec.Params) != 1 {
+					return false
+				}
+				return (*repository.Spec.Params)[0].Value == "true"
+			}, timeout, interval).Should(BeTrue())
+
+			skipBuildsMap = map[string]bool{"main": false}
 			// Verify Repository CR for component2 has correct URL and no GitProvider (GitHub App)
-			sharedPacRepository = validatePaCRepository(component2, "", "")
+			sharedPacRepository = validatePaCRepository(component2, "", "", skipBuildsMap)
 
 			// Verify shared Repository has both component1 and component2 as owners
 			Expect(sharedPacRepository.OwnerReferences).To(HaveLen(2))
@@ -1025,12 +1074,12 @@ var _ = Describe("Component build controller new model", func() {
 			// Version should be onboarded (after sanitization)
 			component = waitForComponentStatusVersions(componentKey, 1)
 			// Original name should be preserved in status
-			verifyComponentVersionStatus(component.Status.Versions[0], "v1.0-beta+build.123", "main", "succeeded", "", "")
+			verifyComponentVersionStatus(component.Status.Versions[0], "v1.0-beta+build.123", "main", "succeeded", "", "", false)
 
 			Expect(component.Finalizers).To(ContainElement(PaCProvisionFinalizer))
 
 			// Verify Repository CR was created with correct URL and no GitProvider (GitHub App)
-			validatePaCRepository(component, "", "")
+			validatePaCRepository(component, "", "", nil)
 		})
 
 		It("should handle updating version revision", func() {
@@ -1060,12 +1109,191 @@ var _ = Describe("Component build controller new model", func() {
 			// Status should now reflect the new revision
 			component = getComponent(componentKey)
 			Expect(component.Status.Versions).To(HaveLen(1))
-			verifyComponentVersionStatus(component.Status.Versions[0], "v1", "develop", "succeeded", "*", "")
+			verifyComponentVersionStatus(component.Status.Versions[0], "v1", "develop", "succeeded", "*", "", false)
 
 			Expect(component.Finalizers).To(ContainElement(PaCProvisionFinalizer))
 
 			// Verify Repository CR was created with correct URL and no GitProvider (GitHub App)
-			validatePaCRepository(component, "", "")
+			validatePaCRepository(component, "", "", nil)
+		})
+
+		It("should handle updating version skip builds", func() {
+			component := getComponentData(componentConfig{
+				componentKey: componentKey,
+				versions: []compapiv1alpha1.ComponentVersion{
+					{Name: "v1", Revision: "main"},
+				},
+			})
+			component = createComponent(component)
+
+			// Wait for initial onboarding
+			Eventually(func() bool {
+				component = getComponent(componentKey)
+				return len(component.Status.Versions) == 1 && component.Status.Versions[0].Revision == "main"
+			}, timeout, interval).Should(BeTrue())
+
+			component = getComponent(componentKey)
+			Expect(component.Finalizers).To(ContainElement(PaCProvisionFinalizer))
+			Expect(component.Status.Versions).To(HaveLen(1))
+			verifyComponentVersionStatus(component.Status.Versions[0], "v1", "main", "succeeded", "", "", false)
+
+			skipBuildsMap := map[string]bool{"main": false}
+			validatePaCRepository(component, "", "", skipBuildsMap)
+
+			// Update skip builds (disable builds)
+			component.Spec.Source.Versions[0].SkipBuilds = true
+			Expect(k8sClient.Update(ctx, component)).To(Succeed())
+
+			// Wait for skip build status to be updated
+			Eventually(func() bool {
+				component = getComponent(componentKey)
+				return len(component.Status.Versions) == 1 && component.Status.Versions[0].Revision == "main" && component.Status.Versions[0].SkipBuilds == true
+			}, timeout, interval).Should(BeTrue())
+
+			// Status should now reflect the new skip builds
+			component = getComponent(componentKey)
+			Expect(component.Status.Versions).To(HaveLen(1))
+			verifyComponentVersionStatus(component.Status.Versions[0], "v1", "main", "succeeded", "", "", true)
+
+			repositoryName, err := generatePaCRepositoryNameFromGitUrl(component.Spec.Source.GitURL)
+			Expect(err).NotTo(HaveOccurred())
+			repositoryKey := types.NamespacedName{Namespace: component.Namespace, Name: repositoryName}
+
+			// Wait for skip builds param updated for in repository
+			Eventually(func() bool {
+				repository := waitPaCRepositoryCreated(repositoryKey)
+				if len(*repository.Spec.Params) != 1 {
+					return false
+				}
+				return (*repository.Spec.Params)[0].Value == "false"
+			}, timeout, interval).Should(BeTrue())
+
+			skipBuildsMap = map[string]bool{"main": true}
+			// Verify Repository CR was created with correct URL and no GitProvider (GitHub App)
+			validatePaCRepository(component, "", "", skipBuildsMap)
+
+			// Update skip builds (enable builds)
+			component.Spec.Source.Versions[0].SkipBuilds = false
+			Expect(k8sClient.Update(ctx, component)).To(Succeed())
+
+			// Wait for skip build status to be updated
+			Eventually(func() bool {
+				component = getComponent(componentKey)
+				return len(component.Status.Versions) == 1 && component.Status.Versions[0].Revision == "main" && component.Status.Versions[0].SkipBuilds == false
+			}, timeout, interval).Should(BeTrue())
+
+			// Status should now reflect the new skip builds
+			component = getComponent(componentKey)
+			Expect(component.Status.Versions).To(HaveLen(1))
+			verifyComponentVersionStatus(component.Status.Versions[0], "v1", "main", "succeeded", "", "", false)
+
+			// Wait for skip builds param updated for in repository
+			Eventually(func() bool {
+				repository := waitPaCRepositoryCreated(repositoryKey)
+				if len(*repository.Spec.Params) != 1 {
+					return false
+				}
+				return (*repository.Spec.Params)[0].Value == "true"
+			}, timeout, interval).Should(BeTrue())
+
+			skipBuildsMap = map[string]bool{"main": false}
+			// Verify Repository CR was created with correct URL and no GitProvider (GitHub App)
+			validatePaCRepository(component, "", "", skipBuildsMap)
+
+		})
+
+		It("should handle updating 2 versions for the same revision and skip builds", func() {
+			// 2 versions with the same revision, but one has skip builds, it will result in not skipping builds for that revision
+			component := getComponentData(componentConfig{
+				componentKey: componentKey,
+				versions: []compapiv1alpha1.ComponentVersion{
+					{Name: "v1", Revision: "main", SkipBuilds: true},
+					{Name: "v2", Revision: "main"},
+				},
+			})
+			component = createComponent(component)
+
+			// Wait for initial onboarding
+			Eventually(func() bool {
+				component = getComponent(componentKey)
+				return len(component.Status.Versions) == 2
+			}, timeout, interval).Should(BeTrue())
+
+			// skip builds are false for both versions
+			component = getComponent(componentKey)
+			Expect(component.Status.Versions).To(HaveLen(2))
+			verifyComponentVersionStatus(component.Status.Versions[0], "v1", "main", "succeeded", "", "", false)
+			verifyComponentVersionStatus(component.Status.Versions[1], "v2", "main", "succeeded", "", "", false)
+
+			skipBuildsMap := map[string]bool{"main": false}
+			validatePaCRepository(component, "", "", skipBuildsMap)
+
+			// Update skip builds for v2, so both version will be skipping builds, resulting in skipping builds for that revision
+			component.Spec.Source.Versions[1].SkipBuilds = true
+			Expect(k8sClient.Update(ctx, component)).To(Succeed())
+
+			// Wait for skip build status to be updated
+			Eventually(func() bool {
+				component = getComponent(componentKey)
+				return component.Status.Versions[0].Revision == "main" && component.Status.Versions[0].SkipBuilds == true && component.Status.Versions[1].Revision == "main" && component.Status.Versions[1].SkipBuilds == true
+			}, timeout, interval).Should(BeTrue())
+
+			// Status should now reflect the new skip builds
+			component = getComponent(componentKey)
+			Expect(component.Status.Versions).To(HaveLen(2))
+			verifyComponentVersionStatus(component.Status.Versions[0], "v1", "main", "succeeded", "", "", true)
+			verifyComponentVersionStatus(component.Status.Versions[1], "v2", "main", "succeeded", "", "", true)
+
+			Expect(component.Finalizers).To(ContainElement(PaCProvisionFinalizer))
+
+			repositoryName, err := generatePaCRepositoryNameFromGitUrl(component.Spec.Source.GitURL)
+			Expect(err).NotTo(HaveOccurred())
+			repositoryKey := types.NamespacedName{Namespace: component.Namespace, Name: repositoryName}
+
+			// Wait for skip builds param updated for in repository
+			Eventually(func() bool {
+				repository := waitPaCRepositoryCreated(repositoryKey)
+				if len(*repository.Spec.Params) != 1 {
+					return false
+				}
+				return (*repository.Spec.Params)[0].Value == "false"
+			}, timeout, interval).Should(BeTrue())
+
+			skipBuildsMap = map[string]bool{"main": true}
+			// Verify Repository CR was created with correct URL and no GitProvider (GitHub App)
+			validatePaCRepository(component, "", "", skipBuildsMap)
+
+			// Update skip builds for both version, so both version won't be skipping builds, resulting in not skipping builds for that revision
+			component.Spec.Source.Versions[0].SkipBuilds = false
+			component.Spec.Source.Versions[1].SkipBuilds = false
+			Expect(k8sClient.Update(ctx, component)).To(Succeed())
+
+			// Wait for skip build status to be updated
+			Eventually(func() bool {
+				component = getComponent(componentKey)
+				return component.Status.Versions[0].Revision == "main" && component.Status.Versions[0].SkipBuilds == false && component.Status.Versions[1].Revision == "main" && component.Status.Versions[1].SkipBuilds == false
+			}, timeout, interval).Should(BeTrue())
+
+			// Status should now reflect the new skip builds
+			component = getComponent(componentKey)
+			Expect(component.Status.Versions).To(HaveLen(2))
+			verifyComponentVersionStatus(component.Status.Versions[0], "v1", "main", "succeeded", "", "", false)
+			verifyComponentVersionStatus(component.Status.Versions[1], "v2", "main", "succeeded", "", "", false)
+
+			Expect(component.Finalizers).To(ContainElement(PaCProvisionFinalizer))
+
+			// Wait for skip builds param updated for in repository
+			Eventually(func() bool {
+				repository := waitPaCRepositoryCreated(repositoryKey)
+				if len(*repository.Spec.Params) != 1 {
+					return false
+				}
+				return (*repository.Spec.Params)[0].Value == "true"
+			}, timeout, interval).Should(BeTrue())
+
+			skipBuildsMap = map[string]bool{"main": false}
+			// Verify Repository CR was created with correct URL and no GitProvider (GitHub App)
+			validatePaCRepository(component, "", "", skipBuildsMap)
 		})
 
 		It("should clear validation errors when spec is fixed", func() {
@@ -1090,12 +1318,12 @@ var _ = Describe("Component build controller new model", func() {
 
 			// Version should be onboarded
 			Expect(component.Status.Versions).To(HaveLen(1))
-			verifyComponentVersionStatus(component.Status.Versions[0], "v1", "main", "succeeded", "", "")
+			verifyComponentVersionStatus(component.Status.Versions[0], "v1", "main", "succeeded", "", "", false)
 
 			Expect(component.Finalizers).To(ContainElement(PaCProvisionFinalizer))
 
 			// Verify Repository CR was created with correct URL and no GitProvider (GitHub App)
-			validatePaCRepository(component, "", "")
+			validatePaCRepository(component, "", "", nil)
 		})
 
 		It("should set permanent error when PAC secret is missing", func() {
@@ -1159,7 +1387,7 @@ var _ = Describe("Component build controller new model", func() {
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
 				versions: []compapiv1alpha1.ComponentVersion{
-					{Name: version1Name, Revision: "main"},
+					{Name: version1Name, Revision: "main", SkipBuilds: true},
 					{Name: version2Name, Revision: "develop"},
 				},
 				skipOffboardingPr: true,
@@ -1168,8 +1396,14 @@ var _ = Describe("Component build controller new model", func() {
 
 			// Wait for both versions to be onboarded
 			component = waitForComponentStatusVersions(componentKey, 2)
+			verifyComponentVersionStatus(component.Status.Versions[0], version1Name, "main", "succeeded", "", "", true)
+			verifyComponentVersionStatus(component.Status.Versions[1], version2Name, "develop", "succeeded", "", "", false)
 
-			// Remove v2 from spec
+			skipBuildsMap := map[string]bool{"main": true, "develop": false}
+			// Verify Repository CR was created with correct URL and no GitProvider (GitHub App)
+			validatePaCRepository(component, "", "", skipBuildsMap)
+
+			// Remove v2 from spec and remove skip builds from v1
 			component.Spec.Source.Versions = []compapiv1alpha1.ComponentVersion{
 				{Name: version1Name, Revision: "main"},
 			}
@@ -1185,7 +1419,21 @@ var _ = Describe("Component build controller new model", func() {
 			}, timeout, interval).Should(BeTrue())
 
 			// Verify v1 remains with correct status fields
-			verifyComponentVersionStatus(component.Status.Versions[0], version1Name, "main", "succeeded", "", "")
+			verifyComponentVersionStatus(component.Status.Versions[0], version1Name, "main", "succeeded", "", "", false)
+
+			repositoryName, err := generatePaCRepositoryNameFromGitUrl(component.Spec.Source.GitURL)
+			Expect(err).NotTo(HaveOccurred())
+			repositoryKey := types.NamespacedName{Namespace: component.Namespace, Name: repositoryName}
+
+			// Wait for skip builds param removed for v2 (devel) from repository
+			Eventually(func() bool {
+				repository := waitPaCRepositoryCreated(repositoryKey)
+				return len(*repository.Spec.Params) == 1
+			}, timeout, interval).Should(BeTrue())
+
+			skipBuildsMap = map[string]bool{"main": false}
+			// Verify Repository CR was updated
+			validatePaCRepository(component, "", "", skipBuildsMap)
 
 			// Verify service account still exists (not removed when offboarding version)
 			saKey := getComponentServiceAccountKey(componentKey)
@@ -1267,7 +1515,7 @@ var _ = Describe("Component build controller new model", func() {
 			}, timeout, interval).Should(BeTrue())
 
 			// Verify v1 remains with correct status fields
-			verifyComponentVersionStatus(component.Status.Versions[0], version1Name, "main", "succeeded", "", "")
+			verifyComponentVersionStatus(component.Status.Versions[0], version1Name, "main", "succeeded", "", "", false)
 
 			// Verify service account still exists (not removed when offboarding version)
 			saKey := getComponentServiceAccountKey(componentKey)
@@ -1360,14 +1608,14 @@ var _ = Describe("Component build controller new model", func() {
 
 			// v1 version should remain with succeeded status (still in spec)
 			Expect(versionMap).To(HaveKey(version1Name))
-			verifyComponentVersionStatus(versionMap[version1Name], version1Name, "branch-v1", "succeeded", "", "")
+			verifyComponentVersionStatus(versionMap[version1Name], version1Name, "branch-v1", "succeeded", "", "", false)
 
 			// v2 version should be completely removed from status (successfully offboarded)
 			Expect(versionMap).NotTo(HaveKey(version2Name))
 
 			// v3 version should remain in status with error message (failed offboarding)
 			Expect(versionMap).To(HaveKey(version3Name))
-			verifyComponentVersionStatus(versionMap[version3Name], version3Name, "branch-v3", "succeeded", "", "91: GitLab access token does not have enough scope")
+			verifyComponentVersionStatus(versionMap[version3Name], version3Name, "branch-v3", "succeeded", "", "91: GitLab access token does not have enough scope", false)
 
 			// Verify service account still exists
 			saKey := getComponentServiceAccountKey(componentKey)
@@ -1514,9 +1762,9 @@ var _ = Describe("Component build controller new model", func() {
 			}
 
 			Expect(versionMap).To(HaveKey(version1Name))
-			verifyComponentVersionStatus(versionMap[version1Name], version1Name, "main", "succeeded", v1PrUrl, "")
+			verifyComponentVersionStatus(versionMap[version1Name], version1Name, "main", "succeeded", v1PrUrl, "", false)
 			Expect(versionMap).To(HaveKey(version2Name))
-			verifyComponentVersionStatus(versionMap[version2Name], version2Name, "develop", "succeeded", v2PrUrl, "")
+			verifyComponentVersionStatus(versionMap[version2Name], version2Name, "develop", "succeeded", v2PrUrl, "", false)
 
 			Expect(prCreatedCount).To(Equal(2), "Both PRs should have been created exactly once each")
 
@@ -1632,7 +1880,7 @@ spec:
 				return len(component.Status.Versions) == 1 && component.Status.Versions[0].ConfigurationMergeURL != ""
 			}, timeout, interval).Should(BeTrue())
 
-			verifyComponentVersionStatus(component.Status.Versions[0], versionName, "main", "succeeded", prUrl, "")
+			verifyComponentVersionStatus(component.Status.Versions[0], versionName, "main", "succeeded", prUrl, "", false)
 
 			Expect(prCreatedCount).To(Equal(1), "PR should have been created exactly once")
 
@@ -1769,7 +2017,7 @@ spec:
 				return len(component.Status.Versions) == 1 && component.Status.Versions[0].ConfigurationMergeURL != ""
 			}, timeout, interval).Should(BeTrue())
 
-			verifyComponentVersionStatus(component.Status.Versions[0], versionName, "main", "succeeded", prUrl, "")
+			verifyComponentVersionStatus(component.Status.Versions[0], versionName, "main", "succeeded", prUrl, "", false)
 
 			Expect(prCreatedCount).To(Equal(1), "PR should have been created exactly once")
 
@@ -1881,9 +2129,9 @@ spec:
 			}
 
 			Expect(versionMap).To(HaveKey(version1Name))
-			verifyComponentVersionStatus(versionMap[version1Name], version1Name, "main", "succeeded", prUrl, "")
+			verifyComponentVersionStatus(versionMap[version1Name], version1Name, "main", "succeeded", prUrl, "", false)
 			Expect(versionMap).To(HaveKey(version2Name))
-			verifyComponentVersionStatus(versionMap[version2Name], version2Name, "develop", "succeeded", "", "")
+			verifyComponentVersionStatus(versionMap[version2Name], version2Name, "develop", "succeeded", "", "", false)
 
 			Expect(prCreatedCount).To(Equal(1), "PR should have been created exactly once")
 
@@ -1977,9 +2225,9 @@ spec:
 			}
 
 			Expect(versionMap).To(HaveKey(version1Name))
-			verifyComponentVersionStatus(versionMap[version1Name], version1Name, "main", "succeeded", "", "")
+			verifyComponentVersionStatus(versionMap[version1Name], version1Name, "main", "succeeded", "", "", false)
 			Expect(versionMap).To(HaveKey(version2Name))
-			verifyComponentVersionStatus(versionMap[version2Name], version2Name, "develop", "succeeded", "", "")
+			verifyComponentVersionStatus(versionMap[version2Name], version2Name, "develop", "succeeded", "", "", false)
 
 			// Now update component to add CreateConfiguration action for v1 only
 			component.Spec.Actions.CreateConfiguration.Version = version1Name
@@ -2015,9 +2263,9 @@ spec:
 			}
 
 			Expect(versionMap).To(HaveKey(version1Name))
-			verifyComponentVersionStatus(versionMap[version1Name], version1Name, "main", "succeeded", v1PrUrl, "")
+			verifyComponentVersionStatus(versionMap[version1Name], version1Name, "main", "succeeded", v1PrUrl, "", false)
 			Expect(versionMap).To(HaveKey(version2Name))
-			verifyComponentVersionStatus(versionMap[version2Name], version2Name, "develop", "succeeded", "", "")
+			verifyComponentVersionStatus(versionMap[version2Name], version2Name, "develop", "succeeded", "", "", false)
 
 			Expect(prCreatedCount).To(Equal(1), "PR should have been created exactly once for v1")
 
@@ -2052,9 +2300,9 @@ spec:
 			}
 
 			Expect(versionMap).To(HaveKey(version1Name))
-			verifyComponentVersionStatus(versionMap[version1Name], version1Name, "main", "succeeded", v1PrUrl, "")
+			verifyComponentVersionStatus(versionMap[version1Name], version1Name, "main", "succeeded", v1PrUrl, "", false)
 			Expect(versionMap).To(HaveKey(version2Name))
-			verifyComponentVersionStatus(versionMap[version2Name], version2Name, "develop", "succeeded", "", "")
+			verifyComponentVersionStatus(versionMap[version2Name], version2Name, "develop", "succeeded", "", "", false)
 
 			// Verify EnsurePaCMergeRequestFunc was called again (prCreatedCount becomes 2)
 			// but no new PR was created since files already match
@@ -2189,11 +2437,11 @@ spec:
 			}
 
 			Expect(versionMap).To(HaveKey(version1Name))
-			verifyComponentVersionStatus(versionMap[version1Name], version1Name, "main", "succeeded", v1PrUrl, "")
+			verifyComponentVersionStatus(versionMap[version1Name], version1Name, "main", "succeeded", v1PrUrl, "", false)
 			Expect(versionMap).To(HaveKey(version2Name))
-			verifyComponentVersionStatus(versionMap[version2Name], version2Name, "non-existing-branch", "failed", "", "94: GitLab branch does not exist")
+			verifyComponentVersionStatus(versionMap[version2Name], version2Name, "non-existing-branch", "failed", "", "94: GitLab branch does not exist", false)
 			Expect(versionMap).To(HaveKey(version3Name))
-			verifyComponentVersionStatus(versionMap[version3Name], version3Name, "develop", "succeeded", v3PrUrl, "")
+			verifyComponentVersionStatus(versionMap[version3Name], version3Name, "develop", "succeeded", v3PrUrl, "", false)
 
 			Expect(v1ConfigPRCreatedCount).To(Equal(1), "v1 PR should have been created exactly once")
 			Expect(v2ConfigPRAttemptedCount).To(Equal(1), "v2 should have been attempted exactly once (fails with persistent error)")
@@ -2333,11 +2581,11 @@ spec:
 			}
 
 			Expect(versionMap).To(HaveKey(version1Name))
-			verifyComponentVersionStatus(versionMap[version1Name], version1Name, "main", "succeeded", v1PrUrl, "")
+			verifyComponentVersionStatus(versionMap[version1Name], version1Name, "main", "succeeded", v1PrUrl, "", false)
 			Expect(versionMap).To(HaveKey(version2Name))
-			verifyComponentVersionStatus(versionMap[version2Name], version2Name, "develop", "succeeded", v2PrUrl, "")
+			verifyComponentVersionStatus(versionMap[version2Name], version2Name, "develop", "succeeded", v2PrUrl, "", false)
 			Expect(versionMap).To(HaveKey(version3Name))
-			verifyComponentVersionStatus(versionMap[version3Name], version3Name, "release", "succeeded", v3PrUrl, "")
+			verifyComponentVersionStatus(versionMap[version3Name], version3Name, "release", "succeeded", v3PrUrl, "", false)
 
 			Expect(v1ConfigPRCreatedCount).To(Equal(1), "v1 PR should have been created exactly once")
 			Expect(v2ConfigPRAttemptedCount).To(Equal(3), "v2 should have been attempted three times (first failed, second failed, third succeeded)")
@@ -2448,7 +2696,7 @@ spec:
 			verifyPacWebhookIncomingPostData(capturedPostData, repositoryName, secretValue, v1PipelineRunName, namespace, "main", component.Spec.Source.GitURL)
 
 			// Verify Repository CR was created with correct URL and no GitProvider (GitHub App)
-			repository := validatePaCRepository(component, "", "")
+			repository := validatePaCRepository(component, "", "", nil)
 
 			// Verify Repository.Spec.Incomings was updated
 			validatePaCRepositoryIncomings(repository, []string{"main"})
@@ -2542,7 +2790,7 @@ spec:
 			verifyPacWebhookIncomingPostData(capturedPostData, repositoryName, secretValue, v1PipelineRunName, namespace, "main", component.Spec.Source.GitURL)
 
 			// Verify Repository CR was created with correct URL and no GitProvider (GitHub App)
-			repository := validatePaCRepository(component, scmSecretKey.Name, "password")
+			repository := validatePaCRepository(component, scmSecretKey.Name, "password", nil)
 
 			// Verify Repository.Spec.Incomings was updated
 			validatePaCRepositoryIncomings(repository, []string{"main"})
@@ -2633,7 +2881,7 @@ spec:
 			verifyPacWebhookIncomingPostData(v2Data, repositoryName, secretValue, v2PipelineRunName, namespace, "develop", component.Spec.Source.GitURL)
 
 			// Verify Repository CR was created with correct URL and no GitProvider (GitHub App)
-			repository := validatePaCRepository(component, "", "")
+			repository := validatePaCRepository(component, "", "", nil)
 
 			// Verify Repository.Spec.Incomings was updated
 			validatePaCRepositoryIncomings(repository, []string{"main", "develop"})
@@ -2724,7 +2972,7 @@ spec:
 			verifyPacWebhookIncomingPostData(v2Data, repositoryName, secretValue, v2PipelineRunName, namespace, "main", component.Spec.Source.GitURL)
 
 			// Verify Repository CR was created with correct URL and no GitProvider (GitHub App)
-			repository := validatePaCRepository(component, "", "")
+			repository := validatePaCRepository(component, "", "", nil)
 
 			// Verify Repository.Spec.Incomings was updated - only "main" since all versions use same branch
 			validatePaCRepositoryIncomings(repository, []string{"main"})
@@ -2821,7 +3069,7 @@ spec:
 			Expect(versionMap).To(HaveKey(version3Name))
 
 			// Verify Repository CR was created with correct URL and no GitProvider (GitHub App)
-			repository := validatePaCRepository(component, "", "")
+			repository := validatePaCRepository(component, "", "", nil)
 
 			// Verify Repository.Spec.Incomings updated - only v2's branch "devel"
 			validatePaCRepositoryIncomings(repository, []string{"develop"})
@@ -2935,7 +3183,7 @@ spec:
 			verifyPacWebhookIncomingPostData(v2Data, repositoryName, secretValue, v2PipelineRunName, namespace, "develop", component.Spec.Source.GitURL)
 
 			// Verify Repository CR was created with correct URL and no GitProvider (GitHub App)
-			repository := validatePaCRepository(component, "", "")
+			repository := validatePaCRepository(component, "", "", nil)
 
 			// Verify Repository.Spec.Incomings was updated with both branches
 			validatePaCRepositoryIncomings(repository, []string{"main", "develop"})
@@ -3211,7 +3459,7 @@ spec:
 					component = waitForComponentStatusVersions(componentKey, 1)
 
 					// Verify component version status
-					verifyComponentVersionStatus(component.Status.Versions[0], "v1", "main", "succeeded", "", "")
+					verifyComponentVersionStatus(component.Status.Versions[0], "v1", "main", "succeeded", "", "", false)
 
 					// Verify SetupPaCWebhook was called
 					Expect(webhookSetupCount).To(Equal(1), "SetupPaCWebhook should be called once for token-based auth")
@@ -3225,7 +3473,7 @@ spec:
 					Expect(string(webhookSecret.Data[expectedKey])).NotTo(BeEmpty())
 
 					// Verify Repository CR was created with correct URL and GitProvider (token auth)
-					validatePaCRepository(component, scmSecretKey.Name, "password")
+					validatePaCRepository(component, scmSecretKey.Name, "password", nil)
 				})
 
 				It("should successfully trigger builds using token authentication", func() {
@@ -3241,7 +3489,7 @@ spec:
 					component = waitForComponentSpecActionEmpty(componentKey, "trigger", "build")
 
 					// Verify Repository CR and Incomings was updated
-					repository := validatePaCRepository(component, scmSecretKey.Name, "password")
+					repository := validatePaCRepository(component, scmSecretKey.Name, "password", nil)
 					validatePaCRepositoryIncomings(repository, []string{"main"})
 				})
 
@@ -3260,7 +3508,7 @@ spec:
 					component = waitForComponentSpecActionEmpty(componentKey, "create-pr", "allversions")
 
 					// Verify configuration merge URL is not empty
-					verifyComponentVersionStatus(component.Status.Versions[0], "v1", "main", "succeeded", "*", "")
+					verifyComponentVersionStatus(component.Status.Versions[0], "v1", "main", "succeeded", "*", "", false)
 
 					// Clean up component at the end of this sub-context
 					deleteComponentAndOwnedResources(componentKey)
@@ -3332,7 +3580,7 @@ spec:
 			component := waitForComponentStatusVersions(componentKey, 1)
 
 			// Verify component version status
-			verifyComponentVersionStatus(component.Status.Versions[0], "version1", "main", "succeeded", "", "")
+			verifyComponentVersionStatus(component.Status.Versions[0], "version1", "main", "succeeded", "", "", false)
 
 			// Mock DeleteBranch to simulate cleanup failure
 			DeleteBranchFunc = func(repoUrl, branchName string) (bool, error) {
@@ -3350,7 +3598,7 @@ spec:
 			component := waitForComponentStatusVersions(componentKey, 1)
 
 			// Verify component version status
-			verifyComponentVersionStatus(component.Status.Versions[0], "version1", "main", "succeeded", "", "")
+			verifyComponentVersionStatus(component.Status.Versions[0], "version1", "main", "succeeded", "", "", false)
 
 			// Verify service account exists
 			saKey := getComponentServiceAccountKey(componentKey)
@@ -3383,7 +3631,7 @@ spec:
 			}, timeout, interval).Should(BeTrue())
 
 			// Verify component version status
-			verifyComponentVersionStatus(component.Status.Versions[0], versionName, "main", "succeeded", "", "")
+			verifyComponentVersionStatus(component.Status.Versions[0], versionName, "main", "succeeded", "", "", false)
 
 			// Verify resources were created
 			repositoryName, err := generatePaCRepositoryNameFromGitUrl(component.Spec.Source.GitURL)
@@ -3471,7 +3719,7 @@ spec:
 			}, timeout, interval).Should(BeTrue())
 
 			// Verify component version status
-			verifyComponentVersionStatus(component.Status.Versions[0], versionName, "main", "succeeded", "", "")
+			verifyComponentVersionStatus(component.Status.Versions[0], versionName, "main", "succeeded", "", "", false)
 
 			// Set up DeletePaCWebhook mock to verify it's called
 			isDeletePaCWebhookCalled := false
@@ -3697,9 +3945,9 @@ spec:
 				versionMap[v.Name] = v
 			}
 			Expect(versionMap).To(HaveKey(version1Name))
-			verifyComponentVersionStatus(versionMap[version1Name], version1Name, "main", "succeeded", v1PrUrl, "")
+			verifyComponentVersionStatus(versionMap[version1Name], version1Name, "main", "succeeded", v1PrUrl, "", false)
 			Expect(versionMap).To(HaveKey(version2Name))
-			verifyComponentVersionStatus(versionMap[version2Name], version2Name, "develop", "succeeded", "", "")
+			verifyComponentVersionStatus(versionMap[version2Name], version2Name, "develop", "succeeded", "", "", false)
 
 			Expect(component.Finalizers).To(ContainElement(PaCProvisionFinalizer))
 
@@ -3712,7 +3960,7 @@ spec:
 			Expect(roleBinding.RoleRef.Kind).To(Equal("ClusterRole"))
 
 			// Verify Repository CR was created with correct URL and no GitProvider (GitHub App)
-			validatePaCRepository(component, "", "")
+			validatePaCRepository(component, "", "", nil)
 
 			// PHASE 2: Add v3 with CreateConfiguration, add v4 without config, trigger v2 with invalid version
 			component = getComponent(componentKey)
@@ -3742,7 +3990,7 @@ spec:
 			}, timeout, interval).Should(BeTrue())
 
 			// Verify Repository CR was created and get repository name
-			repository := validatePaCRepository(component, "", "")
+			repository := validatePaCRepository(component, "", "", nil)
 			repositoryName := repository.Name
 
 			// Wait for incoming secret to be created (after trigger)
@@ -3777,16 +4025,16 @@ spec:
 				versionMap[v.Name] = v
 			}
 			Expect(versionMap).To(HaveKey(version1Name))
-			verifyComponentVersionStatus(versionMap[version1Name], version1Name, "main", "succeeded", v1PrUrl, "")
+			verifyComponentVersionStatus(versionMap[version1Name], version1Name, "main", "succeeded", v1PrUrl, "", false)
 			Expect(versionMap).To(HaveKey(version2Name))
-			verifyComponentVersionStatus(versionMap[version2Name], version2Name, "develop", "succeeded", "", "")
+			verifyComponentVersionStatus(versionMap[version2Name], version2Name, "develop", "succeeded", "", "", false)
 			Expect(versionMap).To(HaveKey(version3Name))
-			verifyComponentVersionStatus(versionMap[version3Name], version3Name, "feature", "succeeded", v3PrUrl, "")
+			verifyComponentVersionStatus(versionMap[version3Name], version3Name, "feature", "succeeded", v3PrUrl, "", false)
 			Expect(versionMap).To(HaveKey(version4Name))
-			verifyComponentVersionStatus(versionMap[version4Name], version4Name, "release", "succeeded", "", "")
+			verifyComponentVersionStatus(versionMap[version4Name], version4Name, "release", "succeeded", "", "", false)
 
 			// Verify Repository.Spec.Incomings was updated with v2's revision
-			repository = validatePaCRepository(component, "", "")
+			repository = validatePaCRepository(component, "", "", nil)
 			validatePaCRepositoryIncomings(repository, []string{"develop"})
 
 			// PHASE 3: Offboard v4, onboard v5 without config, trigger v1 with invalid version
@@ -3845,16 +4093,16 @@ spec:
 				versionMap[v.Name] = v
 			}
 			Expect(versionMap).To(HaveKey(version1Name))
-			verifyComponentVersionStatus(versionMap[version1Name], version1Name, "main", "succeeded", v1PrUrl, "")
+			verifyComponentVersionStatus(versionMap[version1Name], version1Name, "main", "succeeded", v1PrUrl, "", false)
 			Expect(versionMap).To(HaveKey(version2Name))
-			verifyComponentVersionStatus(versionMap[version2Name], version2Name, "develop", "succeeded", "", "")
+			verifyComponentVersionStatus(versionMap[version2Name], version2Name, "develop", "succeeded", "", "", false)
 			Expect(versionMap).To(HaveKey(version3Name))
-			verifyComponentVersionStatus(versionMap[version3Name], version3Name, "feature", "succeeded", v3PrUrl, "")
+			verifyComponentVersionStatus(versionMap[version3Name], version3Name, "feature", "succeeded", v3PrUrl, "", false)
 			Expect(versionMap).To(HaveKey(version5Name))
-			verifyComponentVersionStatus(versionMap[version5Name], version5Name, "staging", "succeeded", "", "")
+			verifyComponentVersionStatus(versionMap[version5Name], version5Name, "staging", "succeeded", "", "", false)
 
 			// Verify Repository.Spec.Incomings was updated with v1's revision
-			repository = validatePaCRepository(component, "", "")
+			repository = validatePaCRepository(component, "", "", nil)
 			validatePaCRepositoryIncomings(repository, []string{"develop", "main"})
 
 			// Verify service account still exists (not removed when offboarding version)
@@ -4071,9 +4319,9 @@ spec:
 				versionMap[v.Name] = v
 			}
 			Expect(versionMap).To(HaveKey(version1Name))
-			verifyComponentVersionStatus(versionMap[version1Name], version1Name, "main", "succeeded", v1PrUrl, "")
+			verifyComponentVersionStatus(versionMap[version1Name], version1Name, "main", "succeeded", v1PrUrl, "", false)
 			Expect(versionMap).To(HaveKey(version2Name))
-			verifyComponentVersionStatus(versionMap[version2Name], version2Name, "develop", "succeeded", "", "")
+			verifyComponentVersionStatus(versionMap[version2Name], version2Name, "develop", "succeeded", "", "", false)
 
 			Expect(component.Finalizers).To(ContainElement(PaCProvisionFinalizer))
 
@@ -4086,7 +4334,7 @@ spec:
 			Expect(roleBinding.RoleRef.Kind).To(Equal("ClusterRole"))
 
 			// Verify Repository CR was created with correct URL and GitProvider (token auth)
-			validatePaCRepository(component, scmSecretKey.Name, "password")
+			validatePaCRepository(component, scmSecretKey.Name, "password", nil)
 
 			// PHASE 2: Add v3 with CreateConfiguration, add v4 without config, trigger v2 with invalid version
 			component = getComponent(componentKey)
@@ -4116,7 +4364,7 @@ spec:
 			}, timeout, interval).Should(BeTrue())
 
 			// Verify Repository CR was created and get repository name
-			repository := validatePaCRepository(component, scmSecretKey.Name, "password")
+			repository := validatePaCRepository(component, scmSecretKey.Name, "password", nil)
 			repositoryName := repository.Name
 
 			// Wait for incoming secret to be created (after trigger)
@@ -4151,16 +4399,16 @@ spec:
 				versionMap[v.Name] = v
 			}
 			Expect(versionMap).To(HaveKey(version1Name))
-			verifyComponentVersionStatus(versionMap[version1Name], version1Name, "main", "succeeded", v1PrUrl, "")
+			verifyComponentVersionStatus(versionMap[version1Name], version1Name, "main", "succeeded", v1PrUrl, "", false)
 			Expect(versionMap).To(HaveKey(version2Name))
-			verifyComponentVersionStatus(versionMap[version2Name], version2Name, "develop", "succeeded", "", "")
+			verifyComponentVersionStatus(versionMap[version2Name], version2Name, "develop", "succeeded", "", "", false)
 			Expect(versionMap).To(HaveKey(version3Name))
-			verifyComponentVersionStatus(versionMap[version3Name], version3Name, "feature", "succeeded", v3PrUrl, "")
+			verifyComponentVersionStatus(versionMap[version3Name], version3Name, "feature", "succeeded", v3PrUrl, "", false)
 			Expect(versionMap).To(HaveKey(version4Name))
-			verifyComponentVersionStatus(versionMap[version4Name], version4Name, "release", "succeeded", "", "")
+			verifyComponentVersionStatus(versionMap[version4Name], version4Name, "release", "succeeded", "", "", false)
 
 			// Verify Repository.Spec.Incomings was updated with v2's revision
-			repository = validatePaCRepository(component, scmSecretKey.Name, "password")
+			repository = validatePaCRepository(component, scmSecretKey.Name, "password", nil)
 			validatePaCRepositoryIncomings(repository, []string{"develop"})
 
 			// Verify webhook setup was called for each phase with onboarding/config creation
@@ -4225,16 +4473,16 @@ spec:
 				versionMap[v.Name] = v
 			}
 			Expect(versionMap).To(HaveKey(version1Name))
-			verifyComponentVersionStatus(versionMap[version1Name], version1Name, "main", "succeeded", v1PrUrl, "")
+			verifyComponentVersionStatus(versionMap[version1Name], version1Name, "main", "succeeded", v1PrUrl, "", false)
 			Expect(versionMap).To(HaveKey(version2Name))
-			verifyComponentVersionStatus(versionMap[version2Name], version2Name, "develop", "succeeded", "", "")
+			verifyComponentVersionStatus(versionMap[version2Name], version2Name, "develop", "succeeded", "", "", false)
 			Expect(versionMap).To(HaveKey(version3Name))
-			verifyComponentVersionStatus(versionMap[version3Name], version3Name, "feature", "succeeded", v3PrUrl, "")
+			verifyComponentVersionStatus(versionMap[version3Name], version3Name, "feature", "succeeded", v3PrUrl, "", false)
 			Expect(versionMap).To(HaveKey(version5Name))
-			verifyComponentVersionStatus(versionMap[version5Name], version5Name, "staging", "succeeded", "", "")
+			verifyComponentVersionStatus(versionMap[version5Name], version5Name, "staging", "succeeded", "", "", false)
 
 			// Verify Repository.Spec.Incomings was updated with v1's revision
-			repository = validatePaCRepository(component, scmSecretKey.Name, "password")
+			repository = validatePaCRepository(component, scmSecretKey.Name, "password", nil)
 			validatePaCRepositoryIncomings(repository, []string{"develop", "main"})
 
 			// Verify webhook setup was called again for v5 onboarding

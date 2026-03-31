@@ -192,6 +192,8 @@ func (r *ComponentBuildReconciler) ReconcileNewModel(ctx context.Context, req ct
 		log.Info("Removed invalid versions from trigger build actions", l.Action, l.ActionUpdate, "InvalidVersions", invalidVersionsToTriggerBuildFor)
 	}
 
+	skipBuildsMap, skipBuildsChanged := buildSkipBuildsMapAndCheckChanges(&component, existingSpecVersions)
+
 	// Check if PAC repository needs to be created or updated
 	createOrUpdateRepository := false
 	if component.Status.PacRepository == "" {
@@ -201,6 +203,10 @@ func (r *ComponentBuildReconciler) ReconcileNewModel(ctx context.Context, req ct
 		// Repository exists but settings changed, need to update
 		createOrUpdateRepository = true
 		log.Info("Repository settings changed, need to update PAC Repository", l.Action, l.ActionUpdate, "PacRepository", component.Status.PacRepository, "SpecRepositorySettings", component.Spec.RepositorySettings, "StatusRepositorySettings", component.Status.RepositorySettings)
+	}
+	if skipBuildsChanged {
+		createOrUpdateRepository = true
+		log.Info("Skip builds settings changed, need to update PAC Repository", l.Action, l.ActionUpdate, "PacRepository", component.Status.PacRepository)
 	}
 
 	var webhookSecretString string
@@ -237,10 +243,18 @@ func (r *ComponentBuildReconciler) ReconcileNewModel(ctx context.Context, req ct
 
 		// Ensure PaC Repository exists and is properly configured
 		var pacRepositoryName string
-		if pacRepositoryName, err = r.ensurePaCRepository(ctx, &component, pacSecret, &component.Spec.RepositorySettings, true); err != nil {
+		if pacRepositoryName, err = r.ensurePaCRepository(ctx, &component, pacSecret, &component.Spec.RepositorySettings, skipBuildsMap, true); err != nil {
 			return ctrl.Result{}, r.handlePersistentError(ctx, &component, err, "Failed to ensure PaC repository")
 		}
 		log.Info("Using PaC repository", "PaCRepositoryName", pacRepositoryName)
+
+		// Update skipBuilds in the status for already onboarded versions
+		// skipBuilds is set also during onboarding, but this is to react on changes to skipBuilds in the spec
+		if skipBuildsChanged {
+			if err := r.updateVersionsSkipBuilds(ctx, &component, existingSpecVersions); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
 
 		// Update component status with PaC repository information
 		if err := r.setStatusPacRepository(ctx, &component, pacRepositoryName, &component.Spec.RepositorySettings); err != nil {
@@ -428,13 +442,13 @@ func (r *ComponentBuildReconciler) ReconcileNewModel(ctx context.Context, req ct
 			log.Info("Requested versions offboarded successfully", "OffboardedVersions", versionsToOffboard)
 		}
 
-		// Clean up repository incomings for offboarded versions
+		// Clean up repository incomings and skip build params for offboarded versions
 		// Don't return error here - since we already removed offboarded versions from status,
 		// new reconcile won't enter the offboarding block again. The cleanup recalculates targets
 		// from all components' status, so it will correct itself on the next offboarding of any
 		// component using the same repository.
-		if err = r.cleanupPaCRepositoryIncomings(ctx, &component); err != nil {
-			log.Error(err, "failed to cleanup incomings from repository, will retry on next offboarding")
+		if err = r.cleanupPaCRepositoryIncomingsAndSkipBuildParams(ctx, &component); err != nil {
+			log.Error(err, "failed to cleanup incomings and skip build params from repository, will retry on next offboarding")
 		}
 
 		// Observe metrics for successful offboarding
@@ -717,8 +731,8 @@ func (r *ComponentBuildReconciler) cleanupComponentPaCResources(ctx context.Cont
 		}
 	}
 
-	// Clean up repository incomings for offboarded versions
-	if err := r.cleanupPaCRepositoryIncomings(ctx, component); err != nil {
+	// Clean up repository incomings and skip build params for offboarded versions
+	if err := r.cleanupPaCRepositoryIncomingsAndSkipBuildParams(ctx, component); err != nil {
 		log.Info("Error during component cleanup: failed to cleanup repository incomings", "error", err)
 	}
 }
@@ -762,6 +776,61 @@ func buildVersionInfoMap(component *compapiv1alpha1.Component, fromStatus bool) 
 	}
 
 	return versionInfoMap
+}
+
+// buildSkipBuildsMapAndCheckChanges creates a map of revisions to their SkipBuilds values from spec
+// and checks if any version has a different SkipBuilds value in status or is missing from status.
+// For multiple versions with the same revision: SkipBuilds is false if ANY version has SkipBuilds=false,
+// and true ONLY if ALL versions for that revision have SkipBuilds=true.
+// Returns:
+//   - skipBuildsMap: map of revision to their SkipBuilds values (aggregated by revision)
+//   - hasChanges: true if any version is missing from status or has different SkipBuilds value in status
+func buildSkipBuildsMapAndCheckChanges(component *compapiv1alpha1.Component, existingSpecVersions map[string]*VersionInfo) (map[string]bool, bool) {
+	skipBuildsMap := make(map[string]bool)
+	skipBuildsChanged := false
+
+	// Aggregate SkipBuilds by revision: a revision has SkipBuilds=true only if ALL versions
+	// sharing that revision have SkipBuilds=true (AND logic across versions)
+	for _, versionInfo := range existingSpecVersions {
+		revision := versionInfo.Revision
+		if currentValue, exists := skipBuildsMap[revision]; exists {
+			skipBuildsMap[revision] = currentValue && versionInfo.SkipBuilds
+		} else {
+			skipBuildsMap[revision] = versionInfo.SkipBuilds
+		}
+	}
+
+	// Update SkipBuilds in existingSpecVersions based on the aggregated revision map.
+	// This ensures versions will use the correct aggregated value when updating status,
+	// since multiple versions can share the same revision with different SkipBuilds settings in spec.
+	for _, versionInfo := range existingSpecVersions {
+		versionInfo.SkipBuilds = skipBuildsMap[versionInfo.Revision]
+	}
+
+	// Check if any version has different SkipBuilds in status or is missing from status
+	for versionName, versionInfo := range existingSpecVersions {
+		// Check if version exists in status
+		foundInStatus := false
+		for _, statusVersion := range component.Status.Versions {
+			if statusVersion.Name == versionName {
+				foundInStatus = true
+				// Check if SkipBuilds value is different
+				if statusVersion.SkipBuilds != versionInfo.SkipBuilds {
+					skipBuildsChanged = true
+				}
+				break
+			}
+		}
+		// Version missing from status
+		if !foundInStatus {
+			skipBuildsChanged = true
+		}
+		// If we already found a change, no need to continue checking
+		if skipBuildsChanged {
+			break
+		}
+	}
+	return skipBuildsMap, skipBuildsChanged
 }
 
 // getUniqueVersionsFromVersionFields extracts and validates version references from action version fields.
@@ -1031,8 +1100,9 @@ func (r *ComponentBuildReconciler) updateVersionsStatus(ctx context.Context, com
 	for _, version := range versions {
 		versionInfo := existingSpecVersions[version.name]
 		versionStatus := compapiv1alpha1.ComponentVersionStatus{
-			Name:     version.name,
-			Revision: versionInfo.Revision,
+			Name:       version.name,
+			Revision:   versionInfo.Revision,
+			SkipBuilds: versionInfo.SkipBuilds,
 		}
 
 		// Get existing ConfigurationMergeURL if version already versionExists in status
@@ -1285,6 +1355,39 @@ func (r *ComponentBuildReconciler) removeVersionsFromStatus(ctx context.Context,
 	r.WaitForCacheUpdateRes(ctx, types.NamespacedName{Namespace: component.Namespace, Name: component.Name}, component)
 
 	log.Info("Removed versions from status", "RemovedVersions", versionsToRemove, l.Action, l.ActionUpdate)
+	return nil
+}
+
+// updateVersionsSkipBuilds updates the SkipBuilds field for versions in component.Status.Versions
+// based on the values in existingSpecVersions. Only updates status if there are actual changes.
+// Returns an error if the status update fails.
+func (r *ComponentBuildReconciler) updateVersionsSkipBuilds(ctx context.Context, component *compapiv1alpha1.Component, existingSpecVersions map[string]*VersionInfo) error {
+	log := ctrllog.FromContext(ctx)
+
+	hasChanges := false
+
+	// Loop through status versions and update SkipBuilds from spec if different
+	for i := range component.Status.Versions {
+		versionName := component.Status.Versions[i].Name
+		if versionInfo, exists := existingSpecVersions[versionName]; exists {
+			if component.Status.Versions[i].SkipBuilds != versionInfo.SkipBuilds {
+				component.Status.Versions[i].SkipBuilds = versionInfo.SkipBuilds
+				hasChanges = true
+			}
+		}
+	}
+
+	// Only update status if there were actual changes
+	if !hasChanges {
+		return nil
+	}
+
+	if err := r.Client.Status().Update(ctx, component); err != nil {
+		log.Error(err, "failed to update component versions SkipBuilds in status", l.Action, l.ActionUpdate, l.Audit, "true")
+		return err
+	}
+
+	log.Info("Updated versions SkipBuilds in status", l.Action, l.ActionUpdate)
 	return nil
 }
 

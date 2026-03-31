@@ -770,6 +770,8 @@ func generateCelExpressionForPipeline(component *compapiv1alpha1.Component, gitC
 	eventCondition := fmt.Sprintf(`event == "%s"`, eventType)
 
 	targetBranchCondition := fmt.Sprintf(`target_branch == "%s"`, versionInfo.Revision)
+	buildEnabledCondition := fmt.Sprintf(`%s == "true"`, BuildsEnabledParamName)
+
 	repoUrl := getGitRepoUrl(*component, newModel)
 
 	// Set path changed event filtering only for Components that are stored within a directory of the git repository.
@@ -806,7 +808,7 @@ func generateCelExpressionForPipeline(component *compapiv1alpha1.Component, gitC
 		pathChangedSuffix = fmt.Sprintf(` && ( "%s***".pathChanged() || ".tekton/%s".pathChanged() %s)`, contextDir, pipelineFileName, dockerfilePathChangedSuffix)
 	}
 
-	return fmt.Sprintf("%s && %s%s", eventCondition, targetBranchCondition, pathChangedSuffix), nil
+	return fmt.Sprintf("%s && %s && %s%s", eventCondition, targetBranchCondition, buildEnabledCondition, pathChangedSuffix), nil
 }
 
 // TODO remove after only new model is used

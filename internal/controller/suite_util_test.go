@@ -18,7 +18,9 @@ package controllers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -785,7 +787,7 @@ func waitPaCRepositoryCreated(resourceKey types.NamespacedName) *pacv1alpha1.Rep
 // When secretName is empty, it verifies GitProvider is nil (GitHub App authentication).
 // When secretName is provided, it validates token-based authentication with the secret.
 // The expected URL is determined using getGitRepoUrl, and GitProvider type using getGitProvider.
-func validatePaCRepository(component *compapiv1alpha1.Component, secretName, secretKey string) *pacv1alpha1.Repository {
+func validatePaCRepository(component *compapiv1alpha1.Component, secretName, secretKey string, skipBuildsMap map[string]bool) *pacv1alpha1.Repository {
 	// Generate repository name from git URL
 	expectedRepoName, err := generatePaCRepositoryNameFromGitUrl(component.Spec.Source.GitURL)
 	Expect(err).NotTo(HaveOccurred())
@@ -835,6 +837,19 @@ func validatePaCRepository(component *compapiv1alpha1.Component, secretName, sec
 		// Validate WebhookSecret
 		Expect(repository.Spec.GitProvider.WebhookSecret).NotTo(BeNil())
 		Expect(repository.Spec.GitProvider.WebhookSecret.Name).To(Equal(pipelinesAsCodeWebhooksSecretName))
+	}
+
+	if skipBuildsMap != nil {
+		Expect(repository.Spec.Params).ShouldNot(BeNil())
+		Expect(len(*repository.Spec.Params)).To(Equal(len(skipBuildsMap)))
+
+		for revision, skipBuild := range skipBuildsMap {
+			Expect(*repository.Spec.Params).Should(ContainElement(And(
+				HaveField("Name", BuildsEnabledParamName),
+				HaveField("Value", strconv.FormatBool(!skipBuild)),
+				HaveField("Filter", fmt.Sprintf("%s == %s", PacTargetBranchFilterKey, revision)),
+			)))
+		}
 	}
 
 	return repository
@@ -1303,10 +1318,12 @@ func verifyPacWebhookIncomingPostData(data map[string]interface{}, repository, s
 // Pass any other value for configurationMergeURL to verify exact match
 // OnboardingTime is automatically verified: not empty when succeeded, empty when failed
 // message: verifies exact Message field value (empty string = verify empty)
-func verifyComponentVersionStatus(versionStatus compapiv1alpha1.ComponentVersionStatus, versionName, revision, onboardingStatus, configurationMergeURL, message string) {
+// skipBuilds: verifies skip builds for the version
+func verifyComponentVersionStatus(versionStatus compapiv1alpha1.ComponentVersionStatus, versionName, revision, onboardingStatus, configurationMergeURL, message string, skipBuilds bool) {
 	Expect(versionStatus.Name).To(Equal(versionName))
 	Expect(versionStatus.Revision).To(Equal(revision))
 	Expect(versionStatus.OnboardingStatus).To(Equal(onboardingStatus))
+	Expect(versionStatus.SkipBuilds).To(Equal(skipBuilds))
 
 	// Verify OnboardingTime based on status
 	if onboardingStatus == "succeeded" {

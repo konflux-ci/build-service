@@ -23,6 +23,7 @@ import (
 	"reflect"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
@@ -38,6 +39,11 @@ import (
 	"github.com/konflux-ci/build-service/pkg/boerrors"
 	"github.com/konflux-ci/build-service/pkg/common"
 	l "github.com/konflux-ci/build-service/pkg/logs"
+)
+
+const (
+	BuildsEnabledParamName   = "builds_enabled"
+	PacTargetBranchFilterKey = "pac.target_branch"
 )
 
 // TODO remove newModel handling after only new model is used
@@ -89,8 +95,61 @@ func getUniqueStrings(items []string) []string {
 	return result
 }
 
+// updatePaCRepositorySkipBuildsParams updates the PaC repository parameters based on the skip builds map.
+// Returns true if any parameters were updated, false otherwise.
+func updatePaCRepositorySkipBuildsParams(repository *pacv1alpha1.Repository, skipBuildsMap map[string]bool) bool {
+	// Build desired params based on skipBuildsMap
+	desiredParams := []pacv1alpha1.Params{}
+	for revision, skipBuilds := range skipBuildsMap {
+		// The applyParamFilter defines when the parameter is passed to the pipeline run.
+		applyParamFilter := getPaCParamFilterForRevision(revision)
+		desiredParams = append(desiredParams, pacv1alpha1.Params{
+			Name:   BuildsEnabledParamName,
+			Value:  strconv.FormatBool(!skipBuilds),
+			Filter: applyParamFilter,
+		})
+	}
+
+	// Check if params need to be updated
+	if repository.Spec.Params == nil {
+		repository.Spec.Params = &desiredParams
+		return true
+	}
+
+	updatedParams := *repository.Spec.Params
+	paramsUpdated := false
+
+	// Check each desired param against existing params
+	// Params for removed branches are removed during version cleanup
+	for _, desired := range desiredParams {
+		found := false
+		for i := range updatedParams {
+			if updatedParams[i].Name == desired.Name && updatedParams[i].Filter == desired.Filter {
+				found = true
+				// Update value if different
+				if updatedParams[i].Value != desired.Value {
+					updatedParams[i].Value = desired.Value
+					paramsUpdated = true
+				}
+				break
+			}
+		}
+		// Add new param if not found
+		if !found {
+			updatedParams = append(updatedParams, desired)
+			paramsUpdated = true
+		}
+	}
+
+	if paramsUpdated {
+		repository.Spec.Params = &updatedParams
+	}
+
+	return paramsUpdated
+}
+
 // TODO remove newModel handling after only new model is used
-func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, component *compapiv1alpha1.Component, pacConfig *corev1.Secret, repositorySettings *compapiv1alpha1.RepositorySettings, newModel bool) (string, error) {
+func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, component *compapiv1alpha1.Component, pacConfig *corev1.Secret, repositorySettings *compapiv1alpha1.RepositorySettings, skipBuildsMap map[string]bool, newModel bool) (string, error) {
 	log := ctrllog.FromContext(ctx)
 
 	// Check multi component git repository scenario.
@@ -111,6 +170,7 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 		}
 
 		repositorySettingsUpdated := false
+		repositoryParamsUpdated := false
 		if newModel {
 			// Initialize Settings if nil
 			if repository.Spec.Settings == nil {
@@ -149,9 +209,13 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 					repositorySettingsUpdated = true
 				}
 			}
+
+			if skipBuildsMap != nil {
+				repositoryParamsUpdated = updatePaCRepositorySkipBuildsParams(repository, skipBuildsMap)
+			}
 		}
 
-		if (len(repository.OwnerReferences) > pacRepositoryOwnersNumber) || repositorySettingsUpdated {
+		if (len(repository.OwnerReferences) > pacRepositoryOwnersNumber) || repositorySettingsUpdated || repositoryParamsUpdated {
 			if err := r.Client.Update(ctx, repository); err != nil {
 				log.Error(err, "failed to update existing PaC repository with component owner reference", "PaCRepositoryName", repository.Name)
 				return "", err
@@ -164,7 +228,7 @@ func (r *ComponentBuildReconciler) ensurePaCRepository(ctx context.Context, comp
 	}
 
 	// This is the first Component that does PaC provision for the git repository
-	repository, err = generatePACRepository(*component, pacConfig, repositorySettings, newModel)
+	repository, err = generatePACRepository(*component, pacConfig, repositorySettings, skipBuildsMap, newModel)
 	if err != nil {
 		return "", err
 	}
@@ -265,7 +329,7 @@ func pacRepoAddParamWorkspaceName(repository *pacv1alpha1.Repository, workspaceN
 
 // TODO remove newModel handling after only new model is used
 // generatePACRepository creates configuration of Pipelines as Code repository object.
-func generatePACRepository(component compapiv1alpha1.Component, config *corev1.Secret, repositorySettings *compapiv1alpha1.RepositorySettings, newModel bool) (*pacv1alpha1.Repository, error) {
+func generatePACRepository(component compapiv1alpha1.Component, config *corev1.Secret, repositorySettings *compapiv1alpha1.RepositorySettings, skipBuildsMap map[string]bool, newModel bool) (*pacv1alpha1.Repository, error) {
 	gitProvider, err := getGitProvider(component, newModel)
 	if err != nil {
 		return nil, err
@@ -363,12 +427,21 @@ func generatePACRepository(component compapiv1alpha1.Component, config *corev1.S
 		}
 	}
 
+	if newModel && skipBuildsMap != nil {
+		params := []pacv1alpha1.Params{}
+		for revision, skipBuild := range skipBuildsMap {
+			applyParamFilter := getPaCParamFilterForRevision(revision)
+			params = append(params, pacv1alpha1.Params{Name: BuildsEnabledParamName, Value: strconv.FormatBool(!skipBuild), Filter: applyParamFilter})
+		}
+		repository.Spec.Params = &params
+	}
+
 	return repository, nil
 }
 
 // TODO remove newModel handling after only new model is used
-// cleanupPaCRepositoryIncomings cleans up incomings in Repository
-func (r *ComponentBuildReconciler) cleanupPaCRepositoryIncomings(ctx context.Context, component *compapiv1alpha1.Component) error {
+// cleanupPaCRepositoryIncomingsAndSkipBuildParams cleans up incomings and skip build params in Repository
+func (r *ComponentBuildReconciler) cleanupPaCRepositoryIncomingsAndSkipBuildParams(ctx context.Context, component *compapiv1alpha1.Component) error {
 	log := ctrllog.FromContext(ctx)
 	newModel := true
 
@@ -415,19 +488,49 @@ func (r *ComponentBuildReconciler) cleanupPaCRepositoryIncomings(ctx context.Con
 	// Ignore return value - we don't care if incomings changed, we just want to consolidate multiple entries into a single entry
 	_ = updateIncoming(repository, incomingSecretName, pacIncomingSecretKey, dummyRevision)
 
+	updateRequired := false
 	// Update repository incomings to only include used revisions
 	if repository.Spec.Incomings != nil && len(*repository.Spec.Incomings) > 0 {
 		// updateIncoming was called above to ensure there's only one entry, so we can safely access index [0]
 		// Set targets to used revisions (can be empty slice)
 		(*repository.Spec.Incomings)[0].Targets = usedRevisions
-
-		if err := r.Client.Update(ctx, repository); err != nil {
-			log.Error(err, "failed to update PaC repository incomings", "PaCRepositoryName", repository.Name)
-			return err
-		}
-		log.Info("Updated incomings in the PaC repository", "PaCRepositoryName", repository.Name, "Targets", usedRevisions, l.Action, l.ActionUpdate)
+		updateRequired = true
 	}
 
+	// update params and remove skip builds params for unused revisions
+	if repository.Spec.Params != nil && len(*repository.Spec.Params) > 0 {
+		newParams := []pacv1alpha1.Params{}
+		for _, param := range *repository.Spec.Params {
+			// param isn't for skip build keep it
+			if param.Name != BuildsEnabledParamName {
+				newParams = append(newParams, param)
+				continue
+			}
+			// check if filter matches existing branch, when it does keep it, otherwise skip it
+			filterMatched := false
+			for _, revision := range usedRevisions {
+				applyParamFilter := getPaCParamFilterForRevision(revision)
+				if param.Filter == applyParamFilter {
+					newParams = append(newParams, param)
+					filterMatched = true
+					break
+				}
+
+			}
+			if !filterMatched {
+				updateRequired = true
+			}
+		}
+		repository.Spec.Params = &newParams
+	}
+
+	if updateRequired {
+		if err := r.Client.Update(ctx, repository); err != nil {
+			log.Error(err, "failed to update PaC repository incomings and skip build params", "PaCRepositoryName", repository.Name)
+			return err
+		}
+		log.Info("Updated incomings and skip build params in the PaC repository", "PaCRepositoryName", repository.Name, "Targets", usedRevisions, l.Action, l.ActionUpdate)
+	}
 	return nil
 }
 
@@ -648,4 +751,9 @@ func generatePaCRepositoryNameFromGitUrl(urlStr string) (string, error) {
 	}
 
 	return sanitized, nil
+}
+
+// getPaCParamFilterForRevision returns PaC param filter for given revision
+func getPaCParamFilterForRevision(revision string) string {
+	return fmt.Sprintf("%s == %s", PacTargetBranchFilterKey, revision)
 }
