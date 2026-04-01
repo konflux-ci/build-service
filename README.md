@@ -1,5 +1,7 @@
 [![codecov](https://codecov.io/gh/redhat-appstudio/build-service/branch/main/graph/badge.svg)](https://codecov.io/gh/redhat-appstudio/build-service)
 
+test
+
 # Build Service
 
 Build Service is a Kubernetes operator that creates and configures build pipelines for the [Konflux](https://konflux-ci.dev) platform. It is one of the core services required for a working Konflux installation, responsible for automating the creation and management of build pipeline definitions from Component custom resources.
