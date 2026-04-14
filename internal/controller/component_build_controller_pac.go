@@ -123,7 +123,7 @@ func (r *ComponentBuildReconciler) GetPacSecrets(ctx context.Context, component 
 	}
 
 	if err := validatePaCConfiguration(gitProvider, *pacSecret); err != nil {
-		r.EventRecorder.Event(pacSecret, "Warning", "ErrorValidatingPaCSecret", err.Error())
+		r.EventRecorder.Eventf(pacSecret, nil, "Warning", "ErrorValidatingPaCSecret", "ValidatePaCSecret", err.Error())
 		// Do not reconcile, because configuration must be fixed before it is possible to proceed.
 		return "", nil, boerrors.NewBuildOpError(boerrors.EPaCSecretInvalid,
 			fmt.Errorf("invalid configuration in Pipelines as Code secret: %w", err))
@@ -177,7 +177,7 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponentOldModel(ctx context.
 	}
 
 	if err := validatePaCConfiguration(gitProvider, *pacSecret); err != nil {
-		r.EventRecorder.Event(pacSecret, "Warning", "ErrorValidatingPaCSecret", err.Error())
+		r.EventRecorder.Eventf(pacSecret, nil, "Warning", "ErrorValidatingPaCSecret", "ValidatePaCSecret", err.Error())
 		// Do not reconcile, because configuration must be fixed before it is possible to proceed.
 		return "", boerrors.NewBuildOpError(boerrors.EPaCSecretInvalid,
 			fmt.Errorf("invalid configuration in Pipelines as Code secret: %w", err))
@@ -208,7 +208,7 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponentOldModel(ctx context.
 	// Manage merge request for Pipelines as Code configuration
 	mrUrl, err := r.ConfigureRepositoryForPaCOldModel(ctx, component, pacSecret.Data, webhookTargetUrl, webhookSecretString)
 	if err != nil {
-		r.EventRecorder.Event(component, "Warning", "ErrorConfiguringPaCForComponentRepository", err.Error())
+		r.EventRecorder.Eventf(component, nil, "Warning", "ErrorConfiguringPaCForComponentRepository", "ConfigurePaCRepository", err.Error())
 		return "", err
 	}
 	var mrMessage string
@@ -218,7 +218,7 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponentOldModel(ctx context.
 		mrMessage = "Pipelines as Code configuration is up to date"
 	}
 	log.Info(mrMessage)
-	r.EventRecorder.Event(component, "Normal", "PipelinesAsCodeConfiguration", mrMessage)
+	r.EventRecorder.Eventf(component, nil, "Normal", "PipelinesAsCodeConfiguration", "ConfigurePaCRepository", mrMessage)
 
 	return mrUrl, nil
 }
@@ -764,7 +764,7 @@ func (r *ComponentBuildReconciler) CreatePipelineRunsInRepository(ctx context.Co
 		mrMessage = fmt.Sprintf("Pipelines as Code configuration is up to date for component: %s, version: %s", component.Name, versionInfo.SanitizedVersion)
 	}
 	log.Info(mrMessage)
-	r.EventRecorder.Event(component, "Normal", "PipelinesAsCodeConfiguration", mrMessage)
+	r.EventRecorder.Eventf(component, nil, "Normal", "PipelinesAsCodeConfiguration", "ConfigurePaCRepository", mrMessage)
 	return mrUrl, nil
 }
 

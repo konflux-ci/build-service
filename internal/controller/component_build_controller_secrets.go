@@ -136,11 +136,11 @@ func (r *ComponentBuildReconciler) lookupGHAppSecret(ctx context.Context) (*core
 	globalPaCSecretKey := types.NamespacedName{Namespace: common.BuildServiceNamespaceName, Name: common.PipelinesAsCodeGitHubAppSecretName}
 	if err := r.Client.Get(ctx, globalPaCSecretKey, pacSecret); err != nil {
 		if !errors.IsNotFound(err) {
-			r.EventRecorder.Event(pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
+			r.EventRecorder.Eventf(pacSecret, nil, "Warning", "ErrorReadingPaCSecret", "ReadPaCSecret", err.Error())
 			return nil, fmt.Errorf("failed to get Pipelines as Code secret in %s namespace: %w", globalPaCSecretKey.Namespace, err)
 		}
 
-		r.EventRecorder.Event(pacSecret, "Warning", "PaCSecretNotFound", err.Error())
+		r.EventRecorder.Eventf(pacSecret, nil, "Warning", "PaCSecretNotFound", "ReadPaCSecret", err.Error())
 		// Do not trigger a new reconcile. The PaC secret must be created first.
 		return nil, boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, fmt.Errorf(" Pipelines as Code secret not found in %s ", globalPaCSecretKey.Namespace))
 	}

@@ -227,7 +227,7 @@ func main() {
 	if err = (&controllers.ComponentBuildReconciler{
 		Client:             mgr.GetClient(),
 		Scheme:             mgr.GetScheme(),
-		EventRecorder:      mgr.GetEventRecorderFor("ComponentOnboarding"),
+		EventRecorder:      mgr.GetEventRecorder("ComponentOnboarding"),
 		PaCWebhookMapping:  pacWebhookMapping,
 		CredentialProvider: k8s.NewGitCredentialProvider(mgr.GetClient()),
 	}).SetupWithManager(mgr); err != nil {
@@ -238,7 +238,7 @@ func main() {
 	if err = (&controllers.PaCPipelineRunPrunerReconciler{
 		Client:        mgr.GetClient(),
 		Scheme:        mgr.GetScheme(),
-		EventRecorder: mgr.GetEventRecorderFor("PaCPipelineRunPruner"),
+		EventRecorder: mgr.GetEventRecorder("PaCPipelineRunPruner"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "PaCPipelineRunPruner")
 		os.Exit(1)
@@ -248,8 +248,8 @@ func main() {
 		Client:                       mgr.GetClient(),
 		ApiReader:                    mgr.GetAPIReader(),
 		Scheme:                       mgr.GetScheme(),
-		EventRecorder:                mgr.GetEventRecorderFor("ComponentDependencyUpdateReconciler"),
-		ComponentDependenciesUpdater: *controllers.NewComponentDependenciesUpdater(mgr.GetClient(), mgr.GetScheme(), mgr.GetEventRecorderFor("ComponentDependencyUpdateReconciler")),
+		EventRecorder:                mgr.GetEventRecorder("ComponentDependencyUpdateReconciler"),
+		ComponentDependenciesUpdater: *controllers.NewComponentDependenciesUpdater(mgr.GetClient(), mgr.GetScheme(), mgr.GetEventRecorder("ComponentDependencyUpdateReconciler")),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ComponentDependencyUpdateReconciler")
 		os.Exit(1)

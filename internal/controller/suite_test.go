@@ -148,7 +148,7 @@ var _ = BeforeSuite(func() {
 	err = (&ComponentBuildReconciler{
 		Client:             k8sManager.GetClient(),
 		Scheme:             k8sManager.GetScheme(),
-		EventRecorder:      k8sManager.GetEventRecorderFor("ComponentOnboarding"),
+		EventRecorder:      k8sManager.GetEventRecorder("ComponentOnboarding"),
 		PaCWebhookMapping:  pacWebhookMapping,
 		CredentialProvider: k8s.NewGitCredentialProvider(k8sManager.GetClient()),
 	}).SetupWithManager(k8sManager)
@@ -157,7 +157,7 @@ var _ = BeforeSuite(func() {
 	err = (&PaCPipelineRunPrunerReconciler{
 		Client:        k8sManager.GetClient(),
 		Scheme:        k8sManager.GetScheme(),
-		EventRecorder: k8sManager.GetEventRecorderFor("PaCPipelineRunPruner"),
+		EventRecorder: k8sManager.GetEventRecorder("PaCPipelineRunPruner"),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
@@ -165,8 +165,8 @@ var _ = BeforeSuite(func() {
 		Client:                       k8sManager.GetClient(),
 		ApiReader:                    k8sManager.GetAPIReader(),
 		Scheme:                       k8sManager.GetScheme(),
-		EventRecorder:                k8sManager.GetEventRecorderFor("ComponentDependencyUpdateReconciler"),
-		ComponentDependenciesUpdater: *NewComponentDependenciesUpdater(k8sManager.GetClient(), k8sManager.GetScheme(), k8sManager.GetEventRecorderFor("ComponentDependencyUpdateReconciler")),
+		EventRecorder:                k8sManager.GetEventRecorder("ComponentDependencyUpdateReconciler"),
+		ComponentDependenciesUpdater: *NewComponentDependenciesUpdater(k8sManager.GetClient(), k8sManager.GetScheme(), k8sManager.GetEventRecorder("ComponentDependencyUpdateReconciler")),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 

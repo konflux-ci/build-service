@@ -156,7 +156,7 @@ func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigsOldModel(ctx con
 	// Get pipeline from the bundle to be expanded to the PipelineRun
 	pipelineSpec, err := retrievePipelineSpec(ctx, pipelineBundle, pipelineName)
 	if err != nil {
-		r.EventRecorder.Event(component, "Warning", "ErrorGettingPipelineFromBundle", err.Error())
+		r.EventRecorder.Eventf(component, nil, "Warning", "ErrorGettingPipelineFromBundle", "GetPipelineFromBundle", err.Error())
 		return nil, nil, err
 	}
 
