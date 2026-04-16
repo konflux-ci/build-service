@@ -134,16 +134,17 @@ func (r *ComponentDependencyUpdateReconciler) SetupWithManager(manager ctrl.Mana
 				}
 
 				// Ensure we have not finished processing
-				if new.ObjectMeta.Annotations != nil && new.ObjectMeta.Annotations[NudgeProcessedAnnotationName] != "" {
+				// when finalizer is there together with annotation that means some other controller updated finalizers and there was race
+				if new.ObjectMeta.Annotations != nil && new.ObjectMeta.Annotations[NudgeProcessedAnnotationName] != "" && !controllerutil.ContainsFinalizer(new, NudgeFinalizer){
 					return false
 				}
 				return true
 			},
 			DeleteFunc: func(e event.DeleteEvent) bool {
-				return true
+				return false
 			},
 			GenericFunc: func(e event.GenericEvent) bool {
-				return true
+				return false
 			},
 		})).
 		Named("ComponentDependencyUpdateReconciler").
@@ -177,6 +178,12 @@ func (r *ComponentDependencyUpdateReconciler) Reconcile(ctx context.Context, req
 	if pipelineRun.CreationTimestamp.Add(delayTime).After(time.Now()) {
 		// These objects are super contested at creation, we just wait 10s before attempting anything
 		return ctrl.Result{RequeueAfter: delayTime}, nil
+	}
+
+	// pipeline run was already processed, but finalizer was added again due to race by other controller, remove it again
+	if controllerutil.ContainsFinalizer(pipelineRun, NudgeFinalizer) && pipelineRun.Annotations != nil && pipelineRun.Annotations[NudgeProcessedAnnotationName] != "" {
+		patch := client.MergeFrom(pipelineRun.DeepCopy())
+		return r.removePipelineFinalizer(ctx, pipelineRun, patch)
 	}
 
 	component, err := GetComponentFromPipelineRun(r.Client, ctx, pipelineRun)
