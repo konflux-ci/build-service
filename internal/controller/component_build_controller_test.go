@@ -82,7 +82,7 @@ var _ = Describe("Component build controller", func() {
 
 	var (
 		// All related to the component resources have the same key (but different type)
-		pacRouteKey  = types.NamespacedName{Name: pipelinesAsCodeRouteName, Namespace: pipelinesAsCodeNamespace}
+		pacRouteKey  = types.NamespacedName{Name: pipelinesAsCodeRouteName, Namespace: pipelinesAsCodeNamespaceOpenshift}
 		pacSecretKey = types.NamespacedName{Name: PipelinesAsCodeGitHubAppSecretName, Namespace: BuildServiceNamespaceName}
 	)
 
@@ -101,7 +101,7 @@ var _ = Describe("Component build controller", func() {
 
 		_ = BeforeEach(func() {
 			createNamespace(namespace)
-			createNamespace(pipelinesAsCodeNamespace)
+			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, "pac-host")
 			createNamespace(BuildServiceNamespaceName)
 			pacSecretData := map[string]string{
@@ -480,7 +480,7 @@ var _ = Describe("Component build controller", func() {
 			})
 			Expect(k8sClient.Update(ctx, contextNamespace)).Should(Succeed())
 
-			createNamespace(pipelinesAsCodeNamespace)
+			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, "pac-host")
 			createNamespace(BuildServiceNamespaceName)
 			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
@@ -1139,7 +1139,7 @@ var _ = Describe("Component build controller", func() {
 
 		_ = BeforeEach(func() {
 			createNamespace(namespace)
-			createNamespace(pipelinesAsCodeNamespace)
+			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, "pac-host")
 			createNamespace(BuildServiceNamespaceName)
 			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
@@ -1661,7 +1661,7 @@ var _ = Describe("Component build controller", func() {
 			deleteAllPaCRepositories(anotherComponentKey.Namespace)
 
 			createNamespace(namespace)
-			createNamespace(pipelinesAsCodeNamespace)
+			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, "pac-host")
 			createNamespace(BuildServiceNamespaceName)
 			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
@@ -1876,7 +1876,7 @@ var _ = Describe("Component build controller", func() {
 
 		_ = BeforeEach(func() {
 			createNamespace(namespace)
-			createNamespace(pipelinesAsCodeNamespace)
+			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, "pac-host")
 			createNamespace(BuildServiceNamespaceName)
 			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
@@ -1992,6 +1992,126 @@ var _ = Describe("Component build controller", func() {
 
 			repository = waitPaCRepositoryCreated(repositoryNameKey)
 
+			Expect(repository.Spec.Incomings).ToNot(BeNil())
+			Expect(len(*repository.Spec.Incomings)).To(Equal(1))
+			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
+			Expect((*repository.Spec.Incomings)[0].Secret.Key).To(Equal(pacIncomingSecretKey))
+			Expect((*repository.Spec.Incomings)[0].Targets).To(Equal([]string{"main"}))
+			Expect(len((*repository.Spec.Incomings)[0].Params)).To(Equal(1))
+			Expect((*repository.Spec.Incomings)[0].Params).To(Equal([]string{"source_url"}))
+		})
+
+		It("should trigger build if proxy is used for git events to PaC webhook", func() {
+			gitRepoUrl := "https://githost.com/org/repo"
+			repositoryName, _ := generatePaCRepositoryNameFromGitUrl(gitRepoUrl)
+			repositoryNameKey := types.NamespacedName{Namespace: namespace, Name: repositoryName}
+
+			mergeUrl := "merge-url"
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				return mergeUrl, nil
+			}
+
+			isSetupPaCWebhookInvoked := false
+			SetupPaCWebhookFunc = func(repoUrl, webhookUrl, webhookSecret string) error {
+				defer GinkgoRecover()
+				isSetupPaCWebhookInvoked = true
+				Expect(repoUrl).To(Equal(gitRepoUrl))
+				// The mapping between git repo URL and webhook URL is defined at controller creation in suite_test.go
+				Expect(webhookUrl).To(Equal("https://githost.proxy.net"))
+				Expect(webhookSecret).ToNot(BeEmpty())
+				return nil
+			}
+
+			// Use token-based auth instead of GitHub App
+			scmSecretKey := types.NamespacedName{Name: "gitlab-token-secret", Namespace: namespace}
+			scmSecretData := map[string]string{
+				"password": "test-token",
+			}
+			labels := map[string]string{
+				"appstudio.redhat.com/credentials": "scm",
+				"appstudio.redhat.com/scm.host":    "githost.com",
+			}
+			createSCMSecret(scmSecretKey, scmSecretData, corev1.SecretTypeBasicAuth, nil, labels)
+			defer deleteSecret(scmSecretKey)
+
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
+				componentKey: resourcePacTriggerKey,
+				annotations: map[string]string{
+					defaultBuildPipelineAnnotation: defaultPipelineAnnotationValue,
+					"git-provider":                 "gitlab",
+				},
+				gitURL: gitRepoUrl,
+			}, BuildRequestConfigurePaCAnnotationValue)
+			Eventually(func() bool { return isSetupPaCWebhookInvoked }, timeout, interval).Should(BeTrue())
+			waitPaCFinalizerOnComponent(resourcePacTriggerKey)
+			expectPacBuildStatusOldModel(resourcePacTriggerKey, "enabled", 0, "", mergeUrl)
+
+			repository := waitPaCRepositoryCreated(repositoryNameKey)
+			component := getComponent(resourcePacTriggerKey)
+
+			pacWebhookRoute := &routev1.Route{}
+			Expect(k8sClient.Get(ctx, pacRouteKey, pacWebhookRoute)).To(Succeed())
+			// Despite using proxy for the git events delivery to PaC,
+			// trigger build requiest should be made using internal connection (PaC Route).
+			webhookTargetUrl := "https://" + pacWebhookRoute.Spec.Host
+			pipelineRunName := component.Name + pipelineRunOnPushSuffix
+
+			client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+			gock.InterceptClient(client)
+			getHttpClientMocked := func() *http.Client { return client }
+			GetHttpClientFunction = getHttpClientMocked
+			defer gock.Off()
+
+			var (
+				requestValueSourceUrl   string
+				requestValueSecret      string
+				requestValueRepository  string
+				requestValueBranch      string
+				requestValuePipelinerun string
+				requestValueNamespace   string
+			)
+			req := gock.New(webhookTargetUrl).
+				Post("/incoming").
+				MatchType("json").
+				SetMatcher(gock.NewBasicMatcher()).
+				AddMatcher(gock.MatchFunc(func(req *http.Request, _ *gock.Request) (bool, error) {
+					var bodyJson map[string]interface{}
+					if err := json.NewDecoder(req.Body).Decode(&bodyJson); err != nil {
+						return false, err
+					}
+					requestValueRepository = bodyJson["repository"].(string)
+					requestValueBranch = bodyJson["branch"].(string)
+					requestValueSecret = bodyJson["secret"].(string)
+					requestValuePipelinerun = bodyJson["pipelinerun"].(string)
+					requestValueNamespace = bodyJson["namespace"].(string)
+					requestValueSourceUrl = bodyJson["params"].(map[string]interface{})["source_url"].(string)
+					return true, nil
+				})).
+				Reply(202).JSON(map[string]string{})
+
+			setComponentBuildRequestOldModel(resourcePacTriggerKey, BuildRequestTriggerPaCBuildAnnotationValue)
+
+			incomingSecretName := getPaCIncomingSecretName(repository.Name)
+			incomingSecretResourceKey := types.NamespacedName{Namespace: component.Namespace, Name: incomingSecretName}
+			waitSecretCreated(incomingSecretResourceKey)
+			defer deleteSecret(incomingSecretResourceKey)
+
+			incomingSecret := corev1.Secret{}
+			Expect(k8sClient.Get(ctx, incomingSecretResourceKey, &incomingSecret)).To(Succeed())
+			secretValue := string(incomingSecret.Data[pacIncomingSecretKey])
+
+			waitComponentAnnotationGone(resourcePacTriggerKey, BuildRequestAnnotationName)
+			// verify that request matched
+			Expect(req.Done()).To(BeTrue())
+			// verify that request body json params match
+			Expect(requestValueSourceUrl).To(Equal(component.Spec.Source.GitSource.URL))
+			Expect(requestValueSecret).To(Equal(secretValue))
+			Expect(requestValueRepository).To(Equal(repositoryName))
+			Expect(requestValueBranch).To(Equal("main"))
+			Expect(requestValuePipelinerun).To(Equal(pipelineRunName))
+			Expect(requestValueNamespace).To(Equal(component.Namespace))
+
+			repository = waitPaCRepositoryCreated(repositoryNameKey)
 			Expect(repository.Spec.Incomings).ToNot(BeNil())
 			Expect(len(*repository.Spec.Incomings)).To(Equal(1))
 			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))

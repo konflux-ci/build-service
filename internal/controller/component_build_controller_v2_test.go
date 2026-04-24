@@ -79,7 +79,7 @@ var _ = Describe("Component build controller new model", func() {
 	)
 
 	var (
-		pacRouteKey  = types.NamespacedName{Name: pipelinesAsCodeRouteName, Namespace: pipelinesAsCodeNamespace}
+		pacRouteKey  = types.NamespacedName{Name: pipelinesAsCodeRouteName, Namespace: pipelinesAsCodeNamespaceOpenshift}
 		pacSecretKey = types.NamespacedName{Name: PipelinesAsCodeGitHubAppSecretName, Namespace: BuildServiceNamespaceName}
 	)
 
@@ -98,7 +98,7 @@ var _ = Describe("Component build controller new model", func() {
 
 		_ = BeforeEach(func() {
 			createNamespace(namespace)
-			createNamespace(pipelinesAsCodeNamespace)
+			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, pacHost)
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",
@@ -397,7 +397,7 @@ var _ = Describe("Component build controller new model", func() {
 
 		_ = BeforeEach(func() {
 			createNamespace(namespace)
-			createNamespace(pipelinesAsCodeNamespace)
+			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, pacHost)
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",
@@ -487,7 +487,7 @@ var _ = Describe("Component build controller new model", func() {
 			})
 			Expect(k8sClient.Update(ctx, contextNamespace)).Should(Succeed())
 
-			createNamespace(pipelinesAsCodeNamespace)
+			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, pacHost)
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",
@@ -532,7 +532,7 @@ var _ = Describe("Component build controller new model", func() {
 
 		_ = BeforeEach(func() {
 			createNamespace(namespace)
-			createNamespace(pipelinesAsCodeNamespace)
+			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, pacHost)
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",
@@ -653,7 +653,7 @@ var _ = Describe("Component build controller new model", func() {
 
 		_ = BeforeEach(func() {
 			createNamespace(namespace)
-			createNamespace(pipelinesAsCodeNamespace)
+			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, pacHost)
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",
@@ -734,7 +734,7 @@ var _ = Describe("Component build controller new model", func() {
 
 		_ = BeforeEach(func() {
 			createNamespace(namespace)
-			createNamespace(pipelinesAsCodeNamespace)
+			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, pacHost)
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",
@@ -1129,7 +1129,7 @@ var _ = Describe("Component build controller new model", func() {
 
 		_ = BeforeEach(func() {
 			createNamespace(namespace)
-			createNamespace(pipelinesAsCodeNamespace)
+			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, pacHost)
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",
@@ -1382,7 +1382,7 @@ var _ = Describe("Component build controller new model", func() {
 
 		_ = BeforeEach(func() {
 			createNamespace(namespace)
-			createNamespace(pipelinesAsCodeNamespace)
+			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, pacHost)
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",
@@ -2354,7 +2354,7 @@ spec:
 
 		_ = BeforeEach(func() {
 			createNamespace(namespace)
-			createNamespace(pipelinesAsCodeNamespace)
+			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, pacHost)
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",
@@ -2444,6 +2444,103 @@ spec:
 
 			// Verify Repository CR was created with correct URL and no GitProvider (GitHub App)
 			repository := validatePaCRepository(component, "", "")
+
+			// Verify Repository.Spec.Incomings was updated
+			validatePaCRepositoryIncomings(repository, []string{"main"})
+		})
+
+		It("should trigger build if proxy is used for git events to PaC webhook", func() {
+			version1Name := "v1"
+			gitRepoUrl := "https://githost.com/org/repo"
+			// Despite using proxy for the git events delivery to PaC above,
+			// trigger build requiest should be made using internal connection (PaC Route).
+			webhookTargetUrl := "https://" + pacHost
+
+			// Mock HTTP POST request
+			var capturedPostData map[string]any
+			gock.New(webhookTargetUrl).
+				Post("/incoming").
+				SetMatcher(gock.NewBasicMatcher()).
+				AddMatcher(gock.MatchFunc(func(req *http.Request, _ *gock.Request) (bool, error) {
+					defer GinkgoRecover()
+					var bodyJson map[string]any
+					if err := json.NewDecoder(req.Body).Decode(&bodyJson); err != nil {
+						return false, err
+					}
+					capturedPostData = bodyJson
+					return true, nil
+				})).
+				Reply(202).JSON(map[string]any{})
+
+			isSetupPaCWebhookInvoked := false
+			SetupPaCWebhookFunc = func(repoUrl, webhookUrl, webhookSecret string) error {
+				defer GinkgoRecover()
+				isSetupPaCWebhookInvoked = true
+				Expect(repoUrl).To(Equal(gitRepoUrl))
+				// The mapping between git repo URL and webhook URL is defined at controller creation in suite_test.go
+				Expect(webhookUrl).To(Equal("https://githost.proxy.net"))
+				Expect(webhookSecret).ToNot(BeEmpty())
+				return nil
+			}
+
+			// Use token-based auth instead of GitHub App
+			scmSecretKey := types.NamespacedName{Name: "gitlab-token-secret", Namespace: namespace}
+			scmSecretData := map[string]string{
+				"password": "test-token",
+			}
+			labels := map[string]string{
+				"appstudio.redhat.com/credentials": "scm",
+				"appstudio.redhat.com/scm.host":    "githost.com",
+			}
+			createSCMSecret(scmSecretKey, scmSecretData, corev1.SecretTypeBasicAuth, nil, labels)
+			defer deleteSecret(scmSecretKey)
+
+			// Onboard component
+			component := getComponentData(componentConfig{
+				componentKey: componentKey,
+				annotations: map[string]string{
+					"git-provider": "gitlab",
+				},
+				gitURL: gitRepoUrl,
+				versions: []compapiv1alpha1.ComponentVersion{
+					{Name: version1Name, Revision: "main"},
+				},
+			})
+			createComponent(component)
+
+			// Wait for the version to be onboarded
+			Eventually(func() bool { return isSetupPaCWebhookInvoked }, timeout, interval).Should(BeTrue())
+			component = waitForComponentStatusVersions(componentKey, 1)
+
+			// Get repository name for verification
+			repositoryName, err := generatePaCRepositoryNameFromGitUrl(component.Spec.Source.GitURL)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Now add trigger build action using TriggerBuild field
+			component.Spec.Actions.TriggerBuild = version1Name
+			Expect(k8sClient.Update(ctx, component)).To(Succeed())
+
+			// Get incoming secret for verification (created after trigger)
+			incomingSecretName := getPaCIncomingSecretName(repositoryName)
+			incomingSecretKey := types.NamespacedName{Namespace: component.Namespace, Name: incomingSecretName}
+			waitSecretCreated(incomingSecretKey)
+
+			var incomingSecret corev1.Secret
+			Expect(k8sClient.Get(ctx, incomingSecretKey, &incomingSecret)).To(Succeed())
+			secretValue := string(incomingSecret.Data[pacIncomingSecretKey])
+
+			// TriggerBuild action should be removed after successful trigger
+			component = waitForComponentSpecActionEmpty(componentKey, "trigger", "build")
+
+			// Verify HTTP POST request was made
+			Eventually(func() bool { return capturedPostData != nil }, timeout, interval).Should(BeTrue())
+
+			// Verify all POST request fields
+			v1PipelineRunName := component.Name + "-" + version1Name + pipelineRunOnPushSuffix
+			verifyPacWebhookIncomingPostData(capturedPostData, repositoryName, secretValue, v1PipelineRunName, namespace, "main", component.Spec.Source.GitURL)
+
+			// Verify Repository CR was created with correct URL and no GitProvider (GitHub App)
+			repository := validatePaCRepository(component, scmSecretKey.Name, "password")
 
 			// Verify Repository.Spec.Incomings was updated
 			validatePaCRepositoryIncomings(repository, []string{"main"})
@@ -2863,7 +2960,7 @@ spec:
 
 		_ = BeforeEach(func() {
 			createNamespace(namespace)
-			createNamespace(pipelinesAsCodeNamespace)
+			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, pacHost)
 
 			// Use token-based auth instead of GitHub App to test ensureWebhookSecret
@@ -3045,7 +3142,7 @@ spec:
 	// These tests verify onboarding, trigger builds, and configuration creation using token authentication (GitLab, GitHub, Forgejo)
 	Context("Token-based authentication", func() {
 		_ = BeforeEach(func() {
-			createNamespace(pipelinesAsCodeNamespace)
+			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, pacHost)
 			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
 
@@ -3218,7 +3315,7 @@ spec:
 
 		_ = BeforeEach(func() {
 			createNamespace(namespace)
-			createNamespace(pipelinesAsCodeNamespace)
+			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, pacHost)
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",
@@ -3412,7 +3509,7 @@ spec:
 
 		_ = BeforeEach(func() {
 			createNamespace(namespace)
-			createNamespace(pipelinesAsCodeNamespace)
+			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, pacHost)
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",

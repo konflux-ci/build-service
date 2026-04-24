@@ -219,16 +219,16 @@ func main() {
 
 	ensureBuildPipelineClusterRoleExist(mgr.GetClient())
 
-	webhookConfig, err := pacwebhook.LoadMappingFromFile(webhookConfigPath, os.ReadFile)
+	pacWebhookMapping, err := pacwebhook.NewPaCWebhookMapping(webhookConfigPath)
 	if err != nil {
-		setupLog.Error(err, "Failed to load webhook config file", "path", webhookConfigPath)
+		setupLog.Error(err, "Failed to load webhook config mapping file", "path", webhookConfigPath)
 		os.Exit(1)
 	}
 	if err = (&controllers.ComponentBuildReconciler{
 		Client:             mgr.GetClient(),
 		Scheme:             mgr.GetScheme(),
 		EventRecorder:      mgr.GetEventRecorderFor("ComponentOnboarding"),
-		WebhookURLLoader:   pacwebhook.NewConfigWebhookURLLoader(webhookConfig),
+		PaCWebhookMapping:  pacWebhookMapping,
 		CredentialProvider: k8s.NewGitCredentialProvider(mgr.GetClient()),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ComponentOnboarding")

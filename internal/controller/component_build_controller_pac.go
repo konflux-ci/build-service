@@ -51,8 +51,9 @@ const (
 	pipelineRunOnPRSuffix             = "-on-pull-request"
 	pipelineRunOnPushFilename         = "push.yaml"
 	pipelineRunOnPRFilename           = "pull-request.yaml"
-	pipelinesAsCodeNamespace          = "openshift-pipelines"
-	pipelinesAsCodeNamespaceFallback  = "pipelines-as-code"
+	pipelinesAsCodeNamespaceEnvVar    = "PAC_NAMESPACE"
+	pipelinesAsCodeNamespaceOpenshift = "openshift-pipelines"
+	pipelinesAsCodeNamespace          = "pipelines-as-code"
 	pipelinesAsCodeRouteName          = "pipelines-as-code-controller"
 	pipelinesAsCodeRouteEnvVar        = "PAC_WEBHOOK_URL"
 	pipelinesAsCodeWebhooksSecretName = "pipelines-as-code-webhooks-secret"
@@ -89,9 +90,9 @@ Please follow the block sequence indentation style introduced by the proprosed P
 // GetHttpClientFunction can be mocked in tests.
 var GetHttpClientFunction = getHttpClient
 
-// GetWebhookDataAndPacSecret gets and validates webhookSecretString, webhookTargetUrl, pacSecret
+// GetPacSecrets gets and validates webhookSecretString and pacSecret.
 // TODO remove newModel handling after only new model is used
-func (r *ComponentBuildReconciler) GetWebhookDataAndPacSecret(ctx context.Context, component *compapiv1alpha1.Component) (string, string, *corev1.Secret, error) {
+func (r *ComponentBuildReconciler) GetPacSecrets(ctx context.Context, component *compapiv1alpha1.Component) (string, *corev1.Secret, error) {
 	log := ctrllog.FromContext(ctx).WithName("GetWebhookAndPacSecret")
 	newModel := true
 
@@ -100,31 +101,31 @@ func (r *ComponentBuildReconciler) GetWebhookDataAndPacSecret(ctx context.Contex
 	gitProvider, err := getGitProvider(*component, newModel)
 	if err != nil {
 		// Do not reconcile, because configuration must be fixed before it is possible to proceed.
-		return "", "", nil, err
+		return "", nil, err
 	}
 	repoUrl := getGitRepoUrl(*component, newModel)
 
 	if strings.HasPrefix(repoUrl, "http:") {
-		return "", "", nil, boerrors.NewBuildOpError(boerrors.EHttpUsedForRepository,
+		return "", nil, boerrors.NewBuildOpError(boerrors.EHttpUsedForRepository,
 			fmt.Errorf("git repository URL can't use insecure HTTP: %s", repoUrl))
 	}
 
 	if url, ok := component.Annotations[GitProviderAnnotationURL]; ok {
 		if strings.HasPrefix(url, "http:") {
-			return "", "", nil, boerrors.NewBuildOpError(boerrors.EHttpUsedForRepository,
+			return "", nil, boerrors.NewBuildOpError(boerrors.EHttpUsedForRepository,
 				fmt.Errorf("git repository URL in annotation %s can't use insecure HTTP: %s", GitProviderAnnotationURL, repoUrl))
 		}
 	}
 
 	pacSecret, err := r.lookupPaCSecret(ctx, component, gitProvider, newModel)
 	if err != nil {
-		return "", "", nil, err
+		return "", nil, err
 	}
 
 	if err := validatePaCConfiguration(gitProvider, *pacSecret); err != nil {
 		r.EventRecorder.Event(pacSecret, "Warning", "ErrorValidatingPaCSecret", err.Error())
 		// Do not reconcile, because configuration must be fixed before it is possible to proceed.
-		return "", "", nil, boerrors.NewBuildOpError(boerrors.EPaCSecretInvalid,
+		return "", nil, boerrors.NewBuildOpError(boerrors.EPaCSecretInvalid,
 			fmt.Errorf("invalid configuration in Pipelines as Code secret: %w", err))
 	}
 
@@ -134,17 +135,11 @@ func (r *ComponentBuildReconciler) GetWebhookDataAndPacSecret(ctx context.Contex
 		// and stores it in the corresponding k8s secret.
 		webhookSecretString, err = r.ensureWebhookSecret(ctx, component, newModel)
 		if err != nil {
-			return "", "", nil, err
+			return "", nil, err
 		}
 	}
 
-	// Obtain Pipelines as Code callback URL (needed for both webhook mode and app mode for incoming triggers)
-	webhookTargetUrl, err := r.getPaCWebhookTargetUrl(ctx, repoUrl, true)
-	if err != nil {
-		return "", "", nil, err
-	}
-
-	return webhookSecretString, webhookTargetUrl, pacSecret, nil
+	return webhookSecretString, pacSecret, nil
 }
 
 // ProvisionPaCForComponentOldModel does Pipelines as Code provision for the given component.
@@ -198,7 +193,7 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponentOldModel(ctx context.
 		}
 
 		// Obtain Pipelines as Code callback URL
-		webhookTargetUrl, err = r.getPaCWebhookTargetUrl(ctx, repoUrl, true)
+		webhookTargetUrl, err = r.getPaCWebhookTargetUrl(ctx, repoUrl)
 		if err != nil {
 			return "", err
 		}
@@ -337,7 +332,7 @@ func (r *ComponentBuildReconciler) TriggerPaCBuild(
 	component *compapiv1alpha1.Component,
 	sanitizedVersionName string,
 	targetBranch string,
-	webhookTargetUrl string,
+	pacInternalUrl string,
 	incomingSecret *corev1.Secret,
 	repository *pacv1alpha1.Repository,
 ) error {
@@ -348,7 +343,7 @@ func (r *ComponentBuildReconciler) TriggerPaCBuild(
 	secretValue := string(incomingSecret.Data[pacIncomingSecretKey])
 	pipelineRunName := getPipelineRunDefinitionName(component.Name, sanitizedVersionName, false)
 
-	triggerURL := fmt.Sprintf("%s/incoming", webhookTargetUrl)
+	triggerURL := fmt.Sprintf("%s/incoming", pacInternalUrl)
 	HttpClient := GetHttpClientFunction()
 
 	// we have to supply source_url as additional param, because PaC isn't able to resolve it for trigger
@@ -446,7 +441,7 @@ func (r *ComponentBuildReconciler) TriggerPaCBuildOldModel(ctx context.Context, 
 		return true, nil
 	}
 
-	webhookTargetUrl, err := r.getPaCWebhookTargetUrl(ctx, repoUrl, false)
+	pacInternalUrl, err := r.getPaCRoutePublicUrl(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -455,7 +450,7 @@ func (r *ComponentBuildReconciler) TriggerPaCBuildOldModel(ctx context.Context, 
 
 	pipelineRunName := getPipelineRunDefinitionName(component.Name, "", false)
 
-	triggerURL := fmt.Sprintf("%s/incoming", webhookTargetUrl)
+	triggerURL := fmt.Sprintf("%s/incoming", pacInternalUrl)
 	HttpClient := GetHttpClientFunction()
 
 	// we have to supply source_url as additional param, because PaC isn't able to resolve it for trigger
@@ -508,7 +503,7 @@ func (r *ComponentBuildReconciler) UndoPaCProvisionForComponentOldModel(ctx cont
 	repoUrl := getGitRepoUrl(*component, newModel)
 	webhookTargetUrl := ""
 	if !common.IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
-		webhookTargetUrl, err = r.getPaCWebhookTargetUrl(ctx, repoUrl, true)
+		webhookTargetUrl, err = r.getPaCWebhookTargetUrl(ctx, repoUrl)
 		if err != nil {
 			// Just log the error and continue with pruning merge request creation
 			log.Error(err, "failed to get Pipelines as Code webhook target URL. Webhook will not be deleted.", l.Action, l.ActionView, l.Audit, "true")
@@ -542,49 +537,54 @@ func (r *ComponentBuildReconciler) UndoPaCProvisionForComponentOldModel(ctx cont
 }
 
 // getPaCWebhookTargetUrl returns URL to which events from git repository should be sent.
-// it will first try to get url from env variable
-// then when useWebhookUrlConfig is true it will try to get it from webhook config
-// and lastly it will try to get it from PaC route url
-func (r *ComponentBuildReconciler) getPaCWebhookTargetUrl(ctx context.Context, repositoryURL string, useWebhookUrlConfig bool) (string, error) {
-	webhookTargetUrl := os.Getenv(pipelinesAsCodeRouteEnvVar)
+// First, it checks provided mapping, if any.
+// If no match found, reads PAC_WEBHOOK_URL environment variable.
+// Lastly, falls back to PaC Route URL.
+func (r *ComponentBuildReconciler) getPaCWebhookTargetUrl(ctx context.Context, repositoryURL string) (string, error) {
+	webhookTargetUrl := r.PaCWebhookMapping.GetPaCWebhookUrlForGitRepo(repositoryURL)
 
-	if webhookTargetUrl == "" && useWebhookUrlConfig {
-		webhookTargetUrl = r.WebhookURLLoader.Load(repositoryURL)
+	if webhookTargetUrl == "" {
+		webhookTargetUrl = os.Getenv(pipelinesAsCodeRouteEnvVar)
 	}
 
 	if webhookTargetUrl == "" {
-		// The env variable is not set
-		// Use the installed on the cluster Pipelines as Code
 		var err error
 		webhookTargetUrl, err = r.getPaCRoutePublicUrl(ctx)
 		if err != nil {
 			return "", err
 		}
 	}
+
 	return webhookTargetUrl, nil
 }
 
 // getPaCRoutePublicUrl returns Pipelines as Code public route that recieves events to trigger new pipeline runs.
+// It checks "openshift-pipelines", "pipelines-as-code" namespaces
+// and namespace defined in PAC_NAMESPACE environment variable, if any (takes precedence).
+// The operator should always use this Route when communicating with PaC endpoint.
 func (r *ComponentBuildReconciler) getPaCRoutePublicUrl(ctx context.Context) (string, error) {
 	pacWebhookRoute := &routev1.Route{}
-	pacWebhookRouteKey := types.NamespacedName{Namespace: pipelinesAsCodeNamespace, Name: pipelinesAsCodeRouteName}
-	if err := r.Client.Get(ctx, pacWebhookRouteKey, pacWebhookRoute); err != nil {
-		if !errors.IsNotFound(err) {
-			return "", fmt.Errorf("failed to get Pipelines as Code route in %s namespace: %w", pacWebhookRouteKey.Namespace, err)
-		}
-		// Fallback to old PaC namesapce
-		pacWebhookRouteKey.Namespace = pipelinesAsCodeNamespaceFallback
+
+	namespacesToCheck := []string{pipelinesAsCodeNamespaceOpenshift, pipelinesAsCodeNamespace}
+	customPacNamespace := os.Getenv(pipelinesAsCodeNamespaceEnvVar)
+	if customPacNamespace != "" {
+		namespacesToCheck = append([]string{customPacNamespace}, namespacesToCheck...)
+	}
+
+	for _, namespace := range namespacesToCheck {
+		pacWebhookRouteKey := types.NamespacedName{Namespace: namespace, Name: pipelinesAsCodeRouteName}
 		if err := r.Client.Get(ctx, pacWebhookRouteKey, pacWebhookRoute); err != nil {
 			if !errors.IsNotFound(err) {
-				return "", fmt.Errorf("failed to get Pipelines as Code route in %s namespace: %w", pacWebhookRouteKey.Namespace, err)
+				return "", fmt.Errorf("failed to get Pipelines as Code route in %s namespace: %w", namespace, err)
 			}
-			// Pipelines as Code public route was not found in expected namespaces
-			// Consider this error permanent
-			return "", boerrors.NewBuildOpError(boerrors.EPaCRouteDoesNotExist,
-				fmt.Errorf("PaC route not found in %s nor %s namespace", pipelinesAsCodeNamespace, pipelinesAsCodeNamespaceFallback))
+			// Not found, continue
+		} else {
+			// Route found
+			return "https://" + pacWebhookRoute.Spec.Host, nil
 		}
 	}
-	return "https://" + pacWebhookRoute.Spec.Host, nil
+	// Checked all candidate namespaces	for PaC installation, the PaC Route not found.
+	return "", fmt.Errorf("PaC route not found in '%s' namespaces", strings.Join(namespacesToCheck, " "))
 }
 
 // TODO remove newModel handling after only new model is used
@@ -640,15 +640,21 @@ func GetGitClient(component *compapiv1alpha1.Component, pacConfig map[string][]b
 // The webhook is only created when PaC GitHub/GitLab App is not configured (checks via IsPaCApplicationConfigured).
 // When using App-based integration, webhooks are managed automatically by the git provider and this setup is skipped.
 // TODO remove newModel handling after only new model is used
-func (r *ComponentBuildReconciler) SetupPacWebhookWhenAppNotUsed(ctx context.Context, component *compapiv1alpha1.Component, gitClient gp.GitProviderClient, pacConfig map[string][]byte, webhookTargetUrl, webhookSecret string) error {
-	log := ctrllog.FromContext(ctx).WithValues("repository", component.Spec.Source.GitURL)
+func (r *ComponentBuildReconciler) SetupPacWebhookWhenAppNotUsed(ctx context.Context, component *compapiv1alpha1.Component, gitClient gp.GitProviderClient, pacConfig map[string][]byte, webhookSecret string) error {
 	newModel := true
 
 	gitProvider, _ := getGitProvider(*component, newModel)
 	repoUrl := getGitRepoUrl(*component, newModel)
 
+	log := ctrllog.FromContext(ctx).WithValues("repository", repoUrl)
+
 	isAppUsed := common.IsPaCApplicationConfigured(gitProvider, pacConfig)
 	if !isAppUsed {
+		webhookTargetUrl, err := r.getPaCWebhookTargetUrl(ctx, repoUrl)
+		if err != nil {
+			return fmt.Errorf("failed to get PaC webhook URL: %w", err)
+		}
+
 		if err := gitClient.SetupPaCWebhook(repoUrl, webhookTargetUrl, webhookSecret); err != nil {
 			log.Error(err, fmt.Sprintf("failed to setup Pipelines as Code webhook %s for %s Component in %s namespace", webhookTargetUrl, component.Name, component.Namespace), l.Audit, "true")
 			return err
@@ -811,7 +817,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaCOldModel(ctx context
 
 // RemovePacWebhook removes repository webhook, but only when no other component is using it, used only when component is removed
 // TODO remove newModel handling after only new model is used
-func (r *ComponentBuildReconciler) RemovePacWebhook(ctx context.Context, component *compapiv1alpha1.Component, gitClient gp.GitProviderClient, pacConfig map[string][]byte, webhookTargetUrl string) error {
+func (r *ComponentBuildReconciler) RemovePacWebhook(ctx context.Context, component *compapiv1alpha1.Component, gitClient gp.GitProviderClient, pacConfig map[string][]byte) error {
 	log := ctrllog.FromContext(ctx)
 	newModel := true
 
@@ -819,7 +825,12 @@ func (r *ComponentBuildReconciler) RemovePacWebhook(ctx context.Context, compone
 	repoUrl := getGitRepoUrl(*component, newModel)
 
 	isAppUsed := common.IsPaCApplicationConfigured(gitProvider, pacConfig)
-	if !isAppUsed && webhookTargetUrl != "" {
+	if !isAppUsed {
+		webhookTargetUrl, err := r.getPaCWebhookTargetUrl(ctx, repoUrl)
+		if err != nil {
+			return fmt.Errorf("failed to get PaC webhook URL: %w", err)
+		}
+
 		componentList := &compapiv1alpha1.ComponentList{}
 		if err := r.Client.List(ctx, componentList, &client.ListOptions{Namespace: component.Namespace}); err != nil {
 			log.Error(err, "failed to list components")

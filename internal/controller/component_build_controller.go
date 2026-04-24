@@ -109,7 +109,7 @@ type ComponentBuildReconciler struct {
 	Scheme             *runtime.Scheme
 	EventRecorder      record.EventRecorder
 	CredentialProvider *k8s.GitCredentialProvider
-	WebhookURLLoader   pacwebhook.WebhookURLLoader
+	PaCWebhookMapping  *pacwebhook.PaCWebhookMapping
 }
 
 // SetupWithManager sets up the controller with the Manager.
