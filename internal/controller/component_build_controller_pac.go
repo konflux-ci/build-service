@@ -608,8 +608,15 @@ func (r *ComponentBuildReconciler) getInternalPaCEndpoint(ctx context.Context) (
 			}
 			// Not found, continue
 		} else {
-			// Service found, generate URL: http://<service-name>.<namespace-name>.svc.cluster.local
-			internalServiceUrl := fmt.Sprintf("http://%s.%s.svc.cluster.local", pacEndpointServiceKey.Name, pacEndpointServiceKey.Namespace)
+			// Service found, generate URL: http://<service-name>.<namespace-name>.svc.cluster.local:<service-port>
+			port := 80
+			for _, servicePortConfig := range pacEndpointService.Spec.Ports {
+				if servicePortConfig.Name == "http-listener" {
+					port = int(servicePortConfig.Port)
+					break
+				}
+			}
+			internalServiceUrl := fmt.Sprintf("http://%s.%s.svc.cluster.local:%d", pacEndpointServiceKey.Name, pacEndpointServiceKey.Namespace, port)
 			return internalServiceUrl, nil
 		}
 	}

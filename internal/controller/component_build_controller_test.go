@@ -1872,14 +1872,14 @@ var _ = Describe("Component build controller", func() {
 			repositoryName, _     = generatePaCRepositoryNameFromGitUrl(SampleRepoLink + "-" + resourcePacTriggerKey.Name)
 			repositoryNameKey     = types.NamespacedName{Name: repositoryName, Namespace: namespace}
 			pacServiceKey         = types.NamespacedName{Name: pipelinesAsCodeRouteName, Namespace: pipelinesAsCodeNamespaceOpenshift}
-			internalPaCEndpoint   = fmt.Sprintf("http://%s.%s.svc.cluster.local", pacServiceKey.Name, pacServiceKey.Namespace)
+			internalPaCEndpoint   = fmt.Sprintf("http://%s.%s.svc.cluster.local:8080", pacServiceKey.Name, pacServiceKey.Namespace)
 		)
 
 		_ = BeforeEach(func() {
 			createNamespace(namespace)
 			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, "pac-host")
-			createService(pacServiceKey)
+			createPaCService(pacServiceKey)
 			createNamespace(BuildServiceNamespaceName)
 			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
 			pacSecretData := map[string]string{

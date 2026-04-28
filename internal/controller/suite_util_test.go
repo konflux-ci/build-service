@@ -966,20 +966,26 @@ func waitForComponentSpecActionEmpty(componentKey types.NamespacedName, actionTy
 	return component
 }
 
-func createService(serviceKey types.NamespacedName) {
+func createPaCService(serviceKey types.NamespacedName) {
+	port := corev1.ServicePort{
+		Name: "http-listener",
+		Port: 8080,
+		TargetPort: intstr.IntOrString{
+			Type:   intstr.Int,
+			IntVal: 8082,
+		},
+	}
+	createService(serviceKey, port)
+}
+
+func createService(serviceKey types.NamespacedName, ports ...corev1.ServicePort) {
 	service := corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      serviceKey.Name,
 			Namespace: serviceKey.Namespace,
 		},
 		Spec: corev1.ServiceSpec{
-			Ports: []corev1.ServicePort{
-				{
-					Protocol:   corev1.ProtocolTCP,
-					Port:       8000,
-					TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: 8000},
-				},
-			},
+			Ports: ports,
 		},
 	}
 

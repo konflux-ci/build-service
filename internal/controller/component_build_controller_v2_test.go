@@ -81,7 +81,7 @@ var _ = Describe("Component build controller new model", func() {
 	var (
 		pacRouteKey         = types.NamespacedName{Name: pipelinesAsCodeRouteName, Namespace: pipelinesAsCodeNamespaceOpenshift}
 		pacServiceKey       = types.NamespacedName{Name: pipelinesAsCodeRouteName, Namespace: pipelinesAsCodeNamespaceOpenshift}
-		internalPaCEndpoint = fmt.Sprintf("http://%s.%s.svc.cluster.local", pacServiceKey.Name, pacServiceKey.Namespace)
+		internalPaCEndpoint = fmt.Sprintf("http://%s.%s.svc.cluster.local:8080", pacServiceKey.Name, pacServiceKey.Namespace)
 		pacSecretKey        = types.NamespacedName{Name: PipelinesAsCodeGitHubAppSecretName, Namespace: BuildServiceNamespaceName}
 	)
 
@@ -711,7 +711,7 @@ var _ = Describe("Component build controller new model", func() {
 			component = waitForComponentStatusVersions(componentKey, 1)
 
 			// Create PaC endpoint Service
-			createService(pacServiceKey)
+			createPaCService(pacServiceKey)
 			defer deleteService(pacServiceKey)
 
 			// Now add trigger build action with invalid version
@@ -2362,7 +2362,7 @@ spec:
 			createNamespace(namespace)
 			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, pacHost)
-			createService(pacServiceKey)
+			createPaCService(pacServiceKey)
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",
 				"github-private-key":    githubAppPrivateKey,
@@ -3505,7 +3505,7 @@ spec:
 			createNamespace(namespace)
 			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, pacHost)
-			createService(pacServiceKey)
+			createPaCService(pacServiceKey)
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",
 				"github-private-key":    githubAppPrivateKey,
