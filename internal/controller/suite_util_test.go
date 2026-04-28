@@ -32,6 +32,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -963,6 +964,41 @@ func waitForComponentSpecActionEmpty(componentKey types.NamespacedName, actionTy
 		return false
 	}, timeout, interval).Should(BeTrue())
 	return component
+}
+
+func createService(serviceKey types.NamespacedName) {
+	service := corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      serviceKey.Name,
+			Namespace: serviceKey.Namespace,
+		},
+		Spec: corev1.ServiceSpec{
+			Ports: []corev1.ServicePort{
+				{
+					Protocol:   corev1.ProtocolTCP,
+					Port:       8000,
+					TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: 8000},
+				},
+			},
+		},
+	}
+
+	if err := k8sClient.Create(ctx, &service); err != nil && !k8sErrors.IsAlreadyExists(err) {
+		Fail(err.Error())
+	}
+}
+
+func deleteService(serviceKey types.NamespacedName) {
+	service := &corev1.Service{}
+	if err := k8sClient.Get(ctx, serviceKey, service); err != nil {
+		if k8sErrors.IsNotFound(err) {
+			return
+		}
+		Fail(err.Error())
+	}
+	if err := k8sClient.Delete(ctx, service); err != nil && !k8sErrors.IsNotFound(err) {
+		Fail(err.Error())
+	}
 }
 
 func createRoute(routeKey types.NamespacedName, host string) {

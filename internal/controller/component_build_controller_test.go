@@ -28,7 +28,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
-	routev1 "github.com/openshift/api/route/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
@@ -1872,12 +1871,15 @@ var _ = Describe("Component build controller", func() {
 			webhookSecretKey      = types.NamespacedName{Name: pipelinesAsCodeWebhooksSecretName, Namespace: namespace}
 			repositoryName, _     = generatePaCRepositoryNameFromGitUrl(SampleRepoLink + "-" + resourcePacTriggerKey.Name)
 			repositoryNameKey     = types.NamespacedName{Name: repositoryName, Namespace: namespace}
+			pacServiceKey         = types.NamespacedName{Name: pipelinesAsCodeRouteName, Namespace: pipelinesAsCodeNamespaceOpenshift}
+			internalPaCEndpoint   = fmt.Sprintf("http://%s.%s.svc.cluster.local", pacServiceKey.Name, pacServiceKey.Namespace)
 		)
 
 		_ = BeforeEach(func() {
 			createNamespace(namespace)
 			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, "pac-host")
+			createService(pacServiceKey)
 			createNamespace(BuildServiceNamespaceName)
 			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
 			pacSecretData := map[string]string{
@@ -1898,6 +1900,7 @@ var _ = Describe("Component build controller", func() {
 
 			deleteSecret(pacSecretKey)
 			deleteRoute(pacRouteKey)
+			deleteService(pacServiceKey)
 		})
 
 		It("should successfully trigger PaC build", func() {
@@ -1917,9 +1920,6 @@ var _ = Describe("Component build controller", func() {
 			repository := waitPaCRepositoryCreated(repositoryNameKey)
 			component := getComponent(resourcePacTriggerKey)
 
-			pacWebhookRoute := &routev1.Route{}
-			Expect(k8sClient.Get(ctx, pacRouteKey, pacWebhookRoute)).To(Succeed())
-			webhookTargetUrl := "https://" + pacWebhookRoute.Spec.Host
 			pipelineRunName := component.Name + pipelineRunOnPushSuffix
 
 			client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
@@ -1934,7 +1934,7 @@ var _ = Describe("Component build controller", func() {
 
 			// return 505 on the first request, so there will be new reconcile
 			// just to test that it will trigger new reconcile
-			gock.New(webhookTargetUrl).
+			gock.New(internalPaCEndpoint).
 				BodyString("").
 				Post("/incoming").
 				Reply(505)
@@ -1948,7 +1948,7 @@ var _ = Describe("Component build controller", func() {
 				requestValueNamespace   string
 			)
 
-			req := gock.New(webhookTargetUrl).
+			req := gock.New(internalPaCEndpoint).
 				Post("/incoming").
 				MatchType("json").
 				SetMatcher(gock.NewBasicMatcher()).
@@ -2049,11 +2049,6 @@ var _ = Describe("Component build controller", func() {
 			repository := waitPaCRepositoryCreated(repositoryNameKey)
 			component := getComponent(resourcePacTriggerKey)
 
-			pacWebhookRoute := &routev1.Route{}
-			Expect(k8sClient.Get(ctx, pacRouteKey, pacWebhookRoute)).To(Succeed())
-			// Despite using proxy for the git events delivery to PaC,
-			// trigger build requiest should be made using internal connection (PaC Route).
-			webhookTargetUrl := "https://" + pacWebhookRoute.Spec.Host
 			pipelineRunName := component.Name + pipelineRunOnPushSuffix
 
 			client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
@@ -2070,7 +2065,7 @@ var _ = Describe("Component build controller", func() {
 				requestValuePipelinerun string
 				requestValueNamespace   string
 			)
-			req := gock.New(webhookTargetUrl).
+			req := gock.New(internalPaCEndpoint).
 				Post("/incoming").
 				MatchType("json").
 				SetMatcher(gock.NewBasicMatcher()).
@@ -2149,9 +2144,6 @@ var _ = Describe("Component build controller", func() {
 			expectPacBuildStatusOldModel(component2Key, "enabled", 0, "", mergeUrl)
 			defer deleteComponent(component2Key)
 
-			pacWebhookRoute := &routev1.Route{}
-			Expect(k8sClient.Get(ctx, pacRouteKey, pacWebhookRoute)).To(Succeed())
-			webhookTargetUrl := "https://" + pacWebhookRoute.Spec.Host
 			incomingSecretName := getPaCIncomingSecretName(repository.Name)
 
 			component1 := getComponent(resourcePacTriggerKey)
@@ -2167,7 +2159,7 @@ var _ = Describe("Component build controller", func() {
 
 			defer gock.Off()
 
-			req1 := gock.New(webhookTargetUrl).
+			req1 := gock.New(internalPaCEndpoint).
 				Post("/incoming").
 				MatchType("json").
 				SetMatcher(gock.NewBasicMatcher()).
@@ -2196,7 +2188,7 @@ var _ = Describe("Component build controller", func() {
 			component2 := getComponent(component2Key)
 			pipelineRunName2 := component2.Name + pipelineRunOnPushSuffix
 
-			req2 := gock.New(webhookTargetUrl).
+			req2 := gock.New(internalPaCEndpoint).
 				Post("/incoming").
 				MatchType("json").
 				SetMatcher(gock.NewBasicMatcher()).
@@ -2249,9 +2241,6 @@ var _ = Describe("Component build controller", func() {
 			expectPacBuildStatusOldModel(component2Key, "enabled", 0, "", mergeUrl)
 			defer deleteComponent(component2Key)
 
-			pacWebhookRoute := &routev1.Route{}
-			Expect(k8sClient.Get(ctx, pacRouteKey, pacWebhookRoute)).To(Succeed())
-			webhookTargetUrl := "https://" + pacWebhookRoute.Spec.Host
 			incomingSecretName := getPaCIncomingSecretName(repository.Name)
 
 			component1 := getComponent(resourcePacTriggerKey)
@@ -2267,7 +2256,7 @@ var _ = Describe("Component build controller", func() {
 
 			defer gock.Off()
 
-			req1 := gock.New(webhookTargetUrl).
+			req1 := gock.New(internalPaCEndpoint).
 				Post("/incoming").
 				MatchType("json").
 				SetMatcher(gock.NewBasicMatcher()).
@@ -2296,7 +2285,7 @@ var _ = Describe("Component build controller", func() {
 			component2 := getComponent(component2Key)
 			pipelineRunName2 := component2.Name + pipelineRunOnPushSuffix
 
-			req2 := gock.New(webhookTargetUrl).
+			req2 := gock.New(internalPaCEndpoint).
 				Post("/incoming").
 				MatchType("json").
 				SetMatcher(gock.NewBasicMatcher()).
@@ -2372,14 +2361,10 @@ var _ = Describe("Component build controller", func() {
 
 			defer gock.Off()
 
-			pacWebhookRoute := &routev1.Route{}
-			Expect(k8sClient.Get(ctx, pacRouteKey, pacWebhookRoute)).To(Succeed())
-			webhookTargetUrl := "https://" + pacWebhookRoute.Spec.Host
-
 			component2 := getComponent(component2Key)
 			pipelineRunName2 := component2.Name + pipelineRunOnPushSuffix
 
-			req := gock.New(webhookTargetUrl).
+			req := gock.New(internalPaCEndpoint).
 				Post("/incoming").
 				MatchType("json").
 				SetMatcher(gock.NewBasicMatcher()).
@@ -2460,14 +2445,10 @@ var _ = Describe("Component build controller", func() {
 
 			defer gock.Off()
 
-			pacWebhookRoute := &routev1.Route{}
-			Expect(k8sClient.Get(ctx, pacRouteKey, pacWebhookRoute)).To(Succeed())
-			webhookTargetUrl := "https://" + pacWebhookRoute.Spec.Host
-
 			component2 := getComponent(component2Key)
 			pipelineRunName2 := component2.Name + pipelineRunOnPushSuffix
 
-			req := gock.New(webhookTargetUrl).
+			req := gock.New(internalPaCEndpoint).
 				Post("/incoming").
 				MatchType("json").
 				SetMatcher(gock.NewBasicMatcher()).
@@ -2542,14 +2523,10 @@ var _ = Describe("Component build controller", func() {
 
 			defer gock.Off()
 
-			pacWebhookRoute := &routev1.Route{}
-			Expect(k8sClient.Get(ctx, pacRouteKey, pacWebhookRoute)).To(Succeed())
-			webhookTargetUrl := "https://" + pacWebhookRoute.Spec.Host
-
 			component2 := getComponent(component2Key)
 			pipelineRunName2 := component2.Name + pipelineRunOnPushSuffix
 
-			req := gock.New(webhookTargetUrl).
+			req := gock.New(internalPaCEndpoint).
 				Post("/incoming").
 				MatchType("json").
 				SetMatcher(gock.NewBasicMatcher()).

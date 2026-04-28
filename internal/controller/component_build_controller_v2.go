@@ -281,7 +281,7 @@ func (r *ComponentBuildReconciler) ReconcileNewModel(ctx context.Context, req ct
 			return ctrl.Result{Requeue: true}, nil
 		}
 
-		pacInternalUrl, err := r.getPaCRoutePublicUrl(ctx)
+		pacInternalUrl, err := r.getInternalPaCEndpoint(ctx)
 		if err != nil {
 			return ctrl.Result{}, err
 		}

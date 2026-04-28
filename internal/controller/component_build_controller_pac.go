@@ -55,7 +55,7 @@ const (
 	pipelinesAsCodeNamespaceOpenshift = "openshift-pipelines"
 	pipelinesAsCodeNamespace          = "pipelines-as-code"
 	pipelinesAsCodeRouteName          = "pipelines-as-code-controller"
-	pipelinesAsCodeRouteEnvVar        = "PAC_WEBHOOK_URL"
+	pipelinesAsCodeWebhookUrlEnvVar   = "PAC_WEBHOOK_URL"
 	pipelinesAsCodeWebhooksSecretName = "pipelines-as-code-webhooks-secret"
 
 	pacCelExpressionAnnotationName = "pipelinesascode.tekton.dev/on-cel-expression"
@@ -441,7 +441,7 @@ func (r *ComponentBuildReconciler) TriggerPaCBuildOldModel(ctx context.Context, 
 		return true, nil
 	}
 
-	pacInternalUrl, err := r.getPaCRoutePublicUrl(ctx)
+	pacInternalUrl, err := r.getInternalPaCEndpoint(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -544,7 +544,7 @@ func (r *ComponentBuildReconciler) getPaCWebhookTargetUrl(ctx context.Context, r
 	webhookTargetUrl := r.PaCWebhookMapping.GetPaCWebhookUrlForGitRepo(repositoryURL)
 
 	if webhookTargetUrl == "" {
-		webhookTargetUrl = os.Getenv(pipelinesAsCodeRouteEnvVar)
+		webhookTargetUrl = os.Getenv(pipelinesAsCodeWebhookUrlEnvVar)
 	}
 
 	if webhookTargetUrl == "" {
@@ -561,7 +561,7 @@ func (r *ComponentBuildReconciler) getPaCWebhookTargetUrl(ctx context.Context, r
 // getPaCRoutePublicUrl returns Pipelines as Code public route that recieves events to trigger new pipeline runs.
 // It checks "openshift-pipelines", "pipelines-as-code" namespaces
 // and namespace defined in PAC_NAMESPACE environment variable, if any (takes precedence).
-// The operator should always use this Route when communicating with PaC endpoint.
+// Note, it makes sense only for Openshift as in pure k8s PaC doesn't have Ingress by default.
 func (r *ComponentBuildReconciler) getPaCRoutePublicUrl(ctx context.Context) (string, error) {
 	pacWebhookRoute := &routev1.Route{}
 
@@ -583,8 +583,38 @@ func (r *ComponentBuildReconciler) getPaCRoutePublicUrl(ctx context.Context) (st
 			return "https://" + pacWebhookRoute.Spec.Host, nil
 		}
 	}
-	// Checked all candidate namespaces	for PaC installation, the PaC Route not found.
+	// Checked all candidate namespaces for PaC installation, the PaC Route not found.
 	return "", fmt.Errorf("PaC route not found in '%s' namespaces", strings.Join(namespacesToCheck, " "))
+}
+
+// getInternalPaCEndpoint returns cluster internal URL to PaC endpoint.
+// It searches for PaC Service (which has the same name as Route) in "openshift-pipelines", "pipelines-as-code" namespaces
+// and namespace defined in PAC_NAMESPACE environment variable, if any (takes precedence).
+// The operator should always use this endpoint when communicating with PaC within the cluster.
+func (r *ComponentBuildReconciler) getInternalPaCEndpoint(ctx context.Context) (string, error) {
+	pacEndpointService := &corev1.Service{}
+
+	namespacesToCheck := []string{pipelinesAsCodeNamespaceOpenshift, pipelinesAsCodeNamespace}
+	customPacNamespace := os.Getenv(pipelinesAsCodeNamespaceEnvVar)
+	if customPacNamespace != "" {
+		namespacesToCheck = append([]string{customPacNamespace}, namespacesToCheck...)
+	}
+
+	for _, namespace := range namespacesToCheck {
+		pacEndpointServiceKey := types.NamespacedName{Namespace: namespace, Name: pipelinesAsCodeRouteName}
+		if err := r.Client.Get(ctx, pacEndpointServiceKey, pacEndpointService); err != nil {
+			if !errors.IsNotFound(err) {
+				return "", fmt.Errorf("failed to get Pipelines as Code service in %s namespace: %w", namespace, err)
+			}
+			// Not found, continue
+		} else {
+			// Service found, generate URL: http://<service-name>.<namespace-name>.svc.cluster.local
+			internalServiceUrl := fmt.Sprintf("http://%s.%s.svc.cluster.local", pacEndpointServiceKey.Name, pacEndpointServiceKey.Namespace)
+			return internalServiceUrl, nil
+		}
+	}
+	// Checked all candidate namespaces for PaC installation, the PaC Service not found.
+	return "", fmt.Errorf("PaC service not found in '%s' namespaces", strings.Join(namespacesToCheck, " "))
 }
 
 // TODO remove newModel handling after only new model is used

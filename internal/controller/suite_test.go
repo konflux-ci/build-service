@@ -67,6 +67,7 @@ func getCacheExcludedObjectsTypes() []client.Object {
 	return []client.Object{
 		&corev1.Secret{},
 		&corev1.ConfigMap{},
+		&corev1.Service{},
 	}
 }
 

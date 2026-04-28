@@ -79,8 +79,10 @@ var _ = Describe("Component build controller new model", func() {
 	)
 
 	var (
-		pacRouteKey  = types.NamespacedName{Name: pipelinesAsCodeRouteName, Namespace: pipelinesAsCodeNamespaceOpenshift}
-		pacSecretKey = types.NamespacedName{Name: PipelinesAsCodeGitHubAppSecretName, Namespace: BuildServiceNamespaceName}
+		pacRouteKey         = types.NamespacedName{Name: pipelinesAsCodeRouteName, Namespace: pipelinesAsCodeNamespaceOpenshift}
+		pacServiceKey       = types.NamespacedName{Name: pipelinesAsCodeRouteName, Namespace: pipelinesAsCodeNamespaceOpenshift}
+		internalPaCEndpoint = fmt.Sprintf("http://%s.%s.svc.cluster.local", pacServiceKey.Name, pacServiceKey.Namespace)
+		pacSecretKey        = types.NamespacedName{Name: PipelinesAsCodeGitHubAppSecretName, Namespace: BuildServiceNamespaceName}
 	)
 
 	BeforeEach(func() {
@@ -707,6 +709,10 @@ var _ = Describe("Component build controller new model", func() {
 
 			// Wait for v1 to be onboarded
 			component = waitForComponentStatusVersions(componentKey, 1)
+
+			// Create PaC endpoint Service
+			createService(pacServiceKey)
+			defer deleteService(pacServiceKey)
 
 			// Now add trigger build action with invalid version
 			component.Spec.Actions.TriggerBuilds = []string{versionName, "nonexistent"}
@@ -2356,6 +2362,7 @@ spec:
 			createNamespace(namespace)
 			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, pacHost)
+			createService(pacServiceKey)
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",
 				"github-private-key":    githubAppPrivateKey,
@@ -2383,22 +2390,20 @@ spec:
 			version2Name := "v2"
 
 			// Mock HTTP POST request
-			var capturedPostData map[string]interface{}
-			webhookTargetUrl := "https://" + pacHost
-
-			gock.New(webhookTargetUrl).
+			var capturedPostData map[string]any
+			gock.New(internalPaCEndpoint).
 				Post("/incoming").
 				SetMatcher(gock.NewBasicMatcher()).
 				AddMatcher(gock.MatchFunc(func(req *http.Request, _ *gock.Request) (bool, error) {
 					defer GinkgoRecover()
-					var bodyJson map[string]interface{}
+					var bodyJson map[string]any
 					if err := json.NewDecoder(req.Body).Decode(&bodyJson); err != nil {
 						return false, err
 					}
 					capturedPostData = bodyJson
 					return true, nil
 				})).
-				Reply(202).JSON(map[string]interface{}{})
+				Reply(202).JSON(map[string]any{})
 
 			// First onboard versions
 			component := getComponentData(componentConfig{
@@ -2452,13 +2457,10 @@ spec:
 		It("should trigger build if proxy is used for git events to PaC webhook", func() {
 			version1Name := "v1"
 			gitRepoUrl := "https://githost.com/org/repo"
-			// Despite using proxy for the git events delivery to PaC above,
-			// trigger build requiest should be made using internal connection (PaC Route).
-			webhookTargetUrl := "https://" + pacHost
 
 			// Mock HTTP POST request
 			var capturedPostData map[string]any
-			gock.New(webhookTargetUrl).
+			gock.New(internalPaCEndpoint).
 				Post("/incoming").
 				SetMatcher(gock.NewBasicMatcher()).
 				AddMatcher(gock.MatchFunc(func(req *http.Request, _ *gock.Request) (bool, error) {
@@ -2552,23 +2554,21 @@ spec:
 			version3Name := "v3"
 
 			// Mock HTTP POST requests
-			var capturedPostData []map[string]interface{}
-			webhookTargetUrl := "https://" + pacHost
-
-			gock.New(webhookTargetUrl).
+			var capturedPostData []map[string]any
+			gock.New(internalPaCEndpoint).
 				Post("/incoming").
 				Times(2). // Expect 2 POST requests (one for v1, one for v2)
 				SetMatcher(gock.NewBasicMatcher()).
 				AddMatcher(gock.MatchFunc(func(req *http.Request, _ *gock.Request) (bool, error) {
 					defer GinkgoRecover()
-					var bodyJson map[string]interface{}
+					var bodyJson map[string]any
 					if err := json.NewDecoder(req.Body).Decode(&bodyJson); err != nil {
 						return false, err
 					}
 					capturedPostData = append(capturedPostData, bodyJson)
 					return true, nil
 				})).
-				Reply(202).JSON(map[string]interface{}{})
+				Reply(202).JSON(map[string]any{})
 
 			// First onboard versions
 			component := getComponentData(componentConfig{
@@ -2614,7 +2614,7 @@ spec:
 			v2PipelineRunName := component.Name + "-" + version2Name + pipelineRunOnPushSuffix
 
 			// Find which request is for which version
-			var v1Data, v2Data map[string]interface{}
+			var v1Data, v2Data map[string]any
 			for _, data := range capturedPostData {
 				pipelinerun := data["pipelinerun"].(string)
 				if pipelinerun == v1PipelineRunName {
@@ -2645,23 +2645,21 @@ spec:
 			version3Name := "v3"
 
 			// Mock HTTP POST requests
-			var capturedPostData []map[string]interface{}
-			webhookTargetUrl := "https://" + pacHost
-
-			gock.New(webhookTargetUrl).
+			var capturedPostData []map[string]any
+			gock.New(internalPaCEndpoint).
 				Post("/incoming").
 				Times(2). // Expect 2 POST requests (one for v1, one for v2)
 				SetMatcher(gock.NewBasicMatcher()).
 				AddMatcher(gock.MatchFunc(func(req *http.Request, _ *gock.Request) (bool, error) {
 					defer GinkgoRecover()
-					var bodyJson map[string]interface{}
+					var bodyJson map[string]any
 					if err := json.NewDecoder(req.Body).Decode(&bodyJson); err != nil {
 						return false, err
 					}
 					capturedPostData = append(capturedPostData, bodyJson)
 					return true, nil
 				})).
-				Reply(202).JSON(map[string]interface{}{})
+				Reply(202).JSON(map[string]any{})
 
 			// First onboard versions - all using same revision
 			component := getComponentData(componentConfig{
@@ -2707,7 +2705,7 @@ spec:
 			v2PipelineRunName := component.Name + "-" + version2Name + pipelineRunOnPushSuffix
 
 			// Find which request is for which version
-			var v1Data, v2Data map[string]interface{}
+			var v1Data, v2Data map[string]any
 			for _, data := range capturedPostData {
 				pipelinerun := data["pipelinerun"].(string)
 				if pipelinerun == v1PipelineRunName {
@@ -2738,23 +2736,21 @@ spec:
 			version3Name := "v3"
 
 			// Mock HTTP POST requests
-			var capturedPostData []map[string]interface{}
-			webhookTargetUrl := "https://" + pacHost
-
-			gock.New(webhookTargetUrl).
+			var capturedPostData []map[string]any
+			gock.New(internalPaCEndpoint).
 				Post("/incoming").
 				Times(1). // Expect 1 POST request (only for v2, v1 is being offboarded)
 				SetMatcher(gock.NewBasicMatcher()).
 				AddMatcher(gock.MatchFunc(func(req *http.Request, _ *gock.Request) (bool, error) {
 					defer GinkgoRecover()
-					var bodyJson map[string]interface{}
+					var bodyJson map[string]any
 					if err := json.NewDecoder(req.Body).Decode(&bodyJson); err != nil {
 						return false, err
 					}
 					capturedPostData = append(capturedPostData, bodyJson)
 					return true, nil
 				})).
-				Reply(202).JSON(map[string]interface{}{})
+				Reply(202).JSON(map[string]any{})
 
 			// First onboard versions
 			component := getComponentData(componentConfig{
@@ -2836,13 +2832,11 @@ spec:
 			version2Name := "v2"
 
 			// Track which POST requests were made
-			var capturedPostData []map[string]interface{}
-			webhookTargetUrl := "https://" + pacHost
-
+			var capturedPostData []map[string]any
 			// Create matcher function that captures all requests
 			captureRequestMatcher := gock.MatchFunc(func(req *http.Request, _ *gock.Request) (bool, error) {
 				defer GinkgoRecover()
-				var bodyJson map[string]interface{}
+				var bodyJson map[string]any
 				if err := json.NewDecoder(req.Body).Decode(&bodyJson); err != nil {
 					return false, err
 				}
@@ -2852,25 +2846,25 @@ spec:
 
 			// Mock HTTP POST requests - gock consumes mocks in FIFO order
 			// 1st request: succeed (v1)
-			gock.New(webhookTargetUrl).
+			gock.New(internalPaCEndpoint).
 				Post("/incoming").
 				SetMatcher(gock.NewBasicMatcher()).
 				AddMatcher(captureRequestMatcher).
-				Reply(202).JSON(map[string]interface{}{})
+				Reply(202).JSON(map[string]any{})
 
 			// 2nd request: fail (v2 first attempt)
-			gock.New(webhookTargetUrl).
+			gock.New(internalPaCEndpoint).
 				Post("/incoming").
 				SetMatcher(gock.NewBasicMatcher()).
 				AddMatcher(captureRequestMatcher).
-				Reply(500).JSON(map[string]interface{}{"error": "internal server error"})
+				Reply(500).JSON(map[string]any{"error": "internal server error"})
 
 			// 3rd request: succeed (v2 retry)
-			gock.New(webhookTargetUrl).
+			gock.New(internalPaCEndpoint).
 				Post("/incoming").
 				SetMatcher(gock.NewBasicMatcher()).
 				AddMatcher(captureRequestMatcher).
-				Reply(202).JSON(map[string]interface{}{})
+				Reply(202).JSON(map[string]any{})
 
 			// First onboard both versions
 			component := getComponentData(componentConfig{
@@ -2918,7 +2912,7 @@ spec:
 			// Count POST requests by version
 			v1Count := 0
 			v2Count := 0
-			var v1Data, v2Data map[string]interface{}
+			var v1Data, v2Data map[string]any
 			for _, data := range capturedPostData {
 				pipelinerun := data["pipelinerun"].(string)
 				if pipelinerun == v1PipelineRunName {
@@ -3511,6 +3505,7 @@ spec:
 			createNamespace(namespace)
 			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, pacHost)
+			createService(pacServiceKey)
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",
 				"github-private-key":    githubAppPrivateKey,
@@ -3530,6 +3525,7 @@ spec:
 
 		_ = AfterEach(func() {
 			deleteComponentAndOwnedResources(componentKey)
+			deleteService(pacServiceKey)
 			gock.Off()
 		})
 
@@ -3637,23 +3633,21 @@ spec:
 			}
 
 			// Track trigger build POST requests
-			var capturedPostData []map[string]interface{}
-			webhookTargetUrl := "https://" + pacHost
-
-			gock.New(webhookTargetUrl).
+			var capturedPostData []map[string]any
+			gock.New(internalPaCEndpoint).
 				Post("/incoming").
 				Persist(). // Allow multiple calls - exact count verified later in test
 				SetMatcher(gock.NewBasicMatcher()).
 				AddMatcher(gock.MatchFunc(func(req *http.Request, _ *gock.Request) (bool, error) {
 					defer GinkgoRecover()
-					var bodyJson map[string]interface{}
+					var bodyJson map[string]any
 					if err := json.NewDecoder(req.Body).Decode(&bodyJson); err != nil {
 						return false, err
 					}
 					capturedPostData = append(capturedPostData, bodyJson)
 					return true, nil
 				})).
-				Reply(202).JSON(map[string]interface{}{})
+				Reply(202).JSON(map[string]any{})
 
 			// Verify SetupPaCWebhookFunc is NOT called when using GitHub App
 			SetupPaCWebhookFunc = func(string, string, string) error {
@@ -3766,7 +3760,7 @@ spec:
 			}, timeout, interval).Should(Equal(1))
 
 			// Find v2 POST data
-			var v2Data map[string]interface{}
+			var v2Data map[string]any
 			v2PipelineRunName := component.Name + "-" + version2Name + pipelineRunOnPushSuffix
 			for _, data := range capturedPostData {
 				if pipelinerun, ok := data["pipelinerun"].(string); ok && pipelinerun == v2PipelineRunName {
@@ -4009,23 +4003,21 @@ spec:
 			}
 
 			// Track trigger build POST requests
-			var capturedPostData []map[string]interface{}
-			webhookTargetUrl := "https://" + pacHost
-
-			gock.New(webhookTargetUrl).
+			var capturedPostData []map[string]any
+			gock.New(internalPaCEndpoint).
 				Post("/incoming").
 				Persist(). // Allow multiple calls - exact count verified later in test
 				SetMatcher(gock.NewBasicMatcher()).
 				AddMatcher(gock.MatchFunc(func(req *http.Request, _ *gock.Request) (bool, error) {
 					defer GinkgoRecover()
-					var bodyJson map[string]interface{}
+					var bodyJson map[string]any
 					if err := json.NewDecoder(req.Body).Decode(&bodyJson); err != nil {
 						return false, err
 					}
 					capturedPostData = append(capturedPostData, bodyJson)
 					return true, nil
 				})).
-				Reply(202).JSON(map[string]interface{}{})
+				Reply(202).JSON(map[string]any{})
 
 			// PHASE 1: Create component with v1 and v2 for onboarding
 			// CreateConfiguration includes v1 (valid) and "nonexistent-v1" (invalid)
@@ -4142,7 +4134,7 @@ spec:
 			}, timeout, interval).Should(Equal(1))
 
 			// Find v2 POST data
-			var v2Data map[string]interface{}
+			var v2Data map[string]any
 			v2PipelineRunName := component.Name + "-" + version2Name + pipelineRunOnPushSuffix
 			for _, data := range capturedPostData {
 				if pipelinerun, ok := data["pipelinerun"].(string); ok && pipelinerun == v2PipelineRunName {
@@ -4216,7 +4208,7 @@ spec:
 			}, timeout, interval).Should(Equal(2))
 
 			// Find v1 POST data
-			var v1Data map[string]interface{}
+			var v1Data map[string]any
 			v1PipelineRunName := component.Name + "-" + version1Name + pipelineRunOnPushSuffix
 			for _, data := range capturedPostData {
 				if pipelinerun, ok := data["pipelinerun"].(string); ok && pipelinerun == v1PipelineRunName {
