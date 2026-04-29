@@ -75,9 +75,10 @@ func readMapping(webhookConfigPath string) (map[string]string, error) {
 // that cannot access the cluster PaC Route directly (e.g. the cluster in behind a VPN and a proxy for git events needed).
 // The URL is resolved based on the provided mapping between git repository url prefix and desired webhook URL.
 // It finds the longest prefix match for the given git repository URL.
+// Note, it's possible to have empty prefix entry, so it will match any git repo URL unless better match is found.
 // It returns empty string if no mapping for the given git defined. In such case, cluster PaC Route should be used.
 func (w *PaCWebhookMapping) GetPaCWebhookUrlForGitRepo(repositoryUrl string) string {
-	longestPrefixLen := 0
+	longestPrefixLen := -1
 	matchedTarget := ""
 	for prefix, target := range w.mapping {
 		if strings.HasPrefix(repositoryUrl, prefix) && len(prefix) > longestPrefixLen {

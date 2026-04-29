@@ -146,6 +146,17 @@ func Test_GetPaCWebhookUrlForGitRepo(t *testing.T) {
 			gitRepoUrl: "https://githost.com/org/repo.git",
 			expected:   "https://githost.org.proxy.net",
 		},
+		{
+			name: "Should match empty key entry if no netter mapping is found",
+			webhookConfig: map[string]string{
+				"https://githost.com":      "https://githost.proxy.net",
+				"https://githost.com/org/": "https://githost.org.proxy.net",
+				"":                         "https://default.proxy.net",
+				"https://special.net":      "https://special.proxy.net",
+			},
+			gitRepoUrl: "https://some-host.com/org/repo.git",
+			expected:   "https://default.proxy.net",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
