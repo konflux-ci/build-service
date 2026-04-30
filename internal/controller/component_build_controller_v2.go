@@ -664,14 +664,14 @@ func (r *ComponentBuildReconciler) handlePersistentError(ctx context.Context, co
 		log.Error(err, errorContext)
 
 		if err := r.setStatusMessage(ctx, component, errMsg); err != nil {
-			return err
+			return fmt.Errorf("failed to set error status message: %w", err)
 		}
 		r.WaitForCacheUpdateRes(ctx, types.NamespacedName{Namespace: component.Namespace, Name: component.Name}, component)
 		return nil
 	}
 
 	log.Error(err, fmt.Sprintf("%s, transient error", errorContext))
-	return err
+	return fmt.Errorf("%s: %w", errorContext, err)
 }
 
 // cleanupComponentPaCResources performs best-effort cleanup of PaC resources during component deletion.
@@ -877,7 +877,7 @@ func (r *ComponentBuildReconciler) resolvePipelinesForCreateConfiguration(
 
 		validationErrors, err := r.processDefaultPipelineConfig(ctx, versionPipelines, versionsToCreatePRFor)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to process default pipeline config: %w", err)
 		}
 		if len(validationErrors) > 0 {
 			return validationErrors, nil
@@ -1072,7 +1072,7 @@ func (r *ComponentBuildReconciler) updateVersionsStatus(ctx context.Context, com
 	// Update the component status
 	if err := r.Client.Status().Update(ctx, component); err != nil {
 		log.Error(err, "failed to update component version status", l.Action, l.ActionUpdate, l.Audit, "true")
-		return err
+		return fmt.Errorf("failed to update component version status: %w", err)
 	}
 
 	return nil
@@ -1090,7 +1090,7 @@ func (r *ComponentBuildReconciler) setStatusMessage(ctx context.Context, compone
 	component.Status.Message = msg
 	if err := r.Client.Status().Update(ctx, component); err != nil {
 		log.Error(err, "failed to update component status message", l.Action, l.ActionUpdate, l.Audit, "true")
-		return err
+		return fmt.Errorf("failed to update component status message: %w", err)
 	}
 	return nil
 }
@@ -1109,7 +1109,7 @@ func (r *ComponentBuildReconciler) setStatusPacRepository(ctx context.Context, c
 
 	if err := r.Client.Status().Update(ctx, component); err != nil {
 		log.Error(err, "failed to update component status PaC repository", l.Action, l.ActionUpdate, l.Audit, "true")
-		return err
+		return fmt.Errorf("failed to update component PaC repository status: %w", err)
 	}
 	// Wait for cache to have the latest ResourceVersion to prevent race with newly triggered reconciles
 	r.WaitForCacheUpdateRes(ctx, types.NamespacedName{Namespace: component.Namespace, Name: component.Name}, component)
@@ -1199,7 +1199,7 @@ func (r *ComponentBuildReconciler) removeCreateConfigurationActions(ctx context.
 
 	if err := r.Client.Update(ctx, component); err != nil {
 		log.Error(err, "failed to update component after removing create configuration actions", l.Action, l.ActionUpdate, l.Audit, "true")
-		return err
+		return fmt.Errorf("failed to remove create configuration actions: %w", err)
 	}
 	r.WaitForCacheUpdateGen(ctx, types.NamespacedName{Namespace: component.Namespace, Name: component.Name}, component)
 
@@ -1244,7 +1244,7 @@ func (r *ComponentBuildReconciler) removeTriggerBuildActions(ctx context.Context
 
 	if err := r.Client.Update(ctx, component); err != nil {
 		log.Error(err, "failed to update component after removing trigger build actions", l.Action, l.ActionUpdate, l.Audit, "true")
-		return err
+		return fmt.Errorf("failed to remove trigger build actions: %w", err)
 	}
 	r.WaitForCacheUpdateGen(ctx, types.NamespacedName{Namespace: component.Namespace, Name: component.Name}, component)
 
@@ -1278,7 +1278,7 @@ func (r *ComponentBuildReconciler) removeVersionsFromStatus(ctx context.Context,
 
 	if err := r.Client.Status().Update(ctx, component); err != nil {
 		log.Error(err, "failed to update component status after removing versions", l.Action, l.ActionUpdate, l.Audit, "true")
-		return err
+		return fmt.Errorf("failed to remove versions from status: %w", err)
 	}
 	// Wait for cache to have the latest ResourceVersion to prevent race with newly triggered reconciles
 	r.WaitForCacheUpdateRes(ctx, types.NamespacedName{Namespace: component.Namespace, Name: component.Name}, component)
@@ -1312,7 +1312,7 @@ func (r *ComponentBuildReconciler) setVersionStatusMessage(ctx context.Context, 
 
 	if err := r.Client.Status().Update(ctx, component); err != nil {
 		log.Error(err, "failed to update version message in component status", l.Action, l.ActionUpdate, l.Audit, "true")
-		return err
+		return fmt.Errorf("failed to set version %s status message: %w", versionName, err)
 	}
 
 	log.Info("Set version message in status", "Version", versionName, "Message", message, l.Action, l.ActionUpdate)
