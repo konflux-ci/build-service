@@ -197,7 +197,12 @@ func (f *ForgejoClient) downloadFileContent(owner, repository, branch, filePath 
 		return nil, errors.New("not found")
 	}
 
-	return []byte(*contents.Content), nil
+	// Forgejo API returns content as base64-encoded string
+	decoded, err := base64.StdEncoding.DecodeString(*contents.Content)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode base64 content for %s: %w", filePath, err)
+	}
+	return decoded, nil
 }
 
 // filesUpToDate checks if all given files have expected content in remote git repository.
