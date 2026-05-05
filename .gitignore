@@ -5,3 +5,6 @@ build-service
 *.test
 .vscode/launch.json
 .idea/
+
+# E2E test binaries
+e2e-tests/tests/bin/
