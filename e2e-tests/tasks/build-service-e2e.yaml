@@ -37,7 +37,7 @@ spec:
       default: "none"
     - name: e2e-timeout
       description: "Timeout value for running E2E script"
-      default: "120m"
+      default: "60m"
     - name: test-environment
       type: string
       description: "Name of the environment the testing should be performed in."

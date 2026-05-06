@@ -142,7 +142,7 @@ spec:
         - name: pipeline-name
           value: "docker-build"
     - name: konflux-e2e-tests
-      timeout: 2h
+      timeout: "90m"
       runAfter:
         - deploy-konflux
       taskRef:
