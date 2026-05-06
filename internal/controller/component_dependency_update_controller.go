@@ -30,7 +30,7 @@ import (
 	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
 	releaseapi "github.com/konflux-ci/release-service/api/v1alpha1"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
-	"golang.org/x/exp/slices"
+	"slices"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
