@@ -5,40 +5,29 @@ metadata:
   name: konflux-e2e-tests
 spec:
   description: |-
-    This pipeline automates the process of running end-to-end tests for Konflux
-    using a Kind cluster running on AWS cluster. The pipeline provisions
-    the Kind cluster, installs Konflux using the konflux-ci repository scripts, runs the tests, collects artifacts,
-    and finally deprovisions the Kind cluster.
+    This pipeline runs build-service e2e tests for Konflux.
+    It provisions a Kind cluster on AWS, installs Konflux, runs the test suite
+    filtered by provider label, collects artifacts, and deprovisions the cluster.
   params:
     - name: SNAPSHOT
       description: 'The JSON string representing the snapshot of the application under test.'
-      default: '{"components": [{"name":"test-app", "containerImage": "quay.io/example/repo:latest"}]}'
-      type: string
-    - name: test-name
-      description: 'The name of the test corresponding to a defined Konflux integration test.'
-      default: ''
-    - name: ocp-version
-      description: 'The OpenShift version to use for the ephemeral cluster deployment.'
       type: string
     - name: konflux-test-infra-secret
       description: The name of secret where testing infrastructures credentials are stored.
-      type: string
-    - name: replicas
-      description: 'The number of replicas for the cluster nodes.'
-      type: string
-    - name: machine-type
-      description: 'The type of machine to use for the cluster nodes.'
+      default: "konflux-test-infra"
       type: string
     - name: oci-container-repo
       default: 'quay.io/konflux-test-storage/konflux-team/build-service'
       description: The OCI container used to store all test artifacts.
-    - name: component-image
-      default: 'none'
-      description: 'Container image built from any konflux git repo. Use this param only when you run Konflux e2e tests
-        in another Konflux component repo. Will pass the component built image from the snapshot.'
     - name: artifact-browser-url
       description: "URL to the artifact browser deployment. If provided, a link will be added to PR comments."
       default: ""
+      type: string
+    - name: provider-tag
+      description: "Provider identifier used in AWS resource tags (e.g., github-pac, github-integration, gitlab, forgejo)."
+      type: string
+    - name: e2e-label-filter
+      description: "Ginkgo label filter expression to select which tests to run (e.g., 'github-webhook && github', 'gitlab', 'forgejo')."
       type: string
   tasks:
     - name: test-metadata
@@ -76,7 +65,7 @@ spec:
         - name: id
           value: $(context.pipelineRun.name)
         - name: tags
-          value: 'owner=konflux-devprod@redhat.com,project=Konflux,created-by=integration-pipeline,component=build-service'
+          value: 'owner=konflux-devprod@redhat.com,project=Konflux,created-by=integration-pipeline,component=build-service,provider=$(params.provider-tag)'
         - name: debug
           value: 'false'
         - name: ownerKind
@@ -153,23 +142,21 @@ spec:
         - name: pipeline-name
           value: "docker-build"
     - name: konflux-e2e-tests
-      timeout: 2h
+      timeout: "90m"
       runAfter:
         - deploy-konflux
       taskRef:
         resolver: git
         params:
           - name: url
-            value: https://github.com/konflux-ci/e2e-tests.git
+            value: https://github.com/psturc/build-service.git
           - name: revision
-            value: main
+            value: KFLUXDP-872
           - name: pathInRepo
-            value: integration-tests/tasks/konflux-e2e-tests/0.2/konflux-e2e-tests.yaml
+            value: e2e-tests/tasks/build-service-e2e.yaml
       params:
         - name: test-name
           value: $(context.pipelineRun.name)
-        - name: git-repo
-          value: $(tasks.test-metadata.results.git-repo)
         - name: git-url
           value: $(tasks.test-metadata.results.git-url)
         - name: git-revision
@@ -184,6 +171,10 @@ spec:
           value: kfg-$(context.pipelineRun.name)
         - name: test-environment
           value: "upstream"
+        - name: ginkgo-procs
+          value: "5"
+        - name: e2e-extra-label-filter
+          value: $(params.e2e-label-filter)
   finally:
     - name: collect-and-upload-coverage
       params:
