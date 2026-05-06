@@ -14,7 +14,7 @@ import (
 	pipeline "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 
-	imageInfo "github.com/openshift/oc/pkg/cli/image/info"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 
 	"github.com/konflux-ci/e2e-tests/pkg/clients/git"
 	"github.com/konflux-ci/e2e-tests/pkg/clients/has"
@@ -417,13 +417,13 @@ var _ = framework.BuildSuiteDescribe("Build service E2E tests", Label("build-ser
 				plr, err = f.AsKubeAdmin.HasController.GetComponentPipelineRun(customBranchComponentName, applicationName, testNamespace, "")
 				Expect(err).ShouldNot(HaveOccurred())
 
-				var image *imageInfo.Image
+				var image *v1.ConfigFile
 				Eventually(func() error {
 					image, err = build.ImageFromPipelineRun(plr)
 					return err
 				}, time.Minute*2, time.Second*10).Should(Succeed(), "timed out waiting for image manifest to become available in Quay")
 
-				labels := image.Config.Config.Labels
+				labels := image.Config.Labels
 				Expect(labels).ToNot(BeEmpty())
 
 				expiration, ok := labels["quay.expires-after"]
@@ -542,14 +542,14 @@ var _ = framework.BuildSuiteDescribe("Build service E2E tests", Label("build-ser
 					mergeResultSha = plr.Labels["pipelinesascode.tekton.dev/sha"]
 				})
 
-			It("does not have expiration set", func() {
-				var image *imageInfo.Image
+		It("does not have expiration set", func() {
+			var image *v1.ConfigFile
 				Eventually(func() error {
 					image, err = build.ImageFromPipelineRun(plr)
 					return err
 				}, time.Minute*2, time.Second*10).Should(Succeed(), "timed out waiting for image manifest to become available in Quay")
 
-				labels := image.Config.Config.Labels
+				labels := image.Config.Labels
 				Expect(labels).ToNot(BeEmpty())
 
 				expiration, ok := labels["quay.expires-after"]
