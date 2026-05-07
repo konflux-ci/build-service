@@ -1,5 +1,5 @@
 /*
-Copyright 2023-2025 Red Hat, Inc.
+Copyright 2023-2026 Red Hat, Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -16,162 +16,153 @@ limitations under the License.
 package webhook
 
 import (
-	"errors"
-	"reflect"
+	"os"
+	"path"
 	"testing"
+
+	. "github.com/onsi/gomega"
 )
 
-func TestConfigWebhookURLLoader_Load(t *testing.T) {
-	type fields struct {
-		mapping map[string]string
-	}
-	type args struct {
-		repositoryUrl string
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		args   args
-		want   string
-	}{
-		{
-			name: "No match should return an empty string",
-			fields: fields{
-				mapping: map[string]string{},
-			},
-			args: args{
-				repositoryUrl: "https://github.com/org/repo",
-			},
-			want: "",
-		},
-		{
-			name: "Multiple prefix' with an exact match",
-			fields: fields{
-				mapping: map[string]string{
-					"https://github.com/org/repo": "chosenTarget",
-					"https://github.com/org/":     "otherTarget1",
-					"https://github.com/":         "otherTarget2",
-					"https://gitlab.com/":         "otherTarget3",
-				},
-			},
-			args: args{
-				repositoryUrl: "https://github.com/org/repo",
-			},
-			want: "chosenTarget",
-		},
-		{
-			name: "No exact match, the longest prefix is chosen",
-			fields: fields{
-				mapping: map[string]string{
-					"https://github.com/org/": "chosenTarget",
-					"https://github.com/":     "otherTarget1",
-					"https://gitlab.com/":     "otherTarget2",
-				},
-			},
-			args: args{
-				repositoryUrl: "https://github.com/org/repo",
-			},
-			want: "chosenTarget",
-		},
-		{
-			name: "Match on an empty string",
-			fields: fields{
-				mapping: map[string]string{
-					"":                    "chosenTarget",
-					"https://gitlab.com/": "otherTarget2",
-				},
-			},
-			args: args{
-				repositoryUrl: "https://github.com/org/repo",
-			},
-			want: "chosenTarget",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := NewConfigWebhookURLLoader(tt.fields.mapping)
-			if got := c.Load(tt.args.repositoryUrl); got != tt.want {
-				t.Errorf("ConfigWebhookURLLoader.Load() = %v, want %v", got, tt.want)
-			}
-		})
-	}
+func Test_NewPaCWebhookMappingFromMap(t *testing.T) {
+	g := NewWithT(t)
+	t.Run("Should create empty mapping from data in map", func(t *testing.T) {
+		mappingConfig := map[string]string{
+			"https://githost.com":      "https://githost.proxy.net",
+			"https://githost.com/org/": "https://githost.org.proxy.net",
+		}
+		m := NewPaCWebhookMappingFromMap(mappingConfig)
+		g.Expect(m).ToNot(BeNil())
+		g.Expect(m.mapping).To(Equal(mappingConfig))
+	})
+
 }
 
-func TestLoadMappingFromFile(t *testing.T) {
-	type args struct {
-		path string
+func Test_NewPaCWebhookMapping(t *testing.T) {
+	g := NewWithT(t)
+
+	createTempWebhookConfigJson := func(t *testing.T, webhookConfigJson string) (string, error) {
+		tmpFile, err := os.CreateTemp("", "webhook-config-*.json")
+		if err != nil {
+			return "", err
+		}
+		defer func() {
+			_ = tmpFile.Close()
+		}()
+
+		configPath := tmpFile.Name()
+		t.Cleanup(func() {
+			_ = os.Remove(configPath)
+		})
+
+		_, err = tmpFile.WriteString(webhookConfigJson)
+		if err != nil {
+			return "", err
+		}
+		return configPath, nil
 	}
+
+	t.Run("Should create empty webhook mapping", func(t *testing.T) {
+		m, err := NewPaCWebhookMapping("")
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(m).ToNot(BeNil())
+	})
+
+	t.Run("Should create webhook mapping", func(t *testing.T) {
+		mappingConfig := `{
+			"https://githost.com":      "https://githost.proxy.net",
+			"https://githost.com/org/": "https://githost.org.proxy.net"
+		}`
+		configPath, err := createTempWebhookConfigJson(t, mappingConfig)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		m, err := NewPaCWebhookMapping(configPath)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(m).ToNot(BeNil())
+		g.Expect(m.mapping).To(HaveLen(2))
+		g.Expect(m.mapping).To(HaveKeyWithValue("https://githost.com", "https://githost.proxy.net"))
+		g.Expect(m.mapping).To(HaveKeyWithValue("https://githost.com/org/", "https://githost.org.proxy.net"))
+	})
+
+	t.Run("Should fail to create webhook mapping if config file doesn't exist", func(t *testing.T) {
+		m, err := NewPaCWebhookMapping(path.Join(os.TempDir(), "non-existent-file.json"))
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(m).To(BeNil())
+	})
+
+	t.Run("Should fail to create webhook mapping if config file has invalid json", func(t *testing.T) {
+		mappingConfig := `{
+			"https://githost.com":      "https://githost.proxy.net,
+			"https://githost.com/org/": "https://githost.org.proxy.net"
+		}`
+		configPath, err := createTempWebhookConfigJson(t, mappingConfig)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		m, err := NewPaCWebhookMapping(configPath)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(m).To(BeNil())
+	})
+}
+
+func Test_GetPaCWebhookUrlForGitRepo(t *testing.T) {
+	g := NewWithT(t)
 	tests := []struct {
-		name       string
-		args       args
-		fileReader FileReader
-		want       map[string]string
-		wantErr    bool
+		name          string
+		webhookConfig map[string]string
+		gitRepoUrl    string
+		expected      string
 	}{
 		{
-			name: "Load empty file",
-			args: args{path: "file"},
-			fileReader: func(name string) ([]byte, error) {
-				return []byte("{}"), nil
-			},
-			want:    map[string]string{},
-			wantErr: false,
+			name:          "Should return empty value if config is empty",
+			webhookConfig: nil,
+			gitRepoUrl:    "https://githost.com/org/repo.git",
+			expected:      "",
 		},
 		{
-			name: "Load non empty file",
-			args: args{path: "file"},
-			fileReader: func(name string) ([]byte, error) {
-				return []byte(`
-					{
-						"a": "1",
-						"b": "2"
-					}
-				`), nil
+			name: "Should return empty value if mapping for the git provider if not defined",
+			webhookConfig: map[string]string{
+				"https://githost.com":      "https://githost.proxy.net",
+				"https://githost.com/org/": "https://githost.org.proxy.net",
 			},
-			want: map[string]string{
-				"a": "1",
-				"b": "2",
-			},
-			wantErr: false,
+			gitRepoUrl: "https://myhost.com/org/repo.git",
+			expected:   "",
 		},
 		{
-			name: "The given path is an empty string",
-			args: args{path: ""},
-			fileReader: func(name string) ([]byte, error) {
-				return nil, nil
+			name: "Should return defined mapping",
+			webhookConfig: map[string]string{
+				"https://somehost.com":     "https://somehost.proxy.net",
+				"https://githost.com/":     "https://githost.proxy.net",
+				"https://anotherhost.com/": "https://anotherhost.proxy.net",
 			},
-			want:    map[string]string{},
-			wantErr: false,
+			gitRepoUrl: "https://githost.com/org/repo.git",
+			expected:   "https://githost.proxy.net",
 		},
 		{
-			name: "Load file with broken json",
-			args: args{path: "file"},
-			fileReader: func(name string) ([]byte, error) {
-				return []byte("abc"), nil
+			name: "Should return most matched mapping",
+			webhookConfig: map[string]string{
+				"https://githost.com":      "https://githost.proxy.net",
+				"https://githost.com/org/": "https://githost.org.proxy.net",
+				"https://somehost.com":     "https://somehost.proxy.net",
 			},
-			want:    nil,
-			wantErr: true,
+			gitRepoUrl: "https://githost.com/org/repo.git",
+			expected:   "https://githost.org.proxy.net",
 		},
 		{
-			name: "Load file random error",
-			args: args{path: "file"},
-			fileReader: func(name string) ([]byte, error) {
-				return nil, errors.New("Random Error")
+			name: "Should match empty key entry if no netter mapping is found",
+			webhookConfig: map[string]string{
+				"https://githost.com":      "https://githost.proxy.net",
+				"https://githost.com/org/": "https://githost.org.proxy.net",
+				"":                         "https://default.proxy.net",
+				"https://special.net":      "https://special.proxy.net",
 			},
-			want:    nil,
-			wantErr: true,
+			gitRepoUrl: "https://some-host.com/org/repo.git",
+			expected:   "https://default.proxy.net",
 		},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := LoadMappingFromFile(tt.args.path, tt.fileReader)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("LoadMappingFromFile() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("LoadMappingFromFile() = %v, want %v", got, tt.want)
-			}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m := PaCWebhookMapping{mapping: tc.webhookConfig}
+			got := m.GetPaCWebhookUrlForGitRepo(tc.gitRepoUrl)
+			g.Expect(got).To(Equal(tc.expected))
 		})
 	}
 }

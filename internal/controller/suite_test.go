@@ -19,7 +19,6 @@ package controllers
 import (
 	"context"
 	"go/build"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -68,6 +67,7 @@ func getCacheExcludedObjectsTypes() []client.Object {
 	return []client.Object{
 		&corev1.Secret{},
 		&corev1.ConfigMap{},
+		&corev1.Service{},
 	}
 }
 
@@ -140,14 +140,16 @@ var _ = BeforeSuite(func() {
 	})
 	Expect(err).ToNot(HaveOccurred())
 
-	webhookConfig, err := pacwebhook.LoadMappingFromFile("", os.ReadFile)
-	Expect(err).ToNot(HaveOccurred())
+	pacWebhookMapping := pacwebhook.NewPaCWebhookMappingFromMap(map[string]string{
+		"https://githost.com":           "https://githost.proxy.net",
+		"https://somehost.com/org/repo": "https://somehost.proxy.net",
+	})
 
 	err = (&ComponentBuildReconciler{
 		Client:             k8sManager.GetClient(),
 		Scheme:             k8sManager.GetScheme(),
 		EventRecorder:      k8sManager.GetEventRecorderFor("ComponentOnboarding"),
-		WebhookURLLoader:   pacwebhook.NewConfigWebhookURLLoader(webhookConfig),
+		PaCWebhookMapping:  pacWebhookMapping,
 		CredentialProvider: k8s.NewGitCredentialProvider(k8sManager.GetClient()),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())

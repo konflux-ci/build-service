@@ -204,13 +204,12 @@ func (r *ComponentBuildReconciler) ReconcileNewModel(ctx context.Context, req ct
 	}
 
 	var webhookSecretString string
-	var webhookTargetUrl string
 	var pacSecret *corev1.Secret
 	var gitClient gitprovider.GitProviderClient
 
 	// Get webhook data and PaC secret and git client if any action needs to be performed
 	if createOrUpdateRepository || len(versionsToOnboard) > 0 || len(versionsToOffboard) > 0 || len(versionsToTriggerBuildFor) > 0 || len(versionsToCreatePRFor) > 0 {
-		webhookSecretString, webhookTargetUrl, pacSecret, err = r.GetWebhookDataAndPacSecret(ctx, &component)
+		webhookSecretString, pacSecret, err = r.GetPacSecrets(ctx, &component)
 		if err != nil {
 			return ctrl.Result{}, r.handlePersistentError(ctx, &component, err, "Failed to get webhook data and PaC secret")
 		}
@@ -252,7 +251,7 @@ func (r *ComponentBuildReconciler) ReconcileNewModel(ctx context.Context, req ct
 	// Setup PaC webhook for the component git repository when GitHub/GitLab App is not configured
 	// (App-based repos skip webhook setup as the app manages webhooks automatically)
 	if len(versionsToOnboard) > 0 || len(versionsToCreatePRFor) > 0 {
-		if err := r.SetupPacWebhookWhenAppNotUsed(ctx, &component, gitClient, pacSecret.Data, webhookTargetUrl, webhookSecretString); err != nil {
+		if err := r.SetupPacWebhookWhenAppNotUsed(ctx, &component, gitClient, pacSecret.Data, webhookSecretString); err != nil {
 			return ctrl.Result{}, r.handlePersistentError(ctx, &component, err, "Failed to setup PaC webhook")
 		}
 	}
@@ -282,12 +281,17 @@ func (r *ComponentBuildReconciler) ReconcileNewModel(ctx context.Context, req ct
 			return ctrl.Result{Requeue: true}, nil
 		}
 
+		pacInternalUrl, err := r.getInternalPaCEndpoint(ctx)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+
 		// Trigger builds for the requested versions
 		successfullyTriggered := make([]string, 0, len(versionsToTriggerBuildFor))
 		for _, versionName := range versionsToTriggerBuildFor {
 			versionInfo := existingSpecVersions[versionName]
 			// Trigger PaC build by calling the incoming webhook endpoint
-			err := r.TriggerPaCBuild(ctx, &component, versionInfo.SanitizedVersion, versionInfo.Revision, webhookTargetUrl, incomingSecret, repository)
+			err := r.TriggerPaCBuild(ctx, &component, versionInfo.SanitizedVersion, versionInfo.Revision, pacInternalUrl, incomingSecret, repository)
 			if err != nil {
 				log.Error(err, "Failed to trigger build for component version", "Version", versionName)
 
@@ -684,8 +688,7 @@ func (r *ComponentBuildReconciler) cleanupComponentPaCResources(ctx context.Cont
 	// Generate version info from status for offboarding
 	existingStatusVersions := buildVersionInfoMap(component, true)
 
-	// Get webhook data and PaC secret
-	_, webhookTargetUrl, pacSecret, err := r.GetWebhookDataAndPacSecret(ctx, component)
+	_, pacSecret, err := r.GetPacSecrets(ctx, component)
 	if err != nil {
 		log.Info("Error during component cleanup: failed to get webhook data and PaC secret", "error", err)
 	}
@@ -697,10 +700,8 @@ func (r *ComponentBuildReconciler) cleanupComponentPaCResources(ctx context.Cont
 			log.Info("Error during component cleanup: failed to get git client", "error", err)
 		} else {
 			// Remove webhook only when other component isn't using the same git repository
-			if webhookTargetUrl != "" {
-				if err := r.RemovePacWebhook(ctx, component, gitClient, pacSecret.Data, webhookTargetUrl); err != nil {
-					log.Info("Error during component cleanup: failed to remove PaC webhook", "error", err)
-				}
+			if err := r.RemovePacWebhook(ctx, component, gitClient, pacSecret.Data); err != nil {
+				log.Info("Error during component cleanup: failed to remove PaC webhook", "error", err)
 			}
 
 			// Remove PaC configuration for all versions from the component git repository

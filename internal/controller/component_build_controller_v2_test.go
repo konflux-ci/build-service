@@ -79,8 +79,10 @@ var _ = Describe("Component build controller new model", func() {
 	)
 
 	var (
-		pacRouteKey  = types.NamespacedName{Name: pipelinesAsCodeRouteName, Namespace: pipelinesAsCodeNamespace}
-		pacSecretKey = types.NamespacedName{Name: PipelinesAsCodeGitHubAppSecretName, Namespace: BuildServiceNamespaceName}
+		pacRouteKey         = types.NamespacedName{Name: pipelinesAsCodeRouteName, Namespace: pipelinesAsCodeNamespaceOpenshift}
+		pacServiceKey       = types.NamespacedName{Name: pipelinesAsCodeRouteName, Namespace: pipelinesAsCodeNamespaceOpenshift}
+		internalPaCEndpoint = fmt.Sprintf("http://%s.%s.svc.cluster.local:8080", pacServiceKey.Name, pacServiceKey.Namespace)
+		pacSecretKey        = types.NamespacedName{Name: PipelinesAsCodeGitHubAppSecretName, Namespace: BuildServiceNamespaceName}
 	)
 
 	BeforeEach(func() {
@@ -98,7 +100,7 @@ var _ = Describe("Component build controller new model", func() {
 
 		_ = BeforeEach(func() {
 			createNamespace(namespace)
-			createNamespace(pipelinesAsCodeNamespace)
+			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, pacHost)
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",
@@ -397,7 +399,7 @@ var _ = Describe("Component build controller new model", func() {
 
 		_ = BeforeEach(func() {
 			createNamespace(namespace)
-			createNamespace(pipelinesAsCodeNamespace)
+			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, pacHost)
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",
@@ -487,7 +489,7 @@ var _ = Describe("Component build controller new model", func() {
 			})
 			Expect(k8sClient.Update(ctx, contextNamespace)).Should(Succeed())
 
-			createNamespace(pipelinesAsCodeNamespace)
+			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, pacHost)
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",
@@ -532,7 +534,7 @@ var _ = Describe("Component build controller new model", func() {
 
 		_ = BeforeEach(func() {
 			createNamespace(namespace)
-			createNamespace(pipelinesAsCodeNamespace)
+			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, pacHost)
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",
@@ -653,7 +655,7 @@ var _ = Describe("Component build controller new model", func() {
 
 		_ = BeforeEach(func() {
 			createNamespace(namespace)
-			createNamespace(pipelinesAsCodeNamespace)
+			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, pacHost)
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",
@@ -708,6 +710,10 @@ var _ = Describe("Component build controller new model", func() {
 			// Wait for v1 to be onboarded
 			component = waitForComponentStatusVersions(componentKey, 1)
 
+			// Create PaC endpoint Service
+			createPaCService(pacServiceKey)
+			defer deleteService(pacServiceKey)
+
 			// Now add trigger build action with invalid version
 			component.Spec.Actions.TriggerBuilds = []string{versionName, "nonexistent"}
 			Expect(k8sClient.Update(ctx, component)).To(Succeed())
@@ -734,7 +740,7 @@ var _ = Describe("Component build controller new model", func() {
 
 		_ = BeforeEach(func() {
 			createNamespace(namespace)
-			createNamespace(pipelinesAsCodeNamespace)
+			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, pacHost)
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",
@@ -1129,7 +1135,7 @@ var _ = Describe("Component build controller new model", func() {
 
 		_ = BeforeEach(func() {
 			createNamespace(namespace)
-			createNamespace(pipelinesAsCodeNamespace)
+			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, pacHost)
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",
@@ -1382,7 +1388,7 @@ var _ = Describe("Component build controller new model", func() {
 
 		_ = BeforeEach(func() {
 			createNamespace(namespace)
-			createNamespace(pipelinesAsCodeNamespace)
+			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, pacHost)
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",
@@ -2354,8 +2360,9 @@ spec:
 
 		_ = BeforeEach(func() {
 			createNamespace(namespace)
-			createNamespace(pipelinesAsCodeNamespace)
+			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, pacHost)
+			createPaCService(pacServiceKey)
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",
 				"github-private-key":    githubAppPrivateKey,
@@ -2383,22 +2390,20 @@ spec:
 			version2Name := "v2"
 
 			// Mock HTTP POST request
-			var capturedPostData map[string]interface{}
-			webhookTargetUrl := "https://" + pacHost
-
-			gock.New(webhookTargetUrl).
+			var capturedPostData map[string]any
+			gock.New(internalPaCEndpoint).
 				Post("/incoming").
 				SetMatcher(gock.NewBasicMatcher()).
 				AddMatcher(gock.MatchFunc(func(req *http.Request, _ *gock.Request) (bool, error) {
 					defer GinkgoRecover()
-					var bodyJson map[string]interface{}
+					var bodyJson map[string]any
 					if err := json.NewDecoder(req.Body).Decode(&bodyJson); err != nil {
 						return false, err
 					}
 					capturedPostData = bodyJson
 					return true, nil
 				})).
-				Reply(202).JSON(map[string]interface{}{})
+				Reply(202).JSON(map[string]any{})
 
 			// First onboard versions
 			component := getComponentData(componentConfig{
@@ -2449,29 +2454,121 @@ spec:
 			validatePaCRepositoryIncomings(repository, []string{"main"})
 		})
 
+		It("should trigger build if proxy is used for git events to PaC webhook", func() {
+			version1Name := "v1"
+			gitRepoUrl := "https://githost.com/org/repo"
+
+			// Mock HTTP POST request
+			var capturedPostData map[string]any
+			gock.New(internalPaCEndpoint).
+				Post("/incoming").
+				SetMatcher(gock.NewBasicMatcher()).
+				AddMatcher(gock.MatchFunc(func(req *http.Request, _ *gock.Request) (bool, error) {
+					defer GinkgoRecover()
+					var bodyJson map[string]any
+					if err := json.NewDecoder(req.Body).Decode(&bodyJson); err != nil {
+						return false, err
+					}
+					capturedPostData = bodyJson
+					return true, nil
+				})).
+				Reply(202).JSON(map[string]any{})
+
+			isSetupPaCWebhookInvoked := false
+			SetupPaCWebhookFunc = func(repoUrl, webhookUrl, webhookSecret string) error {
+				defer GinkgoRecover()
+				isSetupPaCWebhookInvoked = true
+				Expect(repoUrl).To(Equal(gitRepoUrl))
+				// The mapping between git repo URL and webhook URL is defined at controller creation in suite_test.go
+				Expect(webhookUrl).To(Equal("https://githost.proxy.net"))
+				Expect(webhookSecret).ToNot(BeEmpty())
+				return nil
+			}
+
+			// Use token-based auth instead of GitHub App
+			scmSecretKey := types.NamespacedName{Name: "gitlab-token-secret", Namespace: namespace}
+			scmSecretData := map[string]string{
+				"password": "test-token",
+			}
+			labels := map[string]string{
+				"appstudio.redhat.com/credentials": "scm",
+				"appstudio.redhat.com/scm.host":    "githost.com",
+			}
+			createSCMSecret(scmSecretKey, scmSecretData, corev1.SecretTypeBasicAuth, nil, labels)
+			defer deleteSecret(scmSecretKey)
+
+			// Onboard component
+			component := getComponentData(componentConfig{
+				componentKey: componentKey,
+				annotations: map[string]string{
+					"git-provider": "gitlab",
+				},
+				gitURL: gitRepoUrl,
+				versions: []compapiv1alpha1.ComponentVersion{
+					{Name: version1Name, Revision: "main"},
+				},
+			})
+			createComponent(component)
+
+			// Wait for the version to be onboarded
+			Eventually(func() bool { return isSetupPaCWebhookInvoked }, timeout, interval).Should(BeTrue())
+			component = waitForComponentStatusVersions(componentKey, 1)
+
+			// Get repository name for verification
+			repositoryName, err := generatePaCRepositoryNameFromGitUrl(component.Spec.Source.GitURL)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Now add trigger build action using TriggerBuild field
+			component.Spec.Actions.TriggerBuild = version1Name
+			Expect(k8sClient.Update(ctx, component)).To(Succeed())
+
+			// Get incoming secret for verification (created after trigger)
+			incomingSecretName := getPaCIncomingSecretName(repositoryName)
+			incomingSecretKey := types.NamespacedName{Namespace: component.Namespace, Name: incomingSecretName}
+			waitSecretCreated(incomingSecretKey)
+
+			var incomingSecret corev1.Secret
+			Expect(k8sClient.Get(ctx, incomingSecretKey, &incomingSecret)).To(Succeed())
+			secretValue := string(incomingSecret.Data[pacIncomingSecretKey])
+
+			// TriggerBuild action should be removed after successful trigger
+			component = waitForComponentSpecActionEmpty(componentKey, "trigger", "build")
+
+			// Verify HTTP POST request was made
+			Eventually(func() bool { return capturedPostData != nil }, timeout, interval).Should(BeTrue())
+
+			// Verify all POST request fields
+			v1PipelineRunName := component.Name + "-" + version1Name + pipelineRunOnPushSuffix
+			verifyPacWebhookIncomingPostData(capturedPostData, repositoryName, secretValue, v1PipelineRunName, namespace, "main", component.Spec.Source.GitURL)
+
+			// Verify Repository CR was created with correct URL and no GitProvider (GitHub App)
+			repository := validatePaCRepository(component, scmSecretKey.Name, "password")
+
+			// Verify Repository.Spec.Incomings was updated
+			validatePaCRepositoryIncomings(repository, []string{"main"})
+		})
+
 		It("should trigger builds for subset of onboarded versions with different revisions", func() {
 			version1Name := "v1"
 			version2Name := "v2"
 			version3Name := "v3"
 
 			// Mock HTTP POST requests
-			var capturedPostData []map[string]interface{}
-			webhookTargetUrl := "https://" + pacHost
-
-			gock.New(webhookTargetUrl).
+			var capturedPostData []map[string]any
+			gock.New(internalPaCEndpoint).
 				Post("/incoming").
 				Times(2). // Expect 2 POST requests (one for v1, one for v2)
 				SetMatcher(gock.NewBasicMatcher()).
 				AddMatcher(gock.MatchFunc(func(req *http.Request, _ *gock.Request) (bool, error) {
 					defer GinkgoRecover()
-					var bodyJson map[string]interface{}
+					var bodyJson map[string]any
 					if err := json.NewDecoder(req.Body).Decode(&bodyJson); err != nil {
 						return false, err
 					}
 					capturedPostData = append(capturedPostData, bodyJson)
 					return true, nil
 				})).
-				Reply(202).JSON(map[string]interface{}{})
+				Reply(202).JSON(map[string]any{})
 
 			// First onboard versions
 			component := getComponentData(componentConfig{
@@ -2517,7 +2614,7 @@ spec:
 			v2PipelineRunName := component.Name + "-" + version2Name + pipelineRunOnPushSuffix
 
 			// Find which request is for which version
-			var v1Data, v2Data map[string]interface{}
+			var v1Data, v2Data map[string]any
 			for _, data := range capturedPostData {
 				pipelinerun := data["pipelinerun"].(string)
 				if pipelinerun == v1PipelineRunName {
@@ -2548,23 +2645,21 @@ spec:
 			version3Name := "v3"
 
 			// Mock HTTP POST requests
-			var capturedPostData []map[string]interface{}
-			webhookTargetUrl := "https://" + pacHost
-
-			gock.New(webhookTargetUrl).
+			var capturedPostData []map[string]any
+			gock.New(internalPaCEndpoint).
 				Post("/incoming").
 				Times(2). // Expect 2 POST requests (one for v1, one for v2)
 				SetMatcher(gock.NewBasicMatcher()).
 				AddMatcher(gock.MatchFunc(func(req *http.Request, _ *gock.Request) (bool, error) {
 					defer GinkgoRecover()
-					var bodyJson map[string]interface{}
+					var bodyJson map[string]any
 					if err := json.NewDecoder(req.Body).Decode(&bodyJson); err != nil {
 						return false, err
 					}
 					capturedPostData = append(capturedPostData, bodyJson)
 					return true, nil
 				})).
-				Reply(202).JSON(map[string]interface{}{})
+				Reply(202).JSON(map[string]any{})
 
 			// First onboard versions - all using same revision
 			component := getComponentData(componentConfig{
@@ -2610,7 +2705,7 @@ spec:
 			v2PipelineRunName := component.Name + "-" + version2Name + pipelineRunOnPushSuffix
 
 			// Find which request is for which version
-			var v1Data, v2Data map[string]interface{}
+			var v1Data, v2Data map[string]any
 			for _, data := range capturedPostData {
 				pipelinerun := data["pipelinerun"].(string)
 				if pipelinerun == v1PipelineRunName {
@@ -2641,23 +2736,21 @@ spec:
 			version3Name := "v3"
 
 			// Mock HTTP POST requests
-			var capturedPostData []map[string]interface{}
-			webhookTargetUrl := "https://" + pacHost
-
-			gock.New(webhookTargetUrl).
+			var capturedPostData []map[string]any
+			gock.New(internalPaCEndpoint).
 				Post("/incoming").
 				Times(1). // Expect 1 POST request (only for v2, v1 is being offboarded)
 				SetMatcher(gock.NewBasicMatcher()).
 				AddMatcher(gock.MatchFunc(func(req *http.Request, _ *gock.Request) (bool, error) {
 					defer GinkgoRecover()
-					var bodyJson map[string]interface{}
+					var bodyJson map[string]any
 					if err := json.NewDecoder(req.Body).Decode(&bodyJson); err != nil {
 						return false, err
 					}
 					capturedPostData = append(capturedPostData, bodyJson)
 					return true, nil
 				})).
-				Reply(202).JSON(map[string]interface{}{})
+				Reply(202).JSON(map[string]any{})
 
 			// First onboard versions
 			component := getComponentData(componentConfig{
@@ -2739,13 +2832,11 @@ spec:
 			version2Name := "v2"
 
 			// Track which POST requests were made
-			var capturedPostData []map[string]interface{}
-			webhookTargetUrl := "https://" + pacHost
-
+			var capturedPostData []map[string]any
 			// Create matcher function that captures all requests
 			captureRequestMatcher := gock.MatchFunc(func(req *http.Request, _ *gock.Request) (bool, error) {
 				defer GinkgoRecover()
-				var bodyJson map[string]interface{}
+				var bodyJson map[string]any
 				if err := json.NewDecoder(req.Body).Decode(&bodyJson); err != nil {
 					return false, err
 				}
@@ -2755,25 +2846,25 @@ spec:
 
 			// Mock HTTP POST requests - gock consumes mocks in FIFO order
 			// 1st request: succeed (v1)
-			gock.New(webhookTargetUrl).
+			gock.New(internalPaCEndpoint).
 				Post("/incoming").
 				SetMatcher(gock.NewBasicMatcher()).
 				AddMatcher(captureRequestMatcher).
-				Reply(202).JSON(map[string]interface{}{})
+				Reply(202).JSON(map[string]any{})
 
 			// 2nd request: fail (v2 first attempt)
-			gock.New(webhookTargetUrl).
+			gock.New(internalPaCEndpoint).
 				Post("/incoming").
 				SetMatcher(gock.NewBasicMatcher()).
 				AddMatcher(captureRequestMatcher).
-				Reply(500).JSON(map[string]interface{}{"error": "internal server error"})
+				Reply(500).JSON(map[string]any{"error": "internal server error"})
 
 			// 3rd request: succeed (v2 retry)
-			gock.New(webhookTargetUrl).
+			gock.New(internalPaCEndpoint).
 				Post("/incoming").
 				SetMatcher(gock.NewBasicMatcher()).
 				AddMatcher(captureRequestMatcher).
-				Reply(202).JSON(map[string]interface{}{})
+				Reply(202).JSON(map[string]any{})
 
 			// First onboard both versions
 			component := getComponentData(componentConfig{
@@ -2821,7 +2912,7 @@ spec:
 			// Count POST requests by version
 			v1Count := 0
 			v2Count := 0
-			var v1Data, v2Data map[string]interface{}
+			var v1Data, v2Data map[string]any
 			for _, data := range capturedPostData {
 				pipelinerun := data["pipelinerun"].(string)
 				if pipelinerun == v1PipelineRunName {
@@ -2863,7 +2954,7 @@ spec:
 
 		_ = BeforeEach(func() {
 			createNamespace(namespace)
-			createNamespace(pipelinesAsCodeNamespace)
+			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, pacHost)
 
 			// Use token-based auth instead of GitHub App to test ensureWebhookSecret
@@ -3045,7 +3136,7 @@ spec:
 	// These tests verify onboarding, trigger builds, and configuration creation using token authentication (GitLab, GitHub, Forgejo)
 	Context("Token-based authentication", func() {
 		_ = BeforeEach(func() {
-			createNamespace(pipelinesAsCodeNamespace)
+			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, pacHost)
 			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
 
@@ -3218,7 +3309,7 @@ spec:
 
 		_ = BeforeEach(func() {
 			createNamespace(namespace)
-			createNamespace(pipelinesAsCodeNamespace)
+			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, pacHost)
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",
@@ -3412,8 +3503,9 @@ spec:
 
 		_ = BeforeEach(func() {
 			createNamespace(namespace)
-			createNamespace(pipelinesAsCodeNamespace)
+			createNamespace(pipelinesAsCodeNamespaceOpenshift)
 			createRoute(pacRouteKey, pacHost)
+			createPaCService(pacServiceKey)
 			pacSecretData := map[string]string{
 				"github-application-id": "12345",
 				"github-private-key":    githubAppPrivateKey,
@@ -3433,6 +3525,7 @@ spec:
 
 		_ = AfterEach(func() {
 			deleteComponentAndOwnedResources(componentKey)
+			deleteService(pacServiceKey)
 			gock.Off()
 		})
 
@@ -3540,23 +3633,21 @@ spec:
 			}
 
 			// Track trigger build POST requests
-			var capturedPostData []map[string]interface{}
-			webhookTargetUrl := "https://" + pacHost
-
-			gock.New(webhookTargetUrl).
+			var capturedPostData []map[string]any
+			gock.New(internalPaCEndpoint).
 				Post("/incoming").
 				Persist(). // Allow multiple calls - exact count verified later in test
 				SetMatcher(gock.NewBasicMatcher()).
 				AddMatcher(gock.MatchFunc(func(req *http.Request, _ *gock.Request) (bool, error) {
 					defer GinkgoRecover()
-					var bodyJson map[string]interface{}
+					var bodyJson map[string]any
 					if err := json.NewDecoder(req.Body).Decode(&bodyJson); err != nil {
 						return false, err
 					}
 					capturedPostData = append(capturedPostData, bodyJson)
 					return true, nil
 				})).
-				Reply(202).JSON(map[string]interface{}{})
+				Reply(202).JSON(map[string]any{})
 
 			// Verify SetupPaCWebhookFunc is NOT called when using GitHub App
 			SetupPaCWebhookFunc = func(string, string, string) error {
@@ -3669,7 +3760,7 @@ spec:
 			}, timeout, interval).Should(Equal(1))
 
 			// Find v2 POST data
-			var v2Data map[string]interface{}
+			var v2Data map[string]any
 			v2PipelineRunName := component.Name + "-" + version2Name + pipelineRunOnPushSuffix
 			for _, data := range capturedPostData {
 				if pipelinerun, ok := data["pipelinerun"].(string); ok && pipelinerun == v2PipelineRunName {
@@ -3912,23 +4003,21 @@ spec:
 			}
 
 			// Track trigger build POST requests
-			var capturedPostData []map[string]interface{}
-			webhookTargetUrl := "https://" + pacHost
-
-			gock.New(webhookTargetUrl).
+			var capturedPostData []map[string]any
+			gock.New(internalPaCEndpoint).
 				Post("/incoming").
 				Persist(). // Allow multiple calls - exact count verified later in test
 				SetMatcher(gock.NewBasicMatcher()).
 				AddMatcher(gock.MatchFunc(func(req *http.Request, _ *gock.Request) (bool, error) {
 					defer GinkgoRecover()
-					var bodyJson map[string]interface{}
+					var bodyJson map[string]any
 					if err := json.NewDecoder(req.Body).Decode(&bodyJson); err != nil {
 						return false, err
 					}
 					capturedPostData = append(capturedPostData, bodyJson)
 					return true, nil
 				})).
-				Reply(202).JSON(map[string]interface{}{})
+				Reply(202).JSON(map[string]any{})
 
 			// PHASE 1: Create component with v1 and v2 for onboarding
 			// CreateConfiguration includes v1 (valid) and "nonexistent-v1" (invalid)
@@ -4045,7 +4134,7 @@ spec:
 			}, timeout, interval).Should(Equal(1))
 
 			// Find v2 POST data
-			var v2Data map[string]interface{}
+			var v2Data map[string]any
 			v2PipelineRunName := component.Name + "-" + version2Name + pipelineRunOnPushSuffix
 			for _, data := range capturedPostData {
 				if pipelinerun, ok := data["pipelinerun"].(string); ok && pipelinerun == v2PipelineRunName {
@@ -4119,7 +4208,7 @@ spec:
 			}, timeout, interval).Should(Equal(2))
 
 			// Find v1 POST data
-			var v1Data map[string]interface{}
+			var v1Data map[string]any
 			v1PipelineRunName := component.Name + "-" + version1Name + pipelineRunOnPushSuffix
 			for _, data := range capturedPostData {
 				if pipelinerun, ok := data["pipelinerun"].(string); ok && pipelinerun == v1PipelineRunName {
