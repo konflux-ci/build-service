@@ -200,7 +200,7 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponentOldModel(ctx context.
 	}
 
 	var pacRepositoryName string
-	if pacRepositoryName, err = r.ensurePaCRepository(ctx, component, pacSecret, nil, newModel); err != nil {
+	if pacRepositoryName, err = r.ensurePaCRepository(ctx, component, pacSecret, nil, nil, newModel); err != nil {
 		return "", err
 	}
 	log.Info("Using PaC repository", "PaCRepositoryName", pacRepositoryName, l.Action, l.ActionView)

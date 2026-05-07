@@ -739,7 +739,7 @@ func TestGeneratePACRepositoryOldModel(t *testing.T) {
 				},
 				Data: tt.pacConfig,
 			}
-			pacRepo, err := generatePACRepository(component, secret, nil, false)
+			pacRepo, err := generatePACRepository(component, secret, nil, nil, false)
 
 			if err != nil {
 				t.Errorf("Failed to generate PaC repository object. Cause: %v", err)
@@ -796,7 +796,7 @@ func TestPaCRepoAddParamWorkspaceOldModel(t *testing.T) {
 	}
 
 	t.Run("add to Spec.Params", func(t *testing.T) {
-		repository, _ := generatePACRepository(*component, secret, nil, false)
+		repository, _ := generatePACRepository(*component, secret, nil, nil, false)
 		pacRepoAddParamWorkspaceName(repository, workspaceName)
 
 		params := convertCustomParamsToMap(repository)
@@ -806,7 +806,7 @@ func TestPaCRepoAddParamWorkspaceOldModel(t *testing.T) {
 	})
 
 	t.Run("override existing workspace parameter, unset other fields btw", func(t *testing.T) {
-		repository, _ := generatePACRepository(*component, secret, nil, false)
+		repository, _ := generatePACRepository(*component, secret, nil, nil, false)
 		params := []pacv1alpha1.Params{
 			{
 				Name:      pacCustomParamAppstudioWorkspace,

@@ -110,7 +110,8 @@ func TestGeneratePaCPipelineRunForComponent(t *testing.T) {
 		t.Error("generatePaCPipelineRunForComponent(): wrong pipelines.appstudio.openshift.io/type label value")
 	}
 
-	onCel := `event == "pull_request" && target_branch == "custom-branch" && ( "./base_context/***".pathChanged() || ".tekton/my-component-version1-pull-request.yaml".pathChanged() )`
+	onCel := fmt.Sprintf(`event == "pull_request" && target_branch == "custom-branch" && %s == "true" && ( "./base_context/***".pathChanged() || ".tekton/my-component-version1-pull-request.yaml".pathChanged() )`, BuildsEnabledParamName)
+
 	if pipelineRun.Annotations["pipelinesascode.tekton.dev/on-cel-expression"] != onCel {
 		t.Errorf("generatePaCPipelineRunForComponent(): wrong pipelinesascode.tekton.dev/on-cel-expression annotation value")
 	}
@@ -276,14 +277,14 @@ func TestGenerateCelExpressionForPipeline(t *testing.T) {
 	}{
 		{
 			name:        "should generate cel expression for component that occupies whole git repository",
-			wantOnPull:  `event == "pull_request" && target_branch == "my-branch"`,
-			wantOnPush:  `event == "push" && target_branch == "my-branch"`,
+			wantOnPull:  fmt.Sprintf(`event == "pull_request" && target_branch == "my-branch" && %s == "true"`, BuildsEnabledParamName),
+			wantOnPush:  fmt.Sprintf(`event == "push" && target_branch == "my-branch" && %s == "true"`, BuildsEnabledParamName),
 			versionInfo: &VersionInfo{Revision: "my-branch", SanitizedVersion: "version1"},
 		},
 		{
 			name:        "should generate cel expression for component with context directory, without dokerfile",
-			wantOnPull:  `event == "pull_request" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/comp1-version1-pull-request.yaml".pathChanged() )`,
-			wantOnPush:  `event == "push" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/comp1-version1-push.yaml".pathChanged() )`,
+			wantOnPull:  fmt.Sprintf(`event == "pull_request" && target_branch == "my-branch" && %s == "true" && ( "component-dir/***".pathChanged() || ".tekton/comp1-version1-pull-request.yaml".pathChanged() )`, BuildsEnabledParamName),
+			wantOnPush:  fmt.Sprintf(`event == "push" && target_branch == "my-branch" && %s == "true" && ( "component-dir/***".pathChanged() || ".tekton/comp1-version1-push.yaml".pathChanged() )`, BuildsEnabledParamName),
 			versionInfo: &VersionInfo{Revision: "my-branch", Context: "component-dir", SanitizedVersion: "version1"},
 		},
 		{
@@ -291,8 +292,8 @@ func TestGenerateCelExpressionForPipeline(t *testing.T) {
 			isDockerfileExist: func(repoUrl, branch, dockerfilePath string) (bool, error) {
 				return true, nil
 			},
-			wantOnPull:  `event == "pull_request" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/comp1-version1-pull-request.yaml".pathChanged() )`,
-			wantOnPush:  `event == "push" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/comp1-version1-push.yaml".pathChanged() )`,
+			wantOnPull:  fmt.Sprintf(`event == "pull_request" && target_branch == "my-branch" && %s == "true" && ( "component-dir/***".pathChanged() || ".tekton/comp1-version1-pull-request.yaml".pathChanged() )`, BuildsEnabledParamName),
+			wantOnPush:  fmt.Sprintf(`event == "push" && target_branch == "my-branch" && %s == "true" && ( "component-dir/***".pathChanged() || ".tekton/comp1-version1-push.yaml".pathChanged() )`, BuildsEnabledParamName),
 			versionInfo: &VersionInfo{Revision: "my-branch", Context: "component-dir", DockerfileURI: "dockerfile/Dockerfile", SanitizedVersion: "version1"},
 		},
 		{
@@ -300,8 +301,8 @@ func TestGenerateCelExpressionForPipeline(t *testing.T) {
 			isDockerfileExist: func(repoUrl, branch, dockerfilePath string) (bool, error) {
 				return false, nil
 			},
-			wantOnPull:  `event == "pull_request" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/comp1-version1-pull-request.yaml".pathChanged() || "docker-root-dir/Dockerfile".pathChanged() )`,
-			wantOnPush:  `event == "push" && target_branch == "my-branch" && ( "component-dir/***".pathChanged() || ".tekton/comp1-version1-push.yaml".pathChanged() || "docker-root-dir/Dockerfile".pathChanged() )`,
+			wantOnPull:  fmt.Sprintf(`event == "pull_request" && target_branch == "my-branch" && %s == "true" && ( "component-dir/***".pathChanged() || ".tekton/comp1-version1-pull-request.yaml".pathChanged() || "docker-root-dir/Dockerfile".pathChanged() )`, BuildsEnabledParamName),
+			wantOnPush:  fmt.Sprintf(`event == "push" && target_branch == "my-branch" && %s == "true" && ( "component-dir/***".pathChanged() || ".tekton/comp1-version1-push.yaml".pathChanged() || "docker-root-dir/Dockerfile".pathChanged() )`, BuildsEnabledParamName),
 			versionInfo: &VersionInfo{Revision: "my-branch", Context: "component-dir", DockerfileURI: "docker-root-dir/Dockerfile", SanitizedVersion: "version1"},
 		},
 		{
@@ -852,6 +853,8 @@ func TestGeneratePACRepository(t *testing.T) {
 		repoSettings                     *compapiv1alpha1.RepositorySettings
 		expectedGithubAppTokenScopeRepos *[]string
 		expectedCommentStrategy          string
+		skipBuildsMap                    map[string]bool
+		expectedSkipBuildParams          map[string]string
 	}{
 		{
 			name:    "should create PaC repository for GitHub application",
@@ -864,6 +867,8 @@ func TestGeneratePACRepository(t *testing.T) {
 			repoSettings:                     nil,
 			expectedGithubAppTokenScopeRepos: nil,
 			expectedCommentStrategy:          "",
+			skipBuildsMap:                    map[string]bool{"main": false, "feature": true},
+			expectedSkipBuildParams:          map[string]string{fmt.Sprintf("%s == main", PacTargetBranchFilterKey): "true", fmt.Sprintf("%s == feature", PacTargetBranchFilterKey): "false"},
 		},
 		{
 			name:    "should create PaC repository for GitHub application even if Github webhook configured",
@@ -877,6 +882,8 @@ func TestGeneratePACRepository(t *testing.T) {
 			repoSettings:                     nil,
 			expectedGithubAppTokenScopeRepos: nil,
 			expectedCommentStrategy:          "",
+			skipBuildsMap:                    map[string]bool{"main": true, "feature": false},
+			expectedSkipBuildParams:          map[string]string{fmt.Sprintf("%s == main", PacTargetBranchFilterKey): "false", fmt.Sprintf("%s == feature", PacTargetBranchFilterKey): "true"},
 		},
 		{
 			name:    "should create PaC repository for GitHub webhook",
@@ -1168,7 +1175,7 @@ func TestGeneratePACRepository(t *testing.T) {
 				},
 				Data: tt.pacConfig,
 			}
-			pacRepo, err := generatePACRepository(component, secret, &component.Spec.RepositorySettings, true)
+			pacRepo, err := generatePACRepository(component, secret, &component.Spec.RepositorySettings, tt.skipBuildsMap, true)
 
 			if err != nil {
 				t.Errorf("Failed to generate PaC repository object. Cause: %v", err)
@@ -1203,6 +1210,21 @@ func TestGeneratePACRepository(t *testing.T) {
 			}
 			if pacRepo.Spec.Settings.Gitlab.CommentStrategy != tt.expectedCommentStrategy {
 				t.Errorf("Wrong settings Gitlab.CommentStrategy in PaC repository: %s, want %s", pacRepo.Spec.Settings.Gitlab.CommentStrategy, tt.expectedCommentStrategy)
+			}
+
+			if tt.expectedSkipBuildParams != nil {
+				for filter, enabledValue := range tt.expectedSkipBuildParams {
+					foundParam := false
+					for _, repoParam := range *pacRepo.Spec.Params {
+						if repoParam.Name == BuildsEnabledParamName && repoParam.Filter == filter && repoParam.Value == enabledValue {
+							foundParam = true
+							break
+						}
+					}
+					if !foundParam {
+						t.Errorf("Skip build param not found for name: %s, filter: %s, value: %s", BuildsEnabledParamName, filter, enabledValue)
+					}
+				}
 			}
 		})
 	}
@@ -1251,7 +1273,7 @@ func TestPaCRepoAddParamWorkspace(t *testing.T) {
 	}
 
 	t.Run("add to Spec.Params", func(t *testing.T) {
-		repository, _ := generatePACRepository(*component, secret, nil, true)
+		repository, _ := generatePACRepository(*component, secret, nil, nil, true)
 		pacRepoAddParamWorkspaceName(repository, workspaceName)
 
 		params := convertCustomParamsToMap(repository)
@@ -1261,7 +1283,7 @@ func TestPaCRepoAddParamWorkspace(t *testing.T) {
 	})
 
 	t.Run("override existing workspace parameter, unset other fields btw", func(t *testing.T) {
-		repository, _ := generatePACRepository(*component, secret, nil, true)
+		repository, _ := generatePACRepository(*component, secret, nil, nil, true)
 		params := []pacv1alpha1.Params{
 			{
 				Name:      pacCustomParamAppstudioWorkspace,
