@@ -135,7 +135,7 @@ func (r *ComponentDependencyUpdateReconciler) SetupWithManager(manager ctrl.Mana
 
 				// Ensure we have not finished processing
 				// when finalizer is there together with annotation that means some other controller updated finalizers and there was race
-				if new.ObjectMeta.Annotations != nil && new.ObjectMeta.Annotations[NudgeProcessedAnnotationName] != "" && !controllerutil.ContainsFinalizer(new, NudgeFinalizer){
+				if new.ObjectMeta.Annotations != nil && new.ObjectMeta.Annotations[NudgeProcessedAnnotationName] != "" && !controllerutil.ContainsFinalizer(new, NudgeFinalizer) {
 					return false
 				}
 				return true

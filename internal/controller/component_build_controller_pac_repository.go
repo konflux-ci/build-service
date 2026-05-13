@@ -729,23 +729,22 @@ func generatePaCRepositoryNameFromGitUrl(urlStr string) (string, error) {
 	// Convert to lowercase and combine host and path
 	sanitized := strings.ToLower(u.Host + u.Path)
 
-	// Replace slashes with dots
-	sanitized = strings.ReplaceAll(sanitized, "/", ".")
+	// Replace slashes with hyphens
+	sanitized = strings.ReplaceAll(sanitized, "/", "-")
 
-	// Replace invalid characters with hyphens, keep only alphanumeric, hyphens, and dots
-	reg := regexp.MustCompile(`[^a-z0-9\-.]`)
+	// Replace dots with hyphens
+	sanitized = strings.ReplaceAll(sanitized, ".", "-")
+
+	// Replace invalid characters with hyphens, keep only alphanumeric and hyphens
+	reg := regexp.MustCompile(`[^a-z0-9\-]`)
 	sanitized = reg.ReplaceAllString(sanitized, "-")
-
-	// Remove duplicated dots
-	dupDotsReg := regexp.MustCompile(`\.+`)
-	sanitized = dupDotsReg.ReplaceAllString(sanitized, ".")
 
 	// Remove duplicated hyphens
 	dupHyphensReg := regexp.MustCompile(`-+`)
 	sanitized = dupHyphensReg.ReplaceAllString(sanitized, "-")
 
-	// Remove leading/trailing dots and hyphens
-	sanitized = strings.Trim(sanitized, "-.")
+	// Remove leading/trailing hyphens
+	sanitized = strings.Trim(sanitized, "-")
 
 	// Ensure length is not bigger than 230 chars
 	if len(sanitized) > 230 {
