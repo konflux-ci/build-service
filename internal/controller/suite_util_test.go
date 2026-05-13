@@ -811,11 +811,7 @@ func validatePaCRepository(component *compapiv1alpha1.Component, secretName, sec
 		// Token auth - validate GitProvider config
 		Expect(repository.Spec.GitProvider).NotTo(BeNil())
 
-		// Determine expected GitProvider type (handle forgejo -> gitea mapping)
 		expectedType := gitProvider
-		if gitProvider == "forgejo" {
-			expectedType = "gitea"
-		}
 		Expect(repository.Spec.GitProvider.Type).To(Equal(expectedType))
 
 		// Determine expected GitProvider URL from source URL

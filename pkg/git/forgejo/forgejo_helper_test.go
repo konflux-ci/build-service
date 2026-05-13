@@ -91,13 +91,7 @@ func TestGetBaseUrl(t *testing.T) {
 		err     error
 	}{
 		{
-			name:    "SaaS Gitea",
-			repoUrl: "https://forgejo.com/owner/repository",
-			want:    "https://forgejo.com/",
-			err:     nil,
-		},
-		{
-			name:    "Self-hosted Gitea",
+			name:    "Self-hosted Forgejo",
 			repoUrl: "https://forgejo.example.com/owner/repository",
 			want:    "https://forgejo.example.com/",
 			err:     nil,

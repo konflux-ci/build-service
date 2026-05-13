@@ -17,7 +17,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logger "sigs.k8s.io/controller-runtime/pkg/log"
@@ -94,7 +94,7 @@ type updateTarget struct {
 type ComponentDependenciesUpdater struct {
 	Client             client.Client
 	Scheme             *runtime.Scheme
-	EventRecorder      record.EventRecorder
+	EventRecorder      events.EventRecorder
 	CredentialProvider *k8s.GitCredentialProvider
 }
 
@@ -153,7 +153,7 @@ var DisableAllPackageRules = PackageRule{MatchPackagePatterns: []string{"*"}, En
 
 var GenerateRenovateConfigForNudge func(target updateTarget, buildResult *BuildResult, gitRepoAtShaLink string, simpleBranchName bool) (RenovateConfig, error) = generateRenovateConfigForNudge
 
-func NewComponentDependenciesUpdater(client client.Client, scheme *runtime.Scheme, eventRecorder record.EventRecorder) *ComponentDependenciesUpdater {
+func NewComponentDependenciesUpdater(client client.Client, scheme *runtime.Scheme, eventRecorder events.EventRecorder) *ComponentDependenciesUpdater {
 	return &ComponentDependenciesUpdater{Client: client, Scheme: scheme, EventRecorder: eventRecorder, CredentialProvider: k8s.NewGitCredentialProvider(client)}
 }
 
@@ -252,7 +252,7 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsGithubApp(ctx context.Cont
 	pacSecret := corev1.Secret{}
 	globalPaCSecretKey := types.NamespacedName{Namespace: common.BuildServiceNamespaceName, Name: common.PipelinesAsCodeGitHubAppSecretName}
 	if err := u.Client.Get(ctx, globalPaCSecretKey, &pacSecret); err != nil {
-		u.EventRecorder.Event(&pacSecret, "Warning", "ErrorReadingPaCSecret", err.Error())
+		u.EventRecorder.Eventf(&pacSecret, nil, "Warning", "ErrorReadingPaCSecret", "ReadPaCSecret", err.Error())
 		if errors.IsNotFound(err) {
 			log.Error(err, "not found Pipelines as Code secret in %s namespace: %w", globalPaCSecretKey.Namespace, err, l.Action, l.ActionView)
 		} else {

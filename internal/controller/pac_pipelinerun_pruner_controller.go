@@ -24,7 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/selection"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -42,7 +42,7 @@ import (
 type PaCPipelineRunPrunerReconciler struct {
 	Client        client.Client
 	Scheme        *runtime.Scheme
-	EventRecorder record.EventRecorder
+	EventRecorder events.EventRecorder
 }
 
 // SetupWithManager sets up the controller with the Manager.

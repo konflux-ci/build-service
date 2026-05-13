@@ -34,7 +34,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"knative.dev/pkg/apis"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -86,7 +86,7 @@ type ComponentDependencyUpdateReconciler struct {
 	Client                       client.Client
 	ApiReader                    client.Reader
 	Scheme                       *runtime.Scheme
-	EventRecorder                record.EventRecorder
+	EventRecorder                events.EventRecorder
 	ComponentDependenciesUpdater ComponentDependenciesUpdater
 }
 
@@ -470,7 +470,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 
 		pipelineRun.Annotations[FailureCountAnnotationName] = strconv.Itoa(failureCount)
 
-		r.EventRecorder.Event(updatedComponent, corev1.EventTypeWarning, ComponentNudgeFailedEventType, fmt.Sprintf("component update failed as a result of a build for %s, retry %d/%d", updatedComponent.Name, failureCount, MaxAttempts))
+		r.EventRecorder.Eventf(updatedComponent, nil, corev1.EventTypeWarning, ComponentNudgeFailedEventType, "NudgeComponent", fmt.Sprintf("component update failed as a result of a build for %s, retry %d/%d", updatedComponent.Name, failureCount, MaxAttempts))
 
 		if failureCount >= MaxAttempts {
 			// We are at the failure limit, nothing much we can do
@@ -550,7 +550,7 @@ func (r *ComponentDependencyUpdateReconciler) removePipelineFinalizer(ctx contex
 			// We don't log/fire events on conflicts, they are part of normal operation,
 			// especially as these are highly contended objects
 			log.Error(err, "unable to remove pipeline run finalizer")
-			r.EventRecorder.Event(pipelineRun, corev1.EventTypeWarning, ComponentNudgedEventType, fmt.Sprintf("failed to remove finalizer from %s", pipelineRun.Name))
+			r.EventRecorder.Eventf(pipelineRun, nil, corev1.EventTypeWarning, ComponentNudgedEventType, "RemoveFinalizer", fmt.Sprintf("failed to remove finalizer from %s", pipelineRun.Name))
 		}
 		return ctrl.Result{}, err
 	}

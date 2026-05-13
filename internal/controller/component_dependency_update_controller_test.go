@@ -32,6 +32,7 @@ import (
 	. "github.com/onsi/gomega"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	v1 "k8s.io/api/core/v1"
+	eventsv1 "k8s.io/api/events/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -110,7 +111,7 @@ var _ = Describe("Component nudge controller", func() {
 		_ = k8sClient.DeleteAllOf(context.TODO(), &tektonapi.PipelineRun{}, &deleteOptionsNamespace)
 		_ = k8sClient.DeleteAllOf(context.TODO(), &v1.ConfigMap{}, &deleteOptionsNamespace)
 
-		eventList := v1.EventList{}
+		eventList := eventsv1.EventList{}
 		err := k8sClient.List(context.TODO(), &eventList)
 		Expect(err).ToNot(HaveOccurred())
 		for i := range eventList.Items {
@@ -294,12 +295,12 @@ var _ = Describe("Component nudge controller", func() {
 
 			Eventually(func() bool {
 				// check that no nudgeerror event was reported
-				failureCount := getRenovateFailedEventCount()
+				hasFailure := hasRenovateFailedEvent()
 				// check that renovate config was created
 				renovateConfigsCreated := len(getRenovateConfigMapList())
 				// check that renovate pipeline run was created
 				renovatePipelinesCreated := len(getRenovatePipelineRunList())
-				return renovatePipelinesCreated == 1 && renovateConfigsCreated == 2 && failureCount == 0
+				return renovatePipelinesCreated == 1 && renovateConfigsCreated == 2 && !hasFailure
 			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 
 			renovateConfigMaps := getRenovateConfigMapList()
@@ -392,12 +393,12 @@ var _ = Describe("Component nudge controller", func() {
 
 			Eventually(func() bool {
 				// check that no nudgeerror event was reported
-				failureCount := getRenovateFailedEventCount()
+				hasFailure := hasRenovateFailedEvent()
 				// check that renovate config was created
 				renovateConfigsCreated := len(getRenovateConfigMapList())
 				// check that renovate pipeline run was created
 				renovatePipelinesCreated := len(getRenovatePipelineRunList())
-				return renovatePipelinesCreated == 1 && renovateConfigsCreated == 2 && failureCount == 0
+				return renovatePipelinesCreated == 1 && renovateConfigsCreated == 2 && !hasFailure
 			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 
 			renovatePipelines := getRenovatePipelineRunList()
@@ -457,12 +458,12 @@ var _ = Describe("Component nudge controller", func() {
 
 			Eventually(func() bool {
 				// check that no nudgeerror event was reported
-				failureCount := getRenovateFailedEventCount()
+				hasFailure := hasRenovateFailedEvent()
 				// check that renovate config was created
 				renovateConfigsCreated := len(getRenovateConfigMapList())
 				// check that renovate pipeline run was created
 				renovatePipelinesCreated := len(getRenovatePipelineRunList())
-				return renovatePipelinesCreated == 1 && renovateConfigsCreated == 2 && failureCount == 0
+				return renovatePipelinesCreated == 1 && renovateConfigsCreated == 2 && !hasFailure
 			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 
 			renovatePipelines := getRenovatePipelineRunList()
@@ -498,13 +499,13 @@ var _ = Describe("Component nudge controller", func() {
 				if stale.Annotations == nil || stale.Annotations[NudgeProcessedAnnotationName] != "true" || controllerutil.ContainsFinalizer(stale, NudgeFinalizer) {
 					return false
 				}
-				failureCount := getRenovateFailedEventCount()
+				hasFailure := hasRenovateFailedEvent()
 				// check that renovate config was created
 				renovateConfigsCreated := len(getRenovateConfigMapList())
 				// check that renovate pipeline run was created
 				renovatePipelinesCreated := len(getRenovatePipelineRunList())
 
-				return renovatePipelinesCreated == 1 && renovateConfigsCreated == 2 && failureCount == 0
+				return renovatePipelinesCreated == 1 && renovateConfigsCreated == 2 && !hasFailure
 			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 		})
 
@@ -561,12 +562,12 @@ var _ = Describe("Component nudge controller", func() {
 			Expect(k8sClient.Status().Update(ctx, pr)).Should(BeNil())
 			Eventually(func() bool {
 				// check that no nudgeerror event was reported
-				failureCount := getRenovateFailedEventCount()
+				hasFailure := hasRenovateFailedEvent()
 				// check that renovate config was created
 				renovateConfigsCreated := len(getRenovateConfigMapList())
 				// check that renovate pipeline run was created
 				renovatePipelinesCreated := len(getRenovatePipelineRunList())
-				return renovatePipelinesCreated == 1 && renovateConfigsCreated == 2 && failureCount == 0
+				return renovatePipelinesCreated == 1 && renovateConfigsCreated == 2 && !hasFailure
 			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 
 			if namespaceRenovateConfigData != nil {
@@ -874,10 +875,9 @@ var _ = Describe("Component nudge controller", func() {
 			pr.Status.CompletionTime = &metav1.Time{Time: time.Now()}
 			Expect(k8sClient.Status().Update(ctx, pr)).Should(BeNil())
 
-			// wait for one nudge error event
+			// wait for a nudge error event
 			Eventually(func() bool {
-				failureCount := getRenovateFailedEventCount()
-				return failureCount == 1
+				return hasRenovateFailedEvent()
 			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 
 			// after one error it will retry and create pipeline
@@ -922,12 +922,15 @@ var _ = Describe("Component nudge controller", func() {
 			Expect(k8sClient.Status().Update(ctx, pr)).Should(BeNil())
 
 			Eventually(func() bool {
-				// check that multiple nudgeerror event were reported
-				failureCount := getRenovateFailedEventCount()
+				// check that nudgeerror event was reported
+				hasFailure := hasRenovateFailedEvent()
 				// check that no renovate pipeline run was created
 				renovatePipelinesCreated := len(getRenovatePipelineRunList())
+				// check that the pipeline run was processed (finalizer removed after max retries)
+				pr := getPipelineRun("test-pipeline-1", UserNamespace)
+				processed := pr != nil && pr.Annotations != nil && pr.Annotations[NudgeProcessedAnnotationName] == "true"
 
-				return renovatePipelinesCreated == 0 && failureCount == 3
+				return renovatePipelinesCreated == 0 && hasFailure && processed
 			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 		})
 	})
@@ -1136,16 +1139,22 @@ func getRenovatePipelineRunList() []tektonapi.PipelineRun {
 	return renovatePipelinesList
 }
 
-func getRenovateFailedEventCount() int {
-	failureCount := 0
-	events := v1.EventList{}
+// hasRenovateFailedEvent checks whether at least one failure event with
+// reason ComponentNudgeFailedEventType exists in the API server.
+//
+// Note: the events.k8s.io/v1 broadcaster deduplicates events by
+// {regarding, reason, action, eventType} and only patches the API server
+// on the 2nd occurrence.  Subsequent occurrences are batched in a local
+// cache and flushed every ~30 minutes, so an exact count is unreliable
+// in tests.  Use this function only as a presence check.
+func hasRenovateFailedEvent() bool {
+	events := eventsv1.EventList{}
 	err := k8sClient.List(context.TODO(), &events)
 	Expect(err).ToNot(HaveOccurred())
 	for _, i := range events.Items {
 		if i.Reason == ComponentNudgeFailedEventType {
-			failureCount++
-
+			return true
 		}
 	}
-	return failureCount
+	return false
 }

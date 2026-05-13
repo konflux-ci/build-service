@@ -702,7 +702,7 @@ func TestGeneratePACRepositoryOldModel(t *testing.T) {
 			},
 		},
 		{
-			name:    "should create PaC repository for Forgejo webhook with gitea type for PaC compatibility",
+			name:    "should create PaC repository for Forgejo webhook",
 			repoUrl: "https://forgejo.example.com/user/test-component-repository/",
 			componentAnnotations: map[string]string{
 				GitProviderAnnotationName: "forgejo",
@@ -720,7 +720,7 @@ func TestGeneratePACRepositoryOldModel(t *testing.T) {
 					Key:  getWebhookSecretKeyForComponent(getComponent("https://forgejo.example.com/user/test-component-repository/", nil), false),
 				},
 				URL:  "https://forgejo.example.com",
-				Type: "gitea",
+				Type: "forgejo",
 			},
 		},
 	}

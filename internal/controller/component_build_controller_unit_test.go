@@ -1097,7 +1097,7 @@ func TestGeneratePACRepository(t *testing.T) {
 			expectedCommentStrategy:          "",
 		},
 		{
-			name:    "should create PaC repository for Forgejo webhook with gitea type for PaC compatibility",
+			name:    "should create PaC repository for Forgejo webhook",
 			repoUrl: "https://forgejo.example.com/user/test-component-repository/",
 			componentAnnotations: map[string]string{
 				GitProviderAnnotationName: "forgejo",
@@ -1115,7 +1115,54 @@ func TestGeneratePACRepository(t *testing.T) {
 					Key:  getWebhookSecretKeyForComponent(getComponent("https://forgejo.example.com/user/test-component-repository/", nil, nil), true),
 				},
 				URL:  "https://forgejo.example.com",
-				Type: "gitea",
+				Type: "forgejo",
+			},
+			repoSettings:                     nil,
+			expectedGithubAppTokenScopeRepos: nil,
+			expectedCommentStrategy:          "",
+		},
+		{
+			name:    "should create PaC repository for Gitea webhook with gitea annotation (gitea is alias for forgejo)",
+			repoUrl: "https://gitea.example.com/user/test-component-repository/",
+			componentAnnotations: map[string]string{
+				GitProviderAnnotationName: "gitea",
+			},
+			pacConfig: map[string][]byte{
+				"password": []byte("gitea-token"),
+			},
+			expectedGitProviderConfig: &pacv1alpha1.GitProvider{
+				Secret: &pacv1alpha1.Secret{
+					Name: PipelinesAsCodeGitHubAppSecretName,
+					Key:  "password",
+				},
+				WebhookSecret: &pacv1alpha1.Secret{
+					Name: pipelinesAsCodeWebhooksSecretName,
+					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitea.example.com/user/test-component-repository/", nil, nil), true),
+				},
+				URL:  "https://gitea.example.com",
+				Type: "forgejo",
+			},
+			repoSettings:                     nil,
+			expectedGithubAppTokenScopeRepos: nil,
+			expectedCommentStrategy:          "",
+		},
+		{
+			name:    "should create PaC repository for Gitea webhook with auto-detection from URL (gitea is alias for forgejo)",
+			repoUrl: "https://gitea.example.com/user/test-component-repository/",
+			pacConfig: map[string][]byte{
+				"password": []byte("gitea-token"),
+			},
+			expectedGitProviderConfig: &pacv1alpha1.GitProvider{
+				Secret: &pacv1alpha1.Secret{
+					Name: PipelinesAsCodeGitHubAppSecretName,
+					Key:  "password",
+				},
+				WebhookSecret: &pacv1alpha1.Secret{
+					Name: pipelinesAsCodeWebhooksSecretName,
+					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitea.example.com/user/test-component-repository/", nil, nil), true),
+				},
+				URL:  "https://gitea.example.com",
+				Type: "forgejo",
 			},
 			repoSettings:                     nil,
 			expectedGithubAppTokenScopeRepos: nil,

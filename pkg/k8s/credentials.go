@@ -10,9 +10,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/utils/strings/slices"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+	"slices"
 
 	"github.com/konflux-ci/build-service/pkg/boerrors"
 	"github.com/konflux-ci/build-service/pkg/common"
@@ -150,7 +150,7 @@ func bestMatchingSecret(ctx context.Context, componentRepository string, secrets
 		componentRepoParts := strings.Split(componentRepository, "/")
 
 		// Find wildcard repositories
-		wildcardRepos := slices.Filter(nil, secretRepositories, func(s string) bool { return strings.HasSuffix(s, "*") })
+		wildcardRepos := slices.DeleteFunc(slices.Clone(secretRepositories), func(s string) bool { return !strings.HasSuffix(s, "*") })
 
 		for _, repo := range wildcardRepos {
 			i := bslices.Intersection(componentRepoParts, strings.Split(strings.TrimSuffix(repo, "*"), "/"))
