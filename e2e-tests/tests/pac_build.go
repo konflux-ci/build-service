@@ -413,23 +413,23 @@ var _ = framework.BuildSuiteDescribe("Build service E2E tests", Label("build-ser
 					}, time.Minute*3, time.Second*10).Should(BeTrue(), fmt.Sprintf("image tag %s does not exist in quay after timeout", outputImage))
 				})
 
-			It("should ensure pruning labels are set", func() {
-				plr, err = f.AsKubeAdmin.HasController.GetComponentPipelineRun(customBranchComponentName, applicationName, testNamespace, "")
-				Expect(err).ShouldNot(HaveOccurred())
+				It("should ensure pruning labels are set", func() {
+					plr, err = f.AsKubeAdmin.HasController.GetComponentPipelineRun(customBranchComponentName, applicationName, testNamespace, "")
+					Expect(err).ShouldNot(HaveOccurred())
 
-				var image *v1.ConfigFile
-				Eventually(func() error {
-					image, err = build.ImageFromPipelineRun(plr)
-					return err
-				}, time.Minute*2, time.Second*10).Should(Succeed(), "timed out waiting for image manifest to become available in Quay")
+					var image *v1.ConfigFile
+					Eventually(func() error {
+						image, err = build.ImageFromPipelineRun(plr)
+						return err
+					}, time.Minute*2, time.Second*10).Should(Succeed(), "timed out waiting for image manifest to become available in Quay")
 
-				labels := image.Config.Labels
-				Expect(labels).ToNot(BeEmpty())
+					labels := image.Config.Labels
+					Expect(labels).ToNot(BeEmpty())
 
-				expiration, ok := labels["quay.expires-after"]
-				Expect(ok).To(BeTrue())
-				Expect(expiration).To(Equal(utils.GetEnv(constants.IMAGE_TAG_EXPIRATION_ENV, constants.DefaultImageTagExpiration)))
-			})
+					expiration, ok := labels["quay.expires-after"]
+					Expect(ok).To(BeTrue())
+					Expect(expiration).To(Equal(utils.GetEnv(constants.IMAGE_TAG_EXPIRATION_ENV, constants.DefaultImageTagExpiration)))
+				})
 				It("eventually leads to the PipelineRun status report at Checks tab", func() {
 					switch gitProvider {
 					case git.GitHubProvider:
@@ -455,11 +455,11 @@ var _ = framework.BuildSuiteDescribe("Build service E2E tests", Label("build-ser
 					GinkgoWriter.Println("created file sha:", createdFileSHA)
 				})
 
-			It("eventually leads to triggering another PipelineRun", func() {
-				timeout = time.Minute * 5
+				It("eventually leads to triggering another PipelineRun", func() {
+					timeout = time.Minute * 5
 
-				Eventually(func() error {
-					plr, err = f.AsKubeAdmin.HasController.GetComponentPipelineRun(customBranchComponentName, applicationName, testNamespace, createdFileSHA)
+					Eventually(func() error {
+						plr, err = f.AsKubeAdmin.HasController.GetComponentPipelineRun(customBranchComponentName, applicationName, testNamespace, createdFileSHA)
 						if err != nil {
 							GinkgoWriter.Printf("PipelineRun has not been created yet for the component %s/%s\n", testNamespace, customBranchComponentName)
 							return err
@@ -542,20 +542,20 @@ var _ = framework.BuildSuiteDescribe("Build service E2E tests", Label("build-ser
 					mergeResultSha = plr.Labels["pipelinesascode.tekton.dev/sha"]
 				})
 
-		It("does not have expiration set", func() {
-			var image *v1.ConfigFile
-				Eventually(func() error {
-					image, err = build.ImageFromPipelineRun(plr)
-					return err
-				}, time.Minute*2, time.Second*10).Should(Succeed(), "timed out waiting for image manifest to become available in Quay")
+				It("does not have expiration set", func() {
+					var image *v1.ConfigFile
+					Eventually(func() error {
+						image, err = build.ImageFromPipelineRun(plr)
+						return err
+					}, time.Minute*2, time.Second*10).Should(Succeed(), "timed out waiting for image manifest to become available in Quay")
 
-				labels := image.Config.Labels
-				Expect(labels).ToNot(BeEmpty())
+					labels := image.Config.Labels
+					Expect(labels).ToNot(BeEmpty())
 
-				expiration, ok := labels["quay.expires-after"]
-				Expect(ok).To(BeFalse())
-				Expect(expiration).To(BeEmpty())
-			})
+					expiration, ok := labels["quay.expires-after"]
+					Expect(ok).To(BeFalse())
+					Expect(expiration).To(BeEmpty())
+				})
 
 				It("After updating image visibility to private, it should not trigger another PipelineRun", func() {
 					Eventually(func() error {
@@ -592,7 +592,7 @@ var _ = framework.BuildSuiteDescribe("Build service E2E tests", Label("build-ser
 					Expect(err).ShouldNot(HaveOccurred(), fmt.Sprintf("failed while checking if the image repo %s is private", imageRepoName))
 					Expect(isPublic).To(BeFalse(), "Expected image repo to changed to private, but it is public")
 				})
-				It("retrigger the pipeline manually", Pending, func() {
+				It("retrigger the pipeline manually", func() {
 					existingPLRName := ""
 					if plr != nil {
 						existingPLRName = plr.GetName()
@@ -628,7 +628,7 @@ var _ = framework.BuildSuiteDescribe("Build service E2E tests", Label("build-ser
 						return fmt.Errorf("no new PipelineRun found yet (existing: %s)", existingPLRName)
 					}, 10*time.Minute, constants.PipelineRunPollingInterval).Should(Succeed(), fmt.Sprintf("timed out when waiting for the PipelineRun to retrigger for the component %s/%s", testNamespace, customBranchComponentName))
 				})
-				It("retriggered pipelineRun should eventually finish", Pending, func() {
+				It("retriggered pipelineRun should eventually finish", func() {
 					Expect(f.AsKubeAdmin.HasController.WaitForComponentPipelineToBeFinished(component, "build", "", "incoming", f.AsKubeAdmin.TektonController, &has.RetryOptions{Retries: 2, Always: true}, plr)).To(Succeed())
 				})
 			})
