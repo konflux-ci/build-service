@@ -28,7 +28,7 @@ jobs:
       # https://github.com/securego/gosec/blob/12be14859bc7d4b956b71bef0b443694aa519d8a/README.md#integrating-with-code-scanning
       - name: Run Gosec Security Scanner
       # pin gosec to use v2.21.0 temporarily, once upstream issue https://github.com/securego/gosec/issues/1214 is fixed, revert it to use master
-        uses: securego/gosec@v2.21.0
+        uses: securego/gosec@v2.26.1
         with:
           # we let the report trigger content trigger a failure using the GitHub Security features.
           args: '-no-fail -fmt sarif -out results.sarif ./...'
