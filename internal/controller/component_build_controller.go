@@ -173,7 +173,7 @@ func isComponentUsingNewModel(component *compapiv1alpha1.Component) bool {
 //+kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns,verbs=create
 //+kubebuilder:rbac:groups=pipelinesascode.tekton.dev,resources=repositories,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch
-// The following line is needed for component_dependency_update_controller since config there is overriden from here.
+// The following line is needed for component_dependency_update_controller since config there is overridden from here.
 //+kubebuilder:rbac:groups=core,resources=configmaps,verbs=create;get;list;watch;update;patch;delete
 //+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;patch;update;delete
 //+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch
@@ -302,8 +302,9 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err != nil {
 		buildStatus := readBuildStatus(&component)
 		// when reading pipeline annotation fails, we should end reconcile, unless transient error
-		if boErr, ok := err.(*boerrors.BuildOpError); ok && boErr.IsPersistent() {
-			buildStatus.Message = fmt.Sprintf("%d: %s", err.(*boerrors.BuildOpError).GetErrorId(), err.(*boerrors.BuildOpError).ShortError())
+		boErr, ok := err.(*boerrors.BuildOpError)
+		if ok && boErr.IsPersistent() {
+			buildStatus.Message = fmt.Sprintf("%d: %s", boErr.GetErrorId(), boErr.ShortError())
 		} else {
 			// transient error, retry
 			return ctrl.Result{}, err
@@ -312,15 +313,14 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		// when pipeline annotation is missing, we will update component with default annotation
 		// so this reconcile will finish without error, and updated component will trigger new reconcile which already has pipeline annotation
 		// we don't want to update neither status or remove annotation, because that will be handled by next reconcile
-		missingPipelineAnnotationError := boerrors.NewBuildOpError(boerrors.EMissingPipelineAnnotation, nil)
-		if err.(*boerrors.BuildOpError).GetErrorId() == missingPipelineAnnotationError.GetErrorId() {
+		if boErr.GetErrorId() == int(boerrors.EMissingPipelineAnnotation) {
 			err = r.SetDefaultBuildPipelineComponentAnnotation(ctx, &component)
 			if err == nil {
 				return ctrl.Result{}, nil
 			}
 
 			if boErr, ok := err.(*boerrors.BuildOpError); ok && boErr.IsPersistent() {
-				buildStatus.Message = fmt.Sprintf("%d: %s", err.(*boerrors.BuildOpError).GetErrorId(), err.(*boerrors.BuildOpError).ShortError())
+				buildStatus.Message = fmt.Sprintf("%d: %s", boErr.GetErrorId(), boErr.ShortError())
 			} else {
 				// transient error, retry
 				return ctrl.Result{}, err

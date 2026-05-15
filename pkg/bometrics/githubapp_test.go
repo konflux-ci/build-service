@@ -3,15 +3,16 @@ package bometrics
 import (
 	"context"
 	"errors"
-	"github.com/google/go-github/v45/github"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/testutil"
 	"net/http"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/google/go-github/v45/github"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestGithubAppAvailability(t *testing.T) {

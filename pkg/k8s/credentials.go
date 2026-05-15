@@ -3,6 +3,7 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -12,7 +13,6 @@ import (
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
-	"slices"
 
 	"github.com/konflux-ci/build-service/pkg/boerrors"
 	"github.com/konflux-ci/build-service/pkg/common"
@@ -36,7 +36,7 @@ func NewGithubAppConfigReader(client client.Client, scheme *runtime.Scheme, even
 }
 
 func (k ConfigReader) GetConfig(ctx context.Context) (githubAppIdStr string, appPrivateKeyPem []byte, err error) {
-	//Check if GitHub Application is used, if not then skip
+	// Check if GitHub Application is used, if not then skip
 	pacSecret := corev1.Secret{}
 	globalPaCSecretKey := types.NamespacedName{Namespace: common.BuildServiceNamespaceName, Name: common.PipelinesAsCodeGitHubAppSecretName}
 	if err := k.client.Get(ctx, globalPaCSecretKey, &pacSecret); err != nil {
@@ -77,7 +77,7 @@ func (k *GitCredentialProvider) GetBasicAuthCredentials(ctx context.Context, com
 
 func (k *GitCredentialProvider) GetSSHCredentials(ctx context.Context, component *git.ScmComponent) (*credentials.SSHCredentials, error) {
 	secretWithCredentials, err := k.LookupSecret(ctx, component, corev1.SecretTypeSSHAuth)
-	if err == nil {
+	if err != nil {
 		return nil, err
 	}
 	return &credentials.SSHCredentials{
@@ -134,7 +134,7 @@ func bestMatchingSecret(ctx context.Context, componentRepository string, secrets
 		}
 		secretRepositories := strings.Split(repositoryAnnotation, ",")
 		log.Info("found secret repositories", "repositories", secretRepositories)
-		//trim possible slashes at the beginning of the repository path
+		// Trim possible slashes at the beginning of the repository path.
 		for i, repository := range secretRepositories {
 			secretRepositories[i] = strings.TrimPrefix(repository, "/")
 		}

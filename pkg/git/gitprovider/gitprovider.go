@@ -26,7 +26,7 @@ type GitProviderClient interface {
 
 	// UndoPaCMergeRequest creates or updates existing Pipelines as Code configuration removal merge request.
 	// Returns the merge request web URL.
-	// If there is no error and web URL is empty, it means that the merge request is not needed (the configuraton has already been deleted).
+	// If there is no error and web URL is empty, it means that the merge request is not needed (the configuration has already been deleted).
 	UndoPaCMergeRequest(repoUrl string, data *MergeRequestData) (webUrl string, err error)
 
 	// FindUnmergedPaCMergeRequest searches for existing Pipelines as Code configuration proposal merge request

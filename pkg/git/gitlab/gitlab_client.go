@@ -132,7 +132,7 @@ func (g *GitlabClient) EnsurePaCMergeRequest(repoUrl string, d *gp.MergeRequestD
 
 // UndoPaCMergeRequest creates or updates existing Pipelines as Code configuration removal merge request.
 // Returns the merge request web URL.
-// If there is no error and web URL is empty, it means that the merge request is not needed (the configuraton has already been deleted).
+// If there is no error and web URL is empty, it means that the merge request is not needed (the configuration has already been deleted).
 func (g *GitlabClient) UndoPaCMergeRequest(repoUrl string, d *gp.MergeRequestData) (webUrl string, err error) {
 	projectPath, err := getProjectPathFromRepoUrl(repoUrl)
 	if err != nil {

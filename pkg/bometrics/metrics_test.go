@@ -2,10 +2,11 @@ package bometrics
 
 import (
 	"context"
+	"testing"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"testing"
 )
 
 func TestRegisterMetrics(t *testing.T) {

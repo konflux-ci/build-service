@@ -46,7 +46,7 @@ var _ = Describe("Component PipelineRuns pruner controller", func() {
 		})
 
 		It("should not fail if nothing to prune", func() {
-			Expect(len(listComponentPipelineRuns(resourcePrunerKey))).To(Equal(0))
+			Expect(listComponentPipelineRuns(resourcePrunerKey)).To(BeEmpty())
 
 			deleteComponent(resourcePrunerKey)
 			waitNoPipelineRunsForComponent(resourcePrunerKey)
@@ -54,7 +54,7 @@ var _ = Describe("Component PipelineRuns pruner controller", func() {
 
 		It("should prune single PipelineRun", func() {
 			createPaCPipelineRunWithName(resourcePrunerKey, resourcePrunerKey.Name)
-			Expect(len(listComponentPipelineRuns(resourcePrunerKey))).To(Equal(1))
+			Expect(listComponentPipelineRuns(resourcePrunerKey)).To(HaveLen(1))
 
 			deleteComponent(resourcePrunerKey)
 			waitNoPipelineRunsForComponent(resourcePrunerKey)
@@ -65,7 +65,7 @@ var _ = Describe("Component PipelineRuns pruner controller", func() {
 			createPaCPipelineRunWithName(resourcePrunerKey, "component-on-pull-request-j05ew")
 			createPaCPipelineRunWithName(resourcePrunerKey, "component-on-push-vk1t5")
 			createPaCPipelineRunWithName(resourcePrunerKey, "component-on-push-b9i8p")
-			Expect(len(listComponentPipelineRuns(resourcePrunerKey))).To(Equal(4))
+			Expect(listComponentPipelineRuns(resourcePrunerKey)).To(HaveLen(4))
 
 			deleteComponent(resourcePrunerKey)
 			waitNoPipelineRunsForComponent(resourcePrunerKey)
@@ -74,7 +74,7 @@ var _ = Describe("Component PipelineRuns pruner controller", func() {
 		It("should prune only PipelineRuns that belong to the Component", func() {
 			createPaCPipelineRunWithName(resourcePrunerKey, "component-on-pull-request-j7gpx")
 			createPaCPipelineRunWithName(resourcePrunerKey, "component-on-push-vk1t5")
-			Expect(len(listComponentPipelineRuns(resourcePrunerKey))).To(Equal(2))
+			Expect(listComponentPipelineRuns(resourcePrunerKey)).To(HaveLen(2))
 
 			anotherComponentKey := types.NamespacedName{Namespace: namespace, Name: "component2"}
 			createCustomComponentWithBuildRequest(componentConfigOldModel{
@@ -86,13 +86,13 @@ var _ = Describe("Component PipelineRuns pruner controller", func() {
 			anotherComponentPipelineRun2Name := "component2-on-push-owt1l"
 			createPaCPipelineRunWithName(anotherComponentKey, anotherComponentPipelineRun1Name)
 			createPaCPipelineRunWithName(anotherComponentKey, anotherComponentPipelineRun2Name)
-			Expect(len(listComponentPipelineRuns(anotherComponentKey))).To(Equal(2))
+			Expect(listComponentPipelineRuns(anotherComponentKey)).To(HaveLen(2))
 
 			deleteComponent(resourcePrunerKey)
 			waitNoPipelineRunsForComponent(resourcePrunerKey)
 
 			anotherComponentPipelineRuns := listComponentPipelineRuns(anotherComponentKey)
-			Expect(len(anotherComponentPipelineRuns)).To(Equal(2))
+			Expect(anotherComponentPipelineRuns).To(HaveLen(2))
 			for _, pipelineRun := range anotherComponentPipelineRuns {
 				switch pipelineRun.Name {
 				case anotherComponentPipelineRun1Name, anotherComponentPipelineRun2Name:
@@ -110,7 +110,7 @@ var _ = Describe("Component PipelineRuns pruner controller", func() {
 		It("should not prune PipelineRuns that belong to the Component with the same name in a different namespace", func() {
 			createPaCPipelineRunWithName(resourcePrunerKey, "component-on-pull-request-z2opy")
 			createPaCPipelineRunWithName(resourcePrunerKey, "component-on-push-pk8u5")
-			Expect(len(listComponentPipelineRuns(resourcePrunerKey))).To(Equal(2))
+			Expect(listComponentPipelineRuns(resourcePrunerKey)).To(HaveLen(2))
 
 			anotherComponentNamespace := "pipelines-pruner-test-namespace-old"
 			createNamespace(anotherComponentNamespace)
@@ -125,13 +125,13 @@ var _ = Describe("Component PipelineRuns pruner controller", func() {
 			anotherComponentPipelineRun2Name := "component2-on-push-l0dni"
 			createPaCPipelineRunWithName(anotherComponentKey, anotherComponentPipelineRun1Name)
 			createPaCPipelineRunWithName(anotherComponentKey, anotherComponentPipelineRun2Name)
-			Expect(len(listComponentPipelineRuns(anotherComponentKey))).To(Equal(2))
+			Expect(listComponentPipelineRuns(anotherComponentKey)).To(HaveLen(2))
 
 			deleteComponent(resourcePrunerKey)
 			waitNoPipelineRunsForComponent(resourcePrunerKey)
 
 			anotherComponentPipelineRuns := listComponentPipelineRuns(anotherComponentKey)
-			Expect(len(anotherComponentPipelineRuns)).To(Equal(2))
+			Expect(anotherComponentPipelineRuns).To(HaveLen(2))
 			for _, pipelineRun := range anotherComponentPipelineRuns {
 				switch pipelineRun.Name {
 				case anotherComponentPipelineRun1Name, anotherComponentPipelineRun2Name:
@@ -168,7 +168,7 @@ var _ = Describe("Component PipelineRuns pruner controller", func() {
 		})
 
 		It("should not fail if nothing to prune", func() {
-			Expect(len(listComponentPipelineRuns(resourcePrunerKey))).To(Equal(0))
+			Expect(listComponentPipelineRuns(resourcePrunerKey)).To(BeEmpty())
 
 			deleteComponent(resourcePrunerKey)
 			waitNoPipelineRunsForComponent(resourcePrunerKey)
@@ -176,7 +176,7 @@ var _ = Describe("Component PipelineRuns pruner controller", func() {
 
 		It("should prune single PipelineRun", func() {
 			createPaCPipelineRunWithName(resourcePrunerKey, resourcePrunerKey.Name)
-			Expect(len(listComponentPipelineRuns(resourcePrunerKey))).To(Equal(1))
+			Expect(listComponentPipelineRuns(resourcePrunerKey)).To(HaveLen(1))
 
 			deleteComponent(resourcePrunerKey)
 			waitNoPipelineRunsForComponent(resourcePrunerKey)
@@ -187,7 +187,7 @@ var _ = Describe("Component PipelineRuns pruner controller", func() {
 			createPaCPipelineRunWithName(resourcePrunerKey, "component-on-pull-request-j05ew")
 			createPaCPipelineRunWithName(resourcePrunerKey, "component-on-push-vk1t5")
 			createPaCPipelineRunWithName(resourcePrunerKey, "component-on-push-b9i8p")
-			Expect(len(listComponentPipelineRuns(resourcePrunerKey))).To(Equal(4))
+			Expect(listComponentPipelineRuns(resourcePrunerKey)).To(HaveLen(4))
 
 			deleteComponent(resourcePrunerKey)
 			waitNoPipelineRunsForComponent(resourcePrunerKey)
@@ -196,7 +196,7 @@ var _ = Describe("Component PipelineRuns pruner controller", func() {
 		It("should prune only PipelineRuns that belong to the Component", func() {
 			createPaCPipelineRunWithName(resourcePrunerKey, "component-on-pull-request-j7gpx")
 			createPaCPipelineRunWithName(resourcePrunerKey, "component-on-push-vk1t5")
-			Expect(len(listComponentPipelineRuns(resourcePrunerKey))).To(Equal(2))
+			Expect(listComponentPipelineRuns(resourcePrunerKey)).To(HaveLen(2))
 
 			anotherComponentKey := types.NamespacedName{Namespace: namespace, Name: "component2"}
 			anotherComponent := getComponentData(componentConfig{
@@ -209,13 +209,13 @@ var _ = Describe("Component PipelineRuns pruner controller", func() {
 			anotherComponentPipelineRun2Name := "component2-on-push-owt1l"
 			createPaCPipelineRunWithName(anotherComponentKey, anotherComponentPipelineRun1Name)
 			createPaCPipelineRunWithName(anotherComponentKey, anotherComponentPipelineRun2Name)
-			Expect(len(listComponentPipelineRuns(anotherComponentKey))).To(Equal(2))
+			Expect(listComponentPipelineRuns(anotherComponentKey)).To(HaveLen(2))
 
 			deleteComponent(resourcePrunerKey)
 			waitNoPipelineRunsForComponent(resourcePrunerKey)
 
 			anotherComponentPipelineRuns := listComponentPipelineRuns(anotherComponentKey)
-			Expect(len(anotherComponentPipelineRuns)).To(Equal(2))
+			Expect(anotherComponentPipelineRuns).To(HaveLen(2))
 			for _, pipelineRun := range anotherComponentPipelineRuns {
 				switch pipelineRun.Name {
 				case anotherComponentPipelineRun1Name, anotherComponentPipelineRun2Name:
@@ -233,7 +233,7 @@ var _ = Describe("Component PipelineRuns pruner controller", func() {
 		It("should not prune PipelineRuns that belong to the Component with the same name in a different namespace", func() {
 			createPaCPipelineRunWithName(resourcePrunerKey, "component-on-pull-request-z2opy")
 			createPaCPipelineRunWithName(resourcePrunerKey, "component-on-push-pk8u5")
-			Expect(len(listComponentPipelineRuns(resourcePrunerKey))).To(Equal(2))
+			Expect(listComponentPipelineRuns(resourcePrunerKey)).To(HaveLen(2))
 
 			anotherComponentNamespace := "pipelines-pruner-test-namespace"
 			createNamespace(anotherComponentNamespace)
@@ -249,13 +249,13 @@ var _ = Describe("Component PipelineRuns pruner controller", func() {
 			anotherComponentPipelineRun2Name := "component2-on-push-l0dni"
 			createPaCPipelineRunWithName(anotherComponentKey, anotherComponentPipelineRun1Name)
 			createPaCPipelineRunWithName(anotherComponentKey, anotherComponentPipelineRun2Name)
-			Expect(len(listComponentPipelineRuns(anotherComponentKey))).To(Equal(2))
+			Expect(listComponentPipelineRuns(anotherComponentKey)).To(HaveLen(2))
 
 			deleteComponent(resourcePrunerKey)
 			waitNoPipelineRunsForComponent(resourcePrunerKey)
 
 			anotherComponentPipelineRuns := listComponentPipelineRuns(anotherComponentKey)
-			Expect(len(anotherComponentPipelineRuns)).To(Equal(2))
+			Expect(anotherComponentPipelineRuns).To(HaveLen(2))
 			for _, pipelineRun := range anotherComponentPipelineRuns {
 				switch pipelineRun.Name {
 				case anotherComponentPipelineRun1Name, anotherComponentPipelineRun2Name:

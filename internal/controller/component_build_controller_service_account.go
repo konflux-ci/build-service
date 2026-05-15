@@ -239,7 +239,7 @@ func (r *ComponentBuildReconciler) cleanUpNudgingPullSecrets(ctx context.Context
 		}
 
 		oldSecrets := nudgedComponentBuildPipelineServiceAccount.Secrets
-		newSecrets := append(oldSecrets[:pullSecretIndex], oldSecrets[pullSecretIndex+1:]...)
+		newSecrets := append(oldSecrets[:pullSecretIndex], oldSecrets[pullSecretIndex+1:]...) //nolint:gocritic
 		nudgedComponentBuildPipelineServiceAccount.Secrets = newSecrets
 
 		if err := r.Client.Update(ctx, nudgedComponentBuildPipelineServiceAccount); err != nil {
@@ -382,7 +382,7 @@ func (r *ComponentBuildReconciler) removeBuildPipelineServiceAccountBinding(ctx 
 		} else {
 			// Remove subject by its index
 			oldSubjects := buildPipelinesRoleBinding.Subjects
-			newSubjects := append(oldSubjects[:subjectIndex], oldSubjects[subjectIndex+1:]...)
+			newSubjects := append(oldSubjects[:subjectIndex], oldSubjects[subjectIndex+1:]...) //nolint:gocritic
 			buildPipelinesRoleBinding.Subjects = newSubjects
 		}
 	}

@@ -56,7 +56,7 @@ func createClient(clientType githubClientCreationWay) (*GithubClient, error) {
 			return nil, err
 		}
 		owner, _ := getOwnerAndRepoFromUrl(repoUrl)
-		ghclient, err := NewGithubClientByApp(githubAppId, []byte(githubAppPrivateKey), owner)
+		ghclient, err := NewGithubClientByApp(githubAppId, githubAppPrivateKey, owner)
 		if err != nil {
 			fmt.Printf("error: %v", err)
 			return nil, err

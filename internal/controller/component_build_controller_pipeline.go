@@ -122,10 +122,10 @@ func getPipelineSpec(ctx context.Context, pipelineDef *PipelineDef, component *c
 			pipelineType, component.Name, pipelineDef.PipelineRefGit.Url, pipelineDef.PipelineRefGit.Revision, pipelineDef.PipelineRefGit.PathInRepo), l.Audit, "true")
 	} else {
 		repoUrl := getGitRepoUrl(*component, newModel)
-		if pipelineSpec, err = retrievePipelineSpecByName(ctx, repoUrl, versionInfo.Revision, pipelineDef.PipelineRefName, gitClient); err != nil {
-			return nil, err
+		pipelineSpec = retrievePipelineSpecByName(ctx, repoUrl, versionInfo.Revision, pipelineDef.PipelineRefName, gitClient)
+		if pipelineSpec != nil {
+			log.Info(fmt.Sprintf("Got %s pipeline spec from Pipeline Name for %s component, pipeline name %s", pipelineType, component.Name, pipelineDef.PipelineRefName), l.Audit, "true")
 		}
-		log.Info(fmt.Sprintf("Got %s pipeline spec from Pipeline Name for %s component, pipeline name %s", pipelineType, component.Name, pipelineDef.PipelineRefName), l.Audit, "true")
 	}
 
 	return pipelineSpec, nil
@@ -134,7 +134,7 @@ func getPipelineSpec(ctx context.Context, pipelineDef *PipelineDef, component *c
 // TODO remove after only new model is used
 // generatePaCPipelineRunConfigsOldModel generates PipelineRun YAML configs for given component.
 // The generated PipelineRun Yaml content are returned in byte string and in the order of push and pull request.
-func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigsOldModel(ctx context.Context, component *compapiv1alpha1.Component, gitClient gp.GitProviderClient, pacTargetBranch string, newModel bool) ([]byte, []byte, error) {
+func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigsOldModel(ctx context.Context, component *compapiv1alpha1.Component, gitClient gp.GitProviderClient, pacTargetBranch string) ([]byte, []byte, error) {
 	log := ctrllog.FromContext(ctx)
 
 	var pipelineName string
@@ -216,7 +216,7 @@ func retrievePipelineSpecFromGit(ctx context.Context, pipelineRefGit *compapiv1a
 
 // retrievePipelineSpecByName retrieves pipeline definition by searching for it by name in the .tekton directory.
 // It tries common file naming patterns.
-func retrievePipelineSpecByName(ctx context.Context, gitRepoUrl, revision, pipelineName string, gitClient gp.GitProviderClient) (*tektonapi.PipelineSpec, error) {
+func retrievePipelineSpecByName(ctx context.Context, gitRepoUrl, revision, pipelineName string, gitClient gp.GitProviderClient) *tektonapi.PipelineSpec {
 	log := ctrllog.FromContext(ctx)
 
 	// Common file naming patterns to try in .tekton directory
@@ -229,10 +229,7 @@ func retrievePipelineSpecByName(ctx context.Context, gitRepoUrl, revision, pipel
 		".tekton/pipeline.yaml",
 	}
 
-	log.Info("Searching for pipeline by name in .tekton directory",
-		"PipelineName", pipelineName,
-		"URL", gitRepoUrl,
-		"Revision", revision)
+	log.Info("Searching for pipeline by name in .tekton directory", "PipelineName", pipelineName, "URL", gitRepoUrl, "Revision", revision)
 
 	// Try each pattern
 	for _, filePath := range pipelineFilePatterns {
@@ -258,13 +255,13 @@ func retrievePipelineSpecByName(ctx context.Context, gitRepoUrl, revision, pipel
 			// Check if the pipeline name matches
 			if v1Pipeline.Name == pipelineName || v1Pipeline.GenerateName == pipelineName {
 				log.Info("Found matching v1 pipeline", "Name", v1Pipeline.Name, "FilePath", filePath)
-				return &v1Pipeline.Spec, nil
+				return &v1Pipeline.Spec
 			}
 		}
 	}
 
-	// Pipeline not found, don't report error
-	return nil, nil
+	// Pipeline not found
+	return nil
 }
 
 // retrievePipelineSpec retrieves pipeline definition with given name from the given bundle.

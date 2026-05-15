@@ -129,8 +129,7 @@ func (f *ForgejoClient) EnsurePaCMergeRequest(repoUrl string, d *gp.MergeRequest
 		return f.createPullRequestWithinRepository(owner, repository, d.BranchName, d.BaseBranchName, d.Title, d.Text)
 	} else {
 		// Branch doesn't exist - create it
-		_, err = f.createBranch(owner, repository, d.BranchName, d.BaseBranchName)
-		if err != nil {
+		if err := f.createBranch(owner, repository, d.BranchName, d.BaseBranchName); err != nil {
 			return "", err
 		}
 
@@ -199,8 +198,7 @@ func (f *ForgejoClient) UndoPaCMergeRequest(repoUrl string, d *gp.MergeRequestDa
 	}
 
 	// Create new branch
-	_, err = f.createBranch(owner, repository, d.BranchName, d.BaseBranchName)
-	if err != nil {
+	if err := f.createBranch(owner, repository, d.BranchName, d.BaseBranchName); err != nil {
 		return "", err
 	}
 
@@ -292,8 +290,7 @@ func (f *ForgejoClient) SetupPaCWebhook(repoUrl string, webhookUrl string, webho
 		BranchFilter: "*",
 	}
 
-	_, err = f.updateWebhook(owner, repository, existingWebhook.ID, updateOpt)
-	return err
+	return f.updateWebhook(owner, repository, existingWebhook.ID, updateOpt)
 }
 
 // DeletePaCWebhook deletes the Pipelines as Code webhook from the repository.

@@ -24,7 +24,7 @@ func TestGetRandomString(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := RandomString(tt.length)
 			if len(got) != tt.length {
-				t.Errorf("Got string %s has lenght %d but expected length is %d", got, len(got), tt.length)
+				t.Errorf("Got string %s has length %d but expected length is %d", got, len(got), tt.length)
 			}
 		})
 	}

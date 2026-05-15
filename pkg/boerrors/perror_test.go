@@ -51,7 +51,7 @@ func TestPersistentErrorDetection(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			boErr := NewBuildOpError(tt.errId, tt.nestedError)
 			if boErr.IsPersistent() != tt.isPersitent {
-				t.Errorf("Wrong error persistance")
+				t.Errorf("Wrong error persistence")
 			}
 
 			if boErr.GetErrorId() != int(tt.errId) {

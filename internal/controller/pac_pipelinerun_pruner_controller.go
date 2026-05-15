@@ -79,7 +79,7 @@ func (r *PaCPipelineRunPrunerReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{}, nil
 	}
 	if !errors.IsNotFound(err) {
-		log.Error(err, "failed to check Component existance")
+		log.Error(err, "failed to check Component existence")
 		return ctrl.Result{}, err
 	}
 

@@ -642,7 +642,8 @@ func (r *ComponentBuildReconciler) cleanupPaCRepositoryIncomingsAndSecretOldMode
 // if repository contains multiple incoming entries, it will merge them to one, and combine Targets and add incoming secret to incoming
 // if repository contains one incoming entry, it will add new target and add incoming secret to incoming
 // if repository doesn't have any incoming entry, it will add new incoming entry with target and add incoming secret to incoming
-// Returns bool, indicating if incomings in repository was updated or not
+// Returns bool, indicating if incomings in repository was updated or not.
+// nolint:unparam // pacIncomingSecretKey is a parameter for generalization.
 func updateIncoming(repository *pacv1alpha1.Repository, incomingSecretName string, pacIncomingSecretKey string, targetBranch string) bool {
 	foundSecretName := false
 	foundTarget := false
