@@ -57,7 +57,9 @@ func readMapping(webhookConfigPath string) (map[string]string, error) {
 		return nil, nil
 	}
 
-	content, err := os.ReadFile(webhookConfigPath)
+	// webhookConfigPath comes from binary parameters, not user input.
+	// #nosec G304
+	content, err := os.ReadFile(webhookConfigPath) //nolint:gosec
 	if err != nil {
 		return nil, err
 	}

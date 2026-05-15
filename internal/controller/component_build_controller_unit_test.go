@@ -308,7 +308,7 @@ func TestGenerateCelExpressionForPipeline(t *testing.T) {
 		{
 			name: "should fail to generate cel expression for component if isFileExist fails",
 			isDockerfileExist: func(repoUrl, branch, dockerfilePath string) (bool, error) {
-				return false, fmt.Errorf("Failed to check file existance")
+				return false, fmt.Errorf("Failed to check file existence")
 			},
 			wantOnPullError: true,
 			wantOnPushError: true,
@@ -514,7 +514,7 @@ func TestValidatePaCConfiguration(t *testing.T) {
 			expectError: true,
 		},
 		{
-			name:        "should reject GitHub application configuration if GitHub application application private key is invalid",
+			name:        "should reject GitHub application configuration if GitHub application private key is invalid",
 			gitProvider: "github",
 			secret: corev1.Secret{
 				Data: map[string][]byte{

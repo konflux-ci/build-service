@@ -560,7 +560,7 @@ func createImageRepositoryForComponent(componentKey types.NamespacedName) *imgcv
 		Spec: imgcv1alpha1.ImageRepositorySpec{
 			Image: imgcv1alpha1.ImageParameters{
 				Name:       component.Namespace + "/" + component.Name,
-				Visibility: imgcv1alpha1.ImageVisibility(imgcv1alpha1.ImageVisibilityPublic),
+				Visibility: imgcv1alpha1.ImageVisibilityPublic,
 			},
 		},
 	}
@@ -585,7 +585,7 @@ func createImageRepositoryForComponent(componentKey types.NamespacedName) *imgcv
 			PullSecretName: componentKey.Name + "-image-pull",
 		},
 	}
-	Expect(k8sClient.Status().Update(ctx, imageRepository))
+	Expect(k8sClient.Status().Update(ctx, imageRepository)).To(Succeed())
 	Eventually(func() bool {
 		if err := k8sClient.Get(ctx, componentKey, imageRepository); err != nil {
 			return false
@@ -837,7 +837,7 @@ func validatePaCRepository(component *compapiv1alpha1.Component, secretName, sec
 
 	if skipBuildsMap != nil {
 		Expect(repository.Spec.Params).ShouldNot(BeNil())
-		Expect(len(*repository.Spec.Params)).To(Equal(len(skipBuildsMap)))
+		Expect(*repository.Spec.Params).To(HaveLen(len(skipBuildsMap)))
 
 		for revision, skipBuild := range skipBuildsMap {
 			Expect(*repository.Spec.Params).Should(ContainElement(And(
@@ -859,7 +859,7 @@ func validatePaCRepository(component *compapiv1alpha1.Component, secretName, sec
 func validatePaCRepositoryIncomings(repository *pacv1alpha1.Repository, targets []string) {
 	// Validate Incomings
 	Expect(repository.Spec.Incomings).NotTo(BeNil())
-	Expect(len(*repository.Spec.Incomings)).To(Equal(1))
+	Expect(*repository.Spec.Incomings).To(HaveLen(1))
 
 	// Get expected secret name from repository name
 	expectedSecretName := getPaCIncomingSecretName(repository.Name)
@@ -874,7 +874,7 @@ func validatePaCRepositoryIncomings(repository *pacv1alpha1.Repository, targets 
 	}
 
 	// Validate params (always source_url)
-	Expect(len((*repository.Spec.Incomings)[0].Params)).To(Equal(1))
+	Expect((*repository.Spec.Incomings)[0].Params).To(HaveLen(1))
 	Expect((*repository.Spec.Incomings)[0].Params).To(Equal([]string{"source_url"}))
 }
 

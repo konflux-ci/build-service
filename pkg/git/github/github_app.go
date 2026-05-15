@@ -120,16 +120,13 @@ type ApplicationInstallation struct {
 	Repositories []*github.Repository
 }
 
+var ghUrlRegex = regexp.MustCompile(`github.com/([^/]+)/([^/]+)(\.git)?$`)
+
 func getAppInstallationsForRepository(githubAppIdStr string, appPrivateKeyPem []byte, repoUrl string) (*ApplicationInstallation, string, error) {
 	githubAppId, err := strconv.ParseInt(githubAppIdStr, 10, 64)
 	if err != nil {
 		return nil, "", boerrors.NewBuildOpError(boerrors.EGitHubAppMalformedId,
 			fmt.Errorf("failed to convert %s to int: %w", githubAppIdStr, err))
-	}
-
-	ghUrlRegex, err := regexp.Compile(`github.com/([^/]+)/([^/]+)(\.git)?$`)
-	if err != nil {
-		return nil, "", err
 	}
 
 	match := ghUrlRegex.FindStringSubmatch(repoUrl)

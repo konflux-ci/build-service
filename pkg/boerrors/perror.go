@@ -86,7 +86,7 @@ const (
 	EPaCSecretNotFound BOErrorId = 50
 	// Validation of 'pipelines-as-code-secret' secret failed
 	EPaCSecretInvalid BOErrorId = 51
-	// Pipelines as Code public route to recieve webhook events doesn't exist in expected namespaces.
+	// Pipelines as Code public route to receive webhook events doesn't exist in expected namespaces.
 	EPaCRouteDoesNotExist BOErrorId = 52
 	// An attempt to create another PaC repository object that references the same git repository.
 	EPaCDuplicateRepository BOErrorId = 53

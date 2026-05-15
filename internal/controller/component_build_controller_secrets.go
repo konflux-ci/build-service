@@ -200,7 +200,7 @@ func (r *ComponentBuildReconciler) ensureWebhookSecret(ctx context.Context, comp
 func getWebhookSecretKeyForComponent(component compapiv1alpha1.Component, newModel bool) string {
 	gitRepoUrl := getGitRepoUrl(component, newModel)
 
-	notAllowedCharRegex, _ := regexp.Compile("[^-._a-zA-Z0-9]{1}")
+	notAllowedCharRegex := regexp.MustCompile("[^-._a-zA-Z0-9]{1}")
 	return notAllowedCharRegex.ReplaceAllString(gitRepoUrl, "_")
 }
 

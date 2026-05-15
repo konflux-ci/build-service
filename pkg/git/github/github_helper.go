@@ -224,6 +224,8 @@ func (g *GithubClient) deleteFromTree(owner, repository string, baseRef *github.
 	return tree, refineGitHostingServiceError(resp.Response, err)
 }
 
+// addCommitToBranch creates commit on top of the given branch reference with provided files.
+// nolint:dupl // Extracting create the commit using the tree doesn't make sense now.
 func (g *GithubClient) addCommitToBranch(owner, repository, authorName, authorEmail, commitMessage string, signedOff bool, files []gp.RepositoryFile, ref *github.Reference) error {
 	// Get the parent commit to attach the commit to.
 	parent, resp, err := g.client.Repositories.GetCommit(g.ctx, owner, repository, *ref.Object.SHA, nil)
@@ -257,6 +259,7 @@ func (g *GithubClient) addCommitToBranch(owner, repository, authorName, authorEm
 }
 
 // Creates commit into specified branch that deletes given files.
+// nolint:dupl // Extracting create the commit using the tree doesn't make sense now.
 func (g *GithubClient) addDeleteCommitToBranch(owner, repository, authorName, authorEmail, commitMessage string, signedOff bool, files []gp.RepositoryFile, ref *github.Reference) error {
 	// Get the parent commit to attach the commit to.
 	parent, resp, err := g.client.Repositories.GetCommit(g.ctx, owner, repository, *ref.Object.SHA, nil)

@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -44,7 +45,6 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"slices"
 
 	l "github.com/konflux-ci/build-service/pkg/logs"
 )
@@ -256,7 +256,7 @@ func (r *ComponentDependencyUpdateReconciler) Reconcile(ctx context.Context, req
 		}
 		log.Info("adding finalizer for component nudge")
 		// We add a finalizer to make sure we see the run before it is deleted
-		// As tekton results should aggressivly delete when pruning is enabled
+		// As tekton results should aggressively delete when pruning is enabled
 		patch := client.MergeFrom(pipelineRun.DeepCopy())
 		controllerutil.AddFinalizer(pipelineRun, NudgeFinalizer)
 		err = r.Client.Patch(ctx, pipelineRun, patch)
@@ -473,7 +473,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 			log.Error(err, "failed to parse retry count, not retrying")
 			return r.removePipelineFinalizer(ctx, pipelineRun, patch)
 		}
-		failureCount = failureCount + 1
+		failureCount++
 
 		pipelineRun.Annotations[FailureCountAnnotationName] = strconv.Itoa(failureCount)
 
@@ -599,7 +599,7 @@ func (r *ComponentDependencyUpdateReconciler) getImageRepositoryCredentials(ctx 
 	if err := r.Client.List(ctx, allImageRepoSecrets, client.InNamespace(namespace), opts); err != nil {
 		return "", "", fmt.Errorf("failed to list secrets of type %s in %s namespace: %w", corev1.SecretTypeDockerConfigJson, namespace, err)
 	}
-	log.Info("found docker config secrets secrets", "count", len(allImageRepoSecrets.Items))
+	log.Info("found docker config secrets", "count", len(allImageRepoSecrets.Items))
 
 	type DockerConfigJson struct {
 		ConfigAuths map[string]RepositoryConfigAuth `json:"auths"`
@@ -752,24 +752,18 @@ func GetComponentFromPipelineRun(c client.Client, ctx context.Context, pipelineR
 	return nil, nil
 }
 
+var stageRegex = regexp.MustCompile(`^quay.io/redhat-pending/(.*)----(.*)$`)
+var prodRegex = regexp.MustCompile(`^quay.io/redhat-prod/(.*)----(.*)$`)
+
 // See https://issues.redhat.com/browse/KFLUXBUGS-1233
 // This will map repsitories of the form 'quay.io/redhat-prod/foo----bar' to 'registry.redhat.io/foo/bar'
 func mapToRegistryRedhatIo(repo string) string {
-	prodRegex, err := regexp.Compile(`^quay.io/redhat-prod/(.*)----(.*)$`)
-	if err != nil {
-		return ""
-	}
-
 	results := prodRegex.FindStringSubmatch(repo)
 	if results != nil {
 		return "registry.redhat.io/" + results[1] + "/" + results[2]
 	}
 
 	// try handling the stage registry
-	stageRegex, err := regexp.Compile(`^quay.io/redhat-pending/(.*)----(.*)$`)
-	if err != nil {
-		return ""
-	}
 	results = stageRegex.FindStringSubmatch(repo)
 	if results != nil {
 		return "registry.stage.redhat.io/" + results[1] + "/" + results[2]

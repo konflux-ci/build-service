@@ -137,7 +137,7 @@ func (f *ForgejoClient) branchExist(owner, repository, branchName string) (bool,
 	return true, nil
 }
 
-func (f *ForgejoClient) createBranch(owner, repository, branchName, baseBranchName string) (*forgejo.Branch, error) {
+func (f *ForgejoClient) createBranch(owner, repository, branchName, baseBranchName string) error {
 	opts := forgejo.CreateBranchOption{
 		BranchName: branchName,
 	}
@@ -145,16 +145,16 @@ func (f *ForgejoClient) createBranch(owner, repository, branchName, baseBranchNa
 	// Get the base branch to get the commit SHA
 	baseBranch, resp, err := f.getBranch(owner, repository, baseBranchName)
 	if err != nil {
-		return nil, refineGitHostingServiceError(resp.Response, err)
+		return refineGitHostingServiceError(resp.Response, err)
 	}
 	if baseBranch == nil {
-		return nil, fmt.Errorf("base branch '%s' not found", baseBranchName)
+		return fmt.Errorf("base branch '%s' not found", baseBranchName)
 	}
 
 	opts.OldBranchName = baseBranchName
 
-	branch, resp, err := f.client.CreateBranch(owner, repository, opts)
-	return branch, refineGitHostingServiceError(resp.Response, err)
+	_, resp, err = f.client.CreateBranch(owner, repository, opts)
+	return refineGitHostingServiceError(resp.Response, err)
 }
 
 func (f *ForgejoClient) deleteBranch(owner, repository, branchName string) (bool, error) {
@@ -475,9 +475,12 @@ func (f *ForgejoClient) createWebhook(owner, repository string, hook *forgejo.Cr
 }
 
 // updateWebhook updates an existing webhook
-func (f *ForgejoClient) updateWebhook(owner, repository string, webhookID int64, hook *forgejo.EditHookOption) (*forgejo.Hook, error) {
+func (f *ForgejoClient) updateWebhook(owner, repository string, webhookID int64, hook *forgejo.EditHookOption) error {
 	resp, err := f.client.EditRepoHook(owner, repository, webhookID, *hook)
-	return nil, refineGitHostingServiceError(resp.Response, err)
+	if err != nil {
+		return err
+	}
+	return refineGitHostingServiceError(resp.Response, err)
 }
 
 // deleteWebhook deletes a webhook

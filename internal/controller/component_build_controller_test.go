@@ -359,7 +359,7 @@ var _ = Describe("Component build controller", func() {
 			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
 				defer GinkgoRecover()
 
-				Expect(len(d.Files)).To(Equal(2))
+				Expect(d.Files).To(HaveLen(2))
 				for _, file := range d.Files {
 					buildPipelineData := &tektonapi.PipelineRun{}
 					Expect(yaml.Unmarshal(file.Content, buildPipelineData)).To(Succeed())
@@ -512,7 +512,7 @@ var _ = Describe("Component build controller", func() {
 			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
 				isCreatePaCPullRequestInvoked = true
 				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resourcePacPrepKey.Name))
-				Expect(len(d.Files)).To(Equal(2))
+				Expect(d.Files).To(HaveLen(2))
 				for _, file := range d.Files {
 					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
 				}
@@ -561,7 +561,7 @@ var _ = Describe("Component build controller", func() {
 			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
 				isCreatePaCPullRequestInvoked = true
 				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resourcePacPrepKey.Name))
-				Expect(len(d.Files)).To(Equal(2))
+				Expect(d.Files).To(HaveLen(2))
 				for _, file := range d.Files {
 					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
 				}
@@ -610,7 +610,7 @@ var _ = Describe("Component build controller", func() {
 			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
 				isCreatePaCPullRequestInvoked = true
 				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resourcePacPrepKey.Name))
-				Expect(len(d.Files)).To(Equal(2))
+				Expect(d.Files).To(HaveLen(2))
 				for _, file := range d.Files {
 					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
 				}
@@ -660,7 +660,7 @@ var _ = Describe("Component build controller", func() {
 			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
 				isCreatePaCPullRequestInvoked = true
 				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resourcePacPrepKey.Name))
-				Expect(len(d.Files)).To(Equal(2))
+				Expect(d.Files).To(HaveLen(2))
 				for _, file := range d.Files {
 					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
 				}
@@ -895,7 +895,7 @@ var _ = Describe("Component build controller", func() {
 			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
 				isCreatePaCPullRequestInvoked = true
 				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resourcePacPrepKey.Name))
-				Expect(len(d.Files)).To(Equal(2))
+				Expect(d.Files).To(HaveLen(2))
 				for _, file := range d.Files {
 					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
 				}
@@ -995,7 +995,7 @@ var _ = Describe("Component build controller", func() {
 			waitSecretCreated(namespacePaCSecretKey)
 			waitSecretCreated(webhookSecretKey)
 
-			Expect(len(webhookSecretStrings)).To(BeNumerically(">", 0))
+			Expect(webhookSecretStrings).ToNot(BeEmpty())
 			for _, webhookSecret := range webhookSecretStrings {
 				Expect(webhookSecret).To(Equal(webhookSecretStrings[0]))
 			}
@@ -1042,7 +1042,7 @@ var _ = Describe("Component build controller", func() {
 			waitComponentAnnotationGone(component1Key, BuildRequestAnnotationName)
 			waitComponentAnnotationGone(component2Key, BuildRequestAnnotationName)
 
-			Expect(len(webhookSecretStrings)).To(Equal(2))
+			Expect(webhookSecretStrings).To(HaveLen(2))
 			Expect(webhookSecretStrings[0]).ToNot(Equal(webhookSecretStrings[1]))
 		})
 
@@ -1205,7 +1205,7 @@ var _ = Describe("Component build controller", func() {
 			UndoPaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (webUrl string, err error) {
 				isRemovePaCPullRequestInvoked = true
 				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resourceCleanupKey.Name))
-				Expect(len(d.Files)).To(Equal(2))
+				Expect(d.Files).To(HaveLen(2))
 				for _, file := range d.Files {
 					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
 				}
@@ -1335,7 +1335,7 @@ var _ = Describe("Component build controller", func() {
 
 			repository = waitPaCRepositoryCreated(repositoryNameKey)
 			Expect(repository.Spec.Incomings).ToNot(BeNil())
-			Expect(len(*repository.Spec.Incomings)).To(Equal(1))
+			Expect(*repository.Spec.Incomings).To(HaveLen(1))
 			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
 			Expect((*repository.Spec.Incomings)[0].Secret.Key).To(Equal(pacIncomingSecretKey))
 			Expect((*repository.Spec.Incomings)[0].Targets).To(Equal([]string{"another"}))
@@ -1346,7 +1346,7 @@ var _ = Describe("Component build controller", func() {
 			UndoPaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (webUrl string, err error) {
 				isRemovePaCPullRequestInvoked = true
 				Expect(repoUrl).To(Equal(SampleRepoLink + "-" + resourceCleanupKey.Name))
-				Expect(len(d.Files)).To(Equal(2))
+				Expect(d.Files).To(HaveLen(2))
 				for _, file := range d.Files {
 					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
 				}
@@ -1390,7 +1390,7 @@ var _ = Describe("Component build controller", func() {
 			UndoPaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (webUrl string, err error) {
 				isRemovePaCPullRequestInvoked = true
 				Expect(repoUrl).To(Equal(SampleRepoLink + "-samerepo"))
-				Expect(len(d.Files)).To(Equal(2))
+				Expect(d.Files).To(HaveLen(2))
 				for _, file := range d.Files {
 					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue())
 				}
@@ -1761,7 +1761,7 @@ var _ = Describe("Component build controller", func() {
 			pacRepository := &pacv1alpha1.Repository{}
 
 			Expect(k8sClient.List(ctx, pacRepositoriesList, &client.ListOptions{Namespace: component1Key.Namespace})).To(Succeed())
-			Expect(pacRepositoriesList.Items).To(HaveLen(0))
+			Expect(pacRepositoriesList.Items).To(BeEmpty())
 
 			component1PaCMergeRequestCreated := false
 			component2PaCMergeRequestCreated := false
@@ -1993,11 +1993,11 @@ var _ = Describe("Component build controller", func() {
 			repository = waitPaCRepositoryCreated(repositoryNameKey)
 
 			Expect(repository.Spec.Incomings).ToNot(BeNil())
-			Expect(len(*repository.Spec.Incomings)).To(Equal(1))
+			Expect(*repository.Spec.Incomings).To(HaveLen(1))
 			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
 			Expect((*repository.Spec.Incomings)[0].Secret.Key).To(Equal(pacIncomingSecretKey))
 			Expect((*repository.Spec.Incomings)[0].Targets).To(Equal([]string{"main"}))
-			Expect(len((*repository.Spec.Incomings)[0].Params)).To(Equal(1))
+			Expect((*repository.Spec.Incomings)[0].Params).To(HaveLen(1))
 			Expect((*repository.Spec.Incomings)[0].Params).To(Equal([]string{"source_url"}))
 		})
 
@@ -2108,11 +2108,11 @@ var _ = Describe("Component build controller", func() {
 
 			repository = waitPaCRepositoryCreated(repositoryNameKey)
 			Expect(repository.Spec.Incomings).ToNot(BeNil())
-			Expect(len(*repository.Spec.Incomings)).To(Equal(1))
+			Expect(*repository.Spec.Incomings).To(HaveLen(1))
 			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
 			Expect((*repository.Spec.Incomings)[0].Secret.Key).To(Equal(pacIncomingSecretKey))
 			Expect((*repository.Spec.Incomings)[0].Targets).To(Equal([]string{"main"}))
-			Expect(len((*repository.Spec.Incomings)[0].Params)).To(Equal(1))
+			Expect((*repository.Spec.Incomings)[0].Params).To(HaveLen(1))
 			Expect((*repository.Spec.Incomings)[0].Params).To(Equal([]string{"source_url"}))
 		})
 
@@ -2180,7 +2180,7 @@ var _ = Describe("Component build controller", func() {
 
 			repository = waitPaCRepositoryCreated(repositoryNameKey)
 			Expect(repository.Spec.Incomings).ToNot(BeNil())
-			Expect(len(*repository.Spec.Incomings)).To(Equal(1))
+			Expect(*repository.Spec.Incomings).To(HaveLen(1))
 			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
 			Expect((*repository.Spec.Incomings)[0].Secret.Key).To(Equal(pacIncomingSecretKey))
 			Expect((*repository.Spec.Incomings)[0].Targets).To(Equal([]string{"main"}))
@@ -2205,11 +2205,11 @@ var _ = Describe("Component build controller", func() {
 
 			repository = waitPaCRepositoryCreated(repositoryNameKey)
 			Expect(repository.Spec.Incomings).ToNot(BeNil())
-			Expect(len(*repository.Spec.Incomings)).To(Equal(1))
+			Expect(*repository.Spec.Incomings).To(HaveLen(1))
 			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
 			Expect((*repository.Spec.Incomings)[0].Secret.Key).To(Equal(pacIncomingSecretKey))
 			Expect((*repository.Spec.Incomings)[0].Targets).To(Equal([]string{"main", "another"}))
-			Expect(len((*repository.Spec.Incomings)[0].Params)).To(Equal(1))
+			Expect((*repository.Spec.Incomings)[0].Params).To(HaveLen(1))
 			Expect((*repository.Spec.Incomings)[0].Params).To(Equal([]string{"source_url"}))
 		})
 
@@ -2277,7 +2277,7 @@ var _ = Describe("Component build controller", func() {
 
 			repository = waitPaCRepositoryCreated(repositoryNameKey)
 			Expect(repository.Spec.Incomings).ToNot(BeNil())
-			Expect(len(*repository.Spec.Incomings)).To(Equal(1))
+			Expect(*repository.Spec.Incomings).To(HaveLen(1))
 			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
 			Expect((*repository.Spec.Incomings)[0].Secret.Key).To(Equal(pacIncomingSecretKey))
 			Expect((*repository.Spec.Incomings)[0].Targets).To(Equal([]string{"main"}))
@@ -2302,11 +2302,11 @@ var _ = Describe("Component build controller", func() {
 
 			repository = waitPaCRepositoryCreated(repositoryNameKey)
 			Expect(repository.Spec.Incomings).ToNot(BeNil())
-			Expect(len(*repository.Spec.Incomings)).To(Equal(1))
+			Expect(*repository.Spec.Incomings).To(HaveLen(1))
 			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
 			Expect((*repository.Spec.Incomings)[0].Secret.Key).To(Equal(pacIncomingSecretKey))
 			Expect((*repository.Spec.Incomings)[0].Targets).To(Equal([]string{"main"}))
-			Expect(len((*repository.Spec.Incomings)[0].Params)).To(Equal(1))
+			Expect((*repository.Spec.Incomings)[0].Params).To(HaveLen(1))
 			Expect((*repository.Spec.Incomings)[0].Params).To(Equal([]string{"source_url"}))
 		})
 
@@ -2384,11 +2384,11 @@ var _ = Describe("Component build controller", func() {
 
 			repository = waitPaCRepositoryCreated(repositoryNameKey)
 			Expect(repository.Spec.Incomings).ToNot(BeNil())
-			Expect(len(*repository.Spec.Incomings)).To(Equal(1))
+			Expect(*repository.Spec.Incomings).To(HaveLen(1))
 			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
 			Expect((*repository.Spec.Incomings)[0].Secret.Key).To(Equal(pacIncomingSecretKey))
 			Expect((*repository.Spec.Incomings)[0].Targets).To(Equal([]string{"main", "first", "second", "another"}))
-			Expect(len((*repository.Spec.Incomings)[0].Params)).To(Equal(1))
+			Expect((*repository.Spec.Incomings)[0].Params).To(HaveLen(1))
 			Expect((*repository.Spec.Incomings)[0].Params).To(Equal([]string{"source_url"}))
 		})
 
@@ -2468,11 +2468,11 @@ var _ = Describe("Component build controller", func() {
 
 			repository = waitPaCRepositoryCreated(repositoryNameKey)
 			Expect(repository.Spec.Incomings).ToNot(BeNil())
-			Expect(len(*repository.Spec.Incomings)).To(Equal(1))
+			Expect(*repository.Spec.Incomings).To(HaveLen(1))
 			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
 			Expect((*repository.Spec.Incomings)[0].Secret.Key).To(Equal(pacIncomingSecretKey))
 			Expect((*repository.Spec.Incomings)[0].Targets).To(Equal([]string{"main", "another", "first", "second"}))
-			Expect(len((*repository.Spec.Incomings)[0].Params)).To(Equal(1))
+			Expect((*repository.Spec.Incomings)[0].Params).To(HaveLen(1))
 			Expect((*repository.Spec.Incomings)[0].Params).To(Equal([]string{"source_url"}))
 		})
 
@@ -2546,11 +2546,11 @@ var _ = Describe("Component build controller", func() {
 
 			repository = waitPaCRepositoryCreated(repositoryNameKey)
 			Expect(repository.Spec.Incomings).ToNot(BeNil())
-			Expect(len(*repository.Spec.Incomings)).To(Equal(1))
+			Expect(*repository.Spec.Incomings).To(HaveLen(1))
 			Expect((*repository.Spec.Incomings)[0].Secret.Name).To(Equal(incomingSecretName))
 			Expect((*repository.Spec.Incomings)[0].Secret.Key).To(Equal(pacIncomingSecretKey))
 			Expect((*repository.Spec.Incomings)[0].Targets).To(Equal([]string{"main", "another"}))
-			Expect(len((*repository.Spec.Incomings)[0].Params)).To(Equal(1))
+			Expect((*repository.Spec.Incomings)[0].Params).To(HaveLen(1))
 			Expect((*repository.Spec.Incomings)[0].Params).To(Equal([]string{"source_url"}))
 		})
 	})

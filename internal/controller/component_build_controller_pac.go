@@ -351,11 +351,11 @@ func (r *ComponentBuildReconciler) TriggerPaCBuild(
 	bytesParam := []byte(fmt.Sprintf(jsonTemplate, repoUrl, secretValue, repository.Name, targetBranch, pipelineRunName, repository.Namespace))
 
 	resp, err := HttpClient.Post(triggerURL, "application/json", bytes.NewBuffer(bytesParam))
-
 	if err != nil {
 		log.Error(err, "error from incoming webhook trigger POST")
 		return nil
 	}
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 && resp.StatusCode != 202 {
 		// ignore 503 and 504 for now, until PAC fixes issue https://issues.redhat.com/browse/SRVKP-4352
@@ -458,11 +458,11 @@ func (r *ComponentBuildReconciler) TriggerPaCBuildOldModel(ctx context.Context, 
 	bytesParam := []byte(fmt.Sprintf(jsonTemplate, repoUrl, secretValue, repository.Name, targetBranch, pipelineRunName, repository.Namespace))
 
 	resp, err := HttpClient.Post(triggerURL, "application/json", bytes.NewBuffer(bytesParam))
-
 	if err != nil {
 		log.Error(err, "error from incoming webhook trigger POST")
 		return false, nil
 	}
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 && resp.StatusCode != 202 {
 		// ignore 503 and 504 for now, until PAC fixes issue https://issues.redhat.com/browse/SRVKP-4352
@@ -558,7 +558,7 @@ func (r *ComponentBuildReconciler) getPaCWebhookTargetUrl(ctx context.Context, r
 	return webhookTargetUrl, nil
 }
 
-// getPaCRoutePublicUrl returns Pipelines as Code public route that recieves events to trigger new pipeline runs.
+// getPaCRoutePublicUrl returns Pipelines as Code public route that receives events to trigger new pipeline runs.
 // It checks "openshift-pipelines", "pipelines-as-code" namespaces
 // and namespace defined in PAC_NAMESPACE environment variable, if any (takes precedence).
 // Note, it makes sense only for Openshift as in pure k8s PaC doesn't have Ingress by default.
@@ -798,7 +798,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaCOldModel(ctx context
 		baseBranch = defaultBranch
 	}
 
-	pipelineRunOnPushYaml, pipelineRunOnPRYaml, err := r.generatePaCPipelineRunConfigsOldModel(ctx, component, gitClient, baseBranch, newModel)
+	pipelineRunOnPushYaml, pipelineRunOnPRYaml, err := r.generatePaCPipelineRunConfigsOldModel(ctx, component, gitClient, baseBranch)
 	if err != nil {
 		return "", err
 	}

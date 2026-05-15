@@ -64,7 +64,7 @@ func TestReadBuildStatusOldModel(t *testing.T) {
 			want:                       &BuildStatus{},
 		},
 		{
-			name:                       "should return empty build status if curent one is not valid JSON",
+			name:                       "should return empty build status if current one is not valid JSON",
 			buildStatusAnnotationValue: "{\"pac\":{\"build-start-time\":\"time\"}",
 			want:                       &BuildStatus{},
 		},
@@ -427,7 +427,7 @@ func TestGenerateCelExpressionForPipelineOldModel(t *testing.T) {
 			}(),
 			targetBranch: "my-branch",
 			isDockerfileExist: func(repoUrl, branch, dockerfilePath string) (bool, error) {
-				return false, fmt.Errorf("Failed to check file existance")
+				return false, fmt.Errorf("Failed to check file existence")
 			},
 			wantOnPullError: true,
 			wantOnPushError: true,

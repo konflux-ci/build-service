@@ -378,7 +378,7 @@ NextGroup:
 						}
 					}
 					// Required API resource is not found in the list of available API resources
-					setupLog.Info(fmt.Sprintf("Waiting for %s API Resourse under %s API Group", requiredGroupResource, requiredGroupName))
+					setupLog.Info(fmt.Sprintf("Waiting for %s API Resources under %s API Group", requiredGroupResource, requiredGroupName))
 					return false
 				}
 				// All API resources from the group is available

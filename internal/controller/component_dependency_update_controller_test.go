@@ -194,7 +194,7 @@ var _ = Describe("Component nudge controller", func() {
 				LastTransitionTime: apis.VolatileTime{Inner: metav1.Time{Time: time.Now()}},
 			})
 			pr.Status.CompletionTime = &metav1.Time{Time: time.Now()}
-			Expect(k8sClient.Status().Update(ctx, pr)).Should(BeNil())
+			Expect(k8sClient.Status().Update(ctx, pr)).Should(Succeed())
 			Eventually(func() bool {
 				pr := getPipelineRun("test-pipeline-1", UserNamespace)
 				return !controllerutil.ContainsFinalizer(pr, NudgeFinalizer)
@@ -291,7 +291,7 @@ var _ = Describe("Component nudge controller", func() {
 				{Name: ImageUrl, Value: tektonapi.ResultValue{Type: tektonapi.ParamTypeString, StringVal: "quay.io.foo/bar:latest"}},
 			}
 			pr.Status.CompletionTime = &metav1.Time{Time: time.Now()}
-			Expect(k8sClient.Status().Update(ctx, pr)).Should(BeNil())
+			Expect(k8sClient.Status().Update(ctx, pr)).Should(Succeed())
 
 			Eventually(func() bool {
 				// check that no nudgeerror event was reported
@@ -304,7 +304,7 @@ var _ = Describe("Component nudge controller", func() {
 			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 
 			renovateConfigMaps := getRenovateConfigMapList()
-			Expect(len(renovateConfigMaps)).Should(Equal(2))
+			Expect(renovateConfigMaps).Should(HaveLen(2))
 			renovateConfigMapFound := false
 			renovateCaConfigMapFound := false
 
@@ -326,7 +326,7 @@ var _ = Describe("Component nudge controller", func() {
 			Expect(renovateCaConfigMapFound && renovateConfigMapFound).Should(BeTrue())
 
 			renovatePipelines := getRenovatePipelineRunList()
-			Expect(len(renovatePipelines)).Should(Equal(1))
+			Expect(renovatePipelines).Should(HaveLen(1))
 			renovateCommand := strings.Join(renovatePipelines[0].Spec.PipelineSpec.Tasks[0].TaskSpec.Steps[0].Command, ";")
 			Expect(strings.Contains(renovateCommand, `'username':'image_repo_username'`)).Should(BeTrue())
 
@@ -389,7 +389,7 @@ var _ = Describe("Component nudge controller", func() {
 				{Name: ImageUrl, Value: tektonapi.ResultValue{Type: tektonapi.ParamTypeString, StringVal: "quay.io.foo/bar:latest"}},
 			}
 			pr.Status.CompletionTime = &metav1.Time{Time: time.Now()}
-			Expect(k8sClient.Status().Update(ctx, pr)).Should(BeNil())
+			Expect(k8sClient.Status().Update(ctx, pr)).Should(Succeed())
 
 			Eventually(func() bool {
 				// check that no nudgeerror event was reported
@@ -402,7 +402,7 @@ var _ = Describe("Component nudge controller", func() {
 			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 
 			renovatePipelines := getRenovatePipelineRunList()
-			Expect(len(renovatePipelines)).Should(Equal(1))
+			Expect(renovatePipelines).Should(HaveLen(1))
 			renovateCommand := strings.Join(renovatePipelines[0].Spec.PipelineSpec.Tasks[0].TaskSpec.Steps[0].Command, ";")
 			Expect(strings.Contains(renovateCommand, `'username':'image_repo_username_partial'`)).Should(BeTrue())
 		})
@@ -454,7 +454,7 @@ var _ = Describe("Component nudge controller", func() {
 				{Name: ImageUrl, Value: tektonapi.ResultValue{Type: tektonapi.ParamTypeString, StringVal: "quay.io.foo/bar:latest"}},
 			}
 			pr.Status.CompletionTime = &metav1.Time{Time: time.Now()}
-			Expect(k8sClient.Status().Update(ctx, pr)).Should(BeNil())
+			Expect(k8sClient.Status().Update(ctx, pr)).Should(Succeed())
 
 			Eventually(func() bool {
 				// check that no nudgeerror event was reported
@@ -467,7 +467,7 @@ var _ = Describe("Component nudge controller", func() {
 			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 
 			renovatePipelines := getRenovatePipelineRunList()
-			Expect(len(renovatePipelines)).Should(Equal(1))
+			Expect(renovatePipelines).Should(HaveLen(1))
 			renovateCommand := strings.Join(renovatePipelines[0].Spec.PipelineSpec.Tasks[0].TaskSpec.Steps[0].Command, ";")
 			Expect(strings.Contains(renovateCommand, `'username':'image_repo_username_2'`)).Should(BeTrue())
 		})
@@ -491,10 +491,10 @@ var _ = Describe("Component nudge controller", func() {
 				{Name: ImageUrl, Value: tektonapi.ResultValue{Type: tektonapi.ParamTypeString, StringVal: "quay.io.foo/bar:latest"}},
 			}
 			pr.Status.CompletionTime = &metav1.Time{Time: time.Now()}
-			Expect(k8sClient.Status().Update(ctx, pr)).Should(BeNil())
+			Expect(k8sClient.Status().Update(ctx, pr)).Should(Succeed())
 
 			Eventually(func() bool {
-				//test that the state pipeline run was marked as nudged, even though it has not completed
+				// test that the state pipeline run was marked as nudged, even though it has not completed
 				stale := getPipelineRun("stale-pipeline", UserNamespace)
 				if stale.Annotations == nil || stale.Annotations[NudgeProcessedAnnotationName] != "true" || controllerutil.ContainsFinalizer(stale, NudgeFinalizer) {
 					return false
@@ -559,7 +559,7 @@ var _ = Describe("Component nudge controller", func() {
 				{Name: ImageUrl, Value: tektonapi.ResultValue{Type: tektonapi.ParamTypeString, StringVal: "quay.io.foo/bar:latest"}},
 			}
 			pr.Status.CompletionTime = &metav1.Time{Time: time.Now()}
-			Expect(k8sClient.Status().Update(ctx, pr)).Should(BeNil())
+			Expect(k8sClient.Status().Update(ctx, pr)).Should(Succeed())
 			Eventually(func() bool {
 				// check that no nudgeerror event was reported
 				hasFailure := hasRenovateFailedEvent()
@@ -611,7 +611,7 @@ var _ = Describe("Component nudge controller", func() {
 			assertRenovateConfiMap(nil, nil, customConfigMapData, imageBuiltFrom)
 
 			renovateConfigMaps := getRenovateConfigMapList()
-			Expect(len(renovateConfigMaps)).Should(Equal(2))
+			Expect(renovateConfigMaps).Should(HaveLen(2))
 			for _, renovateConfig := range renovateConfigMaps {
 				if strings.HasPrefix(renovateConfig.ObjectMeta.Name, "renovate-pipeline") {
 					for key, val := range renovateConfig.Data {
@@ -629,7 +629,7 @@ var _ = Describe("Component nudge controller", func() {
 						Expect(renovateConfigObj.PackageRules[1].CommitMessageSuffix).Should(Equal(commitMessageSuffixValue))
 						Expect(strings.Contains(renovateConfigObj.PackageRules[1].CommitBody, commitBodyValue)).Should(BeTrue())
 						Expect(renovateConfigObj.CustomManagers[0].FileMatch).Should(Equal(fileMatchValue))
-						Expect(strings.HasSuffix(key, customConfigType))
+						Expect(strings.HasSuffix(key, customConfigType)).To(BeTrue())
 						if renovateConfigObj.Username == gitHubAppUsername {
 							gitHubAppUsed++
 							Expect(renovateConfigObj.GitAuthor).Should(Equal(gitHubAppGitAuthor))
@@ -673,7 +673,7 @@ var _ = Describe("Component nudge controller", func() {
 			assertRenovateConfiMap(&customConfigMapName, customConfigMapData, nil, imageBuiltFrom)
 
 			renovateConfigMaps := getRenovateConfigMapList()
-			Expect(len(renovateConfigMaps)).Should(Equal(2))
+			Expect(renovateConfigMaps).Should(HaveLen(2))
 			for _, renovateConfig := range renovateConfigMaps {
 				if strings.HasPrefix(renovateConfig.ObjectMeta.Name, "renovate-pipeline") {
 					for key, val := range renovateConfig.Data {
@@ -691,7 +691,7 @@ var _ = Describe("Component nudge controller", func() {
 						Expect(renovateConfigObj.PackageRules[1].CommitMessageSuffix).Should(Equal(commitMessageSuffixValue))
 						Expect(strings.Contains(renovateConfigObj.PackageRules[1].CommitBody, commitBodyValue)).Should(BeTrue())
 						Expect(renovateConfigObj.CustomManagers[0].FileMatch).Should(Equal(fileMatchValue))
-						Expect(strings.HasSuffix(key, customConfigType))
+						Expect(strings.HasSuffix(key, customConfigType)).To(BeTrue())
 					}
 					break
 				}
@@ -741,7 +741,7 @@ var _ = Describe("Component nudge controller", func() {
 			assertRenovateConfiMap(&customConfigMapName, customConfigMapData, customNamespaceConfigMapData, imageBuiltFrom)
 
 			renovateConfigMaps := getRenovateConfigMapList()
-			Expect(len(renovateConfigMaps)).Should(Equal(2))
+			Expect(renovateConfigMaps).Should(HaveLen(2))
 			for _, renovateConfig := range renovateConfigMaps {
 				if strings.HasPrefix(renovateConfig.ObjectMeta.Name, "renovate-pipeline") {
 					for key, val := range renovateConfig.Data {
@@ -759,7 +759,7 @@ var _ = Describe("Component nudge controller", func() {
 						Expect(renovateConfigObj.PackageRules[1].CommitMessageSuffix).Should(Equal(commitMessageSuffixValue))
 						Expect(strings.Contains(renovateConfigObj.PackageRules[1].CommitBody, commitBodyValue)).Should(BeTrue())
 						Expect(renovateConfigObj.CustomManagers[0].FileMatch).Should(Equal(fileMatchValue))
-						Expect(strings.HasSuffix(key, customConfigType))
+						Expect(strings.HasSuffix(key, customConfigType)).To(BeTrue())
 					}
 					break
 				}
@@ -792,7 +792,7 @@ var _ = Describe("Component nudge controller", func() {
 			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 
 			renovatePipelines := getRenovatePipelineRunList()
-			Expect(len(renovatePipelines)).Should(Equal(1))
+			Expect(renovatePipelines).Should(HaveLen(1))
 			renovatePipeline := renovatePipelines[0]
 			Expect(renovatePipeline.Spec.TaskRunTemplate.ServiceAccountName).To(Equal(getComponentServiceAccountKey(baseComponentKey).Name))
 		})
@@ -853,7 +853,7 @@ var _ = Describe("Component nudge controller", func() {
 					log.Info("components nudged")
 					return RenovateConfig{}, nil
 				}
-				failures = failures - 1
+				failures--
 				return RenovateConfig{}, fmt.Errorf("failure")
 			}
 
@@ -873,12 +873,10 @@ var _ = Describe("Component nudge controller", func() {
 				{Name: ImageUrl, Value: tektonapi.ResultValue{Type: tektonapi.ParamTypeString, StringVal: "quay.io.foo/bar:latest"}},
 			}
 			pr.Status.CompletionTime = &metav1.Time{Time: time.Now()}
-			Expect(k8sClient.Status().Update(ctx, pr)).Should(BeNil())
+			Expect(k8sClient.Status().Update(ctx, pr)).Should(Succeed())
 
 			// wait for a nudge error event
-			Eventually(func() bool {
-				return hasRenovateFailedEvent()
-			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
+			Eventually(hasRenovateFailedEvent, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 
 			// after one error it will retry and create pipeline
 			Eventually(func() bool {
@@ -899,7 +897,7 @@ var _ = Describe("Component nudge controller", func() {
 					log.Info("components nudged")
 					return RenovateConfig{}, nil
 				}
-				failures = failures - 1
+				failures--
 				return RenovateConfig{}, fmt.Errorf("failure")
 			}
 
@@ -919,7 +917,7 @@ var _ = Describe("Component nudge controller", func() {
 				{Name: ImageUrl, Value: tektonapi.ResultValue{Type: tektonapi.ParamTypeString, StringVal: "quay.io.foo/bar:latest"}},
 			}
 			pr.Status.CompletionTime = &metav1.Time{Time: time.Now()}
-			Expect(k8sClient.Status().Update(ctx, pr)).Should(BeNil())
+			Expect(k8sClient.Status().Update(ctx, pr)).Should(Succeed())
 
 			Eventually(func() bool {
 				// check that nudgeerror event was reported

@@ -261,7 +261,7 @@ var _ = Describe("Component build controller new model", func() {
 			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
 				defer GinkgoRecover()
 
-				Expect(len(d.Files)).To(Equal(2))
+				Expect(d.Files).To(HaveLen(2))
 				for _, file := range d.Files {
 					buildPipelineData := &tektonapi.PipelineRun{}
 					Expect(yaml.Unmarshal(file.Content, buildPipelineData)).To(Succeed())
@@ -691,7 +691,7 @@ var _ = Describe("Component build controller new model", func() {
 			component = waitForComponentSpecActionEmpty(componentKey, "create-pr", "versions")
 
 			// Verify v1 is onboarded in status
-			Expect(len(component.Status.Versions)).To(Equal(1))
+			Expect(component.Status.Versions).To(HaveLen(1))
 			verifyComponentVersionStatus(component.Status.Versions[0], versionName, "main", "succeeded", "*", "", false)
 		})
 
@@ -722,7 +722,7 @@ var _ = Describe("Component build controller new model", func() {
 			component = waitForComponentSpecActionEmpty(componentKey, "trigger", "builds")
 
 			// Verify v1 is still onboarded in status
-			Expect(len(component.Status.Versions)).To(Equal(1))
+			Expect(component.Status.Versions).To(HaveLen(1))
 			verifyComponentVersionStatus(component.Status.Versions[0], versionName, "main", "succeeded", "", "", false)
 		})
 	})
@@ -1346,7 +1346,7 @@ var _ = Describe("Component build controller new model", func() {
 			Expect(component.Status.Message).To(ContainSubstring("Pipelines as Code secret does not exist"))
 
 			// Verify version is not onboarded (no status.Versions entries)
-			Expect(component.Status.Versions).To(HaveLen(0))
+			Expect(component.Status.Versions).To(BeEmpty())
 
 			deleteComponent(componentKey)
 		})
@@ -1469,7 +1469,7 @@ var _ = Describe("Component build controller new model", func() {
 				}
 
 				// Verify purge PR data contains files to delete
-				Expect(len(d.Files)).To(Equal(2), "Should delete both pull and push pipeline files")
+				Expect(d.Files).To(HaveLen(2), "Should delete both pull and push pipeline files")
 				for _, file := range d.Files {
 					Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue(), "File should be in .tekton directory")
 					// Files should be empty for deletion
@@ -1543,7 +1543,7 @@ var _ = Describe("Component build controller new model", func() {
 					Expect(repoUrl).To(Equal(expectedGitURL))
 					Expect(d.CommitMessage).ToNot(BeEmpty())
 					Expect(d.BaseBranchName).To(Equal("branch-v2"))
-					Expect(len(d.Files)).To(Equal(2), "Should delete both pull and push pipeline files")
+					Expect(d.Files).To(HaveLen(2), "Should delete both pull and push pipeline files")
 					return UndoPacMergeRequestURL, nil
 				} else if strings.Contains(d.BranchName, version3Name) {
 					// v3 version fails with insufficient scope error
@@ -1688,7 +1688,7 @@ var _ = Describe("Component build controller new model", func() {
 				verifyMergeRequestData(repoUrl, d, gitURL, commitMessage, title, branchName, baseBranch)
 
 				// Each PR should have exactly 2 files: pull and push pipeline
-				Expect(len(d.Files)).To(Equal(2))
+				Expect(d.Files).To(HaveLen(2))
 
 				expectedPullPipelineName := componentKey.Name + "-" + versionName + pipelineRunOnPRSuffix
 				expectedPushPipelineName := componentKey.Name + "-" + versionName + pipelineRunOnPushSuffix
@@ -1812,7 +1812,7 @@ spec:
 				verifyMergeRequestData(repoUrl, d, gitURL, commitMessage, title, branchName, "main")
 
 				// Each PR should have exactly 2 files: pull and push pipeline
-				Expect(len(d.Files)).To(Equal(2))
+				Expect(d.Files).To(HaveLen(2))
 
 				expectedPullPipelineName := componentKey.Name + "-" + versionName + pipelineRunOnPRSuffix
 				expectedPushPipelineName := componentKey.Name + "-" + versionName + pipelineRunOnPushSuffix
@@ -1927,7 +1927,7 @@ spec:
 				verifyMergeRequestData(repoUrl, d, gitURL, commitMessage, title, branchName, "main")
 
 				// Each PR should have exactly 2 files: pull and push pipeline
-				Expect(len(d.Files)).To(Equal(2))
+				Expect(d.Files).To(HaveLen(2))
 
 				expectedPullPipelineName := componentKey.Name + "-" + versionName + pipelineRunOnPRSuffix
 				expectedPushPipelineName := componentKey.Name + "-" + versionName + pipelineRunOnPushSuffix
@@ -2044,7 +2044,7 @@ spec:
 				verifyMergeRequestData(repoUrl, d, gitURL, commitMessage, title, branchName, "main")
 
 				// Each PR should have exactly 2 files: pull and push pipeline
-				Expect(len(d.Files)).To(Equal(2))
+				Expect(d.Files).To(HaveLen(2))
 
 				// Verify PR contains pipelines for v1 only
 				foundPullPipeline := false
@@ -2168,7 +2168,7 @@ spec:
 				verifyMergeRequestData(repoUrl, d, gitURL, commitMessage, title, branchName, "main")
 
 				// Each PR should have exactly 2 files: pull and push pipeline
-				Expect(len(d.Files)).To(Equal(2))
+				Expect(d.Files).To(HaveLen(2))
 
 				expectedPullPipelineName := componentKey.Name + "-" + version1Name + pipelineRunOnPRSuffix
 				expectedPushPipelineName := componentKey.Name + "-" + version1Name + pipelineRunOnPushSuffix
@@ -2349,7 +2349,7 @@ spec:
 				verifyMergeRequestData(repoUrl, d, gitURL, commitMessage, title, branchName, baseBranch)
 
 				// Each PR should have exactly 2 files: pull and push pipeline
-				Expect(len(d.Files)).To(Equal(2))
+				Expect(d.Files).To(HaveLen(2))
 
 				expectedPullPipelineName := componentKey.Name + "-" + versionName + pipelineRunOnPRSuffix
 				expectedPushPipelineName := componentKey.Name + "-" + versionName + pipelineRunOnPushSuffix
@@ -2499,7 +2499,7 @@ spec:
 				verifyMergeRequestData(repoUrl, d, gitURL, commitMessage, title, branchName, baseBranch)
 
 				// Each PR should have exactly 2 files: pull and push pipeline
-				Expect(len(d.Files)).To(Equal(2))
+				Expect(d.Files).To(HaveLen(2))
 
 				expectedPullPipelineName := componentKey.Name + "-" + versionName + pipelineRunOnPRSuffix
 				expectedPushPipelineName := componentKey.Name + "-" + versionName + pipelineRunOnPushSuffix
@@ -3046,7 +3046,7 @@ spec:
 			// Verify POST data for v2 only
 			v2PipelineRunName := component.Name + "-" + version2Name + pipelineRunOnPushSuffix
 
-			Expect(len(capturedPostData)).To(Equal(1))
+			Expect(capturedPostData).To(HaveLen(1))
 			v2Data := capturedPostData[0]
 			Expect(v2Data["pipelinerun"]).To(Equal(v2PipelineRunName))
 
@@ -3270,7 +3270,7 @@ spec:
 			Expect(webhookSecret.Data).To(HaveKey(expectedKey))
 			firstSecretValue := string(webhookSecret.Data[expectedKey])
 			Expect(firstSecretValue).NotTo(BeEmpty())
-			Expect(len(webhookSecret.Data)).To(Equal(1), "Should have only one webhook secret key")
+			Expect(webhookSecret.Data).To(HaveLen(1), "Should have only one webhook secret key")
 
 			// Create second component with same git URL
 			component2 := getComponentData(componentConfig{
@@ -3287,14 +3287,14 @@ spec:
 
 			// Verify webhook secret still has only one key (shared between components)
 			Expect(k8sClient.Get(ctx, webhookSecretKey, webhookSecret)).To(Succeed())
-			Expect(len(webhookSecret.Data)).To(Equal(1), "Should still have only one webhook secret key")
+			Expect(webhookSecret.Data).To(HaveLen(1), "Should still have only one webhook secret key")
 			Expect(webhookSecret.Data).To(HaveKey(expectedKey))
 			Expect(string(webhookSecret.Data[expectedKey])).To(Equal(firstSecretValue), "Webhook secret value should be reused")
 
 			// Verify SetupPaCWebhook was called for both components
 			Expect(webhookSetupCount).To(Equal(2), "SetupPaCWebhook should be called once per component")
 			// Verify both calls used the same webhook secret (reused for same repository)
-			Expect(len(capturedWebhookSecrets)).To(Equal(2))
+			Expect(capturedWebhookSecrets).To(HaveLen(2))
 			Expect(capturedWebhookSecrets[0]).To(Equal(capturedWebhookSecrets[1]), "Both components should use the same webhook secret")
 		})
 
@@ -3342,7 +3342,7 @@ spec:
 			Expect(webhookSecret.Data).To(HaveKey(expectedKey1))
 			secretValue1 := string(webhookSecret.Data[expectedKey1])
 			Expect(secretValue1).NotTo(BeEmpty())
-			Expect(len(webhookSecret.Data)).To(Equal(1), "Should have one webhook secret key after first component")
+			Expect(webhookSecret.Data).To(HaveLen(1), "Should have one webhook secret key after first component")
 
 			// Create second component with different git URL
 			component2 := getComponentData(componentConfig{
@@ -3359,7 +3359,7 @@ spec:
 
 			// Verify webhook secret now has two different keys
 			Expect(k8sClient.Get(ctx, webhookSecretKey, webhookSecret)).To(Succeed())
-			Expect(len(webhookSecret.Data)).To(Equal(2), "Should have two webhook secret keys for different repos")
+			Expect(webhookSecret.Data).To(HaveLen(2), "Should have two webhook secret keys for different repos")
 
 			expectedKey2 := getWebhookSecretKeyForComponent(*component2, true)
 			Expect(webhookSecret.Data).To(HaveKey(expectedKey1))
@@ -3375,7 +3375,7 @@ spec:
 			Expect(capturedRepoURLs[0]).To(Equal(gitURL1))
 			Expect(capturedRepoURLs[1]).To(Equal(gitURL2))
 			// Verify the two calls used different webhook secrets (different repositories)
-			Expect(len(capturedWebhookSecrets)).To(Equal(2))
+			Expect(capturedWebhookSecrets).To(HaveLen(2))
 			Expect(capturedWebhookSecrets[0]).NotTo(Equal(capturedWebhookSecrets[1]), "Different repositories should use different webhook secrets")
 		})
 	})
@@ -3479,7 +3479,7 @@ spec:
 				It("should successfully trigger builds using token authentication", func() {
 					// Get component (should exist from onboarding test)
 					component = getComponent(componentKey)
-					Expect(len(component.Status.Versions)).To(Equal(1), "Component should be onboarded")
+					Expect(component.Status.Versions).To(HaveLen(1), "Component should be onboarded")
 
 					// Trigger build
 					component.Spec.Actions.TriggerBuild = "v1"
@@ -3496,7 +3496,7 @@ spec:
 				It("should successfully create configuration PR using token authentication", func() {
 					// Get component (should exist from onboarding test)
 					component = getComponent(componentKey)
-					Expect(len(component.Status.Versions)).To(Equal(1), "Component should be onboarded")
+					Expect(component.Status.Versions).To(HaveLen(1), "Component should be onboarded")
 
 					// Set CreateConfiguration action
 					component.Spec.Actions.CreateConfiguration = compapiv1alpha1.ComponentCreatePipelineConfiguration{
@@ -3820,7 +3820,7 @@ spec:
 				verifyMergeRequestData(repoUrl, d, gitURL, commitMessage, title, branchName, baseBranch)
 
 				// Each PR should have exactly 2 files: pull and push pipeline
-				Expect(len(d.Files)).To(Equal(2))
+				Expect(d.Files).To(HaveLen(2))
 
 				// Verify pipelines are present
 				expectedPullPipelineName := componentKey.Name + "-" + versionName + pipelineRunOnPRSuffix
@@ -3868,7 +3868,7 @@ spec:
 					verifyMergeRequestData(repoUrl, d, expectedGitURL, commitMessage, title, branchName, baseBranch)
 
 					// Verify purge PR data contains files to delete
-					Expect(len(d.Files)).To(Equal(2), "Should delete both pull and push pipeline files")
+					Expect(d.Files).To(HaveLen(2), "Should delete both pull and push pipeline files")
 					for _, file := range d.Files {
 						Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue(), "File should be in .tekton directory")
 						// Files should be empty for deletion
@@ -4191,7 +4191,7 @@ spec:
 				verifyMergeRequestData(repoUrl, d, gitURL, commitMessage, title, branchName, baseBranch)
 
 				// Each PR should have exactly 2 files: pull and push pipeline
-				Expect(len(d.Files)).To(Equal(2))
+				Expect(d.Files).To(HaveLen(2))
 
 				// Verify pipelines are present
 				expectedPullPipelineName := componentKey.Name + "-" + versionName + pipelineRunOnPRSuffix
@@ -4238,7 +4238,7 @@ spec:
 					verifyMergeRequestData(repoUrl, d, gitURL, commitMessage, title, branchName, baseBranch)
 
 					// Verify purge PR data contains files to delete
-					Expect(len(d.Files)).To(Equal(2), "Should delete both pull and push pipeline files")
+					Expect(d.Files).To(HaveLen(2), "Should delete both pull and push pipeline files")
 					for _, file := range d.Files {
 						Expect(strings.HasPrefix(file.FullPath, ".tekton/")).To(BeTrue(), "File should be in .tekton directory")
 						// Files should be empty for deletion
