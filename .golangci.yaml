@@ -1,0 +1,85 @@
+# Run 'golangci-lint config verify' after any edit to this config file
+
+version: "2"
+
+# Disable all default linters and specify only ones we want below
+linters:
+  default: none
+  enable:
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - canonicalheader
+    - contextcheck
+    - copyloopvar
+    - dupl
+    - dupword
+    - errcheck
+    - errname
+    - forcetypeassert
+    - gocheckcompilerdirectives
+    - gocritic
+    - gosec
+    - govet
+    - ineffassign
+    - loggercheck
+    - misspell
+    - nilerr
+    - nosprintfhostport
+    - staticcheck
+    - unconvert
+    - unparam
+    - unused
+    # Linters for tests
+    - ginkgolinter
+
+  # Defines a set of rules to ignore issues.
+  # It does not skip the analysis, and so does not ignore "typecheck" errors.
+  exclusions:
+    rules:
+      # Exclude some linters from running on tests files.
+      - path: "_test\\.go$|_mock\\.go$"
+        linters:
+          - errcheck
+          - gosec
+          - dupl
+          - goconst
+          - forcetypeassert
+          - unparam
+      # Run some linter only for test files by excluding its issues for everything else.
+      - path-except: "_test\\.go$|_mock\\.go$"
+        linters:
+          - ginkgolinter
+
+  # Per linter settings
+  settings:
+    gocritic:
+      disabled-checks:
+        - ifElseChain
+        - elseif
+    gosec:
+      confidence: medium # low gives annoying false positives
+    staticcheck:
+      checks:
+        - all
+        # Exclude checks:
+        - "-ST1000" # Package comment
+        - "-ST1003" # Variable names: Url -> URL
+        - "-QF1001" # De Morgan's law
+        - "-QF1003" # Switch enforce
+        - "-QF1008" # Embedded fields: r.Client.Get -> r.Get
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+issues:
+  # Maximum issues count per one linter.
+  # Set to 0 to disable.
+  # Default: 50
+  max-issues-per-linter: 50
+  # Maximum count of issues with the same text.
+  # Set to 0 to disable.
+  # Default: 3
+  max-same-issues: 5
