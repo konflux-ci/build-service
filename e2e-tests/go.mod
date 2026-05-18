@@ -29,7 +29,7 @@ replace (
 
 require (
 	cel.dev/expr v0.25.1 // indirect
-	codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v2 v2.2.0 // indirect
+	codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v3 v3.0.0 // indirect
 	contrib.go.opencensus.io/exporter/ocagent v0.7.1-0.20230502190836-7399e0f8ee5e // indirect
 	contrib.go.opencensus.io/exporter/prometheus v0.4.2 // indirect
 	dario.cat/mergo v1.0.2 // indirect
