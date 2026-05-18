@@ -7,7 +7,7 @@ require (
 	github.com/bradleyfalzon/ghinstallation/v2 v2.17.0
 	github.com/go-logr/logr v1.4.3
 	github.com/google/go-containerregistry v0.21.1
-	github.com/google/go-github/v45 v45.2.0
+	github.com/google/go-github/v87 v87.0.0
 	github.com/h2non/gock v1.2.0
 	github.com/konflux-ci/coverport/instrumentation/go v0.0.0-20251127115143-b5207b335f8b
 	github.com/onsi/ginkgo/v2 v2.27.2
@@ -16,7 +16,6 @@ require (
 	github.com/prometheus/client_golang v1.23.2
 	github.com/xanzy/go-gitlab v0.108.0
 	go.uber.org/zap v1.27.1
-	golang.org/x/exp v0.0.0-20260112195511-716be5621a96
 	golang.org/x/oauth2 v0.35.0
 	gotest.tools/v3 v3.5.2
 	k8s.io/api v0.35.0
@@ -138,6 +137,7 @@ require (
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/crypto v0.48.0 // indirect
+	golang.org/x/exp v0.0.0-20260112195511-716be5621a96 // indirect
 	golang.org/x/mod v0.33.0 // indirect
 	golang.org/x/net v0.51.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
