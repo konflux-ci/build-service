@@ -29,6 +29,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
@@ -601,35 +602,21 @@ func (r *ComponentBuildReconciler) waitForCacheUpdate(ctx context.Context, names
 		failureMessage = "failed to wait for cache to have latest ResourceVersion. Status updates could conflict."
 	}
 
-	isComponentInCacheUpToDate := false
-	for i := 0; i < 20; i++ {
-		// Use a temporary component to avoid overwriting the caller's component variable with stale cache data
+	err := wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, 2*time.Second, true, func(ctx context.Context) (bool, error) {
 		cachedComponent := &compapiv1alpha1.Component{}
-		if err := r.Client.Get(ctx, namespace, cachedComponent); err == nil {
-			var upToDate bool
-			if checkGeneration {
-				upToDate = originalGeneration == cachedComponent.Generation
-			} else {
-				upToDate = originalResourceVersion == cachedComponent.ResourceVersion
-			}
-
-			if upToDate {
-				// Cache now has the updated component with the new Generation/ResourceVersion.
-				isComponentInCacheUpToDate = true
-				break
-			}
-			// Cache still has outdated value, continue waiting.
-		} else {
+		if err := r.Client.Get(ctx, namespace, cachedComponent); err != nil {
 			if k8serrors.IsNotFound(err) {
-				// Component was deleted, no need to wait for cache update.
-				isComponentInCacheUpToDate = true
-				break
+				return true, nil
 			}
 			log.Error(err, "failed to get the component", l.Action, l.ActionView)
+			return false, nil
 		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	if !isComponentInCacheUpToDate {
+		if checkGeneration {
+			return originalGeneration == cachedComponent.Generation, nil
+		}
+		return originalResourceVersion == cachedComponent.ResourceVersion, nil
+	})
+	if err != nil {
 		log.Info(failureMessage, l.Audit, "true")
 	}
 }
