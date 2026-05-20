@@ -349,6 +349,7 @@ func (r *ComponentBuildReconciler) TriggerPaCBuild(
 	// we have to supply source_url as additional param, because PaC isn't able to resolve it for trigger
 	jsonTemplate := `{"params": {"source_url": "%s"}, "secret": "%s", "repository": "%s", "branch": "%s", "pipelinerun": "%s", "namespace": "%s"}`
 	bytesParam := []byte(fmt.Sprintf(jsonTemplate, repoUrl, secretValue, repository.Name, targetBranch, pipelineRunName, repository.Namespace))
+	redactedParams := fmt.Sprintf(jsonTemplate, repoUrl, "***", repository.Name, targetBranch, pipelineRunName, repository.Namespace)
 
 	resp, err := HttpClient.Post(triggerURL, "application/json", bytes.NewBuffer(bytesParam))
 	if err != nil {
@@ -359,14 +360,14 @@ func (r *ComponentBuildReconciler) TriggerPaCBuild(
 
 	if resp.StatusCode != 200 && resp.StatusCode != 202 {
 		// ignore 503 and 504 for now, until PAC fixes issue https://issues.redhat.com/browse/SRVKP-4352
-		log.Info(fmt.Sprintf("PaC incoming endpoint %s with params %s returned HTTP %d", triggerURL, string(bytesParam), resp.StatusCode))
+		log.Info(fmt.Sprintf("PaC incoming endpoint %s with params %s returned HTTP %d", triggerURL, redactedParams, resp.StatusCode))
 		if resp.StatusCode == 503 || resp.StatusCode == 504 {
 			return nil
 		}
-		return fmt.Errorf("PaC incoming endpoint %s with params %s returned HTTP %d", triggerURL, string(bytesParam), resp.StatusCode)
+		return fmt.Errorf("PaC incoming endpoint %s with params %s returned HTTP %d", triggerURL, redactedParams, resp.StatusCode)
 	}
 
-	log.Info(fmt.Sprintf("PaC build manually triggered push pipeline for component: %s, version: %s, endpoint %s with params %s", component.Name, sanitizedVersionName, triggerURL, string(bytesParam)))
+	log.Info(fmt.Sprintf("PaC build manually triggered push pipeline for component: %s, version: %s, endpoint %s with params %s", component.Name, sanitizedVersionName, triggerURL, redactedParams))
 	return nil
 }
 
@@ -456,6 +457,7 @@ func (r *ComponentBuildReconciler) TriggerPaCBuildOldModel(ctx context.Context, 
 	// we have to supply source_url as additional param, because PaC isn't able to resolve it for trigger
 	jsonTemplate := `{"params": {"source_url": "%s"}, "secret": "%s", "repository": "%s", "branch": "%s", "pipelinerun": "%s", "namespace": "%s"}`
 	bytesParam := []byte(fmt.Sprintf(jsonTemplate, repoUrl, secretValue, repository.Name, targetBranch, pipelineRunName, repository.Namespace))
+	redactedParams := fmt.Sprintf(jsonTemplate, repoUrl, "***", repository.Name, targetBranch, pipelineRunName, repository.Namespace)
 
 	resp, err := HttpClient.Post(triggerURL, "application/json", bytes.NewBuffer(bytesParam))
 	if err != nil {
@@ -466,14 +468,14 @@ func (r *ComponentBuildReconciler) TriggerPaCBuildOldModel(ctx context.Context, 
 
 	if resp.StatusCode != 200 && resp.StatusCode != 202 {
 		// ignore 503 and 504 for now, until PAC fixes issue https://issues.redhat.com/browse/SRVKP-4352
-		log.Info(fmt.Sprintf("PaC incoming endpoint %s with params %s returned HTTP %d", triggerURL, string(bytesParam), resp.StatusCode))
+		log.Info(fmt.Sprintf("PaC incoming endpoint %s with params %s returned HTTP %d", triggerURL, redactedParams, resp.StatusCode))
 		if resp.StatusCode == 503 || resp.StatusCode == 504 {
 			return false, nil
 		}
-		return false, fmt.Errorf("PaC incoming endpoint %s with params %s returned HTTP %d", triggerURL, string(bytesParam), resp.StatusCode)
+		return false, fmt.Errorf("PaC incoming endpoint %s with params %s returned HTTP %d", triggerURL, redactedParams, resp.StatusCode)
 	}
 
-	log.Info(fmt.Sprintf("PaC build manually triggered push pipeline for component: %s, endpoint %s with params %s", component.Name, triggerURL, string(bytesParam)))
+	log.Info(fmt.Sprintf("PaC build manually triggered push pipeline for component: %s, endpoint %s with params %s", component.Name, triggerURL, redactedParams))
 	return false, nil
 }
 
