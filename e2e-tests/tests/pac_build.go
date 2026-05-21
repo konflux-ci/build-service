@@ -89,7 +89,7 @@ var _ = framework.BuildSuiteDescribe("Build service E2E tests", Label("build-ser
 				componentBaseBranchName = fmt.Sprintf("base-%s", util.GenerateRandomString(6))
 
 				gitClient, helloWorldComponentGitSourceURL, helloWorldRepository = setupGitProvider(f, gitProvider)
-				buildPipelineAnnotation = build.GetBuildPipelineBundleAnnotation(constants.DockerBuildOciTA)
+				buildPipelineAnnotation = build.GetBuildPipelineBundleAnnotation(constants.DockerBuildOciTAMin)
 
 				if gitProvider == git.ForgejoProvider {
 					gitProviderAnnotation = map[string]string{"git-provider": "forgejo"}
