@@ -1,0 +1,26 @@
+name: Check AGENTS.md Line Count
+
+on:
+  pull_request:
+    paths:
+      - 'AGENTS.md'
+      - '.github/workflows/check-agents-md.yaml'
+
+jobs:
+  check-line-count:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Check AGENTS.md line count
+        run: |
+          line_count=$(wc -l < AGENTS.md)
+          echo "AGENTS.md has $line_count lines"
+
+          if [ "$line_count" -le 300 ]; then
+            echo "✅ AGENTS.md has $line_count lines, which is under the 300 line limit"
+          else
+            echo "❌ AGENTS.md has $line_count lines, which exceeds the limit of 300 lines"
+            exit 1
+          fi
