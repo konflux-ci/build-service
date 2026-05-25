@@ -4,6 +4,8 @@
 
 Build Service is a Kubernetes operator that creates and configures build pipelines for the [Konflux](https://konflux-ci.dev) platform. It is one of the core services required for a working Konflux installation, responsible for automating the creation and management of build pipeline definitions from Component custom resources.
 
+For a short description see [AGENTS.md](AGENTS.md) which should be reviewed each quarter.
+
 ## Overview
 
 The Build Service monitors Component CRs (managed by the Hybrid Application Service or created manually) and automatically creates PipelineRun definitions that integrate with [Pipelines as Code (PaC)](https://pipelinesascode.com). The service handles the complete lifecycle of build pipelines including provisioning, configuration, execution triggering, and cleanup.
