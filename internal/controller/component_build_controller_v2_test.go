@@ -426,11 +426,11 @@ var _ = Describe("Component build controller new model", func() {
 						AllVersions: true,
 					},
 				},
-				defaultPipeline: compapiv1alpha1.ComponentBuildPipeline{
-					PullAndPush: compapiv1alpha1.PipelineDefinition{
+				defaultPipeline: &compapiv1alpha1.ComponentBuildPipeline{
+					PullAndPush: &compapiv1alpha1.PipelineDefinition{
 						PipelineRefName: "docker-build",
 					},
-					Pull: compapiv1alpha1.PipelineDefinition{
+					Pull: &compapiv1alpha1.PipelineDefinition{
 						PipelineRefName: "docker-build",
 					},
 				},
@@ -454,9 +454,9 @@ var _ = Describe("Component build controller new model", func() {
 						AllVersions: true,
 					},
 				},
-				defaultPipeline: compapiv1alpha1.ComponentBuildPipeline{
-					Pull: compapiv1alpha1.PipelineDefinition{
-						PipelineRefGit: compapiv1alpha1.PipelineRefGit{
+				defaultPipeline: &compapiv1alpha1.ComponentBuildPipeline{
+					Pull: &compapiv1alpha1.PipelineDefinition{
+						PipelineRefGit: &compapiv1alpha1.PipelineRefGit{
 							Url: "https://github.com/test/pipelines",
 							// Missing PathInRepo and Revision
 						},
@@ -1851,8 +1851,8 @@ spec:
 					{
 						Name:     versionName,
 						Revision: "main",
-						BuildPipeline: compapiv1alpha1.ComponentBuildPipeline{
-							Pull: compapiv1alpha1.PipelineDefinition{
+						BuildPipeline: &compapiv1alpha1.ComponentBuildPipeline{
+							Pull: &compapiv1alpha1.PipelineDefinition{
 								PipelineRefName: "custom-pull-pipeline",
 							},
 						},
@@ -1984,9 +1984,9 @@ spec:
 					{
 						Name:     versionName,
 						Revision: "main",
-						BuildPipeline: compapiv1alpha1.ComponentBuildPipeline{
-							Push: compapiv1alpha1.PipelineDefinition{
-								PipelineRefGit: compapiv1alpha1.PipelineRefGit{
+						BuildPipeline: &compapiv1alpha1.ComponentBuildPipeline{
+							Push: &compapiv1alpha1.PipelineDefinition{
+								PipelineRefGit: &compapiv1alpha1.PipelineRefGit{
 									Url:        "https://github.com/custom-pipelines/pipelines.git",
 									Revision:   "main",
 									PathInRepo: "pipelines/push.yaml",
@@ -2083,9 +2083,9 @@ spec:
 					{Name: version1Name, Revision: "main"},
 					{Name: version2Name, Revision: "develop"},
 				},
-				defaultPipeline: compapiv1alpha1.ComponentBuildPipeline{
-					PullAndPush: compapiv1alpha1.PipelineDefinition{
-						PipelineSpecFromBundle: compapiv1alpha1.PipelineSpecFromBundle{
+				defaultPipeline: &compapiv1alpha1.ComponentBuildPipeline{
+					PullAndPush: &compapiv1alpha1.PipelineDefinition{
+						PipelineSpecFromBundle: &compapiv1alpha1.PipelineSpecFromBundle{
 							Bundle: "latest",
 							Name:   defaultPipelineName,
 						},

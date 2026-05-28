@@ -97,7 +97,7 @@ type componentConfig struct {
 	finalizers         []string
 	actions            compapiv1alpha1.ComponentActions
 	repositorySettings compapiv1alpha1.RepositorySettings
-	defaultPipeline    compapiv1alpha1.ComponentBuildPipeline
+	defaultPipeline    *compapiv1alpha1.ComponentBuildPipeline
 	skipOffboardingPr  bool
 }
 
