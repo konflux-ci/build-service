@@ -1,8 +1,6 @@
 ---
-name: Feature request
-title: ''
-labels: enhancement
-assignees: ''
+name: Feature Request
+about: Suggest a new tool or feature for the task-runner image
 ---
 
 ## Use Case

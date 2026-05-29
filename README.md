@@ -143,6 +143,11 @@ Build Service is configured through:
 
 3. **Environment Variables**: Fine-tune controller behavior (e.g., `IMAGE_TAG_ON_PR_EXPIRATION`)
 
+## Usage
+
+To give some task to the operator a `Component` resource should be created in cluster.
+Refer to official [Konflux documentation](https://konflux-ci.dev/docs/getting-started/#component) for more details.
+
 ## Development
 
 ### Prerequisites
