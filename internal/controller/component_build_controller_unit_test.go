@@ -868,7 +868,7 @@ func TestGeneratePACRepository(t *testing.T) {
 			expectedGithubAppTokenScopeRepos: nil,
 			expectedCommentStrategy:          "",
 			skipBuildsMap:                    map[string]bool{"main": false, "feature": true},
-			expectedSkipBuildParams:          map[string]string{fmt.Sprintf("%s == main", PacTargetBranchFilterKey): "true", fmt.Sprintf("%s == feature", PacTargetBranchFilterKey): "false"},
+			expectedSkipBuildParams:          map[string]string{fmt.Sprintf("%s == 'main'", PacTargetBranchFilterKey): "true", fmt.Sprintf("%s == 'feature'", PacTargetBranchFilterKey): "false"},
 		},
 		{
 			name:    "should create PaC repository for GitHub application even if Github webhook configured",
@@ -883,7 +883,7 @@ func TestGeneratePACRepository(t *testing.T) {
 			expectedGithubAppTokenScopeRepos: nil,
 			expectedCommentStrategy:          "",
 			skipBuildsMap:                    map[string]bool{"main": true, "feature": false},
-			expectedSkipBuildParams:          map[string]string{fmt.Sprintf("%s == main", PacTargetBranchFilterKey): "false", fmt.Sprintf("%s == feature", PacTargetBranchFilterKey): "true"},
+			expectedSkipBuildParams:          map[string]string{fmt.Sprintf("%s == 'main'", PacTargetBranchFilterKey): "false", fmt.Sprintf("%s == 'feature'", PacTargetBranchFilterKey): "true"},
 		},
 		{
 			name:    "should create PaC repository for GitHub webhook",

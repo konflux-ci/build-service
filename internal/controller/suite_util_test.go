@@ -843,7 +843,7 @@ func validatePaCRepository(component *compapiv1alpha1.Component, secretName, sec
 			Expect(*repository.Spec.Params).Should(ContainElement(And(
 				HaveField("Name", BuildsEnabledParamName),
 				HaveField("Value", strconv.FormatBool(!skipBuild)),
-				HaveField("Filter", fmt.Sprintf("%s == %s", PacTargetBranchFilterKey, revision)),
+				HaveField("Filter", fmt.Sprintf("%s == '%s'", PacTargetBranchFilterKey, revision)),
 			)))
 		}
 	}
