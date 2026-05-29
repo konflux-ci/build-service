@@ -6,5 +6,12 @@ build-service
 .vscode/launch.json
 .idea/
 
+vendor/
+
 # E2E test binaries
 e2e-tests/tests/bin/
+
+# misc tmp files
+*.swp
+*.swo
+.DS_Store

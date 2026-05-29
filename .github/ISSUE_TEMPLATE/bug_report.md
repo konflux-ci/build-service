@@ -1,8 +1,6 @@
 ---
 name: Bug report
-title: ''
 labels: bug
-assignees: ''
 ---
 
 ## Problem Description

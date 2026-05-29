@@ -77,6 +77,11 @@ Main new Component model advantages:
 
 ## Development
 
-After making any code changes, always make sure that:
+After making code changes, always make sure that:
 - unit and integration tests (envtest) pass (run with `make test` after all changes made).
 - all linters pass (run with `make lint`).
+
+To verify single file, run:
+```sh
+./bin/golangci-lint run path/to/file.go
+```
