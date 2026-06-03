@@ -757,5 +757,5 @@ func generatePaCRepositoryNameFromGitUrl(urlStr string) (string, error) {
 
 // getPaCParamFilterForRevision returns PaC param filter for given revision
 func getPaCParamFilterForRevision(revision string) string {
-	return fmt.Sprintf("%s == %s", PacTargetBranchFilterKey, revision)
+	return fmt.Sprintf("%s == '%s'", PacTargetBranchFilterKey, revision)
 }
