@@ -295,6 +295,77 @@ func TestGetContainerImageRepository(t *testing.T) {
 			expectError:       true,
 		},
 		{
+			name: "should create GitHub client from token when username is empty",
+			gitClientConfig: GitClientConfig{
+				PacSecretData: map[string][]byte{
+					"username": []byte(""),
+					"password": []byte("token"),
+				},
+				GitProvider: "github",
+				RepoUrl:     repoUrl,
+			},
+			allowConstructors: func() {
+				github.NewGithubClient = func(accessToken string) *github.GithubClient {
+					expectedToken := "token"
+					if accessToken != expectedToken {
+						t.Errorf("expected token %s, got %s", expectedToken, accessToken)
+					}
+					return &github.GithubClient{}
+				}
+			},
+			expectError: false,
+		},
+		{
+			name: "should create GitLab client from token when username is empty",
+			gitClientConfig: GitClientConfig{
+				PacSecretData: map[string][]byte{
+					"username": []byte(""),
+					"password": []byte("token"),
+				},
+				GitProvider: "gitlab",
+				RepoUrl:     "https://gitlab.com/my-org/my-repo",
+			},
+			allowConstructors: func() {
+				gitlab.NewGitlabClient = func(accessToken, baseUrl string) (*gitlab.GitlabClient, error) {
+					expectedBaseUrl := "https://gitlab.com/"
+					expectedToken := "token"
+					if baseUrl != expectedBaseUrl {
+						return nil, fmt.Errorf("Expected to get baseUrl: %s, got %s", expectedBaseUrl, baseUrl)
+					}
+					if accessToken != expectedToken {
+						return nil, fmt.Errorf("Expected to get token: %s, got %s", expectedToken, accessToken)
+					}
+					return &gitlab.GitlabClient{}, nil
+				}
+			},
+			expectError: false,
+		},
+		{
+			name: "should create Forgejo client from token when username is empty",
+			gitClientConfig: GitClientConfig{
+				PacSecretData: map[string][]byte{
+					"username": []byte(""),
+					"password": []byte("token"),
+				},
+				GitProvider: "forgejo",
+				RepoUrl:     "https://forgejo.example.com/my-org/my-repo",
+			},
+			allowConstructors: func() {
+				forgejo.NewForgejoClient = func(accessToken, baseUrl string) (*forgejo.ForgejoClient, error) {
+					expectedBaseUrl := "https://forgejo.example.com/"
+					expectedToken := "token"
+					if baseUrl != expectedBaseUrl {
+						return nil, fmt.Errorf("Expected to get baseUrl: %s, got %s", expectedBaseUrl, baseUrl)
+					}
+					if accessToken != expectedToken {
+						return nil, fmt.Errorf("Expected to get token: %s, got %s", expectedToken, accessToken)
+					}
+					return &forgejo.ForgejoClient{}, nil
+				}
+			},
+			expectError: false,
+		},
+		{
 			name: "should not create unknown client",
 			gitClientConfig: GitClientConfig{
 				PacSecretData: map[string][]byte{
