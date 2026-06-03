@@ -156,14 +156,18 @@ var _ = framework.BuildSuiteDescribe("Build service E2E tests", Label("build-ser
 				Mapping struct {
 					Components []struct {
 						Name       string
-						Repository string
+						Repositories []struct {
+							Url string
+						}
 					}
 				}
 			}{}
 			data.Mapping.Components = append(data.Mapping.Components, struct {
-				Name       string
-				Repository string
-			}{Name: ParentComponentDef.componentName, Repository: distributionRepository})
+				Name         string
+				Repositories []struct {
+					Url string
+				}
+			}{Name: ParentComponentDef.componentName, Repositories: []struct{ Url string }{{Url: distributionRepository}}})
 			rawData, err := json.Marshal(&data)
 			Expect(err).NotTo(HaveOccurred())
 

@@ -351,7 +351,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 
 	componentsToUpdate := []compapiv1alpha1.Component{}
 
-	distibutionRepositories := []string{}
+	distributionRepositories := []string{}
 	releasePlanAdmissions := releaseapi.ReleasePlanAdmissionList{}
 	err = r.Client.List(ctx, &releasePlanAdmissions)
 	if err != nil {
@@ -365,7 +365,6 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 				Mapping struct {
 					Components []struct {
 						Name         string
-						Repository   string
 						Repositories []struct {
 							Url string
 						}
@@ -378,21 +377,13 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 			}
 			for _, compMapping := range data.Mapping.Components {
 				if compMapping.Name == updatedComponent.Name {
-					if compMapping.Repository != "" {
-						log.Info("added distribution repo for component", "repo", compMapping.Repository)
-						distibutionRepositories = append(distibutionRepositories, compMapping.Repository)
-						registryRedhatMapping := mapToRegistryRedhatIo(compMapping.Repository)
-						if registryRedhatMapping != "" {
-							distibutionRepositories = append(distibutionRepositories, registryRedhatMapping)
-						}
-					}
 					for _, repository := range compMapping.Repositories {
 						if repository.Url != "" {
 							log.Info("added distribution repo for component", "repo", repository.Url)
-							distibutionRepositories = append(distibutionRepositories, repository.Url)
+							distributionRepositories = append(distributionRepositories, repository.Url)
 							registryRedhatMapping := mapToRegistryRedhatIo(repository.Url)
 							if registryRedhatMapping != "" {
-								distibutionRepositories = append(distibutionRepositories, registryRedhatMapping)
+								distributionRepositories = append(distributionRepositories, registryRedhatMapping)
 							}
 						}
 					}
@@ -444,7 +435,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 			simpleBranchName = true
 		}
 
-		buildResult := BuildResult{BuiltImageRepository: repo, BuiltImageTag: tag, Digest: digest, Component: updatedComponent, DistributionRepositories: distibutionRepositories, FileMatches: nudgeFiles}
+		buildResult := BuildResult{BuiltImageRepository: repo, BuiltImageTag: tag, Digest: digest, Component: updatedComponent, DistributionRepositories: distributionRepositories, FileMatches: nudgeFiles}
 		nudgeErr = r.ComponentDependenciesUpdater.CreateRenovaterPipeline(ctx, pipelineRun, targets, true, simpleBranchName, &buildResult, gitRepoAtShaLink)
 	} else {
 		log.Info("no targets found to update")

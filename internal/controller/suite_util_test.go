@@ -81,7 +81,6 @@ const (
 
 	rpaMappingRepository1 = "test1.registry/publish"
 	rpaMappingRepository2 = "test2.registry/publish"
-	rpaMappingRepository3 = "test3.registry/publish"
 )
 
 var (
@@ -1246,16 +1245,14 @@ func createReleasePlanAdmission(rpaKey types.NamespacedName, componentName strin
 		"mapping": map[string]interface{}{
 			"components": []map[string]interface{}{
 				{
-					"name":       componentName,
-					"repository": rpaMappingRepository1,
-					"tags":       []string{"latest"},
+					"name": componentName,
 					"repositories": []map[string]interface{}{
 						{
-							"url":  rpaMappingRepository2,
+							"url":  rpaMappingRepository1,
 							"tags": []string{"latest"},
 						},
 						{
-							"url":  rpaMappingRepository3,
+							"url":  rpaMappingRepository2,
 							"tags": []string{"latest"},
 						},
 					},
