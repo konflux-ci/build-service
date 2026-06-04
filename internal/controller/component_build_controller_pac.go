@@ -358,11 +358,7 @@ func (r *ComponentBuildReconciler) TriggerPaCBuild(
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 && resp.StatusCode != 202 {
-		// ignore 503 and 504 for now, until PAC fixes issue https://issues.redhat.com/browse/SRVKP-4352
 		log.Info(fmt.Sprintf("PaC incoming endpoint %s with params %s returned HTTP %d", triggerURL, string(bytesParam), resp.StatusCode))
-		if resp.StatusCode == 503 || resp.StatusCode == 504 {
-			return nil
-		}
 		return fmt.Errorf("PaC incoming endpoint %s with params %s returned HTTP %d", triggerURL, string(bytesParam), resp.StatusCode)
 	}
 
@@ -465,11 +461,7 @@ func (r *ComponentBuildReconciler) TriggerPaCBuildOldModel(ctx context.Context, 
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 && resp.StatusCode != 202 {
-		// ignore 503 and 504 for now, until PAC fixes issue https://issues.redhat.com/browse/SRVKP-4352
 		log.Info(fmt.Sprintf("PaC incoming endpoint %s with params %s returned HTTP %d", triggerURL, string(bytesParam), resp.StatusCode))
-		if resp.StatusCode == 503 || resp.StatusCode == 504 {
-			return false, nil
-		}
 		return false, fmt.Errorf("PaC incoming endpoint %s with params %s returned HTTP %d", triggerURL, string(bytesParam), resp.StatusCode)
 	}
 
