@@ -46,11 +46,11 @@ import (
 )
 
 type BuildPipeline struct {
-	Name                   string                                 `json:"name,omitempty"`
-	Bundle                 string                                 `json:"bundle,omitempty"`
-	AdditionalParams       []string                               `json:"additional-params,omitempty"`
-	PipelineRefGit         compapiv1alpha1.PipelineRefGit         `json:"pipelineref-by-git-resolver,omitempty"`
-	PipelineSpecFromBundle compapiv1alpha1.PipelineSpecFromBundle `json:"pipelinespec-from-bundle,omitempty"`
+	Name                   string                                  `json:"name,omitempty"`
+	Bundle                 string                                  `json:"bundle,omitempty"`
+	AdditionalParams       []string                                `json:"additional-params,omitempty"`
+	PipelineRefGit         *compapiv1alpha1.PipelineRefGit         `json:"pipelineref-by-git-resolver,omitempty"`
+	PipelineSpecFromBundle *compapiv1alpha1.PipelineSpecFromBundle `json:"pipelinespec-from-bundle,omitempty"`
 }
 
 type pipelineConfig struct {
