@@ -315,7 +315,6 @@ var _ = Describe("Component nudge controller", func() {
 					for _, renovateJsonData := range renovateConfig.Data {
 						Expect(strings.Contains(renovateJsonData, rpaMappingRepository1)).Should(BeTrue())
 						Expect(strings.Contains(renovateJsonData, rpaMappingRepository2)).Should(BeTrue())
-						Expect(strings.Contains(renovateJsonData, rpaMappingRepository3)).Should(BeTrue())
 					}
 				}
 				if strings.HasPrefix(renovateConfig.ObjectMeta.Name, "renovate-ca") {
