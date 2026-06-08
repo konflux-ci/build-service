@@ -85,6 +85,28 @@ func (r *ComponentBuildReconciler) EnsureBuildPipelineServiceAccount(ctx context
 			log.Error(err, fmt.Sprintf("failed to create Service Account %s in namespace %s", buildPipelineServiceAccountName, component.Namespace), l.Action, l.ActionAdd)
 			return err
 		}
+	} else {
+		// TODO remove after new component model migration is done and old model is gone
+		// Service Account already exists, add ownership if it isn't there already
+		ownershipFound := false
+		for _, owner := range buildPipelinesServiceAccount.ObjectMeta.OwnerReferences {
+			if owner.UID == component.UID {
+				ownershipFound = true
+				break
+			}
+		}
+		if !ownershipFound {
+			if err := controllerutil.SetOwnerReference(component, buildPipelinesServiceAccount, r.Scheme); err != nil {
+				log.Error(err, "failed to add owner reference to build pipeline Service Account")
+				return err
+			}
+
+			if err := r.Client.Update(ctx, buildPipelinesServiceAccount); err != nil {
+				log.Error(err, "failed to update build pipeline Service Account", l.Action, l.ActionUpdate)
+				return err
+			}
+			log.Info("Updated Service Account ownership")
+		}
 	}
 
 	// TODO remove after for new component model
