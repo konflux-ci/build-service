@@ -26,7 +26,8 @@ import (
 	"strings"
 
 	"github.com/google/go-containerregistry/pkg/authn"
-	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
+	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1" // TODO remove after only new model is used and old model is gone
+	compv1alpha1 "github.com/konflux-ci/build-service/api/konflux/v1alpha1"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	oci "github.com/tektoncd/pipeline/pkg/remote/oci"
 
@@ -46,6 +47,14 @@ import (
 )
 
 type BuildPipeline struct {
+	Name                   string                               `json:"name,omitempty"`
+	Bundle                 string                               `json:"bundle,omitempty"`
+	AdditionalParams       []string                             `json:"additional-params,omitempty"`
+	PipelineRefGit         *compv1alpha1.PipelineRefGit         `json:"pipelineref-by-git-resolver,omitempty"`
+	PipelineSpecFromBundle *compv1alpha1.PipelineSpecFromBundle `json:"pipelinespec-from-bundle,omitempty"`
+}
+
+type BuildPipelineOld struct {
 	Name                   string                                  `json:"name,omitempty"`
 	Bundle                 string                                  `json:"bundle,omitempty"`
 	AdditionalParams       []string                                `json:"additional-params,omitempty"`
@@ -58,22 +67,22 @@ type pipelineConfig struct {
 	Pipelines           []BuildPipeline `json:"pipelines"`
 }
 
-// TODO remove newModel handling after only new model is used
+type pipelineConfigOld struct {
+	DefaultPipelineName string             `json:"default-pipeline-name"`
+	Pipelines           []BuildPipelineOld `json:"pipelines"`
+}
+
 // generatePaCPipelineRunConfigs generates PipelineRun YAML configs for given component.
 // The generated PipelineRun Yaml content are returned in byte string and in the order of push and pull request.
-func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigs(ctx context.Context, component *compapiv1alpha1.Component, gitClient gp.GitProviderClient, versionInfo *VersionInfo, pipelineDefinition *VersionPipelineDefinition) ([]byte, []byte, error) {
-	newModel := true
-
-	var err error
-
+func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigs(ctx context.Context, component *compv1alpha1.Component, gitClient gp.GitProviderClient, versionInfo *VersionInfo, pipelineDefinition *VersionPipelineDefinition) ([]byte, []byte, error) {
 	// Get pull pipeline spec
-	pipelineSpecPull, err := getPipelineSpec(ctx, pipelineDefinition.Pull, component, versionInfo, gitClient, newModel, "pull")
+	pipelineSpecPull, err := getPipelineSpec(ctx, pipelineDefinition.Pull, component, versionInfo, gitClient, "pull")
 	if err != nil {
 		return nil, nil, err
 	}
 
 	// Get push pipeline spec
-	pipelineSpecPush, err := getPipelineSpec(ctx, pipelineDefinition.Push, component, versionInfo, gitClient, newModel, "push")
+	pipelineSpecPush, err := getPipelineSpec(ctx, pipelineDefinition.Push, component, versionInfo, gitClient, "push")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -101,7 +110,7 @@ func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigs(ctx context.Con
 
 // getPipelineSpec retrieves pipeline spec based on the pipeline definition
 // pipelineType should be "pull" or "push" for logging purposes
-func getPipelineSpec(ctx context.Context, pipelineDef *PipelineDef, component *compapiv1alpha1.Component, versionInfo *VersionInfo, gitClient gp.GitProviderClient, newModel bool, pipelineType string) (*tektonapi.PipelineSpec, error) {
+func getPipelineSpec(ctx context.Context, pipelineDef *PipelineDef, component *compv1alpha1.Component, versionInfo *VersionInfo, gitClient gp.GitProviderClient, pipelineType string) (*tektonapi.PipelineSpec, error) {
 	log := ctrllog.FromContext(ctx)
 	var pipelineSpec *tektonapi.PipelineSpec
 	var err error
@@ -121,7 +130,7 @@ func getPipelineSpec(ctx context.Context, pipelineDef *PipelineDef, component *c
 		log.Info(fmt.Sprintf("Got %s pipeline spec from GitRef for %s component, %s url, revision %s, pathInRepo %s",
 			pipelineType, component.Name, pipelineDef.PipelineRefGit.Url, pipelineDef.PipelineRefGit.Revision, pipelineDef.PipelineRefGit.PathInRepo), l.Audit, "true")
 	} else {
-		repoUrl := getGitRepoUrl(*component, newModel)
+		repoUrl := getGitRepoUrl(*component)
 		pipelineSpec = retrievePipelineSpecByName(ctx, repoUrl, versionInfo.Revision, pipelineDef.PipelineRefName, gitClient)
 		if pipelineSpec != nil {
 			log.Info(fmt.Sprintf("Got %s pipeline spec from Pipeline Name for %s component, pipeline name %s", pipelineType, component.Name, pipelineDef.PipelineRefName), l.Audit, "true")
@@ -131,10 +140,10 @@ func getPipelineSpec(ctx context.Context, pipelineDef *PipelineDef, component *c
 	return pipelineSpec, nil
 }
 
-// TODO remove after only new model is used
+// TODO remove after only new model is used and old model is gone
 // generatePaCPipelineRunConfigsOldModel generates PipelineRun YAML configs for given component.
 // The generated PipelineRun Yaml content are returned in byte string and in the order of push and pull request.
-func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigsOldModel(ctx context.Context, component *compapiv1alpha1.Component, gitClient gp.GitProviderClient, pacTargetBranch string) ([]byte, []byte, error) {
+func (r *ComponentBuildReconcilerOldModel) generatePaCPipelineRunConfigsOldModel(ctx context.Context, component *compapiv1alpha1.Component, gitClient gp.GitProviderClient, pacTargetBranch string) ([]byte, []byte, error) {
 	log := ctrllog.FromContext(ctx)
 
 	var pipelineName string
@@ -182,7 +191,7 @@ func (r *ComponentBuildReconciler) generatePaCPipelineRunConfigsOldModel(ctx con
 }
 
 // retrievePipelineSpecFromGit retrieves pipeline definition from a git repository using git resolver parameters.
-func retrievePipelineSpecFromGit(ctx context.Context, pipelineRefGit *compapiv1alpha1.PipelineRefGit, gitClient gp.GitProviderClient) (*tektonapi.PipelineSpec, error) {
+func retrievePipelineSpecFromGit(ctx context.Context, pipelineRefGit *compv1alpha1.PipelineRefGit, gitClient gp.GitProviderClient) (*tektonapi.PipelineSpec, error) {
 	log := ctrllog.FromContext(ctx)
 
 	// Check if the pipeline file exists
@@ -306,7 +315,8 @@ func (r *ComponentBuildReconciler) GetDefaultBuildPipelinesFromConfig(ctx contex
 }
 
 // GetBuildPipelineFromComponentAnnotation parses pipeline annotation on component and returns build pipeline
-func (r *ComponentBuildReconciler) GetBuildPipelineFromComponentAnnotation(ctx context.Context, component *compapiv1alpha1.Component) (*tektonapi.PipelineRef, []string, error) {
+// TODO remove after only new model is used and old model is gone
+func (r *ComponentBuildReconcilerOldModel) GetBuildPipelineFromComponentAnnotation(ctx context.Context, component *compapiv1alpha1.Component) (*tektonapi.PipelineRef, []string, error) {
 	buildPipeline, err := readBuildPipelineAnnotation(component)
 	if err != nil {
 		return nil, nil, err
@@ -330,7 +340,7 @@ func (r *ComponentBuildReconciler) GetBuildPipelineFromComponentAnnotation(ctx c
 		return nil, nil, err
 	}
 
-	buildPipelineData := &pipelineConfig{}
+	buildPipelineData := &pipelineConfigOld{}
 	if err := yaml.Unmarshal([]byte(pipelinesConfigMap.Data[buildPipelineConfigName]), buildPipelineData); err != nil {
 		return nil, nil, boerrors.NewBuildOpError(boerrors.EBuildPipelineConfigNotValid, err)
 	}
@@ -364,14 +374,15 @@ func (r *ComponentBuildReconciler) GetBuildPipelineFromComponentAnnotation(ctx c
 	return pipelineRef, additionalParams, nil
 }
 
-func readBuildPipelineAnnotation(component *compapiv1alpha1.Component) (*BuildPipeline, error) {
+// TODO remove after only new model is used and old model is gone
+func readBuildPipelineAnnotation(component *compapiv1alpha1.Component) (*BuildPipelineOld, error) {
 	if component.Annotations == nil {
 		return nil, nil
 	}
 
 	requestedPipeline, requestedPipelineExists := component.Annotations[defaultBuildPipelineAnnotation]
 	if requestedPipelineExists && requestedPipeline != "" {
-		buildPipeline := &BuildPipeline{}
+		buildPipeline := &BuildPipelineOld{}
 		buildPipelineBytes := []byte(requestedPipeline)
 
 		if err := json.Unmarshal(buildPipelineBytes, buildPipeline); err != nil {
@@ -383,7 +394,8 @@ func readBuildPipelineAnnotation(component *compapiv1alpha1.Component) (*BuildPi
 }
 
 // SetDefaultBuildPipelineComponentAnnotation sets default build pipeline to component pipeline annotation
-func (r *ComponentBuildReconciler) SetDefaultBuildPipelineComponentAnnotation(ctx context.Context, component *compapiv1alpha1.Component) error {
+// TODO remove after only new model is used and old model is gone
+func (r *ComponentBuildReconcilerOldModel) SetDefaultBuildPipelineComponentAnnotation(ctx context.Context, component *compapiv1alpha1.Component) error {
 	log := ctrllog.FromContext(ctx)
 	pipelinesConfigMap := &corev1.ConfigMap{}
 
@@ -394,7 +406,7 @@ func (r *ComponentBuildReconciler) SetDefaultBuildPipelineComponentAnnotation(ct
 		return err
 	}
 
-	buildPipelineData := &pipelineConfig{}
+	buildPipelineData := &pipelineConfigOld{}
 	if err := yaml.Unmarshal([]byte(pipelinesConfigMap.Data[buildPipelineConfigName]), buildPipelineData); err != nil {
 		return boerrors.NewBuildOpError(boerrors.EBuildPipelineConfigNotValid, err)
 	}
@@ -413,17 +425,15 @@ func (r *ComponentBuildReconciler) SetDefaultBuildPipelineComponentAnnotation(ct
 	return nil
 }
 
-// TODO remove newModel handling after only new model is used
 // generatePaCPipelineRunForComponent returns pipeline run definition to build component source with.
 // Generated pipeline run contains placeholders that are expanded by Pipeline-as-Code.
 func generatePaCPipelineRunForComponent(
-	component *compapiv1alpha1.Component,
+	component *compv1alpha1.Component,
 	pipelineSpec *tektonapi.PipelineSpec,
 	pipelineDefinition *PipelineDef,
 	versionInfo *VersionInfo,
 	gitClient gp.GitProviderClient,
 	onPull bool) (*tektonapi.PipelineRun, error) {
-	newModel := true
 
 	if versionInfo.Revision == "" {
 		return nil, fmt.Errorf("target branch can't be empty for generating PaC PipelineRun for component %s, version %s", component.Name, versionInfo.SanitizedVersion)
@@ -432,12 +442,12 @@ func generatePaCPipelineRunForComponent(
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate cel expression for pipeline: %w", err)
 	}
-	repoUrl := getGitRepoUrl(*component, newModel)
+	repoUrl := getGitRepoUrl(*component)
 
 	annotations := map[string]string{
 		"pipelinesascode.tekton.dev/cancel-in-progress": "false",
 		"pipelinesascode.tekton.dev/max-keep-runs":      "3",
-		"build.appstudio.redhat.com/target_branch":      "{{target_branch}}",
+		gitTargetBranchAnnotationName:                   "{{target_branch}}",
 		pacCelExpressionAnnotationName:                  pipelineCelExpression,
 		gitCommitShaAnnotationName:                      "{{revision}}",
 		gitRepoAtShaAnnotationName:                      gitClient.GetBrowseRepositoryAtShaLink(repoUrl, "{{revision}}"),
@@ -454,7 +464,7 @@ func generatePaCPipelineRunForComponent(
 	var outputImageWithTag string
 	if onPull {
 		annotations["pipelinesascode.tekton.dev/cancel-in-progress"] = "true"
-		annotations["build.appstudio.redhat.com/pull_request_number"] = "{{pull_request_number}}"
+		annotations[gitPRAnnotationName] = "{{pull_request_number}}"
 		outputImageWithTag = imageRepo + ":on-pr-{{revision}}"
 	} else {
 		outputImageWithTag = imageRepo + ":{{revision}}"
@@ -505,7 +515,7 @@ func generatePaCPipelineRunForComponent(
 	}
 
 	if slices.Contains(paramsInSpec, "dockerfile") {
-		params = append(params, tektonapi.Param{Name: "dockerfile", Value: tektonapi.ParamValue{Type: "string", StringVal: versionInfo.DockerfileURI}})
+		params = append(params, tektonapi.Param{Name: "dockerfile", Value: tektonapi.ParamValue{Type: "string", StringVal: versionInfo.DockerfilePath}})
 	}
 
 	pathContext := getPathContext(versionInfo.Context, "")
@@ -569,7 +579,7 @@ func generatePaCPipelineRunForComponent(
 	return pipelineRun, nil
 }
 
-// TODO remove after only new model is used
+// TODO remove after only new model is used and old model is gone
 // generatePaCPipelineRunForComponentOldModel returns pipeline run definition to build component source with.
 // Generated pipeline run contains placeholders that are expanded by Pipeline-as-Code.
 func generatePaCPipelineRunForComponentOldModel(
@@ -579,7 +589,6 @@ func generatePaCPipelineRunForComponentOldModel(
 	pacTargetBranch string,
 	gitClient gp.GitProviderClient,
 	onPull bool) (*tektonapi.PipelineRun, error) {
-	newModel := false
 
 	if pacTargetBranch == "" {
 		return nil, fmt.Errorf("target branch can't be empty for generating PaC PipelineRun for: %v", component)
@@ -588,29 +597,29 @@ func generatePaCPipelineRunForComponentOldModel(
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate cel expression for pipeline: %w", err)
 	}
-	repoUrl := getGitRepoUrl(*component, newModel)
+	repoUrl := getGitRepoUrlOldModel(*component)
 
 	annotations := map[string]string{
 		"pipelinesascode.tekton.dev/cancel-in-progress": "false",
 		"pipelinesascode.tekton.dev/max-keep-runs":      "3",
-		"build.appstudio.redhat.com/target_branch":      "{{target_branch}}",
+		gitTargetBranchAnnotationNameOldModel:           "{{target_branch}}",
 		pacCelExpressionAnnotationName:                  pipelineCelExpression,
-		gitCommitShaAnnotationName:                      "{{revision}}",
-		gitRepoAtShaAnnotationName:                      gitClient.GetBrowseRepositoryAtShaLink(repoUrl, "{{revision}}"),
+		gitCommitShaAnnotationNameOldModel:              "{{revision}}",
+		gitRepoAtShaAnnotationNameOldModel:              gitClient.GetBrowseRepositoryAtShaLink(repoUrl, "{{revision}}"),
 	}
 	labels := map[string]string{
-		ApplicationNameLabelName:                component.Spec.Application,
-		ComponentNameLabelName:                  component.Name,
-		"pipelines.appstudio.openshift.io/type": "build",
+		ApplicationNameLabelName:         component.Spec.Application,
+		ComponentNameLabelNameOldModel:   component.Name,
+		PipelineRunTypeLabelNameOldModel: "build",
 	}
 
-	imageRepo := getContainerImageRepositoryForComponent(component)
-	pipelineName := getPipelineRunDefinitionName(component.Name, "", onPull)
+	imageRepo := getContainerImageRepositoryForComponentOldModel(component)
+	pipelineName := getPipelineRunDefinitionNameOldModel(component.Name, onPull)
 
 	var proposedImage string
 	if onPull {
 		annotations["pipelinesascode.tekton.dev/cancel-in-progress"] = "true"
-		annotations["build.appstudio.redhat.com/pull_request_number"] = "{{pull_request_number}}"
+		annotations[gitPRAnnotationNameOldModel] = "{{pull_request_number}}"
 		proposedImage = imageRepo + ":on-pr-{{revision}}"
 	} else {
 		proposedImage = imageRepo + ":{{revision}}"
@@ -752,14 +761,12 @@ func generateVolumeClaimTemplate() *corev1.PersistentVolumeClaim {
 	}
 }
 
-// TODO remove newModel handling after only new model is used
 // generateCelExpressionForPipeline generates value for pipelinesascode.tekton.dev/on-cel-expression annotation
 // in order to have better flexibility with git events filtering.
 // Examples of returned values:
 // event == "push" && target_branch == "main"
 // event == "pull_request" && target_branch == "my-branch" && ( "component-src-dir/***".pathChanged() || ".tekton/pipeline.yaml".pathChanged() || "dockerfiles/my-component/Dockerfile".pathChanged() )
-func generateCelExpressionForPipeline(component *compapiv1alpha1.Component, gitClient gp.GitProviderClient, versionInfo *VersionInfo, onPull bool) (string, error) {
-	newModel := true
+func generateCelExpressionForPipeline(component *compv1alpha1.Component, gitClient gp.GitProviderClient, versionInfo *VersionInfo, onPull bool) (string, error) {
 	eventType := "push"
 	if onPull {
 		eventType = "pull_request"
@@ -769,7 +776,7 @@ func generateCelExpressionForPipeline(component *compapiv1alpha1.Component, gitC
 	targetBranchCondition := fmt.Sprintf(`target_branch == "%s"`, versionInfo.Revision)
 	buildEnabledCondition := fmt.Sprintf(`%s == "true"`, BuildsEnabledParamName)
 
-	repoUrl := getGitRepoUrl(*component, newModel)
+	repoUrl := getGitRepoUrl(*component)
 
 	// Set path changed event filtering only for Components that are stored within a directory of the git repository.
 	pathChangedSuffix := ""
@@ -782,7 +789,7 @@ func generateCelExpressionForPipeline(component *compapiv1alpha1.Component, gitC
 		// If a Dockerfile is defined for the Component,
 		// we should rebuild the Component if the Dockerfile has been changed.
 		dockerfilePathChangedSuffix := ""
-		dockerfile := versionInfo.DockerfileURI
+		dockerfile := versionInfo.DockerfilePath
 		if dockerfile != "" {
 			// dockerfile could be relative to the context directory or repository root.
 			// To avoid unessesary builds, it's required to pass absolute path to the Dockerfile.
@@ -808,14 +815,13 @@ func generateCelExpressionForPipeline(component *compapiv1alpha1.Component, gitC
 	return fmt.Sprintf("%s && %s && %s%s", eventCondition, targetBranchCondition, buildEnabledCondition, pathChangedSuffix), nil
 }
 
-// TODO remove after only new model is used
+// TODO remove after only new model is used and old model is gone
 // generateCelExpressionForPipelineOldModel generates value for pipelinesascode.tekton.dev/on-cel-expression annotation
 // in order to have better flexibility with git events filtering.
 // Examples of returned values:
 // event == "push" && target_branch == "main"
 // event == "pull_request" && target_branch == "my-branch" && ( "component-src-dir/***".pathChanged() || ".tekton/pipeline.yaml".pathChanged() || "dockerfiles/my-component/Dockerfile".pathChanged() )
 func generateCelExpressionForPipelineOldModel(component *compapiv1alpha1.Component, gitClient gp.GitProviderClient, targetBranch string, onPull bool) (string, error) {
-	newModel := false
 	eventType := "push"
 	if onPull {
 		eventType = "pull_request"
@@ -823,7 +829,7 @@ func generateCelExpressionForPipelineOldModel(component *compapiv1alpha1.Compone
 	eventCondition := fmt.Sprintf(`event == "%s"`, eventType)
 
 	targetBranchCondition := fmt.Sprintf(`target_branch == "%s"`, targetBranch)
-	repoUrl := getGitRepoUrl(*component, newModel)
+	repoUrl := getGitRepoUrlOldModel(*component)
 
 	// Set path changed event filtering only for Components that are stored within a directory of the git repository.
 	pathChangedSuffix := ""
@@ -857,7 +863,7 @@ func generateCelExpressionForPipelineOldModel(component *compapiv1alpha1.Compone
 			}
 		}
 
-		pipelineFileName := getPipelineRunDefinitionFileName(component.Name, "", onPull)
+		pipelineFileName := getPipelineRunDefinitionFileNameOldModel(component.Name, onPull)
 
 		pathChangedSuffix = fmt.Sprintf(` && ( "%s***".pathChanged() || ".tekton/%s".pathChanged() %s)`, contextDir, pipelineFileName, dockerfilePathChangedSuffix)
 	}
@@ -865,7 +871,15 @@ func generateCelExpressionForPipelineOldModel(component *compapiv1alpha1.Compone
 	return fmt.Sprintf("%s && %s%s", eventCondition, targetBranchCondition, pathChangedSuffix), nil
 }
 
-func getContainerImageRepositoryForComponent(component *compapiv1alpha1.Component) string {
+func getContainerImageRepositoryForComponent(component *compv1alpha1.Component) string {
+	if component.Spec.ContainerImage != "" {
+		return getContainerImageRepository(component.Spec.ContainerImage)
+	}
+	return ""
+}
+
+// TODO remove after only new model is used and old model is gone
+func getContainerImageRepositoryForComponentOldModel(component *compapiv1alpha1.Component) string {
 	if component.Spec.ContainerImage != "" {
 		return getContainerImageRepository(component.Spec.ContainerImage)
 	}
@@ -912,30 +926,40 @@ func getPipelineNameAndBundle(pipelineRef *tektonapi.PipelineRef) (string, strin
 	return name, bundle, nil
 }
 
-// TODO remove newModel handling after only new model is used
 // getPipelineRunDefinitionFileName returns pipeline run definition filename of the given Component.
 func getPipelineRunDefinitionFileName(componentName, versionName string, isPullRequest bool) string {
 	pipelineNameSuffix := pipelineRunOnPushFilename
 	if isPullRequest {
 		pipelineNameSuffix = pipelineRunOnPRFilename
 	}
-	if versionName != "" {
-		return componentName + "-" + versionName + "-" + pipelineNameSuffix
-	} else {
-		return componentName + "-" + pipelineNameSuffix
-	}
+	return componentName + "-" + versionName + "-" + pipelineNameSuffix
 }
 
-// TODO remove newModel handling after only new model is used
+// TODO remove after only new model is used and old model is gone
+// getPipelineRunDefinitionFileNameOldModel returns pipeline run definition filename of the given Component.
+func getPipelineRunDefinitionFileNameOldModel(componentName string, isPullRequest bool) string {
+	pipelineNameSuffix := pipelineRunOnPushFilename
+	if isPullRequest {
+		pipelineNameSuffix = pipelineRunOnPRFilename
+	}
+	return componentName + "-" + pipelineNameSuffix
+}
+
 // getPipelineRunDefinitionName generates the pipeline run definition name for the given component.
 func getPipelineRunDefinitionName(componentName, versionName string, isPullRequest bool) string {
 	pipelineNameSuffix := pipelineRunOnPushSuffix
 	if isPullRequest {
 		pipelineNameSuffix = pipelineRunOnPRSuffix
 	}
-	if versionName != "" {
-		return componentName + "-" + versionName + pipelineNameSuffix
-	} else {
-		return componentName + pipelineNameSuffix
+	return componentName + "-" + versionName + pipelineNameSuffix
+}
+
+// TODO remove after only new model is used and old model is gone
+// getPipelineRunDefinitionNameOldModel generates the pipeline run definition name for the given component.
+func getPipelineRunDefinitionNameOldModel(componentName string, isPullRequest bool) string {
+	pipelineNameSuffix := pipelineRunOnPushSuffix
+	if isPullRequest {
+		pipelineNameSuffix = pipelineRunOnPRSuffix
 	}
+	return componentName + pipelineNameSuffix
 }

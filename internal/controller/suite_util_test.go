@@ -42,6 +42,7 @@ import (
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 
 	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
+	compv1alpha1 "github.com/konflux-ci/build-service/api/konflux/v1alpha1"
 	imgcv1alpha1 "github.com/konflux-ci/image-controller/api/v1alpha1"
 	releaseapi "github.com/konflux-ci/release-service/api/v1alpha1"
 	tektonutils "github.com/konflux-ci/release-service/tekton/utils"
@@ -62,11 +63,11 @@ const (
 )
 
 const (
-	// TODO remove after only new model is used
+	// TODO remove after only new model is used and old model is gone
 	HASAppName = "test-application"
-	// TODO remove after only new model is used
+	// TODO remove after only new model is used and old model is gone
 	HASCompName = "test-component"
-	// TODO remove after only new model is used
+	// TODO remove after only new model is used and old model is gone
 	HASAppNamespace         = "default"
 	DefaultCompName         = "test-component"
 	DefaultCompNamespace    = "default"
@@ -90,17 +91,17 @@ var (
 type componentConfig struct {
 	componentKey       types.NamespacedName
 	containerImage     string
-	versions           []compapiv1alpha1.ComponentVersion
+	versions           []compv1alpha1.ComponentVersion
 	gitURL             string
 	annotations        map[string]string
 	finalizers         []string
-	actions            compapiv1alpha1.ComponentActions
-	repositorySettings compapiv1alpha1.RepositorySettings
-	defaultPipeline    *compapiv1alpha1.ComponentBuildPipeline
+	actions            compv1alpha1.ComponentActions
+	repositorySettings compv1alpha1.RepositorySettings
+	defaultPipeline    *compv1alpha1.ComponentBuildPipeline
 	skipOffboardingPr  bool
 }
 
-// TODO remove after only new model is used
+// TODO remove after only new model is used and old model is gone
 type componentConfigOldModel struct {
 	componentKey     types.NamespacedName
 	containerImage   string
@@ -112,7 +113,7 @@ type componentConfigOldModel struct {
 	finalizers       []string
 }
 
-func getComponentData(config componentConfig) *compapiv1alpha1.Component {
+func getComponentData(config componentConfig) *compv1alpha1.Component {
 	name := config.componentKey.Name
 	if name == "" {
 		name = DefaultCompName
@@ -132,13 +133,11 @@ func getComponentData(config componentConfig) *compapiv1alpha1.Component {
 	versions := config.versions
 	// Only add default version if versions is nil (not set), not if it's explicitly empty []
 	if versions == nil {
-		versions = []compapiv1alpha1.ComponentVersion{
+		versions = []compv1alpha1.ComponentVersion{
 			{Name: DefaultVersionName, Revision: DefaultRevisionName, Context: ""},
 		}
 	}
 	annotations := make(map[string]string)
-	// Always set new model annotation for components created with getComponentData
-	annotations["build.appstudio.openshift.io/component_model_version"] = "v2"
 	if config.annotations != nil {
 		for key, value := range config.annotations {
 			annotations[key] = value
@@ -148,9 +147,9 @@ func getComponentData(config componentConfig) *compapiv1alpha1.Component {
 	if len(config.finalizers) != 0 {
 		finalizers = append(finalizers, config.finalizers...)
 	}
-	return &compapiv1alpha1.Component{
+	return &compv1alpha1.Component{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "appstudio.redhat.com/v1alpha1",
+			APIVersion: "konflux-ci.dev/v1alpha1",
 			Kind:       "Component",
 		},
 		ObjectMeta: metav1.ObjectMeta{
@@ -159,23 +158,21 @@ func getComponentData(config componentConfig) *compapiv1alpha1.Component {
 			Annotations: annotations,
 			Finalizers:  finalizers,
 		},
-		Spec: compapiv1alpha1.ComponentSpec{
+		Spec: compv1alpha1.ComponentSpec{
 			Actions:              config.actions,
 			RepositorySettings:   config.repositorySettings,
 			DefaultBuildPipeline: config.defaultPipeline,
 			ContainerImage:       image,
 			SkipOffboardingPr:    config.skipOffboardingPr,
-			Source: compapiv1alpha1.ComponentSource{
-				ComponentSourceUnion: compapiv1alpha1.ComponentSourceUnion{
-					GitURL:   gitUrl,
-					Versions: versions,
-				},
+			Source: compv1alpha1.ComponentSource{
+				GitURL:   gitUrl,
+				Versions: versions,
 			},
 		},
 	}
 }
 
-// TODO remove after only new model is used
+// TODO remove after only new model is used and old model is gone
 func getComponentDataOldModel(config componentConfigOldModel) *compapiv1alpha1.Component {
 	name := config.componentKey.Name
 	if name == "" {
@@ -239,16 +236,16 @@ func getComponentDataOldModel(config componentConfigOldModel) *compapiv1alpha1.C
 	}
 }
 
-func getSampleComponentData(componentKey types.NamespacedName) *compapiv1alpha1.Component {
+func getSampleComponentData(componentKey types.NamespacedName) *compv1alpha1.Component {
 	return getComponentData(componentConfig{componentKey: componentKey})
 }
 
-// TODO remove after only new model is used
+// TODO remove after only new model is used and old model is gone
 func getSampleComponentDataOldModel(componentKey types.NamespacedName) *compapiv1alpha1.Component {
 	return getComponentDataOldModel(componentConfigOldModel{componentKey: componentKey})
 }
 
-// TODO remove after only new model is used
+// TODO remove after only new model is used and old model is gone
 // createComponentAndProcessBuildRequest create a component with specified build request and
 // waits until the request annotation is removed, which means the request was processed by the operator.
 // Use createCustomComponentWithBuildRequest if there is no need to wait.
@@ -257,7 +254,7 @@ func createComponentAndProcessBuildRequest(config componentConfigOldModel, build
 	waitComponentAnnotationGone(config.componentKey, BuildRequestAnnotationName)
 }
 
-// TODO remove after only new model is used
+// TODO remove after only new model is used and old model is gone
 func createCustomComponentWithoutBuildRequest(config componentConfigOldModel) {
 	component := getComponentDataOldModel(config)
 	if component.Annotations == nil {
@@ -265,10 +262,10 @@ func createCustomComponentWithoutBuildRequest(config componentConfigOldModel) {
 	}
 
 	Expect(k8sClient.Create(ctx, component)).Should(Succeed())
-	getComponent(config.componentKey)
+	getComponentOldModel(config.componentKey)
 }
 
-// TODO remove after only new model is used
+// TODO remove after only new model is used and old model is gone
 func createCustomComponentWithBuildRequest(config componentConfigOldModel, buildRequest string) {
 	component := getComponentDataOldModel(config)
 	if component.Annotations == nil {
@@ -277,12 +274,12 @@ func createCustomComponentWithBuildRequest(config componentConfigOldModel, build
 	component.Annotations[BuildRequestAnnotationName] = buildRequest
 
 	Expect(k8sClient.Create(ctx, component)).Should(Succeed())
-	getComponent(config.componentKey)
+	getComponentOldModel(config.componentKey)
 }
 
-// TODO remove after only new model is used
+// TODO remove after only new model is used and old model is gone
 func setComponentBuildRequestOldModel(componentKey types.NamespacedName, buildRequest string) {
-	component := getComponent(componentKey)
+	component := getComponentOldModel(componentKey)
 	if component.Annotations == nil {
 		component.Annotations = make(map[string]string)
 	}
@@ -291,7 +288,7 @@ func setComponentBuildRequestOldModel(componentKey types.NamespacedName, buildRe
 	Expect(k8sClient.Update(ctx, component)).To(Succeed())
 }
 
-// TODO remove after only new model is used
+// TODO remove after only new model is used and old model is gone
 // createComponentOldModel creates sample component resource and verifies it was properly created
 func createComponentOldModel(componentLookupKey types.NamespacedName) {
 	component := getSampleComponentDataOldModel(componentLookupKey)
@@ -300,7 +297,7 @@ func createComponentOldModel(componentLookupKey types.NamespacedName) {
 }
 
 // createComponent creates custom component resource and verifies it was properly created
-func createComponent(sampleComponentData *compapiv1alpha1.Component) *compapiv1alpha1.Component {
+func createComponent(sampleComponentData *compv1alpha1.Component) *compv1alpha1.Component {
 	Expect(k8sClient.Create(ctx, sampleComponentData)).Should(Succeed())
 
 	lookupKey := types.NamespacedName{
@@ -311,7 +308,7 @@ func createComponent(sampleComponentData *compapiv1alpha1.Component) *compapiv1a
 	return getComponent(lookupKey)
 }
 
-// TODO remove after only new model is used
+// TODO remove after only new model is used and old model is gone
 // createComponentCustomOldModel creates custom component resource and verifies it was properly created
 func createComponentCustomOldModel(sampleComponentData *compapiv1alpha1.Component) {
 	Expect(k8sClient.Create(ctx, sampleComponentData)).Should(Succeed())
@@ -321,10 +318,22 @@ func createComponentCustomOldModel(sampleComponentData *compapiv1alpha1.Componen
 		Namespace: sampleComponentData.Namespace,
 	}
 
-	getComponent(lookupKey)
+	getComponentOldModel(lookupKey)
 }
 
-func getComponent(componentKey types.NamespacedName) *compapiv1alpha1.Component {
+func getComponent(componentKey types.NamespacedName) *compv1alpha1.Component {
+	component := &compv1alpha1.Component{}
+	Eventually(func() bool {
+		if err := k8sClient.Get(ctx, componentKey, component); err != nil {
+			return false
+		}
+		return component.ResourceVersion != ""
+	}, timeout, interval).Should(BeTrue())
+	return component
+}
+
+// TODO remove after only new model is used and old model is gone
+func getComponentOldModel(componentKey types.NamespacedName) *compapiv1alpha1.Component {
 	component := &compapiv1alpha1.Component{}
 	Eventually(func() bool {
 		if err := k8sClient.Get(ctx, componentKey, component); err != nil {
@@ -341,7 +350,7 @@ func getComponent(componentKey types.NamespacedName) *compapiv1alpha1.Component 
 // This includes: Repository, ServiceAccount, and incoming Secret.
 func deleteComponentAndOwnedResources(componentKey types.NamespacedName) {
 	// Get component to determine repository name before deletion
-	component := &compapiv1alpha1.Component{}
+	component := &compv1alpha1.Component{}
 	if err := k8sClient.Get(ctx, componentKey, component); err != nil {
 		if !k8sErrors.IsNotFound(err) {
 			Fail(err.Error())
@@ -399,6 +408,29 @@ func deleteComponentAndOwnedResources(componentKey types.NamespacedName) {
 }
 
 func deleteComponent(componentKey types.NamespacedName) {
+	component := &compv1alpha1.Component{}
+
+	// Check if the component exists
+	if err := k8sClient.Get(ctx, componentKey, component); k8sErrors.IsNotFound(err) {
+		return
+	}
+
+	// Delete
+	Eventually(func() error {
+		if err := k8sClient.Get(ctx, componentKey, component); err != nil {
+			return err
+		}
+		return k8sClient.Delete(ctx, component)
+	}, timeout, interval).Should(Succeed())
+
+	// Wait for delete to finish
+	Eventually(func() bool {
+		return k8sErrors.IsNotFound(k8sClient.Get(ctx, componentKey, component))
+	}, timeout, interval).Should(BeTrue())
+}
+
+// TODO remove after only new model is used and old model is gone
+func deleteComponentOldModel(componentKey types.NamespacedName) {
 	component := &compapiv1alpha1.Component{}
 
 	// Check if the component exists
@@ -420,6 +452,7 @@ func deleteComponent(componentKey types.NamespacedName) {
 	}, timeout, interval).Should(BeTrue())
 }
 
+// TODO remove after only new model is used and old model is gone
 func waitFinalizerOnComponent(componentKey types.NamespacedName, finalizerName string, finalizerShouldBePresent bool) {
 	component := &compapiv1alpha1.Component{}
 	Eventually(func() bool {
@@ -435,23 +468,25 @@ func waitFinalizerOnComponent(componentKey types.NamespacedName, finalizerName s
 	}, timeout, interval).Should(BeTrue())
 }
 
+// TODO remove after only new model is used and old model is gone
 func waitPaCFinalizerOnComponent(componentKey types.NamespacedName) {
-	waitFinalizerOnComponent(componentKey, PaCProvisionFinalizer, true)
+	waitFinalizerOnComponent(componentKey, PaCProvisionFinalizerOldModel, true)
 }
 
+// TODO remove after only new model is used and old model is gone
 func waitPaCFinalizerOnComponentGone(componentKey types.NamespacedName) {
-	waitFinalizerOnComponent(componentKey, PaCProvisionFinalizer, false)
+	waitFinalizerOnComponent(componentKey, PaCProvisionFinalizerOldModel, false)
 }
 
-// TODO remove after only new model is used
+// TODO remove after only new model is used and old model is gone
 func waitDoneMessageOnComponentOldModel(componentKey types.NamespacedName) {
 	Eventually(func() bool {
-		buildStatus := readBuildStatus(getComponent(componentKey))
+		buildStatus := readBuildStatus(getComponentOldModel(componentKey))
 		return buildStatus.Message == "done"
 	}, timeout, interval).Should(BeTrue())
 }
 
-// TODO remove after only new model is used
+// TODO remove after only new model is used and old model is gone
 func expectPacBuildStatusOldModel(componentKey types.NamespacedName, state string, errID int, errMessage string, mergeURL string) {
 	// in 1 test component is usually created (which triggers reconcile and adds message=done)
 	// and then component is updated (and waits for message=done apart from other things)
@@ -459,14 +494,14 @@ func expectPacBuildStatusOldModel(componentKey types.NamespacedName, state strin
 	// message might be still done from previous reconcile, but even though requested action already finished,
 	// it didn't update status yet so it will get status from previous reconcile
 	Eventually(func() bool {
-		buildStatus := readBuildStatus(getComponent(componentKey))
+		buildStatus := readBuildStatus(getComponentOldModel(componentKey))
 		Expect(buildStatus).ToNot(BeNil())
 		Expect(buildStatus.PaC).ToNot(BeNil())
 
 		return buildStatus.PaC.State == state
 	}, timeout, interval).Should(BeTrue())
 
-	buildStatus := readBuildStatus(getComponent(componentKey))
+	buildStatus := readBuildStatus(getComponentOldModel(componentKey))
 	Expect(buildStatus).ToNot(BeNil())
 	Expect(buildStatus.PaC).ToNot(BeNil())
 	Expect(buildStatus.PaC.State).To(Equal(state))
@@ -491,6 +526,19 @@ func listComponentPipelineRuns(componentKey types.NamespacedName) []tektonapi.Pi
 	return pipelineRuns.Items
 }
 
+// TODO remove after only new model is used and old model is gone
+func listComponentPipelineRunsOldModel(componentKey types.NamespacedName) []tektonapi.PipelineRun {
+	pipelineRuns := &tektonapi.PipelineRunList{}
+	labelSelectors := client.ListOptions{
+		Raw:       &metav1.ListOptions{LabelSelector: ComponentNameLabelNameOldModel + "=" + componentKey.Name},
+		Namespace: componentKey.Namespace,
+	}
+	err := k8sClient.List(ctx, pipelineRuns, &labelSelectors)
+	Expect(err).ToNot(HaveOccurred())
+	return pipelineRuns.Items
+}
+
+// TODO remove after only new model is used and old model is gone
 func deleteComponentPipelineRuns(componentKey types.NamespacedName) {
 	for _, pipelineRun := range listComponentPipelineRuns(componentKey) {
 		if err := k8sClient.Delete(ctx, &pipelineRun); err != nil {
@@ -520,11 +568,32 @@ func createPaCPipelineRunWithName(resourceKey types.NamespacedName, pipelineRunN
 	}, timeout, interval).Should(BeTrue())
 }
 
+// TODO remove after only new model is used and old model is gone
+func createPaCPipelineRunWithNameOldModel(resourceKey types.NamespacedName, pipelineRunName string) {
+	pipelineRun := &tektonapi.PipelineRun{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pipelineRunName,
+			Namespace: resourceKey.Namespace,
+			Labels: map[string]string{
+				ComponentNameLabelNameOldModel: resourceKey.Name,
+				ApplicationNameLabelName:       "test-application",
+			},
+		},
+	}
+	Expect(k8sClient.Create(ctx, pipelineRun)).Should(Succeed())
+
+	pipelineRunKey := types.NamespacedName{Namespace: pipelineRun.Namespace, Name: pipelineRun.Name}
+	Eventually(func() bool {
+		err := k8sClient.Get(ctx, pipelineRunKey, pipelineRun)
+		return err == nil
+	}, timeout, interval).Should(BeTrue())
+}
+
 func ensureNoPipelineRunsCreated(componentLookupKey types.NamespacedName) {
 	pipelineRuns := &tektonapi.PipelineRunList{}
 	Consistently(func() bool {
 		labelSelectors := client.ListOptions{
-			Raw:       &metav1.ListOptions{LabelSelector: ComponentNameLabelName + "=" + componentLookupKey.Name},
+			Raw:       &metav1.ListOptions{LabelSelector: ComponentNameLabelNameOldModel + "=" + componentLookupKey.Name},
 			Namespace: componentLookupKey.Namespace,
 		}
 		Expect(k8sClient.List(ctx, pipelineRuns, &labelSelectors)).To(Succeed())
@@ -536,7 +605,7 @@ func waitNoPipelineRunsForComponent(componentLookupKey types.NamespacedName) {
 	pipelineRuns := &tektonapi.PipelineRunList{}
 	Eventually(func() bool {
 		labelSelectors := client.ListOptions{
-			Raw:       &metav1.ListOptions{LabelSelector: ComponentNameLabelName + "=" + componentLookupKey.Name},
+			Raw:       &metav1.ListOptions{LabelSelector: ComponentNameLabelNameOldModel + "=" + componentLookupKey.Name},
 			Namespace: componentLookupKey.Namespace,
 		}
 		Expect(k8sClient.List(ctx, pipelineRuns, &labelSelectors)).To(Succeed())
@@ -544,8 +613,9 @@ func waitNoPipelineRunsForComponent(componentLookupKey types.NamespacedName) {
 	}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 }
 
+// TODO remove after only new model is used and old model is gone
 func createImageRepositoryForComponent(componentKey types.NamespacedName) *imgcv1alpha1.ImageRepository {
-	component := getComponent(componentKey)
+	component := getComponentOldModel(componentKey)
 
 	imageRepository := &imgcv1alpha1.ImageRepository{
 		ObjectMeta: metav1.ObjectMeta{
@@ -671,7 +741,7 @@ func createSCMSecret(resourceKey types.NamespacedName, data map[string]string, s
 	}, timeout, interval).Should(Succeed())
 }
 
-// TODO remove after only new model is used
+// TODO remove after only new model is used and old model is gone
 func createSCMSecretOldModel(resourceKey types.NamespacedName, data map[string]string, secretType corev1.SecretType, annotations map[string]string) {
 	labels := map[string]string{
 		"appstudio.redhat.com/credentials": "scm",
@@ -733,14 +803,6 @@ func waitSecretCreated(resourceKey types.NamespacedName) {
 	}, timeout, interval).Should(BeTrue())
 }
 
-func waitSecretGone(resourceKey types.NamespacedName) {
-	secret := &corev1.Secret{}
-	Eventually(func() bool {
-		err := k8sClient.Get(ctx, resourceKey, secret)
-		return k8sErrors.IsNotFound(err)
-	}, timeout, interval).Should(BeTrue())
-}
-
 func createNamespace(name string) {
 	namespace := corev1.Namespace{
 		TypeMeta: metav1.TypeMeta{
@@ -786,7 +848,7 @@ func waitPaCRepositoryCreated(resourceKey types.NamespacedName) *pacv1alpha1.Rep
 // When secretName is empty, it verifies GitProvider is nil (GitHub App authentication).
 // When secretName is provided, it validates token-based authentication with the secret.
 // The expected URL is determined using getGitRepoUrl, and GitProvider type using getGitProvider.
-func validatePaCRepository(component *compapiv1alpha1.Component, secretName, secretKey string, skipBuildsMap map[string]bool) *pacv1alpha1.Repository {
+func validatePaCRepository(component *compv1alpha1.Component, secretName, secretKey string, skipBuildsMap map[string]bool) *pacv1alpha1.Repository {
 	// Generate repository name from git URL
 	expectedRepoName, err := generatePaCRepositoryNameFromGitUrl(component.Spec.Source.GitURL)
 	Expect(err).NotTo(HaveOccurred())
@@ -795,11 +857,11 @@ func validatePaCRepository(component *compapiv1alpha1.Component, secretName, sec
 	repository := waitPaCRepositoryCreated(resourceKey)
 
 	// Get expected URL using getGitRepoUrl
-	expectedURL := getGitRepoUrl(*component, true)
+	expectedURL := getGitRepoUrl(*component)
 	Expect(repository.Spec.URL).To(Equal(expectedURL))
 
 	// Get git provider type
-	gitProvider, err := getGitProvider(*component, true)
+	gitProvider, err := getGitProvider(*component)
 	Expect(err).NotTo(HaveOccurred())
 
 	// Validate GitProvider
@@ -905,9 +967,10 @@ func deleteAllPaCRepositories(namesapce string) {
 	Expect(k8sClient.DeleteAllOf(ctx, &pacv1alpha1.Repository{}, opts)).To(Succeed())
 }
 
+// TODO remove after only new model is used and old model is gone
 func waitComponentAnnotationGone(componentKey types.NamespacedName, annotationName string) {
 	Eventually(func() bool {
-		component := getComponent(componentKey)
+		component := getComponentOldModel(componentKey)
 		annotations := component.GetAnnotations()
 		if annotations == nil {
 			return true
@@ -917,9 +980,10 @@ func waitComponentAnnotationGone(componentKey types.NamespacedName, annotationNa
 	}, timeout, interval).Should(BeTrue())
 }
 
+// TODO remove after only new model is used and old model is gone
 func waitComponentAnnotationExists(componentKey types.NamespacedName, annotationName string) {
 	Eventually(func() bool {
-		component := getComponent(componentKey)
+		component := getComponentOldModel(componentKey)
 		annotations := component.GetAnnotations()
 		if annotations == nil {
 			return false
@@ -929,8 +993,8 @@ func waitComponentAnnotationExists(componentKey types.NamespacedName, annotation
 	}, timeout, interval).Should(BeTrue())
 }
 
-func waitForComponentStatusVersions(componentKey types.NamespacedName, expectedCount int) *compapiv1alpha1.Component {
-	var component *compapiv1alpha1.Component
+func waitForComponentStatusVersions(componentKey types.NamespacedName, expectedCount int) *compv1alpha1.Component {
+	var component *compv1alpha1.Component
 	Eventually(func() bool {
 		component = getComponent(componentKey)
 		return len(component.Status.Versions) == expectedCount
@@ -938,8 +1002,8 @@ func waitForComponentStatusVersions(componentKey types.NamespacedName, expectedC
 	return component
 }
 
-func waitForComponentStatusMessage(componentKey types.NamespacedName, shouldBeEmpty bool) *compapiv1alpha1.Component {
-	var component *compapiv1alpha1.Component
+func waitForComponentStatusMessage(componentKey types.NamespacedName, shouldBeEmpty bool) *compv1alpha1.Component {
+	var component *compv1alpha1.Component
 	Eventually(func() bool {
 		component = getComponent(componentKey)
 		if shouldBeEmpty {
@@ -950,8 +1014,8 @@ func waitForComponentStatusMessage(componentKey types.NamespacedName, shouldBeEm
 	return component
 }
 
-func waitForComponentSpecActionEmpty(componentKey types.NamespacedName, actionType string, checkType string) *compapiv1alpha1.Component {
-	var component *compapiv1alpha1.Component
+func waitForComponentSpecActionEmpty(componentKey types.NamespacedName, actionType string, checkType string) *compv1alpha1.Component {
+	var component *compv1alpha1.Component
 	Eventually(func() bool {
 		component = getComponent(componentKey)
 		if actionType == "create-pr" {
@@ -1312,7 +1376,7 @@ func verifyPacWebhookIncomingPostData(data map[string]interface{}, repository, s
 // OnboardingTime is automatically verified: not empty when succeeded, empty when failed
 // message: verifies exact Message field value (empty string = verify empty)
 // skipBuilds: verifies skip builds for the version
-func verifyComponentVersionStatus(versionStatus compapiv1alpha1.ComponentVersionStatus, versionName, revision, onboardingStatus, configurationMergeURL, message string, skipBuilds bool) {
+func verifyComponentVersionStatus(versionStatus compv1alpha1.ComponentVersionStatus, versionName, revision, onboardingStatus, configurationMergeURL, message string, skipBuilds bool) {
 	Expect(versionStatus.Name).To(Equal(versionName))
 	Expect(versionStatus.Revision).To(Equal(revision))
 	Expect(versionStatus.OnboardingStatus).To(Equal(onboardingStatus))

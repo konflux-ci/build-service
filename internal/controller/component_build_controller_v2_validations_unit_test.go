@@ -26,7 +26,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
+	compv1alpha1 "github.com/konflux-ci/build-service/api/konflux/v1alpha1"
 )
 
 func TestSanitizeVersionName(t *testing.T) {
@@ -81,17 +81,15 @@ func TestSanitizeVersionName(t *testing.T) {
 }
 
 func TestValidateVersions(t *testing.T) {
-	getComponent := func(versions []compapiv1alpha1.ComponentVersion) compapiv1alpha1.Component {
-		component := compapiv1alpha1.Component{
+	getComponent := func(versions []compv1alpha1.ComponentVersion) compv1alpha1.Component {
+		component := compv1alpha1.Component{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "testcomponent",
 				Namespace: "workspace-name",
 			},
-			Spec: compapiv1alpha1.ComponentSpec{
-				Source: compapiv1alpha1.ComponentSource{
-					ComponentSourceUnion: compapiv1alpha1.ComponentSourceUnion{
-						GitURL: "https://github.com/user/repo.git",
-					},
+			Spec: compv1alpha1.ComponentSpec{
+				Source: compv1alpha1.ComponentSource{
+					GitURL: "https://github.com/user/repo.git",
 				},
 			},
 		}
@@ -105,11 +103,11 @@ func TestValidateVersions(t *testing.T) {
 		name        string
 		expectError bool
 		errorSubstr string
-		versions    []compapiv1alpha1.ComponentVersion
+		versions    []compv1alpha1.ComponentVersion
 	}{
 		{
 			name: "should accept valid versions",
-			versions: []compapiv1alpha1.ComponentVersion{
+			versions: []compv1alpha1.ComponentVersion{
 				{Name: "v1.0", Revision: "main"},
 				{Name: "v2.0", Revision: "develop"},
 			},
@@ -117,7 +115,7 @@ func TestValidateVersions(t *testing.T) {
 		},
 		{
 			name: "should validate version names are required",
-			versions: []compapiv1alpha1.ComponentVersion{
+			versions: []compv1alpha1.ComponentVersion{
 				{Name: "", Revision: "main"},
 			},
 			expectError: true,
@@ -125,7 +123,7 @@ func TestValidateVersions(t *testing.T) {
 		},
 		{
 			name: "should validate version revisions are required",
-			versions: []compapiv1alpha1.ComponentVersion{
+			versions: []compv1alpha1.ComponentVersion{
 				{Name: "v1.0", Revision: ""},
 			},
 			expectError: true,
@@ -133,7 +131,7 @@ func TestValidateVersions(t *testing.T) {
 		},
 		{
 			name: "should detect duplicate sanitized version names",
-			versions: []compapiv1alpha1.ComponentVersion{
+			versions: []compv1alpha1.ComponentVersion{
 				{Name: "v1.0", Revision: "main"},
 				{Name: "v1_0", Revision: "develop"},
 			},
@@ -142,7 +140,7 @@ func TestValidateVersions(t *testing.T) {
 		},
 		{
 			name: "should detect empty sanitized version name",
-			versions: []compapiv1alpha1.ComponentVersion{
+			versions: []compv1alpha1.ComponentVersion{
 				{Name: "___", Revision: "main"},
 			},
 			expectError: true,
@@ -150,7 +148,7 @@ func TestValidateVersions(t *testing.T) {
 		},
 		{
 			name: "should validate version revisions are required, while 2 versions are valid",
-			versions: []compapiv1alpha1.ComponentVersion{
+			versions: []compv1alpha1.ComponentVersion{
 				{Name: "v1.0", Revision: "main"},
 				{Name: "v2.0", Revision: "develop"},
 				{Name: "v3.0", Revision: ""},
@@ -184,18 +182,18 @@ func TestValidateVersions(t *testing.T) {
 func TestValidatePipelineConfiguration(t *testing.T) {
 	tests := []struct {
 		name        string
-		pipeline    *compapiv1alpha1.ComponentBuildPipeline
+		pipeline    *compv1alpha1.ComponentBuildPipeline
 		versionName string
 		wantErrors  int
 		errorSubstr string
 	}{
 		{
 			name: "should validate that PullAndPush cannot be used with Pull or Push",
-			pipeline: &compapiv1alpha1.ComponentBuildPipeline{
-				PullAndPush: &compapiv1alpha1.PipelineDefinition{
+			pipeline: &compv1alpha1.ComponentBuildPipeline{
+				PullAndPush: &compv1alpha1.PipelineDefinition{
 					PipelineRefName: "docker-build",
 				},
-				Pull: &compapiv1alpha1.PipelineDefinition{
+				Pull: &compv1alpha1.PipelineDefinition{
 					PipelineRefName: "docker-build",
 				},
 			},
@@ -205,11 +203,11 @@ func TestValidatePipelineConfiguration(t *testing.T) {
 		},
 		{
 			name: "should validate that PullAndPush cannot be used with Push",
-			pipeline: &compapiv1alpha1.ComponentBuildPipeline{
-				PullAndPush: &compapiv1alpha1.PipelineDefinition{
+			pipeline: &compv1alpha1.ComponentBuildPipeline{
+				PullAndPush: &compv1alpha1.PipelineDefinition{
 					PipelineRefName: "docker-build",
 				},
-				Push: &compapiv1alpha1.PipelineDefinition{
+				Push: &compv1alpha1.PipelineDefinition{
 					PipelineRefName: "docker-build",
 				},
 			},
@@ -219,9 +217,9 @@ func TestValidatePipelineConfiguration(t *testing.T) {
 		},
 		{
 			name: "should validate PipelineRefGit required fields - missing pathInRepo",
-			pipeline: &compapiv1alpha1.ComponentBuildPipeline{
-				Pull: &compapiv1alpha1.PipelineDefinition{
-					PipelineRefGit: &compapiv1alpha1.PipelineRefGit{
+			pipeline: &compv1alpha1.ComponentBuildPipeline{
+				Pull: &compv1alpha1.PipelineDefinition{
+					PipelineRefGit: &compv1alpha1.PipelineRefGit{
 						Url:      "https://github.com/test/pipelines",
 						Revision: "main",
 					},
@@ -233,9 +231,9 @@ func TestValidatePipelineConfiguration(t *testing.T) {
 		},
 		{
 			name: "should validate PipelineRefGit required fields - missing url and revision",
-			pipeline: &compapiv1alpha1.ComponentBuildPipeline{
-				Pull: &compapiv1alpha1.PipelineDefinition{
-					PipelineRefGit: &compapiv1alpha1.PipelineRefGit{
+			pipeline: &compv1alpha1.ComponentBuildPipeline{
+				Pull: &compv1alpha1.PipelineDefinition{
+					PipelineRefGit: &compv1alpha1.PipelineRefGit{
 						PathInRepo: ".tekton/pipeline.yaml",
 					},
 				},
@@ -246,9 +244,9 @@ func TestValidatePipelineConfiguration(t *testing.T) {
 		},
 		{
 			name: "should validate PipelineSpecFromBundle required fields",
-			pipeline: &compapiv1alpha1.ComponentBuildPipeline{
-				Push: &compapiv1alpha1.PipelineDefinition{
-					PipelineSpecFromBundle: &compapiv1alpha1.PipelineSpecFromBundle{
+			pipeline: &compv1alpha1.ComponentBuildPipeline{
+				Push: &compv1alpha1.PipelineDefinition{
+					PipelineSpecFromBundle: &compv1alpha1.PipelineSpecFromBundle{
 						Bundle: "quay.io/repo/bundle:latest",
 					},
 				},
@@ -259,10 +257,10 @@ func TestValidatePipelineConfiguration(t *testing.T) {
 		},
 		{
 			name: "should validate multiple definition types cannot be used together",
-			pipeline: &compapiv1alpha1.ComponentBuildPipeline{
-				Pull: &compapiv1alpha1.PipelineDefinition{
+			pipeline: &compv1alpha1.ComponentBuildPipeline{
+				Pull: &compv1alpha1.PipelineDefinition{
 					PipelineRefName: "docker-build",
-					PipelineRefGit: &compapiv1alpha1.PipelineRefGit{
+					PipelineRefGit: &compv1alpha1.PipelineRefGit{
 						Url:        "https://github.com/test/pipelines",
 						PathInRepo: ".tekton/pipeline.yaml",
 						Revision:   "main",
@@ -281,17 +279,17 @@ func TestValidatePipelineConfiguration(t *testing.T) {
 		},
 		{
 			name:        "should accept empty pipeline configuration",
-			pipeline:    &compapiv1alpha1.ComponentBuildPipeline{},
+			pipeline:    &compv1alpha1.ComponentBuildPipeline{},
 			versionName: "test-version",
 			wantErrors:  0,
 		},
 		{
 			name: "should accept valid pipeline with PipelineRefName",
-			pipeline: &compapiv1alpha1.ComponentBuildPipeline{
-				Pull: &compapiv1alpha1.PipelineDefinition{
+			pipeline: &compv1alpha1.ComponentBuildPipeline{
+				Pull: &compv1alpha1.PipelineDefinition{
 					PipelineRefName: "docker-build",
 				},
-				Push: &compapiv1alpha1.PipelineDefinition{
+				Push: &compv1alpha1.PipelineDefinition{
 					PipelineRefName: "docker-build",
 				},
 			},
@@ -300,9 +298,9 @@ func TestValidatePipelineConfiguration(t *testing.T) {
 		},
 		{
 			name: "should accept valid pipeline with PullAndPush using PipelineRefGit",
-			pipeline: &compapiv1alpha1.ComponentBuildPipeline{
-				PullAndPush: &compapiv1alpha1.PipelineDefinition{
-					PipelineRefGit: &compapiv1alpha1.PipelineRefGit{
+			pipeline: &compv1alpha1.ComponentBuildPipeline{
+				PullAndPush: &compv1alpha1.PipelineDefinition{
+					PipelineRefGit: &compv1alpha1.PipelineRefGit{
 						Url:        "https://github.com/test/pipelines",
 						PathInRepo: ".tekton/pipeline.yaml",
 						Revision:   "main",
@@ -335,21 +333,19 @@ func TestValidatePipelineConfiguration(t *testing.T) {
 func TestBuildVersionInfoMap(t *testing.T) {
 	tests := []struct {
 		name       string
-		component  *compapiv1alpha1.Component
+		component  *compv1alpha1.Component
 		fromStatus bool
 		validate   func(t *testing.T, result map[string]*VersionInfo)
 	}{
 		{
 			name: "should build version info map from spec with all fields",
-			component: &compapiv1alpha1.Component{
-				Spec: compapiv1alpha1.ComponentSpec{
-					Source: compapiv1alpha1.ComponentSource{
-						ComponentSourceUnion: compapiv1alpha1.ComponentSourceUnion{
-							DockerfileURI: "Dockerfile.default",
-							Versions: []compapiv1alpha1.ComponentVersion{
-								{Name: "v1.0", Revision: "main", Context: "app1"},
-								{Name: "v2.0", Revision: "develop", DockerfileURI: "Dockerfile.custom"},
-							},
+			component: &compv1alpha1.Component{
+				Spec: compv1alpha1.ComponentSpec{
+					Source: compv1alpha1.ComponentSource{
+						DockerfilePath: "Dockerfile.default",
+						Versions: []compv1alpha1.ComponentVersion{
+							{Name: "v1.0", Revision: "main", Context: "app1"},
+							{Name: "v2.0", Revision: "develop", DockerfilePath: "Dockerfile.custom"},
 						},
 					},
 				},
@@ -361,22 +357,20 @@ func TestBuildVersionInfoMap(t *testing.T) {
 				assert.Equal(t, "v1-0", result["v1.0"].SanitizedVersion)
 				assert.Equal(t, "main", result["v1.0"].Revision)
 				assert.Equal(t, "app1", result["v1.0"].Context)
-				assert.Equal(t, "Dockerfile.default", result["v1.0"].DockerfileURI)
+				assert.Equal(t, "Dockerfile.default", result["v1.0"].DockerfilePath)
 
 				assert.Equal(t, "v2.0", result["v2.0"].OriginalVersion)
-				assert.Equal(t, "Dockerfile.custom", result["v2.0"].DockerfileURI)
+				assert.Equal(t, "Dockerfile.custom", result["v2.0"].DockerfilePath)
 			},
 		},
 		{
-			name: "should build version info map from spec without DockerfileURI and default to Dockerfile",
-			component: &compapiv1alpha1.Component{
-				Spec: compapiv1alpha1.ComponentSpec{
-					Source: compapiv1alpha1.ComponentSource{
-						ComponentSourceUnion: compapiv1alpha1.ComponentSourceUnion{
-							Versions: []compapiv1alpha1.ComponentVersion{
-								{Name: "v1.0", Revision: "main"},
-								{Name: "v2.0", Revision: "develop", Context: "app2"},
-							},
+			name: "should build version info map from spec without DockerfilePath and default to Dockerfile",
+			component: &compv1alpha1.Component{
+				Spec: compv1alpha1.ComponentSpec{
+					Source: compv1alpha1.ComponentSource{
+						Versions: []compv1alpha1.ComponentVersion{
+							{Name: "v1.0", Revision: "main"},
+							{Name: "v2.0", Revision: "develop", Context: "app2"},
 						},
 					},
 				},
@@ -387,18 +381,18 @@ func TestBuildVersionInfoMap(t *testing.T) {
 				assert.Equal(t, "v1.0", result["v1.0"].OriginalVersion)
 				assert.Equal(t, "v1-0", result["v1.0"].SanitizedVersion)
 				assert.Equal(t, "main", result["v1.0"].Revision)
-				assert.Equal(t, "Dockerfile", result["v1.0"].DockerfileURI)
+				assert.Equal(t, "Dockerfile", result["v1.0"].DockerfilePath)
 
 				assert.Equal(t, "v2.0", result["v2.0"].OriginalVersion)
-				assert.Equal(t, "Dockerfile", result["v2.0"].DockerfileURI)
+				assert.Equal(t, "Dockerfile", result["v2.0"].DockerfilePath)
 				assert.Equal(t, "app2", result["v2.0"].Context)
 			},
 		},
 		{
 			name: "should build version info map from status",
-			component: &compapiv1alpha1.Component{
-				Status: compapiv1alpha1.ComponentStatus{
-					Versions: []compapiv1alpha1.ComponentVersionStatus{
+			component: &compv1alpha1.Component{
+				Status: compv1alpha1.ComponentStatus{
+					Versions: []compv1alpha1.ComponentVersionStatus{
 						{Name: "v1.0", Revision: "main"},
 						{Name: "v2.0", Revision: "develop"},
 					},
@@ -410,9 +404,9 @@ func TestBuildVersionInfoMap(t *testing.T) {
 				assert.Equal(t, "v1.0", result["v1.0"].OriginalVersion)
 				assert.Equal(t, "v1-0", result["v1.0"].SanitizedVersion)
 				assert.Equal(t, "main", result["v1.0"].Revision)
-				// Status-based map should not include Context or DockerfileURI
+				// Status-based map should not include Context or DockerfilePath
 				assert.Equal(t, "", result["v1.0"].Context)
-				assert.Equal(t, "", result["v1.0"].DockerfileURI)
+				assert.Equal(t, "", result["v1.0"].DockerfilePath)
 			},
 		},
 	}
@@ -428,67 +422,67 @@ func TestBuildVersionInfoMap(t *testing.T) {
 func TestEqualRepositorySettings(t *testing.T) {
 	tests := []struct {
 		name      string
-		settings1 compapiv1alpha1.RepositorySettings
-		settings2 compapiv1alpha1.RepositorySettings
+		settings1 compv1alpha1.RepositorySettings
+		settings2 compv1alpha1.RepositorySettings
 		expected  bool
 	}{
 		{
 			name: "should detect different comment strategies",
-			settings1: compapiv1alpha1.RepositorySettings{
+			settings1: compv1alpha1.RepositorySettings{
 				CommentStrategy: "",
 			},
-			settings2: compapiv1alpha1.RepositorySettings{
+			settings2: compv1alpha1.RepositorySettings{
 				CommentStrategy: "disable_all",
 			},
 			expected: false,
 		},
 		{
 			name: "should detect different GitHub app token scope repos",
-			settings1: compapiv1alpha1.RepositorySettings{
+			settings1: compv1alpha1.RepositorySettings{
 				GithubAppTokenScopeRepos: []string{"repo1", "repo2"},
 			},
-			settings2: compapiv1alpha1.RepositorySettings{
+			settings2: compv1alpha1.RepositorySettings{
 				GithubAppTokenScopeRepos: []string{"repo1"},
 			},
 			expected: false,
 		},
 		{
 			name: "should consider different ordering of GitHub app token scope repos as equal",
-			settings1: compapiv1alpha1.RepositorySettings{
+			settings1: compv1alpha1.RepositorySettings{
 				GithubAppTokenScopeRepos: []string{"repo1", "repo2"},
 			},
-			settings2: compapiv1alpha1.RepositorySettings{
+			settings2: compv1alpha1.RepositorySettings{
 				GithubAppTokenScopeRepos: []string{"repo2", "repo1"},
 			},
 			expected: true,
 		},
 		{
 			name: "should ignore duplicates when comparing GitHub app token scope repos",
-			settings1: compapiv1alpha1.RepositorySettings{
+			settings1: compv1alpha1.RepositorySettings{
 				GithubAppTokenScopeRepos: []string{"repo1", "repo1", "repo2"},
 			},
-			settings2: compapiv1alpha1.RepositorySettings{
+			settings2: compv1alpha1.RepositorySettings{
 				GithubAppTokenScopeRepos: []string{"repo2", "repo1"},
 			},
 			expected: true,
 		},
 		{
 			name: "should detect different repos despite duplicates",
-			settings1: compapiv1alpha1.RepositorySettings{
+			settings1: compv1alpha1.RepositorySettings{
 				GithubAppTokenScopeRepos: []string{"repo1", "repo1", "repo2"},
 			},
-			settings2: compapiv1alpha1.RepositorySettings{
+			settings2: compv1alpha1.RepositorySettings{
 				GithubAppTokenScopeRepos: []string{"repo1", "repo3", "repo3"},
 			},
 			expected: false,
 		},
 		{
 			name: "should consider equal settings as equal",
-			settings1: compapiv1alpha1.RepositorySettings{
+			settings1: compv1alpha1.RepositorySettings{
 				CommentStrategy:          "",
 				GithubAppTokenScopeRepos: []string{"repo1", "repo2"},
 			},
-			settings2: compapiv1alpha1.RepositorySettings{
+			settings2: compv1alpha1.RepositorySettings{
 				CommentStrategy:          "",
 				GithubAppTokenScopeRepos: []string{"repo1", "repo2"},
 			},
@@ -496,8 +490,8 @@ func TestEqualRepositorySettings(t *testing.T) {
 		},
 		{
 			name:      "should consider empty settings as equal",
-			settings1: compapiv1alpha1.RepositorySettings{},
-			settings2: compapiv1alpha1.RepositorySettings{},
+			settings1: compv1alpha1.RepositorySettings{},
+			settings2: compv1alpha1.RepositorySettings{},
 			expected:  true,
 		},
 	}
@@ -596,12 +590,12 @@ func TestGetVersionsForAction(t *testing.T) {
 func TestHasPipelineRefGit(t *testing.T) {
 	tests := []struct {
 		name     string
-		refGit   *compapiv1alpha1.PipelineRefGit
+		refGit   *compv1alpha1.PipelineRefGit
 		expected bool
 	}{
 		{
 			name: "should return true when all fields set",
-			refGit: &compapiv1alpha1.PipelineRefGit{
+			refGit: &compv1alpha1.PipelineRefGit{
 				Url:        "https://github.com/test/repo",
 				PathInRepo: ".tekton/pipeline.yaml",
 				Revision:   "main",
@@ -610,14 +604,14 @@ func TestHasPipelineRefGit(t *testing.T) {
 		},
 		{
 			name: "should return true when only url set",
-			refGit: &compapiv1alpha1.PipelineRefGit{
+			refGit: &compv1alpha1.PipelineRefGit{
 				Url: "https://github.com/test/repo",
 			},
 			expected: true,
 		},
 		{
 			name:     "should return false when all fields empty",
-			refGit:   &compapiv1alpha1.PipelineRefGit{},
+			refGit:   &compv1alpha1.PipelineRefGit{},
 			expected: false,
 		},
 		{
@@ -664,12 +658,12 @@ func TestHasPipelineRefName(t *testing.T) {
 func TestHasPipelineSpecFromBundle(t *testing.T) {
 	tests := []struct {
 		name           string
-		specFromBundle *compapiv1alpha1.PipelineSpecFromBundle
+		specFromBundle *compv1alpha1.PipelineSpecFromBundle
 		expected       bool
 	}{
 		{
 			name: "should return true when both fields set",
-			specFromBundle: &compapiv1alpha1.PipelineSpecFromBundle{
+			specFromBundle: &compv1alpha1.PipelineSpecFromBundle{
 				Bundle: "quay.io/repo/bundle:latest",
 				Name:   "docker-build",
 			},
@@ -677,14 +671,14 @@ func TestHasPipelineSpecFromBundle(t *testing.T) {
 		},
 		{
 			name: "should return true when only bundle set",
-			specFromBundle: &compapiv1alpha1.PipelineSpecFromBundle{
+			specFromBundle: &compv1alpha1.PipelineSpecFromBundle{
 				Bundle: "quay.io/repo/bundle:latest",
 			},
 			expected: true,
 		},
 		{
 			name:           "should return false when all fields empty",
-			specFromBundle: &compapiv1alpha1.PipelineSpecFromBundle{},
+			specFromBundle: &compv1alpha1.PipelineSpecFromBundle{},
 			expected:       false,
 		},
 		{
@@ -705,7 +699,7 @@ func TestHasPipelineSpecFromBundle(t *testing.T) {
 func TestValidatePipelineRefGitFields(t *testing.T) {
 	tests := []struct {
 		name        string
-		refGit      *compapiv1alpha1.PipelineRefGit
+		refGit      *compv1alpha1.PipelineRefGit
 		errorPrefix string
 		wantErrors  int
 		errorSubstr string
@@ -718,7 +712,7 @@ func TestValidatePipelineRefGitFields(t *testing.T) {
 		},
 		{
 			name: "should accept all fields set",
-			refGit: &compapiv1alpha1.PipelineRefGit{
+			refGit: &compv1alpha1.PipelineRefGit{
 				Url:        "https://github.com/test/repo",
 				PathInRepo: ".tekton/pipeline.yaml",
 				Revision:   "main",
@@ -728,7 +722,7 @@ func TestValidatePipelineRefGitFields(t *testing.T) {
 		},
 		{
 			name: "should reject missing url",
-			refGit: &compapiv1alpha1.PipelineRefGit{
+			refGit: &compv1alpha1.PipelineRefGit{
 				PathInRepo: ".tekton/pipeline.yaml",
 				Revision:   "main",
 			},
@@ -738,7 +732,7 @@ func TestValidatePipelineRefGitFields(t *testing.T) {
 		},
 		{
 			name: "should reject missing pathInRepo",
-			refGit: &compapiv1alpha1.PipelineRefGit{
+			refGit: &compv1alpha1.PipelineRefGit{
 				Url:      "https://github.com/test/repo",
 				Revision: "main",
 			},
@@ -748,7 +742,7 @@ func TestValidatePipelineRefGitFields(t *testing.T) {
 		},
 		{
 			name: "should reject missing revision",
-			refGit: &compapiv1alpha1.PipelineRefGit{
+			refGit: &compv1alpha1.PipelineRefGit{
 				Url:        "https://github.com/test/repo",
 				PathInRepo: ".tekton/pipeline.yaml",
 			},
@@ -758,7 +752,7 @@ func TestValidatePipelineRefGitFields(t *testing.T) {
 		},
 		{
 			name:        "should reject all missing fields",
-			refGit:      &compapiv1alpha1.PipelineRefGit{},
+			refGit:      &compv1alpha1.PipelineRefGit{},
 			errorPrefix: "version v1",
 			wantErrors:  3,
 		},
@@ -785,7 +779,7 @@ func TestValidatePipelineRefGitFields(t *testing.T) {
 func TestValidatePipelineSpecFromBundleFields(t *testing.T) {
 	tests := []struct {
 		name           string
-		specFromBundle *compapiv1alpha1.PipelineSpecFromBundle
+		specFromBundle *compv1alpha1.PipelineSpecFromBundle
 		errorPrefix    string
 		wantErrors     int
 		errorSubstr    string
@@ -798,7 +792,7 @@ func TestValidatePipelineSpecFromBundleFields(t *testing.T) {
 		},
 		{
 			name: "should accept both fields set",
-			specFromBundle: &compapiv1alpha1.PipelineSpecFromBundle{
+			specFromBundle: &compv1alpha1.PipelineSpecFromBundle{
 				Bundle: "quay.io/repo/bundle:latest",
 				Name:   "docker-build",
 			},
@@ -807,7 +801,7 @@ func TestValidatePipelineSpecFromBundleFields(t *testing.T) {
 		},
 		{
 			name: "should reject missing bundle",
-			specFromBundle: &compapiv1alpha1.PipelineSpecFromBundle{
+			specFromBundle: &compv1alpha1.PipelineSpecFromBundle{
 				Name: "docker-build",
 			},
 			errorPrefix: "test",
@@ -816,7 +810,7 @@ func TestValidatePipelineSpecFromBundleFields(t *testing.T) {
 		},
 		{
 			name: "should reject missing name",
-			specFromBundle: &compapiv1alpha1.PipelineSpecFromBundle{
+			specFromBundle: &compv1alpha1.PipelineSpecFromBundle{
 				Bundle: "quay.io/repo/bundle:latest",
 			},
 			errorPrefix: "test",
@@ -825,7 +819,7 @@ func TestValidatePipelineSpecFromBundleFields(t *testing.T) {
 		},
 		{
 			name:           "should reject all missing fields",
-			specFromBundle: &compapiv1alpha1.PipelineSpecFromBundle{},
+			specFromBundle: &compv1alpha1.PipelineSpecFromBundle{},
 			errorPrefix:    "version v1",
 			wantErrors:     2,
 		},
@@ -852,13 +846,13 @@ func TestValidatePipelineSpecFromBundleFields(t *testing.T) {
 func TestHasPipelineDefConfig(t *testing.T) {
 	tests := []struct {
 		name        string
-		pipelineDef *compapiv1alpha1.PipelineDefinition
+		pipelineDef *compv1alpha1.PipelineDefinition
 		expected    bool
 	}{
 		{
 			name: "should return true for PipelineRefGit",
-			pipelineDef: &compapiv1alpha1.PipelineDefinition{
-				PipelineRefGit: &compapiv1alpha1.PipelineRefGit{
+			pipelineDef: &compv1alpha1.PipelineDefinition{
+				PipelineRefGit: &compv1alpha1.PipelineRefGit{
 					Url: "https://github.com/test/repo",
 				},
 			},
@@ -866,15 +860,15 @@ func TestHasPipelineDefConfig(t *testing.T) {
 		},
 		{
 			name: "should return true for PipelineRefName",
-			pipelineDef: &compapiv1alpha1.PipelineDefinition{
+			pipelineDef: &compv1alpha1.PipelineDefinition{
 				PipelineRefName: "docker-build",
 			},
 			expected: true,
 		},
 		{
 			name: "should return true for PipelineSpecFromBundle",
-			pipelineDef: &compapiv1alpha1.PipelineDefinition{
-				PipelineSpecFromBundle: &compapiv1alpha1.PipelineSpecFromBundle{
+			pipelineDef: &compv1alpha1.PipelineDefinition{
+				PipelineSpecFromBundle: &compv1alpha1.PipelineSpecFromBundle{
 					Bundle: "quay.io/repo/bundle:latest",
 				},
 			},
@@ -882,7 +876,7 @@ func TestHasPipelineDefConfig(t *testing.T) {
 		},
 		{
 			name:        "should return false for empty definition",
-			pipelineDef: &compapiv1alpha1.PipelineDefinition{},
+			pipelineDef: &compv1alpha1.PipelineDefinition{},
 			expected:    false,
 		},
 		{
@@ -903,13 +897,13 @@ func TestHasPipelineDefConfig(t *testing.T) {
 func TestHasPipelineConfig(t *testing.T) {
 	tests := []struct {
 		name     string
-		pipeline *compapiv1alpha1.ComponentBuildPipeline
+		pipeline *compv1alpha1.ComponentBuildPipeline
 		expected bool
 	}{
 		{
 			name: "should return true for PullAndPush",
-			pipeline: &compapiv1alpha1.ComponentBuildPipeline{
-				PullAndPush: &compapiv1alpha1.PipelineDefinition{
+			pipeline: &compv1alpha1.ComponentBuildPipeline{
+				PullAndPush: &compv1alpha1.PipelineDefinition{
 					PipelineRefName: "docker-build",
 				},
 			},
@@ -917,8 +911,8 @@ func TestHasPipelineConfig(t *testing.T) {
 		},
 		{
 			name: "should return true for Pull",
-			pipeline: &compapiv1alpha1.ComponentBuildPipeline{
-				Pull: &compapiv1alpha1.PipelineDefinition{
+			pipeline: &compv1alpha1.ComponentBuildPipeline{
+				Pull: &compv1alpha1.PipelineDefinition{
 					PipelineRefName: "docker-build",
 				},
 			},
@@ -926,8 +920,8 @@ func TestHasPipelineConfig(t *testing.T) {
 		},
 		{
 			name: "should return true for Push",
-			pipeline: &compapiv1alpha1.ComponentBuildPipeline{
-				Push: &compapiv1alpha1.PipelineDefinition{
+			pipeline: &compv1alpha1.ComponentBuildPipeline{
+				Push: &compv1alpha1.PipelineDefinition{
 					PipelineRefName: "docker-build",
 				},
 			},
@@ -935,7 +929,7 @@ func TestHasPipelineConfig(t *testing.T) {
 		},
 		{
 			name:     "should return false for empty pipeline",
-			pipeline: &compapiv1alpha1.ComponentBuildPipeline{},
+			pipeline: &compv1alpha1.ComponentBuildPipeline{},
 			expected: false,
 		},
 		{
@@ -956,13 +950,13 @@ func TestHasPipelineConfig(t *testing.T) {
 func TestExtractPipelineDef(t *testing.T) {
 	tests := []struct {
 		name        string
-		pipelineDef *compapiv1alpha1.PipelineDefinition
+		pipelineDef *compv1alpha1.PipelineDefinition
 		validate    func(t *testing.T, result *PipelineDef)
 	}{
 		{
 			name: "should extract PipelineRefGit",
-			pipelineDef: &compapiv1alpha1.PipelineDefinition{
-				PipelineRefGit: &compapiv1alpha1.PipelineRefGit{
+			pipelineDef: &compv1alpha1.PipelineDefinition{
+				PipelineRefGit: &compv1alpha1.PipelineRefGit{
 					Url:        "https://github.com/test/repo",
 					PathInRepo: ".tekton/pipeline.yaml",
 					Revision:   "main",
@@ -977,7 +971,7 @@ func TestExtractPipelineDef(t *testing.T) {
 		},
 		{
 			name: "should extract PipelineRefName",
-			pipelineDef: &compapiv1alpha1.PipelineDefinition{
+			pipelineDef: &compv1alpha1.PipelineDefinition{
 				PipelineRefName: "docker-build",
 			},
 			validate: func(t *testing.T, result *PipelineDef) {
@@ -988,8 +982,8 @@ func TestExtractPipelineDef(t *testing.T) {
 		},
 		{
 			name: "should extract PipelineSpecFromBundle",
-			pipelineDef: &compapiv1alpha1.PipelineDefinition{
-				PipelineSpecFromBundle: &compapiv1alpha1.PipelineSpecFromBundle{
+			pipelineDef: &compv1alpha1.PipelineDefinition{
+				PipelineSpecFromBundle: &compv1alpha1.PipelineSpecFromBundle{
 					Bundle: "quay.io/repo/bundle:latest",
 					Name:   "docker-build",
 				},
@@ -1021,7 +1015,7 @@ func TestExtractPipelineDef(t *testing.T) {
 func TestValidatePipelines(t *testing.T) {
 	tests := []struct {
 		name              string
-		component         *compapiv1alpha1.Component
+		component         *compv1alpha1.Component
 		wantErrors        int
 		wantPipelineCount int
 		errorSubstr       string
@@ -1029,17 +1023,16 @@ func TestValidatePipelines(t *testing.T) {
 	}{
 		{
 			name: "should validate and extract pipelines from default and versions",
-			component: &compapiv1alpha1.Component{
-				Spec: compapiv1alpha1.ComponentSpec{
-					DefaultBuildPipeline: &compapiv1alpha1.ComponentBuildPipeline{
-						Pull: &compapiv1alpha1.PipelineDefinition{PipelineRefName: "docker-build"},
+			component: &compv1alpha1.Component{
+				Spec: compv1alpha1.ComponentSpec{
+					DefaultBuildPipeline: &compv1alpha1.ComponentBuildPipeline{
+						Pull: &compv1alpha1.PipelineDefinition{PipelineRefName: "docker-build"},
 					},
-					Source: compapiv1alpha1.ComponentSource{
-						ComponentSourceUnion: compapiv1alpha1.ComponentSourceUnion{
-							Versions: []compapiv1alpha1.ComponentVersion{
-								{Name: "v1", Revision: "main"},
-								{Name: "v2", Revision: "develop"},
-							}}}},
+					Source: compv1alpha1.ComponentSource{
+						Versions: []compv1alpha1.ComponentVersion{
+							{Name: "v1", Revision: "main"},
+							{Name: "v2", Revision: "develop"},
+						}}},
 			},
 			wantErrors:        0,
 			wantPipelineCount: 2, // both versions inherit from default
@@ -1056,23 +1049,22 @@ func TestValidatePipelines(t *testing.T) {
 		},
 		{
 			name: "should merge default pipeline with version-specific pipeline",
-			component: &compapiv1alpha1.Component{
-				Spec: compapiv1alpha1.ComponentSpec{
-					DefaultBuildPipeline: &compapiv1alpha1.ComponentBuildPipeline{
-						Pull: &compapiv1alpha1.PipelineDefinition{PipelineRefName: "default-pull"},
+			component: &compv1alpha1.Component{
+				Spec: compv1alpha1.ComponentSpec{
+					DefaultBuildPipeline: &compv1alpha1.ComponentBuildPipeline{
+						Pull: &compv1alpha1.PipelineDefinition{PipelineRefName: "default-pull"},
 					},
-					Source: compapiv1alpha1.ComponentSource{
-						ComponentSourceUnion: compapiv1alpha1.ComponentSourceUnion{
-							Versions: []compapiv1alpha1.ComponentVersion{
-								{
-									Name:     "v1",
-									Revision: "main",
-									BuildPipeline: &compapiv1alpha1.ComponentBuildPipeline{
-										Push: &compapiv1alpha1.PipelineDefinition{PipelineRefName: "custom-push"},
-									},
+					Source: compv1alpha1.ComponentSource{
+						Versions: []compv1alpha1.ComponentVersion{
+							{
+								Name:     "v1",
+								Revision: "main",
+								BuildPipeline: &compv1alpha1.ComponentBuildPipeline{
+									Push: &compv1alpha1.PipelineDefinition{PipelineRefName: "custom-push"},
 								},
-								{Name: "v2", Revision: "develop"},
-							}}}},
+							},
+							{Name: "v2", Revision: "develop"},
+						}}},
 			},
 			wantErrors:        0,
 			wantPipelineCount: 2,
@@ -1089,37 +1081,36 @@ func TestValidatePipelines(t *testing.T) {
 		},
 		{
 			name: "should handle default PullAndPush with version-specific Pull, Push, and PullAndPush",
-			component: &compapiv1alpha1.Component{
-				Spec: compapiv1alpha1.ComponentSpec{
-					DefaultBuildPipeline: &compapiv1alpha1.ComponentBuildPipeline{
-						PullAndPush: &compapiv1alpha1.PipelineDefinition{PipelineRefName: "default-pullandpush"},
+			component: &compv1alpha1.Component{
+				Spec: compv1alpha1.ComponentSpec{
+					DefaultBuildPipeline: &compv1alpha1.ComponentBuildPipeline{
+						PullAndPush: &compv1alpha1.PipelineDefinition{PipelineRefName: "default-pullandpush"},
 					},
-					Source: compapiv1alpha1.ComponentSource{
-						ComponentSourceUnion: compapiv1alpha1.ComponentSourceUnion{
-							Versions: []compapiv1alpha1.ComponentVersion{
-								{
-									Name:     "v1",
-									Revision: "main",
-									BuildPipeline: &compapiv1alpha1.ComponentBuildPipeline{
-										Pull: &compapiv1alpha1.PipelineDefinition{PipelineRefName: "custom-pull"},
-									},
+					Source: compv1alpha1.ComponentSource{
+						Versions: []compv1alpha1.ComponentVersion{
+							{
+								Name:     "v1",
+								Revision: "main",
+								BuildPipeline: &compv1alpha1.ComponentBuildPipeline{
+									Pull: &compv1alpha1.PipelineDefinition{PipelineRefName: "custom-pull"},
 								},
-								{
-									Name:     "v2",
-									Revision: "develop",
-									BuildPipeline: &compapiv1alpha1.ComponentBuildPipeline{
-										Push: &compapiv1alpha1.PipelineDefinition{PipelineRefName: "custom-push"},
-									},
+							},
+							{
+								Name:     "v2",
+								Revision: "develop",
+								BuildPipeline: &compv1alpha1.ComponentBuildPipeline{
+									Push: &compv1alpha1.PipelineDefinition{PipelineRefName: "custom-push"},
 								},
-								{
-									Name:     "v3",
-									Revision: "release",
-									BuildPipeline: &compapiv1alpha1.ComponentBuildPipeline{
-										PullAndPush: &compapiv1alpha1.PipelineDefinition{PipelineRefName: "custom-pullandpush"},
-									},
+							},
+							{
+								Name:     "v3",
+								Revision: "release",
+								BuildPipeline: &compv1alpha1.ComponentBuildPipeline{
+									PullAndPush: &compv1alpha1.PipelineDefinition{PipelineRefName: "custom-pullandpush"},
 								},
-								{Name: "v4", Revision: "staging"},
-							}}}},
+							},
+							{Name: "v4", Revision: "staging"},
+						}}},
 			},
 			wantErrors:        0,
 			wantPipelineCount: 4,
@@ -1144,55 +1135,52 @@ func TestValidatePipelines(t *testing.T) {
 		},
 		{
 			name: "should detect validation errors in default pipeline",
-			component: &compapiv1alpha1.Component{
-				Spec: compapiv1alpha1.ComponentSpec{
-					DefaultBuildPipeline: &compapiv1alpha1.ComponentBuildPipeline{
-						PullAndPush: &compapiv1alpha1.PipelineDefinition{PipelineRefName: "docker-build"},
-						Pull:        &compapiv1alpha1.PipelineDefinition{PipelineRefName: "docker-build"},
+			component: &compv1alpha1.Component{
+				Spec: compv1alpha1.ComponentSpec{
+					DefaultBuildPipeline: &compv1alpha1.ComponentBuildPipeline{
+						PullAndPush: &compv1alpha1.PipelineDefinition{PipelineRefName: "docker-build"},
+						Pull:        &compv1alpha1.PipelineDefinition{PipelineRefName: "docker-build"},
 					},
-					Source: compapiv1alpha1.ComponentSource{
-						ComponentSourceUnion: compapiv1alpha1.ComponentSourceUnion{
-							Versions: []compapiv1alpha1.ComponentVersion{
-								{Name: "v1", Revision: "main"},
-							}}}},
+					Source: compv1alpha1.ComponentSource{
+						Versions: []compv1alpha1.ComponentVersion{
+							{Name: "v1", Revision: "main"},
+						}}},
 			},
 			wantErrors:  1,
 			errorSubstr: "cannot specify pull-and-push together with pull or push",
 		},
 		{
 			name: "should detect validation errors in version-specific pipeline",
-			component: &compapiv1alpha1.Component{
-				Spec: compapiv1alpha1.ComponentSpec{
-					Source: compapiv1alpha1.ComponentSource{
-						ComponentSourceUnion: compapiv1alpha1.ComponentSourceUnion{
-							Versions: []compapiv1alpha1.ComponentVersion{
-								{
-									Name:     "v1",
-									Revision: "main",
-									BuildPipeline: &compapiv1alpha1.ComponentBuildPipeline{
-										Pull: &compapiv1alpha1.PipelineDefinition{
-											PipelineRefGit: &compapiv1alpha1.PipelineRefGit{
-												Url: "https://github.com/test/repo",
-												// Missing required fields
-											},
-										}}}}}}},
+			component: &compv1alpha1.Component{
+				Spec: compv1alpha1.ComponentSpec{
+					Source: compv1alpha1.ComponentSource{
+						Versions: []compv1alpha1.ComponentVersion{
+							{
+								Name:     "v1",
+								Revision: "main",
+								BuildPipeline: &compv1alpha1.ComponentBuildPipeline{
+									Pull: &compv1alpha1.PipelineDefinition{
+										PipelineRefGit: &compv1alpha1.PipelineRefGit{
+											Url: "https://github.com/test/repo",
+											// Missing required fields
+										},
+									}}}}}},
 			},
 			wantErrors:  2, // missing pathInRepo and revision
 			errorSubstr: "is required",
 		},
 		{
 			name: "should propagate default PullAndPush to version with nil BuildPipeline",
-			component: &compapiv1alpha1.Component{
-				Spec: compapiv1alpha1.ComponentSpec{
-					DefaultBuildPipeline: &compapiv1alpha1.ComponentBuildPipeline{
-						PullAndPush: &compapiv1alpha1.PipelineDefinition{PipelineRefName: "default-pipeline"},
+			component: &compv1alpha1.Component{
+				Spec: compv1alpha1.ComponentSpec{
+					DefaultBuildPipeline: &compv1alpha1.ComponentBuildPipeline{
+						PullAndPush: &compv1alpha1.PipelineDefinition{PipelineRefName: "default-pipeline"},
 					},
-					Source: compapiv1alpha1.ComponentSource{
-						ComponentSourceUnion: compapiv1alpha1.ComponentSourceUnion{
-							Versions: []compapiv1alpha1.ComponentVersion{
-								// Explicitly set to nil to test this critical scenario
-								{Name: "v1", Revision: "main", BuildPipeline: nil},
-							}}}},
+					Source: compv1alpha1.ComponentSource{
+						Versions: []compv1alpha1.ComponentVersion{
+							// Explicitly set to nil to test this critical scenario
+							{Name: "v1", Revision: "main", BuildPipeline: nil},
+						}}},
 			},
 			wantErrors:        0,
 			wantPipelineCount: 1,
@@ -1250,17 +1238,15 @@ func TestValidatePipelines(t *testing.T) {
 }
 
 func TestDetermineVersionsToCreateConfiguration(t *testing.T) {
-	getComponent := func(allVersions bool, version string, versions []string) compapiv1alpha1.Component {
-		component := compapiv1alpha1.Component{
+	getComponent := func(allVersions bool, version string, versions []string) compv1alpha1.Component {
+		component := compv1alpha1.Component{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "testcomponent",
 				Namespace: "workspace-name",
 			},
-			Spec: compapiv1alpha1.ComponentSpec{
-				Source: compapiv1alpha1.ComponentSource{
-					ComponentSourceUnion: compapiv1alpha1.ComponentSourceUnion{
-						GitURL: "https://github.com/user/repo.git",
-					},
+			Spec: compv1alpha1.ComponentSpec{
+				Source: compv1alpha1.ComponentSource{
+					GitURL: "https://github.com/user/repo.git",
 				},
 			},
 		}
@@ -1283,7 +1269,7 @@ func TestDetermineVersionsToCreateConfiguration(t *testing.T) {
 
 	tests := []struct {
 		name                             string
-		component                        compapiv1alpha1.Component
+		component                        compv1alpha1.Component
 		wantVersionsToCreatePRFor        []string
 		wantInvalidVersionsToCreatePRFor []string
 	}{
@@ -1332,21 +1318,19 @@ func TestDetermineVersionsToCreateConfiguration(t *testing.T) {
 }
 
 func TestDetermineVersionsToOnboardAndOffboard(t *testing.T) {
-	getComponent := func(specVersions []compapiv1alpha1.ComponentVersion, statusVersions []compapiv1alpha1.ComponentVersionStatus) compapiv1alpha1.Component {
-		component := compapiv1alpha1.Component{
+	getComponent := func(specVersions []compv1alpha1.ComponentVersion, statusVersions []compv1alpha1.ComponentVersionStatus) compv1alpha1.Component {
+		component := compv1alpha1.Component{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "testcomponent",
 				Namespace: "workspace-name",
 			},
-			Spec: compapiv1alpha1.ComponentSpec{
-				Source: compapiv1alpha1.ComponentSource{
-					ComponentSourceUnion: compapiv1alpha1.ComponentSourceUnion{
-						GitURL:   "https://github.com/user/repo.git",
-						Versions: specVersions,
-					},
+			Spec: compv1alpha1.ComponentSpec{
+				Source: compv1alpha1.ComponentSource{
+					GitURL:   "https://github.com/user/repo.git",
+					Versions: specVersions,
 				},
 			},
-			Status: compapiv1alpha1.ComponentStatus{
+			Status: compv1alpha1.ComponentStatus{
 				Versions: statusVersions,
 			},
 		}
@@ -1355,22 +1339,22 @@ func TestDetermineVersionsToOnboardAndOffboard(t *testing.T) {
 
 	tests := []struct {
 		name                   string
-		component              compapiv1alpha1.Component
+		component              compv1alpha1.Component
 		wantVersionsToOnboard  []string
 		wantVersionsToOffboard []string
 	}{
 		{
 			name: "should identify versions to onboard",
 			component: getComponent(
-				[]compapiv1alpha1.ComponentVersion{{Name: "v1", Revision: "main"}, {Name: "v2", Revision: "develop"}},
-				[]compapiv1alpha1.ComponentVersionStatus{{Name: "v1", Revision: "main"}}),
+				[]compv1alpha1.ComponentVersion{{Name: "v1", Revision: "main"}, {Name: "v2", Revision: "develop"}},
+				[]compv1alpha1.ComponentVersionStatus{{Name: "v1", Revision: "main"}}),
 			wantVersionsToOnboard:  []string{"v2"},
 			wantVersionsToOffboard: []string{},
 		},
 		{
 			name: "should identify all versions to onboard when status is empty",
 			component: getComponent(
-				[]compapiv1alpha1.ComponentVersion{{Name: "v1", Revision: "main"}, {Name: "v2", Revision: "develop"}},
+				[]compv1alpha1.ComponentVersion{{Name: "v1", Revision: "main"}, {Name: "v2", Revision: "develop"}},
 				nil),
 			wantVersionsToOnboard:  []string{"v1", "v2"},
 			wantVersionsToOffboard: []string{},
@@ -1378,8 +1362,8 @@ func TestDetermineVersionsToOnboardAndOffboard(t *testing.T) {
 		{
 			name: "should identify versions to offboard",
 			component: getComponent(
-				[]compapiv1alpha1.ComponentVersion{{Name: "v1", Revision: "main"}},
-				[]compapiv1alpha1.ComponentVersionStatus{{Name: "v1", Revision: "main"}, {Name: "v2", Revision: "develop"}},
+				[]compv1alpha1.ComponentVersion{{Name: "v1", Revision: "main"}},
+				[]compv1alpha1.ComponentVersionStatus{{Name: "v1", Revision: "main"}, {Name: "v2", Revision: "develop"}},
 			),
 			wantVersionsToOnboard:  []string{},
 			wantVersionsToOffboard: []string{"v2"},
@@ -1387,8 +1371,8 @@ func TestDetermineVersionsToOnboardAndOffboard(t *testing.T) {
 		{
 			name: "should identify both versions to onboard and offboard simultaneously",
 			component: getComponent(
-				[]compapiv1alpha1.ComponentVersion{{Name: "v1", Revision: "main"}, {Name: "v3", Revision: "feature"}},
-				[]compapiv1alpha1.ComponentVersionStatus{{Name: "v1", Revision: "main"}, {Name: "v2", Revision: "develop"}},
+				[]compv1alpha1.ComponentVersion{{Name: "v1", Revision: "main"}, {Name: "v3", Revision: "feature"}},
+				[]compv1alpha1.ComponentVersionStatus{{Name: "v1", Revision: "main"}, {Name: "v2", Revision: "develop"}},
 			),
 			wantVersionsToOnboard:  []string{"v3"},
 			wantVersionsToOffboard: []string{"v2"},
@@ -1417,19 +1401,17 @@ func TestDetermineVersionsToOnboardAndOffboard(t *testing.T) {
 }
 
 func TestDetermineVersionsToTriggerBuild(t *testing.T) {
-	getComponent := func(triggerVersion string, triggerVersions []string) compapiv1alpha1.Component {
-		component := compapiv1alpha1.Component{
+	getComponent := func(triggerVersion string, triggerVersions []string) compv1alpha1.Component {
+		component := compv1alpha1.Component{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "testcomponent",
 				Namespace: "workspace-name",
 			},
-			Spec: compapiv1alpha1.ComponentSpec{
-				Source: compapiv1alpha1.ComponentSource{
-					ComponentSourceUnion: compapiv1alpha1.ComponentSourceUnion{
-						GitURL: "https://github.com/user/repo.git",
-					},
+			Spec: compv1alpha1.ComponentSpec{
+				Source: compv1alpha1.ComponentSource{
+					GitURL: "https://github.com/user/repo.git",
 				},
-				Actions: compapiv1alpha1.ComponentActions{TriggerBuild: triggerVersion, TriggerBuilds: triggerVersions},
+				Actions: compv1alpha1.ComponentActions{TriggerBuild: triggerVersion, TriggerBuilds: triggerVersions},
 			},
 		}
 		return component
@@ -1442,7 +1424,7 @@ func TestDetermineVersionsToTriggerBuild(t *testing.T) {
 
 	tests := []struct {
 		name                                 string
-		component                            compapiv1alpha1.Component
+		component                            compv1alpha1.Component
 		versionsToOnboard                    []string
 		versionsToCreatePRFor                []string
 		wantVersionsToTriggerBuildFor        []string

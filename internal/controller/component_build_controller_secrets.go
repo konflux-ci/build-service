@@ -23,7 +23,8 @@ import (
 	"fmt"
 	"regexp"
 
-	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
+	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1" // TODO remove after only new model is used and old model is gone
+	compv1alpha1 "github.com/konflux-ci/build-service/api/konflux/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -39,14 +40,14 @@ import (
 
 // ensureIncomingSecret is ensuring that incoming secret for PaC trigger exists
 // if secret doesn't exists it will create it and also add repository as owner
-// TODO remove newModel handling after only new model is used
 // Returns:
 // pointer to secret object
 // bool which indicates if reconcile is required (which is required when we just created secret)
-func (r *ComponentBuildReconciler) ensureIncomingSecret(ctx context.Context, component *compapiv1alpha1.Component, newModel bool) (*corev1.Secret, bool, error) {
+// nolint:dupl
+func (r *ComponentBuildReconciler) ensureIncomingSecret(ctx context.Context, component *compv1alpha1.Component) (*corev1.Secret, bool, error) {
 	log := ctrllog.FromContext(ctx)
 
-	repository, err := r.findPaCRepositoryForComponent(ctx, component, newModel)
+	repository, err := r.findPaCRepositoryForComponent(ctx, component)
 	if err != nil {
 		return nil, false, err
 	}
@@ -89,18 +90,100 @@ func (r *ComponentBuildReconciler) ensureIncomingSecret(ctx context.Context, com
 	return &secret, false, nil
 }
 
-// TODO remove newModel handling after only new model is used
-func (r *ComponentBuildReconciler) lookupPaCSecret(ctx context.Context, component *compapiv1alpha1.Component, gitProvider string, newModel bool) (*corev1.Secret, error) {
+// ensureIncomingSecret is ensuring that incoming secret for PaC trigger exists
+// if secret doesn't exists it will create it and also add repository as owner
+// TODO remove after only new model is used and old model is gone
+// Returns:
+// pointer to secret object
+// bool which indicates if reconcile is required (which is required when we just created secret)
+// nolint:dupl
+func (r *ComponentBuildReconcilerOldModel) ensureIncomingSecret(ctx context.Context, component *compapiv1alpha1.Component) (*corev1.Secret, bool, error) {
 	log := ctrllog.FromContext(ctx)
 
-	repoUrl := getGitRepoUrl(*component, newModel)
-	var scmComponent *git.ScmComponent
-	var err error
-	if newModel {
-		scmComponent, err = git.NewScmComponent(gitProvider, repoUrl, "", component.Name, component.Namespace)
-	} else {
-		scmComponent, err = git.NewScmComponent(gitProvider, repoUrl, component.Spec.Source.GitSource.Revision, component.Name, component.Namespace)
+	repository, err := r.findPaCRepositoryForComponent(ctx, component)
+	if err != nil {
+		return nil, false, err
 	}
+
+	incomingSecretName := getPaCIncomingSecretName(repository.Name)
+	incomingSecretPassword := generatePaCWebhookSecretString()
+	incomingSecretData := map[string]string{
+		pacIncomingSecretKey: incomingSecretPassword,
+	}
+
+	secret := corev1.Secret{}
+	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: component.Namespace, Name: incomingSecretName}, &secret); err != nil {
+		if !errors.IsNotFound(err) {
+			log.Error(err, "failed to get incoming secret", l.Action, l.ActionView)
+			return nil, false, err
+		}
+		// Create incoming secret
+		secret = corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      incomingSecretName,
+				Namespace: component.Namespace,
+			},
+			Type:       corev1.SecretTypeOpaque,
+			StringData: incomingSecretData,
+		}
+
+		if err := controllerutil.SetOwnerReference(repository, &secret, r.Scheme); err != nil {
+			log.Error(err, "failed to set owner for incoming secret")
+			return nil, false, err
+		}
+
+		if err := r.Client.Create(ctx, &secret); err != nil {
+			log.Error(err, "failed to create incoming secret", l.Action, l.ActionAdd)
+			return nil, false, err
+		}
+
+		log.Info("incoming secret created")
+		return &secret, true, nil
+	}
+	return &secret, false, nil
+}
+
+func (r *ComponentBuildReconciler) lookupPaCSecret(ctx context.Context, component *compv1alpha1.Component, gitProvider string) (*corev1.Secret, error) {
+	log := ctrllog.FromContext(ctx)
+
+	repoUrl := getGitRepoUrl(*component)
+	scmComponent, err := git.NewScmComponent(gitProvider, repoUrl, "", component.Name, component.Namespace)
+	if err != nil {
+		return nil, err
+	}
+	// find the best matching secret, starting from SSH type
+	secret, err := r.CredentialProvider.LookupSecret(ctx, scmComponent, corev1.SecretTypeSSHAuth)
+	if err != nil && !boerrors.IsBuildOpError(err, boerrors.EComponentGitSecretMissing) {
+		log.Error(err, "failed to get Pipelines as Code SSH secret", "scmComponent", scmComponent)
+		return nil, err
+	}
+	if secret != nil {
+		return secret, nil
+	}
+	// find the best matching secret, starting from BasicAuth type
+	secret, err = r.CredentialProvider.LookupSecret(ctx, scmComponent, corev1.SecretTypeBasicAuth)
+	if err != nil && !boerrors.IsBuildOpError(err, boerrors.EComponentGitSecretMissing) {
+		log.Error(err, "failed to get Pipelines as Code BasicAuth secret", "scmComponent", scmComponent)
+		return nil, err
+	}
+	if secret != nil {
+		return secret, nil
+	}
+
+	// No SCM secrets found in the component namespace, fall back to the global configuration
+	if gitProvider == "github" {
+		return r.lookupGHAppSecret(ctx)
+	} else {
+		return nil, boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, fmt.Errorf("no matching Pipelines as Code secrets found in %s namespace", component.Namespace))
+	}
+}
+
+// TODO remove after only new model is used and old model is gone
+func (r *ComponentBuildReconcilerOldModel) lookupPaCSecret(ctx context.Context, component *compapiv1alpha1.Component, gitProvider string) (*corev1.Secret, error) {
+	log := ctrllog.FromContext(ctx)
+
+	repoUrl := getGitRepoUrlOldModel(*component)
+	scmComponent, err := git.NewScmComponent(gitProvider, repoUrl, component.Spec.Source.GitSource.Revision, component.Name, component.Namespace)
 	if err != nil {
 		return nil, err
 	}
@@ -147,10 +230,27 @@ func (r *ComponentBuildReconciler) lookupGHAppSecret(ctx context.Context) (*core
 	return pacSecret, nil
 }
 
-// TODO remove newModel handling after only new model is used
+// TODO remove after only new model is used and old model is gone
+func (r *ComponentBuildReconcilerOldModel) lookupGHAppSecret(ctx context.Context) (*corev1.Secret, error) {
+	pacSecret := &corev1.Secret{}
+	globalPaCSecretKey := types.NamespacedName{Namespace: common.BuildServiceNamespaceName, Name: common.PipelinesAsCodeGitHubAppSecretName}
+	if err := r.Client.Get(ctx, globalPaCSecretKey, pacSecret); err != nil {
+		if !errors.IsNotFound(err) {
+			r.EventRecorder.Eventf(pacSecret, nil, "Warning", "ErrorReadingPaCSecret", "ReadPaCSecret", err.Error())
+			return nil, fmt.Errorf("failed to get Pipelines as Code secret in %s namespace: %w", globalPaCSecretKey.Namespace, err)
+		}
+
+		r.EventRecorder.Eventf(pacSecret, nil, "Warning", "PaCSecretNotFound", "ReadPaCSecret", err.Error())
+		// Do not trigger a new reconcile. The PaC secret must be created first.
+		return nil, boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, fmt.Errorf(" Pipelines as Code secret not found in %s ", globalPaCSecretKey.Namespace))
+	}
+	return pacSecret, nil
+}
+
 // Returns webhook secret for given component.
 // Generates the webhook secret and saves it in the k8s secret if it doesn't exist.
-func (r *ComponentBuildReconciler) ensureWebhookSecret(ctx context.Context, component *compapiv1alpha1.Component, newModel bool) (string, error) {
+// nolint:dupl
+func (r *ComponentBuildReconciler) ensureWebhookSecret(ctx context.Context, component *compv1alpha1.Component) (string, error) {
 	log := ctrllog.FromContext(ctx)
 
 	webhookSecretsSecret := &corev1.Secret{}
@@ -161,7 +261,7 @@ func (r *ComponentBuildReconciler) ensureWebhookSecret(ctx context.Context, comp
 					Name:      pipelinesAsCodeWebhooksSecretName,
 					Namespace: component.Namespace,
 					Labels: map[string]string{
-						PartOfLabelName: PartOfAppStudioLabelValue,
+						PartOfLabelName: PartOfKonfluxLabelValue,
 					},
 				},
 			}
@@ -169,14 +269,14 @@ func (r *ComponentBuildReconciler) ensureWebhookSecret(ctx context.Context, comp
 				log.Error(err, "failed to create webhooks secrets secret", l.Action, l.ActionAdd)
 				return "", err
 			}
-			return r.ensureWebhookSecret(ctx, component, newModel)
+			return r.ensureWebhookSecret(ctx, component)
 		}
 
 		log.Error(err, "failed to get webhook secrets secret", l.Action, l.ActionView)
 		return "", err
 	}
 
-	componentWebhookSecretKey := getWebhookSecretKeyForComponent(*component, newModel)
+	componentWebhookSecretKey := getWebhookSecretKeyForComponent(*component)
 	if _, exists := webhookSecretsSecret.Data[componentWebhookSecretKey]; exists {
 		// The webhook secret already exists. Use single secret for the same repository.
 		return string(webhookSecretsSecret.Data[componentWebhookSecretKey]), nil
@@ -196,9 +296,66 @@ func (r *ComponentBuildReconciler) ensureWebhookSecret(ctx context.Context, comp
 	return webhookSecretString, nil
 }
 
-// TODO remove newModel handling after only new model is used
-func getWebhookSecretKeyForComponent(component compapiv1alpha1.Component, newModel bool) string {
-	gitRepoUrl := getGitRepoUrl(component, newModel)
+// TODO remove after only new model is used and old model is gone
+// Returns webhook secret for given component.
+// Generates the webhook secret and saves it in the k8s secret if it doesn't exist.
+// nolint:dupl
+func (r *ComponentBuildReconcilerOldModel) ensureWebhookSecret(ctx context.Context, component *compapiv1alpha1.Component) (string, error) {
+	log := ctrllog.FromContext(ctx)
+
+	webhookSecretsSecret := &corev1.Secret{}
+	if err := r.Client.Get(ctx, types.NamespacedName{Name: pipelinesAsCodeWebhooksSecretName, Namespace: component.Namespace}, webhookSecretsSecret); err != nil {
+		if errors.IsNotFound(err) {
+			webhookSecretsSecret = &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      pipelinesAsCodeWebhooksSecretName,
+					Namespace: component.Namespace,
+					Labels: map[string]string{
+						PartOfLabelName: PartOfKonfluxLabelValue,
+					},
+				},
+			}
+			if err := r.Client.Create(ctx, webhookSecretsSecret); err != nil {
+				log.Error(err, "failed to create webhooks secrets secret", l.Action, l.ActionAdd)
+				return "", err
+			}
+			return r.ensureWebhookSecret(ctx, component)
+		}
+
+		log.Error(err, "failed to get webhook secrets secret", l.Action, l.ActionView)
+		return "", err
+	}
+
+	componentWebhookSecretKey := getWebhookSecretKeyForComponentOldModel(*component)
+	if _, exists := webhookSecretsSecret.Data[componentWebhookSecretKey]; exists {
+		// The webhook secret already exists. Use single secret for the same repository.
+		return string(webhookSecretsSecret.Data[componentWebhookSecretKey]), nil
+	}
+
+	webhookSecretString := generatePaCWebhookSecretString()
+
+	if webhookSecretsSecret.Data == nil {
+		webhookSecretsSecret.Data = make(map[string][]byte)
+	}
+	webhookSecretsSecret.Data[componentWebhookSecretKey] = []byte(webhookSecretString)
+	if err := r.Client.Update(ctx, webhookSecretsSecret); err != nil {
+		log.Error(err, "failed to update webhook secrets secret", l.Action, l.ActionUpdate)
+		return "", err
+	}
+
+	return webhookSecretString, nil
+}
+
+func getWebhookSecretKeyForComponent(component compv1alpha1.Component) string {
+	gitRepoUrl := getGitRepoUrl(component)
+
+	notAllowedCharRegex := regexp.MustCompile("[^-._a-zA-Z0-9]{1}")
+	return notAllowedCharRegex.ReplaceAllString(gitRepoUrl, "_")
+}
+
+// TODO remove after only new model is used and old model is gone
+func getWebhookSecretKeyForComponentOldModel(component compapiv1alpha1.Component) string {
+	gitRepoUrl := getGitRepoUrlOldModel(component)
 
 	notAllowedCharRegex := regexp.MustCompile("[^-._a-zA-Z0-9]{1}")
 	return notAllowedCharRegex.ReplaceAllString(gitRepoUrl, "_")

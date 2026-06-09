@@ -28,23 +28,53 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
+	compv1alpha1 "github.com/konflux-ci/build-service/api/konflux/v1alpha1"
 	"github.com/konflux-ci/build-service/pkg/boerrors"
 	"github.com/konflux-ci/build-service/pkg/bometrics"
 	"github.com/konflux-ci/build-service/pkg/git/gitprovider"
+	"github.com/konflux-ci/build-service/pkg/k8s"
 	l "github.com/konflux-ci/build-service/pkg/logs"
+	pacwebhook "github.com/konflux-ci/build-service/pkg/pacwebhook"
+)
+
+const (
+	PaCProvisionFinalizer = "konflux-ci.dev/component-finalizer"
+
+	ComponentNameLabelName = "build.konflux-ci.dev/component"
+	// PipelineRunTypeLabelName contains the type of the PipelineRunType
+	PipelineRunTypeLabelName = "pipelines.konflux-ci.dev/type"
+	PartOfLabelName          = "app.kubernetes.io/part-of"
+	PartOfKonfluxLabelValue  = "konflux"
+
+	gitCommitShaAnnotationName    = "build.konflux-ci.dev/commit_sha"
+	gitRepoAtShaAnnotationName    = "build.konflux-ci.dev/repo"
+	gitPRAnnotationName           = "build.konflux-ci.dev/pull_request_number"
+	gitTargetBranchAnnotationName = "build.konflux-ci.dev/target_branch"
+	ContextAnnotationName         = "build.konflux-ci.dev/context"
+	VersionAnnotationName         = "build.konflux-ci.dev/version"
+
+	buildPipelineConfigMapResourceName = "build-pipeline-config"
+	buildPipelineConfigName            = "config.yaml"
+
+	waitForContainerImageMessage = "waiting for spec.containerImage to be set by ImageRepository with annotation image-controller.appstudio.redhat.com/update-component-image"
 )
 
 // PipelineDef represents a single pipeline definition with pointer fields
 type PipelineDef struct {
-	PipelineRefGit         *compapiv1alpha1.PipelineRefGit
+	PipelineRefGit         *compv1alpha1.PipelineRefGit
 	PipelineRefName        string
-	PipelineSpecFromBundle *compapiv1alpha1.PipelineSpecFromBundle
+	PipelineSpecFromBundle *compv1alpha1.PipelineSpecFromBundle
 	AdditionalParams       []string
 }
 
@@ -56,10 +86,10 @@ type VersionPipelineDefinition struct {
 
 // VersionInfo holds detailed information about a version
 type VersionInfo struct {
-	Context       string
-	DockerfileURI string
-	Revision      string
-	SkipBuilds    bool
+	Context        string
+	DockerfilePath string
+	Revision       string
+	SkipBuilds     bool
 
 	OriginalVersion  string
 	SanitizedVersion string
@@ -71,8 +101,40 @@ type onboardedVersionInfo struct {
 	mrUrl string
 }
 
-//+kubebuilder:rbac:groups=appstudio.redhat.com,resources=components,verbs=get;list;watch;update;patch
-//+kubebuilder:rbac:groups=appstudio.redhat.com,resources=components/status,verbs=get;list;watch;update;patch
+// ComponentBuildReconciler watches Component objects in order to
+// provision Pipelines as Code configuration for the Component.
+type ComponentBuildReconciler struct {
+	Client             client.Client
+	Scheme             *runtime.Scheme
+	EventRecorder      events.EventRecorder
+	CredentialProvider *k8s.GitCredentialProvider
+	PaCWebhookMapping  *pacwebhook.PaCWebhookMapping
+}
+
+// SetupWithManager sets up the controller with the Manager.
+func (r *ComponentBuildReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&compv1alpha1.Component{}, builder.WithPredicates(predicate.Funcs{
+			CreateFunc: func(e event.CreateEvent) bool {
+				return true
+			},
+			UpdateFunc: func(e event.UpdateEvent) bool {
+				// only reconcile when spec changes (Generation increments), not on status-only updates
+				return e.ObjectOld.GetGeneration() != e.ObjectNew.GetGeneration()
+			},
+			DeleteFunc: func(e event.DeleteEvent) bool {
+				return false
+			},
+			GenericFunc: func(e event.GenericEvent) bool {
+				return false
+			},
+		})).
+		Named("ComponentBuildReconciler").
+		Complete(r)
+}
+
+//+kubebuilder:rbac:groups=konflux-ci.dev,resources=components,verbs=get;list;watch;update;patch
+//+kubebuilder:rbac:groups=konflux-ci.dev,resources=components/status,verbs=get;list;watch;update;patch
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=imagerepositories,verbs=get;list;watch
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=imagerepositories/status,verbs=get;list;watch
 //+kubebuilder:rbac:groups=pipelinesascode.tekton.dev,resources=repositories,verbs=get;list;watch;create;update;patch;delete
@@ -81,16 +143,16 @@ type onboardedVersionInfo struct {
 //+kubebuilder:rbac:groups=core,resources=namespaces,verbs=get;list;watch
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups="events.k8s.io",resources=events,verbs=create;patch
-//+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch
+//+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
 
-func (r *ComponentBuildReconciler) ReconcileNewModel(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := ctrllog.FromContext(ctx).WithName("ComponentOnboardingNewModel")
 	ctx = ctrllog.IntoContext(ctx, log)
 	reconcileStartTime := time.Now()
 
 	// Fetch the Component instance
-	var component compapiv1alpha1.Component
+	var component compv1alpha1.Component
 	err := r.Client.Get(ctx, req.NamespacedName, &component)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
@@ -109,7 +171,7 @@ func (r *ComponentBuildReconciler) ReconcileNewModel(ctx context.Context, req ct
 	if component.ObjectMeta.DeletionTimestamp.IsZero() {
 		// We need to make sure the Service Account exists before checking the Component image,
 		// because Image Controller operator expects the Service Account to exist to link push secret to it.
-		if err := r.EnsureBuildPipelineServiceAccount(ctx, &component, false); err != nil {
+		if err := r.EnsureBuildPipelineServiceAccount(ctx, &component); err != nil {
 			log.Error(err, "Failed to ensure build pipeline service account")
 			return ctrl.Result{}, err
 		}
@@ -244,7 +306,7 @@ func (r *ComponentBuildReconciler) ReconcileNewModel(ctx context.Context, req ct
 
 		// Ensure PaC Repository exists and is properly configured
 		var pacRepositoryName string
-		if pacRepositoryName, err = r.ensurePaCRepository(ctx, &component, pacSecret, &component.Spec.RepositorySettings, skipBuildsMap, true); err != nil {
+		if pacRepositoryName, err = r.ensurePaCRepository(ctx, &component, pacSecret, &component.Spec.RepositorySettings, skipBuildsMap); err != nil {
 			return ctrl.Result{}, r.handlePersistentError(ctx, &component, err, "Failed to ensure PaC repository")
 		}
 		log.Info("Using PaC repository", "PaCRepositoryName", pacRepositoryName)
@@ -568,7 +630,6 @@ func (r *ComponentBuildReconciler) ReconcileNewModel(ctx context.Context, req ct
 		r.WaitForCacheUpdateRes(ctx, types.NamespacedName{Namespace: component.Namespace, Name: component.Name}, &component)
 	}
 
-	// TODO handle skip builds !!!! if it is already working in PaC
 	log.Info("New model reconciliation completed successfully", l.Action, l.ActionView)
 
 	return ctrl.Result{}, nil
@@ -587,7 +648,7 @@ func (r *ComponentBuildReconciler) ReconcileNewModel(ctx context.Context, req ct
 // we need to wait for status updates to propagate before the new reconcile starts.
 // Without this wait for ResourceVersion, the newly triggered reconcile might fetch a stale component,
 // leading to conflicts when it tries to re-apply the same status change.
-func (r *ComponentBuildReconciler) waitForCacheUpdate(ctx context.Context, namespace types.NamespacedName, component *compapiv1alpha1.Component, checkGeneration bool) {
+func (r *ComponentBuildReconciler) waitForCacheUpdate(ctx context.Context, namespace types.NamespacedName, component *compv1alpha1.Component, checkGeneration bool) {
 	log := ctrllog.FromContext(ctx)
 
 	var failureMessage string
@@ -605,7 +666,7 @@ func (r *ComponentBuildReconciler) waitForCacheUpdate(ctx context.Context, names
 	isComponentInCacheUpToDate := false
 	for i := 0; i < 20; i++ {
 		// Use a temporary component to avoid overwriting the caller's component variable with stale cache data
-		cachedComponent := &compapiv1alpha1.Component{}
+		cachedComponent := &compv1alpha1.Component{}
 		if err := r.Client.Get(ctx, namespace, cachedComponent); err == nil {
 			var upToDate bool
 			if checkGeneration {
@@ -637,13 +698,13 @@ func (r *ComponentBuildReconciler) waitForCacheUpdate(ctx context.Context, names
 
 // WaitForCacheUpdateGen waits for the controller cache to contain the component with the latest Generation.
 // This should be called after spec updates to ensure the cache has propagated before the reconcile completes.
-func (r *ComponentBuildReconciler) WaitForCacheUpdateGen(ctx context.Context, namespace types.NamespacedName, component *compapiv1alpha1.Component) {
+func (r *ComponentBuildReconciler) WaitForCacheUpdateGen(ctx context.Context, namespace types.NamespacedName, component *compv1alpha1.Component) {
 	r.waitForCacheUpdate(ctx, namespace, component, true)
 }
 
 // WaitForCacheUpdateRes waits for the controller cache to contain the component with the latest ResourceVersion.
 // This should be called after status updates when the current reconcile previously updated the spec (which triggered a new reconcile).
-func (r *ComponentBuildReconciler) WaitForCacheUpdateRes(ctx context.Context, namespace types.NamespacedName, component *compapiv1alpha1.Component) {
+func (r *ComponentBuildReconciler) WaitForCacheUpdateRes(ctx context.Context, namespace types.NamespacedName, component *compv1alpha1.Component) {
 	r.waitForCacheUpdate(ctx, namespace, component, false)
 }
 
@@ -673,7 +734,7 @@ func (r *ComponentBuildReconciler) observeActionMetrics(action string, reconcile
 // by logging and setting the component status message.
 // Returns error, where error is from setStatusMessage if it's a persistent error,
 // or the original error if not persistent.
-func (r *ComponentBuildReconciler) handlePersistentError(ctx context.Context, component *compapiv1alpha1.Component, err error, errorContext string) error {
+func (r *ComponentBuildReconciler) handlePersistentError(ctx context.Context, component *compv1alpha1.Component, err error, errorContext string) error {
 	log := ctrllog.FromContext(ctx)
 
 	var boErr *boerrors.BuildOpError
@@ -697,7 +758,7 @@ func (r *ComponentBuildReconciler) handlePersistentError(ctx context.Context, co
 // It removes PaC webhook if not used by other components, deletes PaC configurations from repository
 // for each version (unless skipped), and cleans up repository incomings.
 // All errors are logged but not returned, as the component finalizer has already been removed.
-func (r *ComponentBuildReconciler) cleanupComponentPaCResources(ctx context.Context, component *compapiv1alpha1.Component) {
+func (r *ComponentBuildReconciler) cleanupComponentPaCResources(ctx context.Context, component *compv1alpha1.Component) {
 	log := ctrllog.FromContext(ctx)
 
 	// Generate version info from status for offboarding
@@ -742,7 +803,7 @@ func (r *ComponentBuildReconciler) cleanupComponentPaCResources(ctx context.Cont
 // When fromStatus is true, builds from component.Status.Versions (for offboarding).
 // When fromStatus is false, builds from component.Spec.Source.Versions (for onboarding/builds).
 // Returns a map of version names to VersionInfo pointers.
-func buildVersionInfoMap(component *compapiv1alpha1.Component, fromStatus bool) map[string]*VersionInfo {
+func buildVersionInfoMap(component *compv1alpha1.Component, fromStatus bool) map[string]*VersionInfo {
 	versionInfoMap := make(map[string]*VersionInfo)
 
 	if fromStatus {
@@ -757,19 +818,19 @@ func buildVersionInfoMap(component *compapiv1alpha1.Component, fromStatus bool) 
 	} else {
 		// Build from spec - includes all fields
 		for _, version := range component.Spec.Source.Versions {
-			dockerfileURI := version.DockerfileURI
-			if dockerfileURI == "" {
-				dockerfileURI = component.Spec.Source.DockerfileURI
+			dockerfilePath := version.DockerfilePath
+			if dockerfilePath == "" {
+				dockerfilePath = component.Spec.Source.DockerfilePath
 			}
-			if dockerfileURI == "" {
-				dockerfileURI = "Dockerfile"
+			if dockerfilePath == "" {
+				dockerfilePath = "Dockerfile"
 			}
 
 			versionInfoMap[version.Name] = &VersionInfo{
 				OriginalVersion:  version.Name,
 				SanitizedVersion: sanitizeVersionName(version.Name),
 				Context:          version.Context,
-				DockerfileURI:    dockerfileURI,
+				DockerfilePath:   dockerfilePath,
 				Revision:         version.Revision,
 				SkipBuilds:       version.SkipBuilds,
 			}
@@ -786,7 +847,7 @@ func buildVersionInfoMap(component *compapiv1alpha1.Component, fromStatus bool) 
 // Returns:
 //   - skipBuildsMap: map of revision to their SkipBuilds values (aggregated by revision)
 //   - hasChanges: true if any version is missing from status or has different SkipBuilds value in status
-func buildSkipBuildsMapAndCheckChanges(component *compapiv1alpha1.Component, existingSpecVersions map[string]*VersionInfo) (map[string]bool, bool) {
+func buildSkipBuildsMapAndCheckChanges(component *compv1alpha1.Component, existingSpecVersions map[string]*VersionInfo) (map[string]bool, bool) {
 	skipBuildsMap := make(map[string]bool)
 	skipBuildsChanged := false
 
@@ -913,7 +974,7 @@ func getUniqueVersionsFromVersionFields(allVersions bool, singleVersion string, 
 // - invalidVersionsToOnboardWithPR: invalid versions (not in spec) that should be removed from actions
 func (r *ComponentBuildReconciler) determineVersionsToCreateConfigurationFor(
 	ctx context.Context,
-	component *compapiv1alpha1.Component,
+	component *compv1alpha1.Component,
 	existingSpecVersions map[string]*VersionInfo,
 ) (versionsToOnboardWithPR []string, invalidVersionsToOnboardWithPR []string) {
 	log := ctrllog.FromContext(ctx)
@@ -961,7 +1022,7 @@ func (r *ComponentBuildReconciler) resolvePipelinesForCreateConfiguration(
 // equalRepositorySettings compares two RepositorySettings structs for equality.
 // Returns true if the settings are equal, false otherwise.
 // GithubAppTokenScopeRepos are compared as mathematical sets (order and duplicates don't matter).
-func equalRepositorySettings(a, b compapiv1alpha1.RepositorySettings) bool {
+func equalRepositorySettings(a, b compv1alpha1.RepositorySettings) bool {
 	if a.CommentStrategy != b.CommentStrategy {
 		return false
 	}
@@ -984,7 +1045,7 @@ func equalRepositorySettings(a, b compapiv1alpha1.RepositorySettings) bool {
 // Returns two slices: versions to onboard and versions to offboard.
 func (r *ComponentBuildReconciler) determineVersionsToOnboardAndOffboard(
 	ctx context.Context,
-	component *compapiv1alpha1.Component,
+	component *compv1alpha1.Component,
 	existingSpecVersions map[string]*VersionInfo,
 ) (versionsToOnboard []string, versionsToOffboard []string) {
 	log := ctrllog.FromContext(ctx)
@@ -1029,7 +1090,7 @@ func (r *ComponentBuildReconciler) determineVersionsToOnboardAndOffboard(
 // - invalidVersionsToTriggerBuild: all versions (invalid + being onboarded) that should be removed from trigger build actions
 func (r *ComponentBuildReconciler) determineVersionsToTriggerBuildFor(
 	ctx context.Context,
-	component *compapiv1alpha1.Component,
+	component *compv1alpha1.Component,
 	existingSpecVersions map[string]*VersionInfo,
 	versionsToOnboardWithoutPR []string,
 	versionsToOnboardWithPR []string,
@@ -1084,7 +1145,7 @@ func (r *ComponentBuildReconciler) determineVersionsToTriggerBuildFor(
 // preserves existing ConfigurationMergeURL, and sets Message to errorMessage if provided.
 //
 // Returns an error if the status update fails.
-func (r *ComponentBuildReconciler) updateVersionsStatus(ctx context.Context, component *compapiv1alpha1.Component, versions []onboardedVersionInfo, existingSpecVersions map[string]*VersionInfo, success bool, errorMessage string) error {
+func (r *ComponentBuildReconciler) updateVersionsStatus(ctx context.Context, component *compv1alpha1.Component, versions []onboardedVersionInfo, existingSpecVersions map[string]*VersionInfo, success bool, errorMessage string) error {
 	log := ctrllog.FromContext(ctx)
 
 	if len(versions) == 0 {
@@ -1100,7 +1161,7 @@ func (r *ComponentBuildReconciler) updateVersionsStatus(ctx context.Context, com
 	// Update or add version status for each version
 	for _, version := range versions {
 		versionInfo := existingSpecVersions[version.name]
-		versionStatus := compapiv1alpha1.ComponentVersionStatus{
+		versionStatus := compv1alpha1.ComponentVersionStatus{
 			Name:       version.name,
 			Revision:   versionInfo.Revision,
 			SkipBuilds: versionInfo.SkipBuilds,
@@ -1152,7 +1213,7 @@ func (r *ComponentBuildReconciler) updateVersionsStatus(ctx context.Context, com
 
 // setStatusMessage sets provided message in the status and updates component's status.
 // Returns an error if the status update fails.
-func (r *ComponentBuildReconciler) setStatusMessage(ctx context.Context, component *compapiv1alpha1.Component, msg string) error {
+func (r *ComponentBuildReconciler) setStatusMessage(ctx context.Context, component *compv1alpha1.Component, msg string) error {
 	log := ctrllog.FromContext(ctx)
 
 	if component.Status.Message == msg {
@@ -1169,7 +1230,7 @@ func (r *ComponentBuildReconciler) setStatusMessage(ctx context.Context, compone
 
 // setStatusPacRepository updates the PaC repository name and settings in component status.
 // Returns an error if the status update fails.
-func (r *ComponentBuildReconciler) setStatusPacRepository(ctx context.Context, component *compapiv1alpha1.Component, repositoryName string, repositorySettings *compapiv1alpha1.RepositorySettings) error {
+func (r *ComponentBuildReconciler) setStatusPacRepository(ctx context.Context, component *compv1alpha1.Component, repositoryName string, repositorySettings *compv1alpha1.RepositorySettings) error {
 	log := ctrllog.FromContext(ctx)
 
 	if component.Status.PacRepository == repositoryName && reflect.DeepEqual(component.Status.RepositorySettings, *repositorySettings) {
@@ -1206,7 +1267,7 @@ func (r *ComponentBuildReconciler) setStatusPacRepository(ctx context.Context, c
 //   - Works the same regardless of removingInvalidVersions flag
 //
 // Returns an error if the component update fails.
-func (r *ComponentBuildReconciler) removeCreateConfigurationActions(ctx context.Context, component *compapiv1alpha1.Component, versionsToRemove []string, removingInvalidVersions bool, versionsToCreatePRFor []string) error {
+func (r *ComponentBuildReconciler) removeCreateConfigurationActions(ctx context.Context, component *compv1alpha1.Component, versionsToRemove []string, removingInvalidVersions bool, versionsToCreatePRFor []string) error {
 	log := ctrllog.FromContext(ctx)
 
 	if len(versionsToRemove) == 0 {
@@ -1281,7 +1342,7 @@ func (r *ComponentBuildReconciler) removeCreateConfigurationActions(ctx context.
 
 // removeTriggerBuildActions removes specified versions from component's TriggerBuild and TriggerBuilds actions.
 // Returns an error if the component update fails.
-func (r *ComponentBuildReconciler) removeTriggerBuildActions(ctx context.Context, component *compapiv1alpha1.Component, versionsToRemove []string) error {
+func (r *ComponentBuildReconciler) removeTriggerBuildActions(ctx context.Context, component *compv1alpha1.Component, versionsToRemove []string) error {
 	log := ctrllog.FromContext(ctx)
 
 	if len(versionsToRemove) == 0 {
@@ -1326,7 +1387,7 @@ func (r *ComponentBuildReconciler) removeTriggerBuildActions(ctx context.Context
 
 // removeVersionsFromStatus removes specified versions from component.Status.Versions.
 // Returns an error if the status update fails.
-func (r *ComponentBuildReconciler) removeVersionsFromStatus(ctx context.Context, component *compapiv1alpha1.Component, versionsToRemove []string) error {
+func (r *ComponentBuildReconciler) removeVersionsFromStatus(ctx context.Context, component *compv1alpha1.Component, versionsToRemove []string) error {
 	log := ctrllog.FromContext(ctx)
 
 	if len(versionsToRemove) == 0 {
@@ -1334,7 +1395,7 @@ func (r *ComponentBuildReconciler) removeVersionsFromStatus(ctx context.Context,
 	}
 
 	// Filter out versions to remove
-	newVersions := make([]compapiv1alpha1.ComponentVersionStatus, 0, len(component.Status.Versions))
+	newVersions := make([]compv1alpha1.ComponentVersionStatus, 0, len(component.Status.Versions))
 	for _, version := range component.Status.Versions {
 		if !slices.Contains(versionsToRemove, version.Name) {
 			newVersions = append(newVersions, version)
@@ -1362,7 +1423,7 @@ func (r *ComponentBuildReconciler) removeVersionsFromStatus(ctx context.Context,
 // updateVersionsSkipBuilds updates the SkipBuilds field for versions in component.Status.Versions
 // based on the values in existingSpecVersions. Only updates status if there are actual changes.
 // Returns an error if the status update fails.
-func (r *ComponentBuildReconciler) updateVersionsSkipBuilds(ctx context.Context, component *compapiv1alpha1.Component, existingSpecVersions map[string]*VersionInfo) error {
+func (r *ComponentBuildReconciler) updateVersionsSkipBuilds(ctx context.Context, component *compv1alpha1.Component, existingSpecVersions map[string]*VersionInfo) error {
 	log := ctrllog.FromContext(ctx)
 
 	hasChanges := false
@@ -1394,7 +1455,7 @@ func (r *ComponentBuildReconciler) updateVersionsSkipBuilds(ctx context.Context,
 
 // setVersionStatusMessage sets the message field for a specific version in component.Status.Versions.
 // Returns an error if the status update fails.
-func (r *ComponentBuildReconciler) setVersionStatusMessage(ctx context.Context, component *compapiv1alpha1.Component, versionName string, message string) error {
+func (r *ComponentBuildReconciler) setVersionStatusMessage(ctx context.Context, component *compv1alpha1.Component, versionName string, message string) error {
 	log := ctrllog.FromContext(ctx)
 
 	// Find the version in status

@@ -28,7 +28,8 @@ import (
 	"strconv"
 	"strings"
 
-	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
+	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1" // TODO remove after only new model is used and old model is gone
+	compv1alpha1 "github.com/konflux-ci/build-service/api/konflux/v1alpha1"
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	routev1 "github.com/openshift/api/route/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -66,8 +67,12 @@ const (
 
 	pacMergeRequestSourceBranchPrefix = "konflux-"
 
-	appstudioWorkspaceNameLabel      = "appstudio.redhat.com/workspace_name"
-	pacCustomParamAppstudioWorkspace = "appstudio_workspace"
+	appstudioWorkspaceNameLabel = "konflux-ci.dev/workspace_name"
+	// TODO remove after only new model is used and old model is gone
+	appstudioWorkspaceNameLabelOldModel = "appstudio.redhat.com/workspace_name"
+	pacCustomParamKonfluxWorkspace      = "konflux_workspace"
+	// TODO remove after only new model is used and old model is gone
+	pacCustomParamKonfluxWorkspaceOldModel = "appstudio_workspace"
 
 	mergeRequestDescription = `
 # Pipelines as Code configuration proposal
@@ -93,19 +98,17 @@ Please follow the block sequence indentation style introduced by the proprosed P
 var GetHttpClientFunction = getHttpClient
 
 // GetPacSecrets gets and validates webhookSecretString and pacSecret.
-// TODO remove newModel handling after only new model is used
-func (r *ComponentBuildReconciler) GetPacSecrets(ctx context.Context, component *compapiv1alpha1.Component) (string, *corev1.Secret, error) {
+func (r *ComponentBuildReconciler) GetPacSecrets(ctx context.Context, component *compv1alpha1.Component) (string, *corev1.Secret, error) {
 	log := ctrllog.FromContext(ctx).WithName("GetWebhookAndPacSecret")
-	newModel := true
 
 	log.Info("Getting webhook and pacSecret")
 
-	gitProvider, err := getGitProvider(*component, newModel)
+	gitProvider, err := getGitProvider(*component)
 	if err != nil {
 		// Do not reconcile, because configuration must be fixed before it is possible to proceed.
 		return "", nil, err
 	}
-	repoUrl := getGitRepoUrl(*component, newModel)
+	repoUrl := getGitRepoUrl(*component)
 
 	if strings.HasPrefix(repoUrl, "http:") {
 		return "", nil, boerrors.NewBuildOpError(boerrors.EHttpUsedForRepository,
@@ -119,7 +122,7 @@ func (r *ComponentBuildReconciler) GetPacSecrets(ctx context.Context, component 
 		}
 	}
 
-	pacSecret, err := r.lookupPaCSecret(ctx, component, gitProvider, newModel)
+	pacSecret, err := r.lookupPaCSecret(ctx, component, gitProvider)
 	if err != nil {
 		return "", nil, err
 	}
@@ -135,7 +138,7 @@ func (r *ComponentBuildReconciler) GetPacSecrets(ctx context.Context, component 
 	if !common.IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
 		// Generate webhook secret for the component git repository if not yet generated
 		// and stores it in the corresponding k8s secret.
-		webhookSecretString, err = r.ensureWebhookSecret(ctx, component, newModel)
+		webhookSecretString, err = r.ensureWebhookSecret(ctx, component)
 		if err != nil {
 			return "", nil, err
 		}
@@ -147,19 +150,17 @@ func (r *ComponentBuildReconciler) GetPacSecrets(ctx context.Context, component 
 // ProvisionPaCForComponentOldModel does Pipelines as Code provision for the given component.
 // Mainly, it creates PaC configuration merge request into the component source repositotiry.
 // If GitHub PaC application is not configured, creates a webhook for PaC.
-// TODO remove after only new model is used
-func (r *ComponentBuildReconciler) ProvisionPaCForComponentOldModel(ctx context.Context, component *compapiv1alpha1.Component) (string, error) {
+// TODO remove after only new model is used and old model is gone
+func (r *ComponentBuildReconcilerOldModel) ProvisionPaCForComponentOldModel(ctx context.Context, component *compapiv1alpha1.Component) (string, error) {
 	log := ctrllog.FromContext(ctx).WithName("PaC-setup")
-	newModel := false
-
 	log.Info("Starting Pipelines as Code provision for the Component")
 
-	gitProvider, err := getGitProvider(*component, newModel)
+	gitProvider, err := getGitProviderOldModel(*component)
 	if err != nil {
 		// Do not reconcile, because configuration must be fixed before it is possible to proceed.
 		return "", err
 	}
-	repoUrl := getGitRepoUrl(*component, newModel)
+	repoUrl := getGitRepoUrlOldModel(*component)
 
 	if strings.HasPrefix(repoUrl, "http:") {
 		return "", boerrors.NewBuildOpError(boerrors.EHttpUsedForRepository,
@@ -173,7 +174,7 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponentOldModel(ctx context.
 		}
 	}
 
-	pacSecret, err := r.lookupPaCSecret(ctx, component, gitProvider, newModel)
+	pacSecret, err := r.lookupPaCSecret(ctx, component, gitProvider)
 	if err != nil {
 		return "", err
 	}
@@ -189,7 +190,7 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponentOldModel(ctx context.
 	if !common.IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
 		// Generate webhook secret for the component git repository if not yet generated
 		// and stores it in the corresponding k8s secret.
-		webhookSecretString, err = r.ensureWebhookSecret(ctx, component, newModel)
+		webhookSecretString, err = r.ensureWebhookSecret(ctx, component)
 		if err != nil {
 			return "", err
 		}
@@ -202,7 +203,7 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponentOldModel(ctx context.
 	}
 
 	var pacRepositoryName string
-	if pacRepositoryName, err = r.ensurePaCRepository(ctx, component, pacSecret, nil, nil, newModel); err != nil {
+	if pacRepositoryName, err = r.ensurePaCRepository(ctx, component, pacSecret); err != nil {
 		return "", err
 	}
 	log.Info("Using PaC repository", "PaCRepositoryName", pacRepositoryName, l.Action, l.ActionView)
@@ -283,16 +284,14 @@ func checkMandatoryFieldsNotEmpty(config map[string][]byte, mandatoryFields []st
 // TriggerPaCBuildPreparation prepares for triggering builds by ensuring incoming secret and updating incomings for all versions.
 // This should be called once before triggering multiple builds to avoid multiple reconciles.
 // Returns reconcileRequired flag, incomingSecret, repository, and error.
-// TODO remove newModel handling after only new model is used
 func (r *ComponentBuildReconciler) TriggerPaCBuildPreparation(
 	ctx context.Context,
-	component *compapiv1alpha1.Component,
+	component *compv1alpha1.Component,
 	targetBranches []string,
 ) (reconcileRequired bool, incomingSecret *corev1.Secret, repository *pacv1alpha1.Repository, err error) {
 	log := ctrllog.FromContext(ctx).WithName("TriggerPaCBuildPrep")
-	newModel := true
 
-	repository, err = r.findPaCRepositoryForComponent(ctx, component, newModel)
+	repository, err = r.findPaCRepositoryForComponent(ctx, component)
 	if err != nil {
 		return false, nil, nil, err
 	}
@@ -301,7 +300,7 @@ func (r *ComponentBuildReconciler) TriggerPaCBuildPreparation(
 		return false, nil, nil, fmt.Errorf("PaC repository not found for component %s", component.Name)
 	}
 
-	incomingSecret, reconcileRequired, err = r.ensureIncomingSecret(ctx, component, newModel)
+	incomingSecret, reconcileRequired, err = r.ensureIncomingSecret(ctx, component)
 	if err != nil {
 		return false, nil, nil, err
 	}
@@ -328,10 +327,9 @@ func (r *ComponentBuildReconciler) TriggerPaCBuildPreparation(
 
 // TriggerPaCBuild triggers a PaC build using pre-prepared resources from TriggerPaCBuildPrep.
 // This method doesn't perform reconciliation and should be called after TriggerPaCBuildPrep.
-// TODO remove newModel handling after only new model is used
 func (r *ComponentBuildReconciler) TriggerPaCBuild(
 	ctx context.Context,
-	component *compapiv1alpha1.Component,
+	component *compv1alpha1.Component,
 	sanitizedVersionName string,
 	targetBranch string,
 	pacInternalUrl string,
@@ -339,9 +337,8 @@ func (r *ComponentBuildReconciler) TriggerPaCBuild(
 	repository *pacv1alpha1.Repository,
 ) error {
 	log := ctrllog.FromContext(ctx).WithName("TriggerPaCBuild")
-	newModel := true
 
-	repoUrl := getGitRepoUrl(*component, newModel)
+	repoUrl := getGitRepoUrl(*component)
 	secretValue := string(incomingSecret.Data[pacIncomingSecretKey])
 	pipelineRunName := getPipelineRunDefinitionName(component.Name, sanitizedVersionName, false)
 
@@ -351,6 +348,8 @@ func (r *ComponentBuildReconciler) TriggerPaCBuild(
 	// we have to supply source_url as additional param, because PaC isn't able to resolve it for trigger
 	jsonTemplate := `{"params": {"source_url": "%s"}, "secret": "%s", "repository": "%s", "branch": "%s", "pipelinerun": "%s", "namespace": "%s"}`
 	bytesParam := []byte(fmt.Sprintf(jsonTemplate, repoUrl, secretValue, repository.Name, targetBranch, pipelineRunName, repository.Namespace))
+	redactedJsonTemplate := `{"params": {"source_url": "%s"}, "secret": "", "repository": "%s", "branch": "%s", "pipelinerun": "%s", "namespace": "%s"}`
+	redactedBytesParam := []byte(fmt.Sprintf(redactedJsonTemplate, repoUrl, repository.Name, targetBranch, pipelineRunName, repository.Namespace))
 
 	resp, err := HttpClient.Post(triggerURL, "application/json", bytes.NewBuffer(bytesParam))
 	if err != nil {
@@ -360,22 +359,21 @@ func (r *ComponentBuildReconciler) TriggerPaCBuild(
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 && resp.StatusCode != 202 {
-		log.Info(fmt.Sprintf("PaC incoming endpoint %s with params %s returned HTTP %d", triggerURL, string(bytesParam), resp.StatusCode))
-		return fmt.Errorf("PaC incoming endpoint %s with params %s returned HTTP %d", triggerURL, string(bytesParam), resp.StatusCode)
+		log.Info(fmt.Sprintf("PaC incoming endpoint %s with params %s returned HTTP %d", triggerURL, string(redactedBytesParam), resp.StatusCode))
+		return fmt.Errorf("PaC incoming endpoint %s with params %s returned HTTP %d", triggerURL, string(redactedBytesParam), resp.StatusCode)
 	}
 
-	log.Info(fmt.Sprintf("PaC build manually triggered push pipeline for component: %s, version: %s, endpoint %s with params %s", component.Name, sanitizedVersionName, triggerURL, string(bytesParam)))
+	log.Info(fmt.Sprintf("PaC build manually triggered push pipeline for component: %s, version: %s, endpoint %s with params %s", component.Name, sanitizedVersionName, triggerURL, string(redactedBytesParam)))
 	return nil
 }
 
 // TriggerPaCBuildOldModel triggers PaC builds for the old model.
 // For new model, use TriggerPaCBuildPrep followed by TriggerPaCBuild.
-// TODO remove after only new model is used
-func (r *ComponentBuildReconciler) TriggerPaCBuildOldModel(ctx context.Context, component *compapiv1alpha1.Component) (bool, error) {
+// TODO remove after only new model is used and old model is gone
+func (r *ComponentBuildReconcilerOldModel) TriggerPaCBuildOldModel(ctx context.Context, component *compapiv1alpha1.Component) (bool, error) {
 	log := ctrllog.FromContext(ctx).WithName("TriggerPaCBuild")
-	newModel := false
 
-	repository, err := r.findPaCRepositoryForComponent(ctx, component, newModel)
+	repository, err := r.findPaCRepositoryForComponent(ctx, component)
 	if err != nil {
 		return false, err
 	}
@@ -384,19 +382,19 @@ func (r *ComponentBuildReconciler) TriggerPaCBuildOldModel(ctx context.Context, 
 		return false, fmt.Errorf("PaC repository not found for component %s", component.Name)
 	}
 
-	incomingSecret, reconcileRequired, err := r.ensureIncomingSecret(ctx, component, newModel)
+	incomingSecret, reconcileRequired, err := r.ensureIncomingSecret(ctx, component)
 	if err != nil {
 		return false, err
 	}
 
-	repoUrl := getGitRepoUrl(*component, newModel)
-	gitProvider, err := getGitProvider(*component, newModel)
+	repoUrl := getGitRepoUrlOldModel(*component)
+	gitProvider, err := getGitProviderOldModel(*component)
 	if err != nil {
 		// There is no point to continue if git provider is not known.
 		return false, err
 	}
 
-	pacSecret, err := r.lookupPaCSecret(ctx, component, gitProvider, newModel)
+	pacSecret, err := r.lookupPaCSecret(ctx, component, gitProvider)
 	if err != nil {
 		return false, err
 	}
@@ -446,7 +444,7 @@ func (r *ComponentBuildReconciler) TriggerPaCBuildOldModel(ctx context.Context, 
 
 	secretValue := string(incomingSecret.Data[pacIncomingSecretKey])
 
-	pipelineRunName := getPipelineRunDefinitionName(component.Name, "", false)
+	pipelineRunName := getPipelineRunDefinitionNameOldModel(component.Name, false)
 
 	triggerURL := fmt.Sprintf("%s/incoming", pacInternalUrl)
 	HttpClient := GetHttpClientFunction()
@@ -454,6 +452,8 @@ func (r *ComponentBuildReconciler) TriggerPaCBuildOldModel(ctx context.Context, 
 	// we have to supply source_url as additional param, because PaC isn't able to resolve it for trigger
 	jsonTemplate := `{"params": {"source_url": "%s"}, "secret": "%s", "repository": "%s", "branch": "%s", "pipelinerun": "%s", "namespace": "%s"}`
 	bytesParam := []byte(fmt.Sprintf(jsonTemplate, repoUrl, secretValue, repository.Name, targetBranch, pipelineRunName, repository.Namespace))
+	redactedJsonTemplate := `{"params": {"source_url": "%s"}, "secret": "", "repository": "%s", "branch": "%s", "pipelinerun": "%s", "namespace": "%s"}`
+	redactedBytesParam := []byte(fmt.Sprintf(redactedJsonTemplate, repoUrl, repository.Name, targetBranch, pipelineRunName, repository.Namespace))
 
 	resp, err := HttpClient.Post(triggerURL, "application/json", bytes.NewBuffer(bytesParam))
 	if err != nil {
@@ -463,38 +463,37 @@ func (r *ComponentBuildReconciler) TriggerPaCBuildOldModel(ctx context.Context, 
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 && resp.StatusCode != 202 {
-		log.Info(fmt.Sprintf("PaC incoming endpoint %s with params %s returned HTTP %d", triggerURL, string(bytesParam), resp.StatusCode))
-		return false, fmt.Errorf("PaC incoming endpoint %s with params %s returned HTTP %d", triggerURL, string(bytesParam), resp.StatusCode)
+		log.Info(fmt.Sprintf("PaC incoming endpoint %s with params %s returned HTTP %d", triggerURL, string(redactedBytesParam), resp.StatusCode))
+		return false, fmt.Errorf("PaC incoming endpoint %s with params %s returned HTTP %d", triggerURL, string(redactedBytesParam), resp.StatusCode)
 	}
 
-	log.Info(fmt.Sprintf("PaC build manually triggered push pipeline for component: %s, endpoint %s with params %s", component.Name, triggerURL, string(bytesParam)))
+	log.Info(fmt.Sprintf("PaC build manually triggered push pipeline for component: %s, endpoint %s with params %s", component.Name, triggerURL, string(redactedBytesParam)))
 	return false, nil
 }
 
 // UndoPaCProvisionForComponentOldModel creates merge request that removes Pipelines as Code configuration from component source repository.
 // Deletes PaC webhook if used.
 // In case of any errors just logs them and does not block Component deletion.
-// TODO remove after only new model is used
-func (r *ComponentBuildReconciler) UndoPaCProvisionForComponentOldModel(ctx context.Context, component *compapiv1alpha1.Component) (string, error) {
+// TODO remove after only new model is used and old model is gone
+func (r *ComponentBuildReconcilerOldModel) UndoPaCProvisionForComponentOldModel(ctx context.Context, component *compapiv1alpha1.Component) (string, error) {
 	log := ctrllog.FromContext(ctx).WithName("PaC-cleanup")
-	newModel := false
 
 	log.Info("Starting Pipelines as Code unprovision for the Component")
 
-	gitProvider, err := getGitProvider(*component, newModel)
+	gitProvider, err := getGitProviderOldModel(*component)
 	if err != nil {
 		// There is no point to continue if git provider is not known.
 		return "", err
 	}
 
-	pacSecret, err := r.lookupPaCSecret(ctx, component, gitProvider, newModel)
+	pacSecret, err := r.lookupPaCSecret(ctx, component, gitProvider)
 	if err != nil {
 		log.Error(err, "error getting git provider credentials secret", l.Action, l.ActionView)
 		// Cannot continue without accessing git provider credentials.
 		return "", boerrors.NewBuildOpError(boerrors.EPaCSecretNotFound, err)
 	}
 
-	repoUrl := getGitRepoUrl(*component, newModel)
+	repoUrl := getGitRepoUrlOldModel(*component)
 	webhookTargetUrl := ""
 	if !common.IsPaCApplicationConfigured(gitProvider, pacSecret.Data) {
 		webhookTargetUrl, err = r.getPaCWebhookTargetUrl(ctx, repoUrl)
@@ -511,7 +510,7 @@ func (r *ComponentBuildReconciler) UndoPaCProvisionForComponentOldModel(ctx cont
 		return "", err
 	}
 
-	err = r.cleanupPaCRepositoryIncomingsAndSecretOldModel(ctx, component, baseBranch, newModel)
+	err = r.cleanupPaCRepositoryIncomingsOldModel(ctx, component, baseBranch)
 	if err != nil {
 		log.Error(err, "failed cleanup incomings from repo and incoming secret")
 		return "", err
@@ -535,6 +534,29 @@ func (r *ComponentBuildReconciler) UndoPaCProvisionForComponentOldModel(ctx cont
 // If no match found, reads PAC_WEBHOOK_URL environment variable.
 // Lastly, falls back to PaC Route URL.
 func (r *ComponentBuildReconciler) getPaCWebhookTargetUrl(ctx context.Context, repositoryURL string) (string, error) {
+	webhookTargetUrl := r.PaCWebhookMapping.GetPaCWebhookUrlForGitRepo(repositoryURL)
+
+	if webhookTargetUrl == "" {
+		webhookTargetUrl = os.Getenv(pipelinesAsCodeWebhookUrlEnvVar)
+	}
+
+	if webhookTargetUrl == "" {
+		var err error
+		webhookTargetUrl, err = r.getPaCRoutePublicUrl(ctx)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	return webhookTargetUrl, nil
+}
+
+// TODO remove after only new model is used and old model is gone
+// getPaCWebhookTargetUrl returns URL to which events from git repository should be sent.
+// First, it checks provided mapping, if any.
+// If no match found, reads PAC_WEBHOOK_URL environment variable.
+// Lastly, falls back to PaC Route URL.
+func (r *ComponentBuildReconcilerOldModel) getPaCWebhookTargetUrl(ctx context.Context, repositoryURL string) (string, error) {
 	webhookTargetUrl := r.PaCWebhookMapping.GetPaCWebhookUrlForGitRepo(repositoryURL)
 
 	if webhookTargetUrl == "" {
@@ -581,10 +603,41 @@ func (r *ComponentBuildReconciler) getPaCRoutePublicUrl(ctx context.Context) (st
 	return "", fmt.Errorf("PaC route not found in '%s' namespaces", strings.Join(namespacesToCheck, " "))
 }
 
+// TODO remove after only new model is used and old model is gone
+// getPaCRoutePublicUrl returns Pipelines as Code public route that receives events to trigger new pipeline runs.
+// It checks "openshift-pipelines", "pipelines-as-code" namespaces
+// and namespace defined in PAC_NAMESPACE environment variable, if any (takes precedence).
+// Note, it makes sense only for Openshift as in pure k8s PaC doesn't have Ingress by default.
+func (r *ComponentBuildReconcilerOldModel) getPaCRoutePublicUrl(ctx context.Context) (string, error) {
+	pacWebhookRoute := &routev1.Route{}
+
+	namespacesToCheck := []string{pipelinesAsCodeNamespaceOpenshift, pipelinesAsCodeNamespace}
+	customPacNamespace := os.Getenv(pipelinesAsCodeNamespaceEnvVar)
+	if customPacNamespace != "" {
+		namespacesToCheck = append([]string{customPacNamespace}, namespacesToCheck...)
+	}
+
+	for _, namespace := range namespacesToCheck {
+		pacWebhookRouteKey := types.NamespacedName{Namespace: namespace, Name: pipelinesAsCodeRouteName}
+		if err := r.Client.Get(ctx, pacWebhookRouteKey, pacWebhookRoute); err != nil {
+			if !errors.IsNotFound(err) {
+				return "", fmt.Errorf("failed to get Pipelines as Code route in %s namespace: %w", namespace, err)
+			}
+			// Not found, continue
+		} else {
+			// Route found
+			return "https://" + pacWebhookRoute.Spec.Host, nil
+		}
+	}
+	// Checked all candidate namespaces for PaC installation, the PaC Route not found.
+	return "", fmt.Errorf("PaC route not found in '%s' namespaces", strings.Join(namespacesToCheck, " "))
+}
+
 // getInternalPaCEndpoint returns cluster internal URL to PaC endpoint.
 // It searches for PaC Service (which has the same name as Route) in "openshift-pipelines", "pipelines-as-code" namespaces
 // and namespace defined in PAC_NAMESPACE environment variable, if any (takes precedence).
 // The operator should always use this endpoint when communicating with PaC within the cluster.
+// nolint:dupl
 func (r *ComponentBuildReconciler) getInternalPaCEndpoint(ctx context.Context) (string, error) {
 	pacEndpointService := &corev1.Service{}
 
@@ -618,36 +671,78 @@ func (r *ComponentBuildReconciler) getInternalPaCEndpoint(ctx context.Context) (
 	return "", fmt.Errorf("PaC service not found in '%s' namespaces", strings.Join(namespacesToCheck, " "))
 }
 
-// TODO remove newModel handling after only new model is used
-func generateMergeRequestSourceBranch(component *compapiv1alpha1.Component, version string) string {
-	if version != "" {
-		return fmt.Sprintf("%s%s-%s", pacMergeRequestSourceBranchPrefix, component.Name, version)
-	} else {
-		return fmt.Sprintf("%s%s", pacMergeRequestSourceBranchPrefix, component.Name)
+// TODO remove after only new model is used and old model is gone
+// getInternalPaCEndpoint returns cluster internal URL to PaC endpoint.
+// It searches for PaC Service (which has the same name as Route) in "openshift-pipelines", "pipelines-as-code" namespaces
+// and namespace defined in PAC_NAMESPACE environment variable, if any (takes precedence).
+// The operator should always use this endpoint when communicating with PaC within the cluster.
+// nolint:dupl
+func (r *ComponentBuildReconcilerOldModel) getInternalPaCEndpoint(ctx context.Context) (string, error) {
+	pacEndpointService := &corev1.Service{}
+
+	namespacesToCheck := []string{pipelinesAsCodeNamespaceOpenshift, pipelinesAsCodeNamespace}
+	customPacNamespace := os.Getenv(pipelinesAsCodeNamespaceEnvVar)
+	if customPacNamespace != "" {
+		namespacesToCheck = append([]string{customPacNamespace}, namespacesToCheck...)
 	}
+
+	for _, namespace := range namespacesToCheck {
+		pacEndpointServiceKey := types.NamespacedName{Namespace: namespace, Name: pipelinesAsCodeRouteName}
+		if err := r.Client.Get(ctx, pacEndpointServiceKey, pacEndpointService); err != nil {
+			if !errors.IsNotFound(err) {
+				return "", fmt.Errorf("failed to get Pipelines as Code service in %s namespace: %w", namespace, err)
+			}
+			// Not found, continue
+		} else {
+			// Service found, generate URL: http://<service-name>.<namespace-name>.svc.cluster.local:<service-port>
+			port := 80
+			for _, servicePortConfig := range pacEndpointService.Spec.Ports {
+				if servicePortConfig.Name == "http-listener" {
+					port = int(servicePortConfig.Port)
+					break
+				}
+			}
+			internalServiceUrl := fmt.Sprintf("http://%s.%s.svc.cluster.local:%d", pacEndpointServiceKey.Name, pacEndpointServiceKey.Namespace, port)
+			return internalServiceUrl, nil
+		}
+	}
+	// Checked all candidate namespaces for PaC installation, the PaC Service not found.
+	return "", fmt.Errorf("PaC service not found in '%s' namespaces", strings.Join(namespacesToCheck, " "))
 }
 
-// TODO remove newModel handling after only new model is used
+func generateMergeRequestSourceBranch(component *compv1alpha1.Component, version string) string {
+	return fmt.Sprintf("%s%s-%s", pacMergeRequestSourceBranchPrefix, component.Name, version)
+}
+
+// TODO remove after only new model is used and old model is gone
+func generateMergeRequestSourceBranchOldModel(component *compapiv1alpha1.Component) string {
+	return fmt.Sprintf("%s%s", pacMergeRequestSourceBranchPrefix, component.Name)
+}
+
 // getPipelineRunDefinitionFilePath returns full path in git repository to the pipeline run definition of the given Component.
 func getPipelineRunDefinitionFilePath(componentName, versionName string, isPullRequest bool) string {
 	pipelineNameSuffix := pipelineRunOnPushFilename
 	if isPullRequest {
 		pipelineNameSuffix = pipelineRunOnPRFilename
 	}
-	if versionName != "" {
-		return ".tekton/" + componentName + "-" + versionName + "-" + pipelineNameSuffix
-	} else {
-		return ".tekton/" + componentName + "-" + pipelineNameSuffix
+	return ".tekton/" + componentName + "-" + versionName + "-" + pipelineNameSuffix
+}
+
+// TODO remove after only new model is used and old model is gone
+// getPipelineRunDefinitionFilePathOldModel returns full path in git repository to the pipeline run definition of the given Component.
+func getPipelineRunDefinitionFilePathOldModel(componentName string, isPullRequest bool) string {
+	pipelineNameSuffix := pipelineRunOnPushFilename
+	if isPullRequest {
+		pipelineNameSuffix = pipelineRunOnPRFilename
 	}
+	return ".tekton/" + componentName + "-" + pipelineNameSuffix
 }
 
 // GetGitClient creates and returns a git provider client for the component's git repository.
 // It uses the PaC configuration to authenticate with the git provider (GitHub, GitLab, etc.).
-// TODO remove newModel handling after only new model is used
-func GetGitClient(component *compapiv1alpha1.Component, pacConfig map[string][]byte) (gp.GitProviderClient, error) {
-	newModel := true
-	gitProvider, _ := getGitProvider(*component, newModel)
-	repoUrl := getGitRepoUrl(*component, newModel)
+func GetGitClient(component *compv1alpha1.Component, pacConfig map[string][]byte) (gp.GitProviderClient, error) {
+	gitProvider, _ := getGitProvider(*component)
+	repoUrl := getGitRepoUrl(*component)
 
 	gitClient, err := gitproviderfactory.CreateGitClient(gitproviderfactory.GitClientConfig{
 		PacSecretData: pacConfig,
@@ -670,12 +765,9 @@ func GetGitClient(component *compapiv1alpha1.Component, pacConfig map[string][]b
 // SetupPacWebhookWhenAppNotUsed configures a webhook in the component's git repository to notify the in-cluster PaC controller.
 // The webhook is only created when PaC GitHub/GitLab App is not configured (checks via IsPaCApplicationConfigured).
 // When using App-based integration, webhooks are managed automatically by the git provider and this setup is skipped.
-// TODO remove newModel handling after only new model is used
-func (r *ComponentBuildReconciler) SetupPacWebhookWhenAppNotUsed(ctx context.Context, component *compapiv1alpha1.Component, gitClient gp.GitProviderClient, pacConfig map[string][]byte, webhookSecret string) error {
-	newModel := true
-
-	gitProvider, _ := getGitProvider(*component, newModel)
-	repoUrl := getGitRepoUrl(*component, newModel)
+func (r *ComponentBuildReconciler) SetupPacWebhookWhenAppNotUsed(ctx context.Context, component *compv1alpha1.Component, gitClient gp.GitProviderClient, pacConfig map[string][]byte, webhookSecret string) error {
+	gitProvider, _ := getGitProvider(*component)
+	repoUrl := getGitRepoUrl(*component)
 
 	log := ctrllog.FromContext(ctx).WithValues("repository", repoUrl)
 
@@ -700,18 +792,16 @@ func (r *ComponentBuildReconciler) SetupPacWebhookWhenAppNotUsed(ctx context.Con
 
 // CreatePipelineRunsInRepository creates a merge request with pipeline run definitions in the component's git repository.
 // Returns the merge request URL if created, or empty string if pipeline runs are already up to date.
-// TODO remove newModel handling after only new model is used
-func (r *ComponentBuildReconciler) CreatePipelineRunsInRepository(ctx context.Context, component *compapiv1alpha1.Component, gitClient gp.GitProviderClient, versionInfo *VersionInfo, pipelineDefinition *VersionPipelineDefinition, pacConfig map[string][]byte) (prUrl string, err error) {
+func (r *ComponentBuildReconciler) CreatePipelineRunsInRepository(ctx context.Context, component *compv1alpha1.Component, gitClient gp.GitProviderClient, versionInfo *VersionInfo, pipelineDefinition *VersionPipelineDefinition, pacConfig map[string][]byte) (prUrl string, err error) {
 	log := ctrllog.FromContext(ctx).WithValues("repository", component.Spec.Source.GitURL)
 	ctx = ctrllog.IntoContext(ctx, log)
-	newModel := true
 
 	pipelineRunOnPushYaml, pipelineRunOnPRYaml, err := r.generatePaCPipelineRunConfigs(ctx, component, gitClient, versionInfo, pipelineDefinition)
 	if err != nil {
 		return "", err
 	}
 
-	gitProvider, _ := getGitProvider(*component, newModel)
+	gitProvider, _ := getGitProvider(*component)
 	authorName := "konflux"
 	authorEmail := konfluxAuthorEmail
 	namePrefix := "Konflux"
@@ -749,7 +839,7 @@ func (r *ComponentBuildReconciler) CreatePipelineRunsInRepository(ctx context.Co
 		},
 	}
 
-	repoUrl := getGitRepoUrl(*component, newModel)
+	repoUrl := getGitRepoUrl(*component)
 	mrUrl, err := gitClient.EnsurePaCMergeRequest(repoUrl, mrData)
 	if err != nil {
 		return "", err
@@ -768,13 +858,12 @@ func (r *ComponentBuildReconciler) CreatePipelineRunsInRepository(ctx context.Co
 
 // ConfigureRepositoryForPaCOldModel creates a merge request with initial Pipelines as Code configuration
 // and configures a webhook to notify in-cluster PaC unless application (on the repository side) is used.
-// TODO remove after only new model is used
-func (r *ComponentBuildReconciler) ConfigureRepositoryForPaCOldModel(ctx context.Context, component *compapiv1alpha1.Component, pacConfig map[string][]byte, webhookTargetUrl, webhookSecret string) (prUrl string, err error) {
+// TODO remove after only new model is used and old model is gone
+func (r *ComponentBuildReconcilerOldModel) ConfigureRepositoryForPaCOldModel(ctx context.Context, component *compapiv1alpha1.Component, pacConfig map[string][]byte, webhookTargetUrl, webhookSecret string) (prUrl string, err error) {
 	log := ctrllog.FromContext(ctx).WithValues("repository", component.Spec.Source.GitSource.URL)
-	newModel := false
 
-	gitProvider, _ := getGitProvider(*component, newModel)
-	repoUrl := getGitRepoUrl(*component, newModel)
+	gitProvider, _ := getGitProviderOldModel(*component)
+	repoUrl := getGitRepoUrlOldModel(*component)
 
 	gitClient, err := gitproviderfactory.CreateGitClient(gitproviderfactory.GitClientConfig{
 		PacSecretData: pacConfig,
@@ -804,15 +893,15 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaCOldModel(ctx context
 	mrData := &gp.MergeRequestData{
 		CommitMessage:  "Konflux update " + component.Name,
 		SignedOff:      true,
-		BranchName:     generateMergeRequestSourceBranch(component, ""),
+		BranchName:     generateMergeRequestSourceBranchOldModel(component),
 		BaseBranchName: baseBranch,
 		Title:          "Konflux update " + component.Name,
 		Text:           mergeRequestDescription,
 		AuthorName:     "konflux",
 		AuthorEmail:    konfluxAuthorEmail,
 		Files: []gp.RepositoryFile{
-			{FullPath: getPipelineRunDefinitionFilePath(component.Name, "", false), Content: pipelineRunOnPushYaml},
-			{FullPath: getPipelineRunDefinitionFilePath(component.Name, "", true), Content: pipelineRunOnPRYaml},
+			{FullPath: getPipelineRunDefinitionFilePathOldModel(component.Name, false), Content: pipelineRunOnPushYaml},
+			{FullPath: getPipelineRunDefinitionFilePathOldModel(component.Name, true), Content: pipelineRunOnPRYaml},
 		},
 	}
 
@@ -854,13 +943,11 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaCOldModel(ctx context
 }
 
 // RemovePacWebhook removes repository webhook, but only when no other component is using it, used only when component is removed
-// TODO remove newModel handling after only new model is used
-func (r *ComponentBuildReconciler) RemovePacWebhook(ctx context.Context, component *compapiv1alpha1.Component, gitClient gp.GitProviderClient, pacConfig map[string][]byte) error {
+func (r *ComponentBuildReconciler) RemovePacWebhook(ctx context.Context, component *compv1alpha1.Component, gitClient gp.GitProviderClient, pacConfig map[string][]byte) error {
 	log := ctrllog.FromContext(ctx)
-	newModel := true
 
-	gitProvider, _ := getGitProvider(*component, newModel)
-	repoUrl := getGitRepoUrl(*component, newModel)
+	gitProvider, _ := getGitProvider(*component)
+	repoUrl := getGitRepoUrl(*component)
 
 	isAppUsed := common.IsPaCApplicationConfigured(gitProvider, pacConfig)
 	if !isAppUsed {
@@ -869,18 +956,37 @@ func (r *ComponentBuildReconciler) RemovePacWebhook(ctx context.Context, compone
 			return fmt.Errorf("failed to get PaC webhook URL: %w", err)
 		}
 
-		componentList := &compapiv1alpha1.ComponentList{}
+		componentList := &compv1alpha1.ComponentList{}
 		if err := r.Client.List(ctx, componentList, &client.ListOptions{Namespace: component.Namespace}); err != nil {
+			log.Error(err, "failed to list components")
+			return err
+		}
+		// TODO remove after only new model is used and old model is gone
+		componentListOld := &compapiv1alpha1.ComponentList{}
+		if err := r.Client.List(ctx, componentListOld, &client.ListOptions{Namespace: component.Namespace}); err != nil {
 			log.Error(err, "failed to list components")
 			return err
 		}
 
 		sameRepoUsed := false
 		for _, comp := range componentList.Items {
-			if comp.Name == component.Name {
+			// Skip components marked for removal
+			if comp.DeletionTimestamp != nil {
 				continue
 			}
-			componentUrl := getGitRepoUrl(comp, newModel)
+			componentUrl := getGitRepoUrl(comp)
+			if componentUrl == repoUrl {
+				sameRepoUsed = true
+				break
+			}
+		}
+		// TODO remove after only new model is used and old model is gone
+		for _, comp := range componentListOld.Items {
+			// Skip components marked for removal
+			if comp.DeletionTimestamp != nil {
+				continue
+			}
+			componentUrl := getGitRepoUrlOldModel(comp)
 			if componentUrl == repoUrl {
 				sameRepoUsed = true
 				break
@@ -907,15 +1013,13 @@ func (r *ComponentBuildReconciler) RemovePacWebhook(ctx context.Context, compone
 // It first closes any unmerged MRs by deleting their source branches.
 // If the pipeline runs were already merged, it creates a new merge request to delete the pipeline run files.
 // Does not delete the GitHub application from the repository as its installation was done manually by the user.
-// TODO remove newModel handling after only new model is used
-func (r *ComponentBuildReconciler) RemovePipelineRunsFromRepository(ctx context.Context, component *compapiv1alpha1.Component, versionInfo *VersionInfo, gitClient gp.GitProviderClient, pacConfig map[string][]byte) error {
+func (r *ComponentBuildReconciler) RemovePipelineRunsFromRepository(ctx context.Context, component *compv1alpha1.Component, versionInfo *VersionInfo, gitClient gp.GitProviderClient, pacConfig map[string][]byte) error {
 	log := ctrllog.FromContext(ctx)
-	newModel := true
 
 	log.Info("Starting Pipelines as Code unprovision for the Component", "componentName", component.Name, "versionName", versionInfo.OriginalVersion)
 
-	gitProvider, _ := getGitProvider(*component, newModel)
-	repoUrl := getGitRepoUrl(*component, newModel)
+	gitProvider, _ := getGitProvider(*component)
+	repoUrl := getGitRepoUrl(*component)
 
 	sourceBranch := generateMergeRequestSourceBranch(component, versionInfo.SanitizedVersion)
 
@@ -1014,13 +1118,12 @@ func (r *ComponentBuildReconciler) RemovePipelineRunsFromRepository(ctx context.
 // Deletes PaC webhook if it's used.
 // Does not delete PaC GitHub application from the repository as its installation was done manually by the user.
 // Returns merge request web URL or empty string if it's not needed.
-// TODO remove after only new model is used
-func (r *ComponentBuildReconciler) UnconfigureRepositoryForPacOldModel(ctx context.Context, component *compapiv1alpha1.Component, pacConfig map[string][]byte, webhookTargetUrl string) (baseBranch string, prUrl string, action string, err error) {
+// TODO remove after only new model is used and old model is gone
+func (r *ComponentBuildReconcilerOldModel) UnconfigureRepositoryForPacOldModel(ctx context.Context, component *compapiv1alpha1.Component, pacConfig map[string][]byte, webhookTargetUrl string) (baseBranch string, prUrl string, action string, err error) {
 	log := ctrllog.FromContext(ctx)
-	newModel := false
 
-	gitProvider, _ := getGitProvider(*component, newModel)
-	repoUrl := getGitRepoUrl(*component, newModel)
+	gitProvider, _ := getGitProviderOldModel(*component)
+	repoUrl := getGitRepoUrlOldModel(*component)
 
 	gitClient, err := gitproviderfactory.CreateGitClient(gitproviderfactory.GitClientConfig{
 		PacSecretData: pacConfig,
@@ -1044,13 +1147,30 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPacOldModel(ctx conte
 			log.Error(err, "failed to list components")
 			return "", "", "", err
 		}
+		componentListNew := &compv1alpha1.ComponentList{}
+		if err := r.Client.List(ctx, componentListNew, &client.ListOptions{Namespace: component.Namespace}); err != nil {
+			log.Error(err, "failed to list components")
+			return "", "", "", err
+		}
 
 		sameRepoUsed := false
 		for _, comp := range componentList.Items {
-			if comp.Name == component.Name {
+			// Skip components marked for removal
+			if comp.DeletionTimestamp != nil {
 				continue
 			}
-			componentUrl := getGitRepoUrl(comp, newModel)
+			componentUrl := getGitRepoUrlOldModel(comp)
+			if componentUrl == repoUrl {
+				sameRepoUsed = true
+				break
+			}
+		}
+		for _, comp := range componentListNew.Items {
+			// Skip components marked for removal
+			if comp.DeletionTimestamp != nil {
+				continue
+			}
+			componentUrl := getGitRepoUrl(comp)
 			if componentUrl == repoUrl {
 				sameRepoUsed = true
 				break
@@ -1070,7 +1190,7 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPacOldModel(ctx conte
 		}
 	}
 
-	sourceBranch := generateMergeRequestSourceBranch(component, "")
+	sourceBranch := generateMergeRequestSourceBranchOldModel(component)
 	baseBranch = component.Spec.Source.GitSource.Revision
 	if baseBranch == "" {
 		baseBranch = defaultBranch
@@ -1113,8 +1233,8 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPacOldModel(ctx conte
 			AuthorName:     "konflux",
 			AuthorEmail:    konfluxAuthorEmail,
 			Files: []gp.RepositoryFile{
-				{FullPath: getPipelineRunDefinitionFilePath(component.Name, "", false)},
-				{FullPath: getPipelineRunDefinitionFilePath(component.Name, "", true)},
+				{FullPath: getPipelineRunDefinitionFilePathOldModel(component.Name, false)},
+				{FullPath: getPipelineRunDefinitionFilePathOldModel(component.Name, true)},
 			},
 		}
 
@@ -1142,22 +1262,22 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPacOldModel(ctx conte
 	return baseBranch, prUrl, action_done, err
 }
 
-// TODO remove newModel handling after only new model is used
 // getGitRepoUrl returns trimmed source url
-func getGitRepoUrl(component compapiv1alpha1.Component, newModel bool) string {
-	if newModel {
-		return strings.TrimSuffix(strings.TrimSuffix(component.Spec.Source.GitURL, "/"), ".git")
-	} else {
-		return strings.TrimSuffix(strings.TrimSuffix(component.Spec.Source.GitSource.URL, "/"), ".git")
-	}
+func getGitRepoUrl(component compv1alpha1.Component) string {
+	return strings.TrimSuffix(strings.TrimSuffix(component.Spec.Source.GitURL, "/"), ".git")
 }
 
-// TODO remove newModel handling after only new model is used
+// TODO remove after only new model is used and old model is gone
+// getGitRepoUrlOldModel returns trimmed source url
+func getGitRepoUrlOldModel(component compapiv1alpha1.Component) string {
+	return strings.TrimSuffix(strings.TrimSuffix(component.Spec.Source.GitSource.URL, "/"), ".git")
+}
+
 // validateGitSourceUrl validates if component.Spec.Source.GitSource.URL is valid git url
 // https://github.com/owner/repository is valid
 // https://github.com/owner is invalid
-func validateGitSourceUrl(component compapiv1alpha1.Component, gitProvider string, newModel bool) error {
-	sourceUrl := getGitRepoUrl(component, newModel)
+func validateGitSourceUrl(component compv1alpha1.Component, gitProvider string) error {
+	sourceUrl := getGitRepoUrl(component)
 	gitUrl, err := url.Parse(sourceUrl)
 	if err != nil {
 		return err
@@ -1187,18 +1307,46 @@ func validateGitSourceUrl(component compapiv1alpha1.Component, gitProvider strin
 	return nil
 }
 
-// TODO remove newModel handling after only new model is used
+// TODO remove after only new model is used and old model is gone
+// validateGitSourceUrlOldModel validates if component.Spec.Source.GitSource.URL is valid git url
+// https://github.com/owner/repository is valid
+// https://github.com/owner is invalid
+func validateGitSourceUrlOldModel(component compapiv1alpha1.Component, gitProvider string) error {
+	sourceUrl := getGitRepoUrlOldModel(component)
+	gitUrl, err := url.Parse(sourceUrl)
+	if err != nil {
+		return err
+	}
+	shouldFail := false
+	gitSourceUrlPathParts := strings.Split(strings.TrimSuffix(strings.TrimPrefix(gitUrl.Path, "/"), "/"), "/")
+	if len(gitSourceUrlPathParts) < 2 {
+		shouldFail = true
+	}
+
+	if gitProvider == "github" {
+		if len(gitSourceUrlPathParts) > 2 {
+			shouldFail = true
+		}
+	}
+
+	if gitProvider == "gitlab" {
+		if slices.Contains(gitSourceUrlPathParts, "-") {
+			shouldFail = true
+		}
+	}
+
+	if shouldFail {
+		err := fmt.Errorf("git source URL is not valid git URL '%s' for %s Component in %s namespace", sourceUrl, component.Name, component.Namespace)
+		return err
+	}
+	return nil
+}
+
 // getGitProvider returns git provider name based on the repository url or the git-provider annotation
-func getGitProvider(component compapiv1alpha1.Component, newModel bool) (string, error) {
+func getGitProvider(component compv1alpha1.Component) (string, error) {
 	allowedGitProviders := []string{"github", "gitlab", "forgejo"}
-	if newModel {
-		if component.Spec.Source.GitURL == "" {
-			return "", boerrors.NewBuildOpError(boerrors.EWrongGitSourceUrl, fmt.Errorf("git source URL is not set for %s Component in %s namespace", component.Name, component.Namespace))
-		}
-	} else {
-		if component.Spec.Source.GitSource == nil {
-			return "", boerrors.NewBuildOpError(boerrors.EWrongGitSourceUrl, fmt.Errorf("git source URL is not set for %s Component in %s namespace", component.Name, component.Namespace))
-		}
+	if component.Spec.Source.GitURL == "" {
+		return "", boerrors.NewBuildOpError(boerrors.EWrongGitSourceUrl, fmt.Errorf("git source URL is not set for %s Component in %s namespace", component.Name, component.Namespace))
 	}
 
 	gitProvider := component.GetAnnotations()[GitProviderAnnotationName]
@@ -1211,20 +1359,14 @@ func getGitProvider(component compapiv1alpha1.Component, newModel bool) (string,
 	}
 
 	if gitProvider == "" {
-		var sourceUrl string
-		if newModel {
-			sourceUrl = component.Spec.Source.GitURL
-		} else {
-			sourceUrl = component.Spec.Source.GitSource.URL
-		}
-		var host string
+		sourceUrl := component.Spec.Source.GitURL
 
 		// sourceUrl example: https://github.com/konflux-ci/build-service
 		u, err := url.Parse(sourceUrl)
 		if err != nil {
 			return "", boerrors.NewBuildOpError(boerrors.EWrongGitSourceUrl, err)
 		}
-		host = u.Hostname()
+		host := u.Hostname()
 
 		for _, provider := range allowedGitProviders {
 			if strings.Contains(host, provider) {
@@ -1243,7 +1385,59 @@ func getGitProvider(component compapiv1alpha1.Component, newModel bool) (string,
 	}
 
 	// validate gitsource URL
-	err := validateGitSourceUrl(component, gitProvider, newModel)
+	err := validateGitSourceUrl(component, gitProvider)
+	if err != nil {
+		return "", boerrors.NewBuildOpError(boerrors.EWrongGitSourceUrl, err)
+	}
+
+	return gitProvider, nil
+}
+
+// TODO remove after only new model is used and old model is gone
+// getGitProviderOldModel returns git provider name based on the repository url or the git-provider annotation
+func getGitProviderOldModel(component compapiv1alpha1.Component) (string, error) {
+	allowedGitProviders := []string{"github", "gitlab", "forgejo"}
+	if component.Spec.Source.GitSource == nil {
+		return "", boerrors.NewBuildOpError(boerrors.EWrongGitSourceUrl, fmt.Errorf("git source URL is not set for %s Component in %s namespace", component.Name, component.Namespace))
+	}
+
+	gitProvider := component.GetAnnotations()[GitProviderAnnotationName]
+	// Gitea is API-compatible with Forgejo, treat "gitea" as "forgejo"
+	if gitProvider == "gitea" {
+		gitProvider = "forgejo"
+	}
+	if gitProvider != "" && !slices.Contains(allowedGitProviders, gitProvider) {
+		return "", boerrors.NewBuildOpError(boerrors.EUnknownGitProvider, fmt.Errorf(`unsupported "%s" annotation value: %s`, GitProviderAnnotationName, gitProvider))
+	}
+
+	if gitProvider == "" {
+		sourceUrl := component.Spec.Source.GitSource.URL
+
+		// sourceUrl example: https://github.com/konflux-ci/build-service
+		u, err := url.Parse(sourceUrl)
+		if err != nil {
+			return "", boerrors.NewBuildOpError(boerrors.EWrongGitSourceUrl, err)
+		}
+		host := u.Hostname()
+
+		for _, provider := range allowedGitProviders {
+			if strings.Contains(host, provider) {
+				gitProvider = provider
+				break
+			}
+		}
+		// Gitea is API-compatible with Forgejo, detect "gitea" in hostname as "forgejo"
+		if gitProvider == "" && strings.Contains(host, "gitea") {
+			gitProvider = "forgejo"
+		}
+	}
+
+	if gitProvider == "" {
+		return "", boerrors.NewBuildOpError(boerrors.EUnknownGitProvider, fmt.Errorf(`failed to determine git provider, please set the "%s" annotation on the component`, GitProviderAnnotationName))
+	}
+
+	// validate gitsource URL
+	err := validateGitSourceUrlOldModel(component, gitProvider)
 	if err != nil {
 		return "", boerrors.NewBuildOpError(boerrors.EWrongGitSourceUrl, err)
 	}
