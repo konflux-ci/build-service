@@ -1124,10 +1124,10 @@ func createBuildPipelineRun(name, namespace, component, imageBuiltFrom string) *
 		},
 	}
 	run := tektonapi.PipelineRun{}
-	run.Labels = map[string]string{ComponentNameLabelName: component, PipelineRunTypeLabelName: PipelineRunBuildType}
-	run.Annotations = map[string]string{PacEventTypeAnnotationName: PacEventPushType, NudgeFilesAnnotationName: ".*Dockerfile.*, .*.yaml, .*Containerfile.*", gitRepoAtShaAnnotationName: "https://github.com/foo/bar/-/tree/4b00cdb6ceb84d3953d8987e3e06f967a6d86e76"}
+	run.Labels = map[string]string{ComponentNameLabelNameOldModel: component, ApplicationNameLabelName: HASAppName, PipelineRunTypeLabelNameOldModel: PipelineRunBuildType}
+	run.Annotations = map[string]string{PacEventTypeAnnotationName: PacEventPushType, NudgeFilesAnnotationName: ".*Dockerfile.*, .*.yaml, .*Containerfile.*", gitRepoAtShaAnnotationNameOldModel: "https://github.com/foo/bar/-/tree/4b00cdb6ceb84d3953d8987e3e06f967a6d86e76"}
 	if imageBuiltFrom != "" {
-		run.Annotations[gitRepoAtShaAnnotationName] = imageBuiltFrom
+		run.Annotations[gitRepoAtShaAnnotationNameOldModel] = imageBuiltFrom
 	}
 	run.Namespace = namespace
 	run.Name = name

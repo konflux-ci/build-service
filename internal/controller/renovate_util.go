@@ -1,4 +1,4 @@
-// TODO remove whole file after only new model is used
+// TODO remove whole file after only new model is used and old model is gone
 package controllers
 
 import (
@@ -160,18 +160,17 @@ func NewComponentDependenciesUpdater(client client.Client, scheme *runtime.Schem
 // GetUpdateTargetsBasicAuth This method returns targets for components based on basic auth
 func (u ComponentDependenciesUpdater) GetUpdateTargetsBasicAuth(ctx context.Context, componentList []compapiv1alpha1.Component, imageRepositoryHost, imageRepositoryUsername, imageRepositoryPassword string) []updateTarget {
 	log := logger.FromContext(ctx)
-	newModel := false
 	targetsToUpdate := []updateTarget{}
 
 	for _, comp := range componentList {
 		component := comp
-		gitProvider, err := getGitProvider(component, newModel)
+		gitProvider, err := getGitProviderOldModel(component)
 		if err != nil {
 			log.Error(err, "error detecting git provider", "ComponentName", component.Name, "ComponentNamespace", component.Namespace)
 			continue
 		}
 
-		repoUrl := getGitRepoUrl(component, newModel)
+		repoUrl := getGitRepoUrlOldModel(component)
 		scmComponent, err := git.NewScmComponent(gitProvider, repoUrl, component.Spec.Source.GitSource.Revision, component.Name, component.Namespace)
 		if err != nil {
 			log.Error(err, "error parsing component", "ComponentName", component.Name, "ComponentNamespace", component.Namespace)
@@ -247,7 +246,6 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsBasicAuth(ctx context.Cont
 // GetUpdateTargetsGithubApp This method returns targets for components based on github app
 func (u ComponentDependenciesUpdater) GetUpdateTargetsGithubApp(ctx context.Context, componentList []compapiv1alpha1.Component, imageRepositoryHost, imageRepositoryUsername, imageRepositoryPassword string) []updateTarget {
 	log := logger.FromContext(ctx)
-	newModel := false
 	// Check if GitHub Application is used, if not then skip
 	pacSecret := corev1.Secret{}
 	globalPaCSecretKey := types.NamespacedName{Namespace: common.BuildServiceNamespaceName, Name: common.PipelinesAsCodeGitHubAppSecretName}
@@ -282,7 +280,7 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsGithubApp(ctx context.Cont
 			continue
 		}
 
-		gitProvider, err := getGitProvider(component, newModel)
+		gitProvider, err := getGitProviderOldModel(component)
 		if err != nil {
 			log.Error(err, "error detecting git provider", "ComponentName", component.Name, "ComponentNamespace", component.Namespace)
 			continue
@@ -293,7 +291,7 @@ func (u ComponentDependenciesUpdater) GetUpdateTargetsGithubApp(ctx context.Cont
 
 		gitSource := component.Spec.Source.GitSource
 
-		url := getGitRepoUrl(component, newModel)
+		url := getGitRepoUrlOldModel(component)
 		log.Info("getting app installation for component repository", "ComponentName", component.Name, "ComponentNamespace", component.Namespace, "RepositoryUrl", url)
 		githubAppInstallation, slugTmp, err := github.GetAppInstallationsForRepository(githubAppIdStr, privateKey, url)
 		if err != nil {
