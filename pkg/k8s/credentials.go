@@ -18,7 +18,6 @@ import (
 	"github.com/konflux-ci/build-service/pkg/common"
 	"github.com/konflux-ci/build-service/pkg/git"
 	"github.com/konflux-ci/build-service/pkg/git/credentials"
-	bslices "github.com/konflux-ci/build-service/pkg/slices"
 )
 
 type ConfigReader struct {
@@ -100,8 +99,8 @@ func (k *GitCredentialProvider) LookupSecret(ctx context.Context, component *git
 		return nil, fmt.Errorf("failed to list Pipelines as Code secrets in %s namespace: %w", component.NamespaceName(), err)
 	}
 	log.Info("found secrets", "count", len(secretList.Items))
-	secretsWithCredentialsCandidates := bslices.Filter(secretList.Items, func(secret corev1.Secret) bool {
-		return secret.Type == secretType && len(secret.Data) > 0
+	secretsWithCredentialsCandidates := slices.DeleteFunc(slices.Clone(secretList.Items), func(secret corev1.Secret) bool {
+		return secret.Type != secretType || len(secret.Data) == 0
 	})
 	secretWithCredential := bestMatchingSecret(ctx, component.Repository(), secretsWithCredentialsCandidates)
 	if secretWithCredential != nil {
@@ -153,7 +152,7 @@ func bestMatchingSecret(ctx context.Context, componentRepository string, secrets
 		wildcardRepos := slices.DeleteFunc(slices.Clone(secretRepositories), func(s string) bool { return !strings.HasSuffix(s, "*") })
 
 		for _, repo := range wildcardRepos {
-			i := bslices.Intersection(componentRepoParts, strings.Split(strings.TrimSuffix(repo, "*"), "/"))
+			i := orderedPrefixIntersection(componentRepoParts, strings.Split(strings.TrimSuffix(repo, "*"), "/"))
 			if i > 0 && potentialMatches[index] < i {
 				// Add whole secret index to potential matches
 				potentialMatches[index] = i
@@ -180,4 +179,19 @@ func bestMatchingSecret(ctx context.Context, componentRepository string, secrets
 
 	log.Info("Using host only secret based on potential matches", "name", secrets[bestIndex].Name)
 	return &secrets[bestIndex]
+}
+
+// orderedPrefixIntersection returns the number of elements that match
+// between two slices starting from index 0, stopping at the first mismatch.
+// e.g. orderedPrefixIntersection(["a","b","c"], ["a","b","d"]) == 2
+func orderedPrefixIntersection(s1, s2 []string) int {
+	var count int
+	for i, e1 := range s1 {
+		if i < len(s2) && e1 == s2[i] {
+			count++
+		} else {
+			break
+		}
+	}
+	return count
 }
