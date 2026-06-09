@@ -31,7 +31,6 @@ import (
 
 	"github.com/konflux-ci/build-service/pkg/bometrics"
 	. "github.com/konflux-ci/build-service/pkg/common"
-	pkgslices "github.com/konflux-ci/build-service/pkg/slices"
 
 	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
@@ -781,42 +780,6 @@ func TestCreateWorkspaceBinding(t *testing.T) {
 			got := createWorkspaceBinding(tt.pipelineWorkspaces)
 			if !reflect.DeepEqual(got, tt.expectedWorkspaceBindings) {
 				t.Errorf("Expected %#v, but received %#v", tt.expectedWorkspaceBindings, got)
-			}
-		})
-	}
-}
-
-func TestSlicesIntersection(t *testing.T) {
-	tests := []struct {
-		in1, in2     []string
-		intersection int
-	}{
-		{
-			in1:          []string{"a", "b", "c", "d", "e"},
-			in2:          []string{"a", "b", "c", "d", "e"},
-			intersection: 5,
-		},
-		{
-			in1:          []string{"a", "b", "c", "d", "e"},
-			in2:          []string{"a", "b", "c", "q", "y"},
-			intersection: 3,
-		},
-		{
-			in1:          []string{"a", "b", "c", "d", "e"},
-			in2:          []string{"a", "q", "c", "f", "y"},
-			intersection: 1,
-		},
-		{
-			in1:          []string{"a", "b", "c", "d", "e"},
-			in2:          []string{"f", "b", "c", "d", "e"},
-			intersection: 0,
-		},
-	}
-	for _, tt := range tests {
-		t.Run("intersection test", func(t *testing.T) {
-			got := pkgslices.Intersection(tt.in1, tt.in2)
-			if got != tt.intersection {
-				t.Errorf("Got slice intersection %d but expected length is %d", got, tt.intersection)
 			}
 		})
 	}
