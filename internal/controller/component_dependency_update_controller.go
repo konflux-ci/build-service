@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// TODO remove whole file after only new model is used
+// TODO remove whole file after only new model is used and old model is gone
 package controllers
 
 import (

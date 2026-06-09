@@ -12,7 +12,9 @@ linters:
     - canonicalheader
     - contextcheck
     - copyloopvar
-    - dupl
+    # dupl disabled temporarily: old/new model controllers contain intentional duplicates;
+    # re-enable once migration to new Component model (v2) is complete.
+    # - dupl
     - dupword
     - errcheck
     - errname

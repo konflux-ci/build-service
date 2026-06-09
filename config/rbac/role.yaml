@@ -54,7 +54,6 @@ rules:
   - appstudio.redhat.com
   resources:
   - components
-  - components/status
   verbs:
   - get
   - list
@@ -64,12 +63,24 @@ rules:
 - apiGroups:
   - appstudio.redhat.com
   resources:
+  - components/status
   - imagerepositories
   - imagerepositories/status
   - releaseplanadmissions
   verbs:
   - get
   - list
+  - watch
+- apiGroups:
+  - konflux-ci.dev
+  resources:
+  - components
+  - components/status
+  verbs:
+  - get
+  - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - pipelinesascode.tekton.dev

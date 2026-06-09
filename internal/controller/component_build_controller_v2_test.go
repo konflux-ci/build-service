@@ -30,11 +30,12 @@ import (
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
+	compv1alpha1 "github.com/konflux-ci/build-service/api/konflux/v1alpha1"
 	"github.com/konflux-ci/build-service/pkg/boerrors"
 	. "github.com/konflux-ci/build-service/pkg/common"
 	gp "github.com/konflux-ci/build-service/pkg/git/gitprovider"
@@ -274,11 +275,11 @@ var _ = Describe("Component build controller new model", func() {
 
 			component := getComponentData(componentConfig{
 				componentKey: component1Key,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: "v1", Revision: "main"},
 				},
-				actions: compapiv1alpha1.ComponentActions{
-					CreateConfiguration: compapiv1alpha1.ComponentCreatePipelineConfiguration{
+				actions: compv1alpha1.ComponentActions{
+					CreateConfiguration: compv1alpha1.ComponentCreatePipelineConfiguration{
 						AllVersions: true,
 					},
 				},
@@ -310,7 +311,7 @@ var _ = Describe("Component build controller new model", func() {
 		It("should set error status when version name is empty", func() {
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: "", Revision: "main"},
 				},
 			})
@@ -325,7 +326,7 @@ var _ = Describe("Component build controller new model", func() {
 		It("should set error status when version revision is empty", func() {
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: "v1.0", Revision: ""},
 				},
 			})
@@ -340,7 +341,7 @@ var _ = Describe("Component build controller new model", func() {
 		It("should set error status for duplicate sanitized version names", func() {
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: "v1.0", Revision: "main"},    // becomes "v1-0" after sanitization
 					{Name: "v1_0", Revision: "develop"}, // becomes "v1-0" after sanitization
 				},
@@ -377,7 +378,7 @@ var _ = Describe("Component build controller new model", func() {
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
 				gitURL:       "https://gitlab.com/test-org/test-repo",
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: "v1", Revision: "main"},
 				},
 			})
@@ -418,19 +419,19 @@ var _ = Describe("Component build controller new model", func() {
 		It("should set error status when PullAndPush is used with Pull/Push", func() {
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: "v1", Revision: "main"},
 				},
-				actions: compapiv1alpha1.ComponentActions{
-					CreateConfiguration: compapiv1alpha1.ComponentCreatePipelineConfiguration{
+				actions: compv1alpha1.ComponentActions{
+					CreateConfiguration: compv1alpha1.ComponentCreatePipelineConfiguration{
 						AllVersions: true,
 					},
 				},
-				defaultPipeline: &compapiv1alpha1.ComponentBuildPipeline{
-					PullAndPush: &compapiv1alpha1.PipelineDefinition{
+				defaultPipeline: &compv1alpha1.ComponentBuildPipeline{
+					PullAndPush: &compv1alpha1.PipelineDefinition{
 						PipelineRefName: "docker-build",
 					},
-					Pull: &compapiv1alpha1.PipelineDefinition{
+					Pull: &compv1alpha1.PipelineDefinition{
 						PipelineRefName: "docker-build",
 					},
 				},
@@ -446,17 +447,17 @@ var _ = Describe("Component build controller new model", func() {
 		It("should set error status for missing PipelineRefGit required fields", func() {
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: "v1", Revision: "main"},
 				},
-				actions: compapiv1alpha1.ComponentActions{
-					CreateConfiguration: compapiv1alpha1.ComponentCreatePipelineConfiguration{
+				actions: compv1alpha1.ComponentActions{
+					CreateConfiguration: compv1alpha1.ComponentCreatePipelineConfiguration{
 						AllVersions: true,
 					},
 				},
-				defaultPipeline: &compapiv1alpha1.ComponentBuildPipeline{
-					Pull: &compapiv1alpha1.PipelineDefinition{
-						PipelineRefGit: &compapiv1alpha1.PipelineRefGit{
+				defaultPipeline: &compv1alpha1.ComponentBuildPipeline{
+					Pull: &compv1alpha1.PipelineDefinition{
+						PipelineRefGit: &compv1alpha1.PipelineRefGit{
 							Url: "https://github.com/test/pipelines",
 							// Missing PathInRepo and Revision
 						},
@@ -556,10 +557,10 @@ var _ = Describe("Component build controller new model", func() {
 			// Create component with initial settings
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: versionName, Revision: "main"},
 				},
-				repositorySettings: compapiv1alpha1.RepositorySettings{
+				repositorySettings: compv1alpha1.RepositorySettings{
 					CommentStrategy:          "disable_all",
 					GithubAppTokenScopeRepos: []string{"owner/repo1", "owner/repo2"},
 				},
@@ -617,10 +618,10 @@ var _ = Describe("Component build controller new model", func() {
 			// Create component with initial repo list
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: versionName, Revision: "main"},
 				},
-				repositorySettings: compapiv1alpha1.RepositorySettings{
+				repositorySettings: compv1alpha1.RepositorySettings{
 					GithubAppTokenScopeRepos: []string{"owner/repo1", "owner/repo2"},
 				},
 			})
@@ -676,11 +677,11 @@ var _ = Describe("Component build controller new model", func() {
 
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: versionName, Revision: "main"},
 				},
-				actions: compapiv1alpha1.ComponentActions{
-					CreateConfiguration: compapiv1alpha1.ComponentCreatePipelineConfiguration{
+				actions: compv1alpha1.ComponentActions{
+					CreateConfiguration: compv1alpha1.ComponentCreatePipelineConfiguration{
 						Versions: []string{versionName, "nonexistent"},
 					},
 				},
@@ -701,7 +702,7 @@ var _ = Describe("Component build controller new model", func() {
 			// First onboard v1
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: versionName, Revision: "main"},
 				},
 			})
@@ -768,7 +769,7 @@ var _ = Describe("Component build controller new model", func() {
 
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: "v1", Revision: "main"},
 					{Name: "v2", Revision: "develop"},
 				},
@@ -779,7 +780,7 @@ var _ = Describe("Component build controller new model", func() {
 			component = waitForComponentStatusVersions(componentKey, 2)
 
 			// Verify both versions are onboarded with correct status fields
-			versionMap := make(map[string]compapiv1alpha1.ComponentVersionStatus)
+			versionMap := make(map[string]compv1alpha1.ComponentVersionStatus)
 			for _, v := range component.Status.Versions {
 				versionMap[v.Name] = v
 			}
@@ -806,7 +807,7 @@ var _ = Describe("Component build controller new model", func() {
 			// Create component with one version
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: "v1", Revision: "main"},
 				},
 			})
@@ -817,14 +818,14 @@ var _ = Describe("Component build controller new model", func() {
 
 			// Add v2
 			component.Spec.Source.Versions = append(component.Spec.Source.Versions,
-				compapiv1alpha1.ComponentVersion{Name: "v2", Revision: "develop", SkipBuilds: true})
+				compv1alpha1.ComponentVersion{Name: "v2", Revision: "develop", SkipBuilds: true})
 			Expect(k8sClient.Update(ctx, component)).To(Succeed())
 
 			// Wait for v2 to be onboarded
 			component = waitForComponentStatusVersions(componentKey, 2)
 
 			// Verify both versions are in status with correct status fields
-			versionMap := make(map[string]compapiv1alpha1.ComponentVersionStatus)
+			versionMap := make(map[string]compv1alpha1.ComponentVersionStatus)
 			for _, v := range component.Status.Versions {
 				versionMap[v.Name] = v
 			}
@@ -864,7 +865,7 @@ var _ = Describe("Component build controller new model", func() {
 			// Create component with two versions
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: version1Name, Revision: "main"},
 					{Name: version2Name, Revision: "develop", SkipBuilds: true},
 				},
@@ -881,7 +882,7 @@ var _ = Describe("Component build controller new model", func() {
 			verifyComponentVersionStatus(component.Status.Versions[1], version2Name, "develop", "succeeded", "", "", true)
 
 			// Remove v2
-			component.Spec.Source.Versions = []compapiv1alpha1.ComponentVersion{
+			component.Spec.Source.Versions = []compv1alpha1.ComponentVersion{
 				{Name: version1Name, Revision: "main"},
 			}
 			Expect(k8sClient.Update(ctx, component)).To(Succeed())
@@ -923,7 +924,7 @@ var _ = Describe("Component build controller new model", func() {
 			// Create default component with default git URL
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: versionName, Revision: "main", SkipBuilds: true},
 				},
 			})
@@ -944,7 +945,7 @@ var _ = Describe("Component build controller new model", func() {
 			component1 := getComponentData(componentConfig{
 				componentKey: component1Key,
 				gitURL:       sharedGitURL,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: versionName, Revision: "main", SkipBuilds: true},
 				},
 			})
@@ -971,7 +972,7 @@ var _ = Describe("Component build controller new model", func() {
 			component2 := getComponentData(componentConfig{
 				componentKey: component2Key,
 				gitURL:       sharedGitURL,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: versionName, Revision: "main"},
 				},
 			})
@@ -1051,7 +1052,7 @@ var _ = Describe("Component build controller new model", func() {
 		It("should handle component with no versions defined", func() {
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions:     []compapiv1alpha1.ComponentVersion{},
+				versions:     []compv1alpha1.ComponentVersion{},
 			})
 			component = createComponent(component)
 
@@ -1065,7 +1066,7 @@ var _ = Describe("Component build controller new model", func() {
 		It("should handle version names with special characters", func() {
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: "v1.0-beta+build.123", Revision: "main"},
 				},
 			})
@@ -1085,7 +1086,7 @@ var _ = Describe("Component build controller new model", func() {
 		It("should handle updating version revision", func() {
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: "v1", Revision: "main"},
 				},
 			})
@@ -1120,7 +1121,7 @@ var _ = Describe("Component build controller new model", func() {
 		It("should handle updating version skip builds", func() {
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: "v1", Revision: "main"},
 				},
 			})
@@ -1206,7 +1207,7 @@ var _ = Describe("Component build controller new model", func() {
 			// 2 versions with the same revision, but one has skip builds, it will result in not skipping builds for that revision
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: "v1", Revision: "main", SkipBuilds: true},
 					{Name: "v2", Revision: "main"},
 				},
@@ -1300,7 +1301,7 @@ var _ = Describe("Component build controller new model", func() {
 			// Create component with invalid spec
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: "", Revision: "main"},
 				},
 			})
@@ -1333,7 +1334,7 @@ var _ = Describe("Component build controller new model", func() {
 			// Create component with one version
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: "v1", Revision: "main"},
 				},
 			})
@@ -1386,7 +1387,7 @@ var _ = Describe("Component build controller new model", func() {
 			// Create component with two versions (SkipOffboardingPr=true)
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: version1Name, Revision: "main", SkipBuilds: true},
 					{Name: version2Name, Revision: "develop"},
 				},
@@ -1404,7 +1405,7 @@ var _ = Describe("Component build controller new model", func() {
 			validatePaCRepository(component, "", "", skipBuildsMap)
 
 			// Remove v2 from spec and remove skip builds from v1
-			component.Spec.Source.Versions = []compapiv1alpha1.ComponentVersion{
+			component.Spec.Source.Versions = []compv1alpha1.ComponentVersion{
 				{Name: version1Name, Revision: "main"},
 			}
 			Expect(k8sClient.Update(ctx, component)).To(Succeed())
@@ -1483,7 +1484,7 @@ var _ = Describe("Component build controller new model", func() {
 			// Create component with two versions without SkipOffboardingPr
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: version1Name, Revision: "main"},
 					{Name: version2Name, Revision: "develop"},
 				},
@@ -1495,7 +1496,7 @@ var _ = Describe("Component build controller new model", func() {
 			component = waitForComponentStatusVersions(componentKey, 2)
 
 			// Remove v2 from spec (trigger offboarding with purge PR)
-			component.Spec.Source.Versions = []compapiv1alpha1.ComponentVersion{
+			component.Spec.Source.Versions = []compv1alpha1.ComponentVersion{
 				{Name: version1Name, Revision: "main"},
 			}
 			Expect(k8sClient.Update(ctx, component)).To(Succeed())
@@ -1561,7 +1562,7 @@ var _ = Describe("Component build controller new model", func() {
 			// Create component with three versions
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: version1Name, Revision: "branch-v1"},
 					{Name: version2Name, Revision: "branch-v2"},
 					{Name: version3Name, Revision: "branch-v3"},
@@ -1573,7 +1574,7 @@ var _ = Describe("Component build controller new model", func() {
 			component = waitForComponentStatusVersions(componentKey, 3)
 
 			// Remove v2 and v3 versions from spec (trigger offboarding for both)
-			component.Spec.Source.Versions = []compapiv1alpha1.ComponentVersion{
+			component.Spec.Source.Versions = []compv1alpha1.ComponentVersion{
 				{Name: version1Name, Revision: "branch-v1"},
 			}
 			Expect(k8sClient.Update(ctx, component)).To(Succeed())
@@ -1601,7 +1602,7 @@ var _ = Describe("Component build controller new model", func() {
 			Expect(v3PurgePRAttempted).To(BeTrue(), "v3 version offboarding should have been attempted")
 
 			// Verify version states
-			versionMap := make(map[string]compapiv1alpha1.ComponentVersionStatus)
+			versionMap := make(map[string]compv1alpha1.ComponentVersionStatus)
 			for _, v := range component.Status.Versions {
 				versionMap[v.Name] = v
 			}
@@ -1727,12 +1728,12 @@ var _ = Describe("Component build controller new model", func() {
 
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: version1Name, Revision: "main"},
 					{Name: version2Name, Revision: "develop"},
 				},
-				actions: compapiv1alpha1.ComponentActions{
-					CreateConfiguration: compapiv1alpha1.ComponentCreatePipelineConfiguration{
+				actions: compv1alpha1.ComponentActions{
+					CreateConfiguration: compv1alpha1.ComponentCreatePipelineConfiguration{
 						AllVersions: true,
 					},
 				},
@@ -1756,7 +1757,7 @@ var _ = Describe("Component build controller new model", func() {
 			}, timeout, interval).Should(BeTrue())
 
 			// Verify both versions are onboarded with correct PR URLs
-			versionMap := make(map[string]compapiv1alpha1.ComponentVersionStatus)
+			versionMap := make(map[string]compv1alpha1.ComponentVersionStatus)
 			for _, v := range component.Status.Versions {
 				versionMap[v.Name] = v
 			}
@@ -1847,19 +1848,19 @@ spec:
 
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{
 						Name:     versionName,
 						Revision: "main",
-						BuildPipeline: &compapiv1alpha1.ComponentBuildPipeline{
-							Pull: &compapiv1alpha1.PipelineDefinition{
+						BuildPipeline: &compv1alpha1.ComponentBuildPipeline{
+							Pull: &compv1alpha1.PipelineDefinition{
 								PipelineRefName: "custom-pull-pipeline",
 							},
 						},
 					},
 				},
-				actions: compapiv1alpha1.ComponentActions{
-					CreateConfiguration: compapiv1alpha1.ComponentCreatePipelineConfiguration{
+				actions: compv1alpha1.ComponentActions{
+					CreateConfiguration: compv1alpha1.ComponentCreatePipelineConfiguration{
 						Version: versionName,
 					},
 				},
@@ -1980,13 +1981,13 @@ spec:
 
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{
 						Name:     versionName,
 						Revision: "main",
-						BuildPipeline: &compapiv1alpha1.ComponentBuildPipeline{
-							Push: &compapiv1alpha1.PipelineDefinition{
-								PipelineRefGit: &compapiv1alpha1.PipelineRefGit{
+						BuildPipeline: &compv1alpha1.ComponentBuildPipeline{
+							Push: &compv1alpha1.PipelineDefinition{
+								PipelineRefGit: &compv1alpha1.PipelineRefGit{
 									Url:        "https://github.com/custom-pipelines/pipelines.git",
 									Revision:   "main",
 									PathInRepo: "pipelines/push.yaml",
@@ -1995,8 +1996,8 @@ spec:
 						},
 					},
 				},
-				actions: compapiv1alpha1.ComponentActions{
-					CreateConfiguration: compapiv1alpha1.ComponentCreatePipelineConfiguration{
+				actions: compv1alpha1.ComponentActions{
+					CreateConfiguration: compv1alpha1.ComponentCreatePipelineConfiguration{
 						Versions: []string{versionName},
 					},
 				},
@@ -2079,20 +2080,20 @@ spec:
 
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: version1Name, Revision: "main"},
 					{Name: version2Name, Revision: "develop"},
 				},
-				defaultPipeline: &compapiv1alpha1.ComponentBuildPipeline{
-					PullAndPush: &compapiv1alpha1.PipelineDefinition{
-						PipelineSpecFromBundle: &compapiv1alpha1.PipelineSpecFromBundle{
+				defaultPipeline: &compv1alpha1.ComponentBuildPipeline{
+					PullAndPush: &compv1alpha1.PipelineDefinition{
+						PipelineSpecFromBundle: &compv1alpha1.PipelineSpecFromBundle{
 							Bundle: "latest",
 							Name:   defaultPipelineName,
 						},
 					},
 				},
-				actions: compapiv1alpha1.ComponentActions{
-					CreateConfiguration: compapiv1alpha1.ComponentCreatePipelineConfiguration{
+				actions: compv1alpha1.ComponentActions{
+					CreateConfiguration: compv1alpha1.ComponentCreatePipelineConfiguration{
 						Versions: []string{version1Name},
 					},
 				},
@@ -2123,7 +2124,7 @@ spec:
 			}, timeout, interval).Should(BeTrue())
 
 			// Verify both versions with correct status
-			versionMap := make(map[string]compapiv1alpha1.ComponentVersionStatus)
+			versionMap := make(map[string]compv1alpha1.ComponentVersionStatus)
 			for _, v := range component.Status.Versions {
 				versionMap[v.Name] = v
 			}
@@ -2208,7 +2209,7 @@ spec:
 			// Create component without any actions initially
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: version1Name, Revision: "main"},
 					{Name: version2Name, Revision: "develop"},
 				},
@@ -2219,7 +2220,7 @@ spec:
 			component = waitForComponentStatusVersions(componentKey, 2)
 
 			// Verify both versions are onboarded without PR URLs
-			versionMap := make(map[string]compapiv1alpha1.ComponentVersionStatus)
+			versionMap := make(map[string]compv1alpha1.ComponentVersionStatus)
 			for _, v := range component.Status.Versions {
 				versionMap[v.Name] = v
 			}
@@ -2257,7 +2258,7 @@ spec:
 			}, timeout, interval).Should(BeTrue())
 
 			// Verify both versions with correct status
-			versionMap = make(map[string]compapiv1alpha1.ComponentVersionStatus)
+			versionMap = make(map[string]compv1alpha1.ComponentVersionStatus)
 			for _, v := range component.Status.Versions {
 				versionMap[v.Name] = v
 			}
@@ -2294,7 +2295,7 @@ spec:
 				return len(component.Status.Versions) == 2
 			}, timeout, interval).Should(BeTrue())
 
-			versionMap = make(map[string]compapiv1alpha1.ComponentVersionStatus)
+			versionMap = make(map[string]compv1alpha1.ComponentVersionStatus)
 			for _, v := range component.Status.Versions {
 				versionMap[v.Name] = v
 			}
@@ -2383,7 +2384,7 @@ spec:
 
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: version1Name, Revision: "main"},
 					{Name: version2Name, Revision: "non-existing-branch"},
 					{Name: version3Name, Revision: "develop"},
@@ -2431,7 +2432,7 @@ spec:
 			}, timeout, interval).Should(BeTrue())
 
 			// Verify all three versions in status with correct states
-			versionMap := make(map[string]compapiv1alpha1.ComponentVersionStatus)
+			versionMap := make(map[string]compv1alpha1.ComponentVersionStatus)
 			for _, v := range component.Status.Versions {
 				versionMap[v.Name] = v
 			}
@@ -2533,7 +2534,7 @@ spec:
 
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: version1Name, Revision: "main"},
 					{Name: version2Name, Revision: "develop"},
 					{Name: version3Name, Revision: "release"},
@@ -2575,7 +2576,7 @@ spec:
 			}, timeout, interval).Should(BeTrue())
 
 			// Verify all three versions in status with correct states
-			versionMap := make(map[string]compapiv1alpha1.ComponentVersionStatus)
+			versionMap := make(map[string]compv1alpha1.ComponentVersionStatus)
 			for _, v := range component.Status.Versions {
 				versionMap[v.Name] = v
 			}
@@ -2656,7 +2657,7 @@ spec:
 			// First onboard versions
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: version1Name, Revision: "main"},
 					{Name: version2Name, Revision: "develop"},
 				},
@@ -2752,7 +2753,7 @@ spec:
 					"git-provider": "gitlab",
 				},
 				gitURL: gitRepoUrl,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: version1Name, Revision: "main"},
 				},
 			})
@@ -2821,7 +2822,7 @@ spec:
 			// First onboard versions
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: version1Name, Revision: "main"},
 					{Name: version2Name, Revision: "develop"},
 					{Name: version3Name, Revision: "release"},
@@ -2912,7 +2913,7 @@ spec:
 			// First onboard versions - all using same revision
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: version1Name, Revision: "main"},
 					{Name: version2Name, Revision: "main"},
 					{Name: version3Name, Revision: "main"},
@@ -3003,7 +3004,7 @@ spec:
 			// First onboard versions
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: version1Name, Revision: "main"},
 					{Name: version2Name, Revision: "develop"},
 					{Name: version3Name, Revision: "release"},
@@ -3020,7 +3021,7 @@ spec:
 
 			// Now add trigger build action and offboard v1 at the same time
 			component.Spec.Actions.TriggerBuilds = []string{version1Name, version2Name}
-			component.Spec.Source.Versions = []compapiv1alpha1.ComponentVersion{
+			component.Spec.Source.Versions = []compv1alpha1.ComponentVersion{
 				{Name: version2Name, Revision: "develop"},
 				{Name: version3Name, Revision: "release"},
 			}
@@ -3060,7 +3061,7 @@ spec:
 			}, timeout, interval).Should(BeTrue())
 
 			// Verify only v2 and v3 remain
-			versionMap := make(map[string]compapiv1alpha1.ComponentVersionStatus)
+			versionMap := make(map[string]compv1alpha1.ComponentVersionStatus)
 			for _, v := range component.Status.Versions {
 				versionMap[v.Name] = v
 			}
@@ -3117,7 +3118,7 @@ spec:
 			// First onboard both versions
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: version1Name, Revision: "main"},
 					{Name: version2Name, Revision: "develop"},
 				},
@@ -3249,7 +3250,7 @@ spec:
 			component1 := getComponentData(componentConfig{
 				componentKey: component1Key,
 				gitURL:       sameGitURL,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: versionName, Revision: "main"},
 				},
 			})
@@ -3266,7 +3267,7 @@ spec:
 			Expect(k8sClient.Get(ctx, webhookSecretKey, webhookSecret)).To(Succeed())
 
 			// Get expected key using the same function as the controller
-			expectedKey := getWebhookSecretKeyForComponent(*component1, true)
+			expectedKey := getWebhookSecretKeyForComponent(*component1)
 			Expect(webhookSecret.Data).To(HaveKey(expectedKey))
 			firstSecretValue := string(webhookSecret.Data[expectedKey])
 			Expect(firstSecretValue).NotTo(BeEmpty())
@@ -3276,7 +3277,7 @@ spec:
 			component2 := getComponentData(componentConfig{
 				componentKey: component2Key,
 				gitURL:       sameGitURL,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: versionName, Revision: "develop"},
 				},
 			})
@@ -3321,7 +3322,7 @@ spec:
 			component1 := getComponentData(componentConfig{
 				componentKey: component1Key,
 				gitURL:       gitURL1,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: versionName, Revision: "main"},
 				},
 			})
@@ -3338,7 +3339,7 @@ spec:
 			webhookSecret := &corev1.Secret{}
 			Expect(k8sClient.Get(ctx, webhookSecretKey, webhookSecret)).To(Succeed())
 
-			expectedKey1 := getWebhookSecretKeyForComponent(*component1, true)
+			expectedKey1 := getWebhookSecretKeyForComponent(*component1)
 			Expect(webhookSecret.Data).To(HaveKey(expectedKey1))
 			secretValue1 := string(webhookSecret.Data[expectedKey1])
 			Expect(secretValue1).NotTo(BeEmpty())
@@ -3348,7 +3349,7 @@ spec:
 			component2 := getComponentData(componentConfig{
 				componentKey: component2Key,
 				gitURL:       gitURL2,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: versionName, Revision: "main"},
 				},
 			})
@@ -3361,7 +3362,7 @@ spec:
 			Expect(k8sClient.Get(ctx, webhookSecretKey, webhookSecret)).To(Succeed())
 			Expect(webhookSecret.Data).To(HaveLen(2), "Should have two webhook secret keys for different repos")
 
-			expectedKey2 := getWebhookSecretKeyForComponent(*component2, true)
+			expectedKey2 := getWebhookSecretKeyForComponent(*component2)
 			Expect(webhookSecret.Data).To(HaveKey(expectedKey1))
 			Expect(webhookSecret.Data).To(HaveKey(expectedKey2))
 
@@ -3405,7 +3406,7 @@ spec:
 		createTokenBasedAuthContextRun := func(data TokenBasedAuthScenario) {
 			Context(data.name, func() {
 				var (
-					component        *compapiv1alpha1.Component
+					component        *compv1alpha1.Component
 					namespace        = data.namespace
 					componentKey     = types.NamespacedName{Name: "test-component", Namespace: namespace}
 					scmSecretKey     = types.NamespacedName{Name: data.scmSecretName, Namespace: namespace}
@@ -3441,7 +3442,7 @@ spec:
 					componentCfg := componentConfig{
 						componentKey: componentKey,
 						gitURL:       gitURL,
-						versions: []compapiv1alpha1.ComponentVersion{
+						versions: []compv1alpha1.ComponentVersion{
 							{Name: "v1", Revision: "main"},
 						},
 					}
@@ -3468,7 +3469,7 @@ spec:
 					webhookSecret := &corev1.Secret{}
 					Expect(k8sClient.Get(ctx, webhookSecretKey, webhookSecret)).To(Succeed())
 
-					expectedKey := getWebhookSecretKeyForComponent(*component, true)
+					expectedKey := getWebhookSecretKeyForComponent(*component)
 					Expect(webhookSecret.Data).To(HaveKey(expectedKey))
 					Expect(string(webhookSecret.Data[expectedKey])).NotTo(BeEmpty())
 
@@ -3499,7 +3500,7 @@ spec:
 					Expect(component.Status.Versions).To(HaveLen(1), "Component should be onboarded")
 
 					// Set CreateConfiguration action
-					component.Spec.Actions.CreateConfiguration = compapiv1alpha1.ComponentCreatePipelineConfiguration{
+					component.Spec.Actions.CreateConfiguration = compv1alpha1.ComponentCreatePipelineConfiguration{
 						AllVersions: true,
 					}
 					Expect(k8sClient.Update(ctx, component)).To(Succeed())
@@ -3613,79 +3614,243 @@ spec:
 			Expect(errors.IsNotFound(err)).To(BeTrue(), "Service account should not be recreated during component deletion")
 		})
 
-		It("should remove incomings from Repository on deletion", func() {
-			versionName := "v1"
+		It("should clean up repository incomings recalculating targets on each component deletion", func() {
+			// Create 3 new model components with different revisions for the same repository
+			comp1Key := types.NamespacedName{Name: "comp1-incoming-cleanup", Namespace: namespace}
+			comp2Key := types.NamespacedName{Name: "comp2-incoming-cleanup", Namespace: namespace}
+			comp3Key := types.NamespacedName{Name: "comp3-incoming-cleanup", Namespace: namespace}
 
-			component := getComponentData(componentConfig{
-				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
-					{Name: versionName, Revision: "main"},
+			gitURL := "https://github.com/test-org/test-repo-incoming-cleanup"
+
+			// Create first component with revision "main"
+			comp1 := getComponentData(componentConfig{
+				componentKey: comp1Key,
+				gitURL:       gitURL,
+				versions: []compv1alpha1.ComponentVersion{
+					{Name: "v1", Revision: "main"},
 				},
 			})
-			component = createComponent(component)
+			createComponent(comp1)
+			waitForComponentStatusVersions(comp1Key, 1)
 
-			// Wait for onboarding to complete
-			Eventually(func() bool {
-				component = getComponent(componentKey)
-				return len(component.Status.Versions) == 1 && len(component.Finalizers) == 1
-			}, timeout, interval).Should(BeTrue())
+			// Create second component with revision "dev"
+			comp2 := getComponentData(componentConfig{
+				componentKey: comp2Key,
+				gitURL:       gitURL,
+				versions: []compv1alpha1.ComponentVersion{
+					{Name: "v1", Revision: "dev"},
+				},
+			})
+			createComponent(comp2)
+			waitForComponentStatusVersions(comp2Key, 1)
 
-			// Verify component version status
-			verifyComponentVersionStatus(component.Status.Versions[0], versionName, "main", "succeeded", "", "", false)
+			// Create third component with revision "feature"
+			comp3 := getComponentData(componentConfig{
+				componentKey: comp3Key,
+				gitURL:       gitURL,
+				versions: []compv1alpha1.ComponentVersion{
+					{Name: "v1", Revision: "feature"},
+				},
+			})
+			createComponent(comp3)
+			waitForComponentStatusVersions(comp3Key, 1)
 
-			// Verify resources were created
-			repositoryName, err := generatePaCRepositoryNameFromGitUrl(component.Spec.Source.GitURL)
+			// Get Repository
+			repositoryName, err := generatePaCRepositoryNameFromGitUrl(gitURL)
 			Expect(err).NotTo(HaveOccurred())
-			repositoryKey := types.NamespacedName{Namespace: component.Namespace, Name: repositoryName}
-
-			// Repository CR should exist
+			repositoryKey := types.NamespacedName{Namespace: namespace, Name: repositoryName}
 			repository := waitPaCRepositoryCreated(repositoryKey)
-			Expect(repository).NotTo(BeNil())
 
-			// Manually add incomings to Repository to test cleanup
-			// (Incomings are normally created during TriggerBuild, but we add them manually here
-			// to test that component deletion properly removes them)
+			// Manually add incomings to Repository with all three revisions
 			incomingSecretName := getPaCIncomingSecretName(repositoryName)
 			incomings := []pacv1alpha1.Incoming{{
 				Type:    "webhook-url",
 				Secret:  pacv1alpha1.Secret{Name: incomingSecretName, Key: pacIncomingSecretKey},
-				Targets: []string{"main"},
+				Targets: []string{"main", "dev", "feature"},
 				Params:  []string{"source_url"},
 			}}
 			repository.Spec.Incomings = &incomings
 			Expect(k8sClient.Update(ctx, repository)).To(Succeed())
 
-			// Verify Repository has incomings
+			// Create incoming secret
+			incomingSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      incomingSecretName,
+					Namespace: namespace,
+				},
+				Type: corev1.SecretTypeOpaque,
+				StringData: map[string]string{
+					pacIncomingSecretKey: "test-webhook-url",
+				},
+			}
+			Expect(k8sClient.Create(ctx, incomingSecret)).To(Succeed())
+
+			// Get repository generation before cleanup update
+			repository = waitPaCRepositoryCreated(repositoryKey)
+			repositoryGen := repository.Generation
+
+			// Phase 1: Delete first component - "main" removed from targets, "dev" and "feature" remain
+			deleteComponent(comp1Key)
+
+			// Wait for Repository to be updated
 			Eventually(func() bool {
-				var repo pacv1alpha1.Repository
-				if err := k8sClient.Get(ctx, repositoryKey, &repo); err != nil {
-					return false
-				}
-				return repo.Spec.Incomings != nil && len(*repo.Spec.Incomings) > 0
+				repo := waitPaCRepositoryCreated(repositoryKey)
+				return repo.Generation != repositoryGen
 			}, timeout, interval).Should(BeTrue())
 
-			// Now delete the component
-			deleteComponent(componentKey)
+			// Targets should be updated to remove "main" (first component's revision)
+			repository = waitPaCRepositoryCreated(repositoryKey)
+			repositoryGen = repository.Generation
+			validatePaCRepositoryIncomings(repository, []string{"dev", "feature"})
 
-			// Incomings should be removed or cleared from Repository
+			// Phase 2: Delete second component - "dev" removed from targets, "feature" remain
+			deleteComponent(comp2Key)
+
+			// Wait for Repository to be updated
 			Eventually(func() bool {
-				var repo pacv1alpha1.Repository
-				if err := k8sClient.Get(ctx, repositoryKey, &repo); err != nil {
-					return false
-				}
-				if repo.Spec.Incomings == nil {
-					return true
-				}
-				// Check that incoming secret for this component is removed or has empty targets
-				for _, incoming := range *repo.Spec.Incomings {
-					if incoming.Secret.Name == incomingSecretName {
-						// Incoming entry exists, check if targets are empty (cleanup completed)
-						return len(incoming.Targets) == 0
-					}
-				}
-				// Incoming entry not found (also acceptable)
-				return true
+				repo := waitPaCRepositoryCreated(repositoryKey)
+				return repo.Generation != repositoryGen
 			}, timeout, interval).Should(BeTrue())
+
+			// Targets should be updated to remove "dev" (second component's revision)
+			repository = waitPaCRepositoryCreated(repositoryKey)
+			repositoryGen = repository.Generation
+			validatePaCRepositoryIncomings(repository, []string{"feature"})
+
+			// Phase 3: Delete third component - "feature" removed from targets, nothing remain
+			deleteComponent(comp3Key)
+
+			// Wait for Repository to be updated
+			Eventually(func() bool {
+				repo := waitPaCRepositoryCreated(repositoryKey)
+				return repo.Generation != repositoryGen
+			}, timeout, interval).Should(BeTrue())
+
+			// Targets should be updated to remove "feature" (third component's revision)
+			repository = waitPaCRepositoryCreated(repositoryKey)
+			validatePaCRepositoryIncomings(repository, []string{})
+
+			deleteComponentAndOwnedResources(comp1Key)
+			deleteComponentAndOwnedResources(comp2Key)
+			deleteComponentAndOwnedResources(comp3Key)
+		})
+
+		// TODO: remove after old model removal
+		It("should clean up repository incomings for dual-group components", func() {
+			// Create 2 old model components and 1 new model component with different revisions for the same repository
+			oldComp1Key := types.NamespacedName{Name: "old-comp1-dual-cleanup", Namespace: namespace}
+			oldComp2Key := types.NamespacedName{Name: "old-comp2-dual-cleanup", Namespace: namespace}
+			newCompKey := types.NamespacedName{Name: "new-comp-dual-cleanup", Namespace: namespace}
+
+			gitURL := "https://github.com/test-org/test-repo-dual-cleanup"
+
+			// Create first old model component with revision "main"
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
+				componentKey: oldComp1Key,
+				annotations:  defaultPipelineAnnotations,
+				gitURL:       gitURL,
+				gitRevision:  "main",
+			}, BuildRequestConfigurePaCAnnotationValue)
+			waitPaCFinalizerOnComponent(oldComp1Key)
+
+			// Create second old model component with revision "dev"
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
+				componentKey: oldComp2Key,
+				annotations:  defaultPipelineAnnotations,
+				gitURL:       gitURL,
+				gitRevision:  "dev",
+			}, BuildRequestConfigurePaCAnnotationValue)
+			waitPaCFinalizerOnComponent(oldComp2Key)
+
+			// Create new model component with revision "feature"
+			newComp := getComponentData(componentConfig{
+				componentKey: newCompKey,
+				gitURL:       gitURL,
+				versions: []compv1alpha1.ComponentVersion{
+					{Name: "v1", Revision: "feature"},
+				},
+			})
+			createComponent(newComp)
+			waitForComponentStatusVersions(newCompKey, 1)
+
+			// Get Repository
+			repositoryName, err := generatePaCRepositoryNameFromGitUrl(gitURL)
+			Expect(err).NotTo(HaveOccurred())
+			repositoryKey := types.NamespacedName{Namespace: namespace, Name: repositoryName}
+			repository := waitPaCRepositoryCreated(repositoryKey)
+
+			// Manually add incomings to Repository with all three revisions
+			incomingSecretName := getPaCIncomingSecretName(repositoryName)
+			incomings := []pacv1alpha1.Incoming{{
+				Type:    "webhook-url",
+				Secret:  pacv1alpha1.Secret{Name: incomingSecretName, Key: pacIncomingSecretKey},
+				Targets: []string{"main", "dev", "feature"},
+				Params:  []string{"source_url"},
+			}}
+			repository.Spec.Incomings = &incomings
+			Expect(k8sClient.Update(ctx, repository)).To(Succeed())
+
+			// Create incoming secret
+			incomingSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      incomingSecretName,
+					Namespace: namespace,
+				},
+				Type: corev1.SecretTypeOpaque,
+				StringData: map[string]string{
+					pacIncomingSecretKey: "test-webhook-url",
+				},
+			}
+			Expect(k8sClient.Create(ctx, incomingSecret)).To(Succeed())
+
+			// Get repository generation before cleanup update
+			repository = waitPaCRepositoryCreated(repositoryKey)
+			repositoryGen := repository.Generation
+
+			// Phase 1: Delete first old model component - "main" removed from targets, "dev" and "feature" remain
+			deleteComponentOldModel(oldComp1Key)
+
+			// Wait for Repository to be updated
+			Eventually(func() bool {
+				repo := waitPaCRepositoryCreated(repositoryKey)
+				return repo.Generation != repositoryGen
+			}, timeout, interval).Should(BeTrue())
+
+			// Targets should be updated to remove "main" (first old model component's revision)
+			repository = waitPaCRepositoryCreated(repositoryKey)
+			repositoryGen = repository.Generation
+			validatePaCRepositoryIncomings(repository, []string{"dev", "feature"})
+
+			// Phase 2: Delete second old model component - "dev" removed from targets, "feature" remain
+			deleteComponentOldModel(oldComp2Key)
+
+			// Wait for Repository to be updated
+			Eventually(func() bool {
+				repo := waitPaCRepositoryCreated(repositoryKey)
+				return repo.Generation != repositoryGen
+			}, timeout, interval).Should(BeTrue())
+
+			// Targets should be updated to remove "dev" (second old component's revision)
+			repository = waitPaCRepositoryCreated(repositoryKey)
+			repositoryGen = repository.Generation
+			validatePaCRepositoryIncomings(repository, []string{"feature"})
+
+			// Phase 3: Delete new model component - "feature" removed from targets, nothing remain
+			deleteComponent(newCompKey)
+
+			// Wait for Repository to be updated
+			Eventually(func() bool {
+				repo := waitPaCRepositoryCreated(repositoryKey)
+				return repo.Generation != repositoryGen
+			}, timeout, interval).Should(BeTrue())
+
+			// Targets should be updated to remove "feature" (new component's revision)
+			repository = waitPaCRepositoryCreated(repositoryKey)
+			validatePaCRepositoryIncomings(repository, []string{})
+
+			deleteComponentAndOwnedResources(oldComp1Key)
+			deleteComponentAndOwnedResources(oldComp2Key)
+			deleteComponentAndOwnedResources(newCompKey)
 		})
 
 		It("should call DeletePaCWebhook on deletion with token auth", func() {
@@ -3706,7 +3871,7 @@ spec:
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
 				gitURL:       "https://gitlab.com/test-org/test-repo",
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: versionName, Revision: "main"},
 				},
 			})
@@ -3734,6 +3899,126 @@ spec:
 			deleteComponent(componentKey)
 
 			// DeletePaCWebhook should be called with token-based auth
+			Eventually(func() bool {
+				return isDeletePaCWebhookCalled
+			}, timeout, interval).Should(BeTrue())
+		})
+
+		It("should not delete webhook when multiple components use same repository", func() {
+			sharedGitURL := "https://gitlab.com/test-org/shared-repo"
+			component1Key := types.NamespacedName{Name: "test-component-1", Namespace: namespace}
+			component2Key := types.NamespacedName{Name: "test-component-2", Namespace: namespace}
+
+			// Create SCM secret for webhook authentication
+			scmSecretKey := types.NamespacedName{Name: "gitlab-token-secret", Namespace: namespace}
+			scmSecretData := map[string]string{
+				"password": "test-token",
+			}
+			labels := map[string]string{
+				"appstudio.redhat.com/credentials": "scm",
+				"appstudio.redhat.com/scm.host":    "gitlab.com",
+			}
+			createSCMSecret(scmSecretKey, scmSecretData, corev1.SecretTypeBasicAuth, nil, labels)
+			defer deleteSecret(scmSecretKey)
+
+			// Create first component with shared Git URL
+			createComponent(getComponentData(componentConfig{
+				componentKey: component1Key,
+				gitURL:       sharedGitURL,
+			}))
+			_ = waitForComponentStatusVersions(component1Key, 1)
+
+			// Create second component with same shared Git URL
+			createComponent(getComponentData(componentConfig{
+				componentKey: component2Key,
+				gitURL:       sharedGitURL,
+			}))
+			_ = waitForComponentStatusVersions(component2Key, 1)
+
+			// Set up DeletePaCWebhook mock to fail if called - webhook should NOT be deleted
+			DeletePaCWebhookFunc = func(repoUrl string, webhookUrl string) error {
+				defer GinkgoRecover()
+				Fail("Should not delete webhook because another component is still using the same repository")
+				return nil
+			}
+
+			// Delete first component - webhook should NOT be deleted (deleteComponent waits for deletion to complete)
+			deleteComponent(component1Key)
+
+			// Now delete the second (last) component - webhook SHOULD be deleted
+			isDeletePaCWebhookCalled := false
+			DeletePaCWebhookFunc = func(repoUrl string, webhookUrl string) error {
+				defer GinkgoRecover()
+				isDeletePaCWebhookCalled = true
+				Expect(repoUrl).To(Equal(sharedGitURL))
+				Expect(webhookUrl).To(Equal("https://" + pacHost))
+				return nil
+			}
+
+			deleteComponent(component2Key)
+
+			// DeletePaCWebhook should be called when deleting the last component
+			Eventually(func() bool {
+				return isDeletePaCWebhookCalled
+			}, timeout, interval).Should(BeTrue())
+		})
+
+		// TODO: remove after old model removal
+		It("should not delete webhook when new and old model components use same repository", func() {
+			sharedGitURL := "https://gitlab.com/test-org/dual-group-repo"
+			newModelComponentKey := types.NamespacedName{Name: "test-component-newmodel", Namespace: namespace}
+			oldModelComponentKey := types.NamespacedName{Name: "test-component-oldmodel", Namespace: namespace}
+
+			// Create SCM secret for webhook authentication
+			scmSecretKey := types.NamespacedName{Name: "gitlab-token-secret", Namespace: namespace}
+			scmSecretData := map[string]string{
+				"password": "test-token",
+			}
+			labels := map[string]string{
+				"appstudio.redhat.com/credentials": "scm",
+				"appstudio.redhat.com/scm.host":    "gitlab.com",
+			}
+			createSCMSecret(scmSecretKey, scmSecretData, corev1.SecretTypeBasicAuth, nil, labels)
+			defer deleteSecret(scmSecretKey)
+
+			// Create new model component with shared Git URL
+			createComponent(getComponentData(componentConfig{
+				componentKey: newModelComponentKey,
+				gitURL:       sharedGitURL,
+			}))
+			_ = waitForComponentStatusVersions(newModelComponentKey, 1)
+
+			// Create old model component with same shared Git URL
+			createComponentAndProcessBuildRequest(componentConfigOldModel{
+				componentKey: oldModelComponentKey,
+				annotations:  defaultPipelineAnnotations,
+				gitURL:       sharedGitURL,
+			}, BuildRequestConfigurePaCAnnotationValue)
+			waitPaCFinalizerOnComponent(oldModelComponentKey)
+
+			// Set up DeletePaCWebhook mock to fail if called - webhook should NOT be deleted
+			DeletePaCWebhookFunc = func(repoUrl string, webhookUrl string) error {
+				defer GinkgoRecover()
+				Fail("Should not delete webhook because component from other API group is still using the same repository")
+				return nil
+			}
+
+			// Delete old model component - webhook should NOT be deleted (new model component still exists)
+			deleteComponentOldModel(oldModelComponentKey)
+
+			// Now delete the new model component (last component) - webhook SHOULD be deleted
+			isDeletePaCWebhookCalled := false
+			DeletePaCWebhookFunc = func(repoUrl string, webhookUrl string) error {
+				defer GinkgoRecover()
+				isDeletePaCWebhookCalled = true
+				Expect(repoUrl).To(Equal(sharedGitURL))
+				Expect(webhookUrl).To(Equal("https://" + pacHost))
+				return nil
+			}
+
+			deleteComponent(newModelComponentKey)
+
+			// DeletePaCWebhook should be called when deleting the last component
 			Eventually(func() bool {
 				return isDeletePaCWebhookCalled
 			}, timeout, interval).Should(BeTrue())
@@ -3916,12 +4201,12 @@ spec:
 			// v2 will onboard without config
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: version1Name, Revision: "main"},
 					{Name: version2Name, Revision: "develop"},
 				},
-				actions: compapiv1alpha1.ComponentActions{
-					CreateConfiguration: compapiv1alpha1.ComponentCreatePipelineConfiguration{
+				actions: compv1alpha1.ComponentActions{
+					CreateConfiguration: compv1alpha1.ComponentCreatePipelineConfiguration{
 						Versions: []string{version1Name, "nonexistent-v1"},
 					},
 				},
@@ -3940,7 +4225,7 @@ spec:
 			component = waitForComponentSpecActionEmpty(componentKey, "create-pr", "versions")
 
 			// Verify both versions in status
-			versionMap := make(map[string]compapiv1alpha1.ComponentVersionStatus)
+			versionMap := make(map[string]compv1alpha1.ComponentVersionStatus)
 			for _, v := range component.Status.Versions {
 				versionMap[v.Name] = v
 			}
@@ -3965,10 +4250,10 @@ spec:
 			// PHASE 2: Add v3 with CreateConfiguration, add v4 without config, trigger v2 with invalid version
 			component = getComponent(componentKey)
 			component.Spec.Source.Versions = append(component.Spec.Source.Versions,
-				compapiv1alpha1.ComponentVersion{Name: version3Name, Revision: "feature"},
-				compapiv1alpha1.ComponentVersion{Name: version4Name, Revision: "release"},
+				compv1alpha1.ComponentVersion{Name: version3Name, Revision: "feature"},
+				compv1alpha1.ComponentVersion{Name: version4Name, Revision: "release"},
 			)
-			component.Spec.Actions.CreateConfiguration = compapiv1alpha1.ComponentCreatePipelineConfiguration{
+			component.Spec.Actions.CreateConfiguration = compv1alpha1.ComponentCreatePipelineConfiguration{
 				Versions: []string{version3Name},
 			}
 			component.Spec.Actions.TriggerBuilds = []string{version2Name, "nonexistent-v2"}
@@ -4020,7 +4305,7 @@ spec:
 			verifyPacWebhookIncomingPostData(v2Data, repositoryName, secretValue, v2PipelineRunName, namespace, "develop", component.Spec.Source.GitURL)
 
 			// Verify all 4 versions in status
-			versionMap = make(map[string]compapiv1alpha1.ComponentVersionStatus)
+			versionMap = make(map[string]compv1alpha1.ComponentVersionStatus)
 			for _, v := range component.Status.Versions {
 				versionMap[v.Name] = v
 			}
@@ -4039,7 +4324,7 @@ spec:
 
 			// PHASE 3: Offboard v4, onboard v5 without config, trigger v1 with invalid version
 			component = getComponent(componentKey)
-			component.Spec.Source.Versions = []compapiv1alpha1.ComponentVersion{
+			component.Spec.Source.Versions = []compv1alpha1.ComponentVersion{
 				{Name: version1Name, Revision: "main"},
 				{Name: version2Name, Revision: "develop"},
 				{Name: version3Name, Revision: "feature"},
@@ -4088,7 +4373,7 @@ spec:
 			verifyPacWebhookIncomingPostData(v1Data, repositoryName, secretValue, v1PipelineRunName, namespace, "main", component.Spec.Source.GitURL)
 
 			// Verify all 4 versions in status (v1, v2, v3, v5)
-			versionMap = make(map[string]compapiv1alpha1.ComponentVersionStatus)
+			versionMap = make(map[string]compv1alpha1.ComponentVersionStatus)
 			for _, v := range component.Status.Versions {
 				versionMap[v.Name] = v
 			}
@@ -4273,12 +4558,12 @@ spec:
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
 				gitURL:       gitURL,
-				versions: []compapiv1alpha1.ComponentVersion{
+				versions: []compv1alpha1.ComponentVersion{
 					{Name: version1Name, Revision: "main"},
 					{Name: version2Name, Revision: "develop"},
 				},
-				actions: compapiv1alpha1.ComponentActions{
-					CreateConfiguration: compapiv1alpha1.ComponentCreatePipelineConfiguration{
+				actions: compv1alpha1.ComponentActions{
+					CreateConfiguration: compv1alpha1.ComponentCreatePipelineConfiguration{
 						Versions: []string{version1Name, "nonexistent-v1"},
 					},
 				},
@@ -4298,7 +4583,7 @@ spec:
 				if err := k8sClient.Get(ctx, webhookSecretKey, webhookSecret); err != nil {
 					return false
 				}
-				expectedKey := getWebhookSecretKeyForComponent(*component, true)
+				expectedKey := getWebhookSecretKeyForComponent(*component)
 				return len(webhookSecret.Data[expectedKey]) > 0
 			}, timeout, interval).Should(BeTrue())
 
@@ -4314,7 +4599,7 @@ spec:
 			component = waitForComponentSpecActionEmpty(componentKey, "create-pr", "versions")
 
 			// Verify both versions in status
-			versionMap := make(map[string]compapiv1alpha1.ComponentVersionStatus)
+			versionMap := make(map[string]compv1alpha1.ComponentVersionStatus)
 			for _, v := range component.Status.Versions {
 				versionMap[v.Name] = v
 			}
@@ -4339,10 +4624,10 @@ spec:
 			// PHASE 2: Add v3 with CreateConfiguration, add v4 without config, trigger v2 with invalid version
 			component = getComponent(componentKey)
 			component.Spec.Source.Versions = append(component.Spec.Source.Versions,
-				compapiv1alpha1.ComponentVersion{Name: version3Name, Revision: "feature"},
-				compapiv1alpha1.ComponentVersion{Name: version4Name, Revision: "release"},
+				compv1alpha1.ComponentVersion{Name: version3Name, Revision: "feature"},
+				compv1alpha1.ComponentVersion{Name: version4Name, Revision: "release"},
 			)
-			component.Spec.Actions.CreateConfiguration = compapiv1alpha1.ComponentCreatePipelineConfiguration{
+			component.Spec.Actions.CreateConfiguration = compv1alpha1.ComponentCreatePipelineConfiguration{
 				Versions: []string{version3Name},
 			}
 			component.Spec.Actions.TriggerBuilds = []string{version2Name, "nonexistent-v2"}
@@ -4394,7 +4679,7 @@ spec:
 			verifyPacWebhookIncomingPostData(v2Data, repositoryName, secretValue, v2PipelineRunName, namespace, "develop", component.Spec.Source.GitURL)
 
 			// Verify all 4 versions in status
-			versionMap = make(map[string]compapiv1alpha1.ComponentVersionStatus)
+			versionMap = make(map[string]compv1alpha1.ComponentVersionStatus)
 			for _, v := range component.Status.Versions {
 				versionMap[v.Name] = v
 			}
@@ -4419,7 +4704,7 @@ spec:
 			// PHASE 3: Offboard v4, onboard v5 without config, trigger v1 with invalid version
 			// Webhook should NOT be deleted when offboarding a version
 			component = getComponent(componentKey)
-			component.Spec.Source.Versions = []compapiv1alpha1.ComponentVersion{
+			component.Spec.Source.Versions = []compv1alpha1.ComponentVersion{
 				{Name: version1Name, Revision: "main"},
 				{Name: version2Name, Revision: "develop"},
 				{Name: version3Name, Revision: "feature"},
@@ -4468,7 +4753,7 @@ spec:
 			verifyPacWebhookIncomingPostData(v1Data, repositoryName, secretValue, v1PipelineRunName, namespace, "main", component.Spec.Source.GitURL)
 
 			// Verify all 4 versions in status (v1, v2, v3, v5)
-			versionMap = make(map[string]compapiv1alpha1.ComponentVersionStatus)
+			versionMap = make(map[string]compv1alpha1.ComponentVersionStatus)
 			for _, v := range component.Status.Versions {
 				versionMap[v.Name] = v
 			}
