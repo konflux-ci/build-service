@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// TODO remove whole file after only new model is used and old model is gone
+
 package controllers
 
 import (
@@ -32,23 +34,23 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	compv1alpha1 "github.com/konflux-ci/build-service/api/konflux/v1alpha1"
+	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
 	l "github.com/konflux-ci/build-service/pkg/logs"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 )
 
-// PaCPipelineRunPrunerReconciler watches AppStudio Component object in order to clean up
+// PaCPipelineRunPrunerReconcilerOldModel watches AppStudio Component object in order to clean up
 // running PipelineRuns created by Pipeline-as-Code when the Component gets deleted.
-type PaCPipelineRunPrunerReconciler struct {
+type PaCPipelineRunPrunerReconcilerOldModel struct {
 	Client        client.Client
 	Scheme        *runtime.Scheme
 	EventRecorder events.EventRecorder
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *PaCPipelineRunPrunerReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *PaCPipelineRunPrunerReconcilerOldModel) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&compv1alpha1.Component{}, builder.WithPredicates(predicate.Funcs{
+		For(&compapiv1alpha1.Component{}, builder.WithPredicates(predicate.Funcs{
 			CreateFunc: func(e event.CreateEvent) bool {
 				return false
 			},
@@ -62,16 +64,16 @@ func (r *PaCPipelineRunPrunerReconciler) SetupWithManager(mgr ctrl.Manager) erro
 				return false
 			},
 		})).
-		Named("PaCPipelineRunPruner").
+		Named("PaCPipelineRunPrunerOld").
 		Complete(r)
 }
 
 //+kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns,verbs=get;list;watch;delete;deletecollection;update;patch
 
-func (r *PaCPipelineRunPrunerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *PaCPipelineRunPrunerReconcilerOldModel) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := ctrllog.FromContext(ctx).WithName("PaCPipelineRunPruner")
 
-	var component compv1alpha1.Component
+	var component compapiv1alpha1.Component
 	err := r.Client.Get(ctx, req.NamespacedName, &component)
 	if err == nil {
 		// The Component has been recreated.
@@ -92,7 +94,7 @@ func (r *PaCPipelineRunPrunerReconciler) Reconcile(ctx context.Context, req ctrl
 }
 
 // PrunePipelineRuns deletes PipelineRuns, if any, assocoated with the given Component.
-func (r *PaCPipelineRunPrunerReconciler) PrunePipelineRuns(ctx context.Context, req ctrl.Request) error {
+func (r *PaCPipelineRunPrunerReconcilerOldModel) PrunePipelineRuns(ctx context.Context, req ctrl.Request) error {
 	log := ctrllog.FromContext(ctx)
 
 	componentPipelineRunsRequirement, err := labels.NewRequirement(ComponentNameLabelName, selection.Equals, []string{req.Name})
