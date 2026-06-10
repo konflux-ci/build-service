@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -86,6 +87,19 @@ Please follow the block sequence indentation style introduced by the proprosed P
 	// https://pipelinesascode.com/docs/install/gitlab/#notes
 	GitProviderAnnotationURL = "git-provider-url"
 )
+
+type pacIncomingWebhookPayload struct {
+	Params      pacIncomingWebhookParams `json:"params"`
+	Secret      string                   `json:"secret"`
+	Repository  string                   `json:"repository"`
+	Branch      string                   `json:"branch"`
+	PipelineRun string                   `json:"pipelinerun"`
+	Namespace   string                   `json:"namespace"`
+}
+
+type pacIncomingWebhookParams struct {
+	SourceURL string `json:"source_url"`
+}
 
 // GetHttpClientFunction can be mocked in tests.
 var GetHttpClientFunction = getHttpClient
@@ -347,8 +361,18 @@ func (r *ComponentBuildReconciler) TriggerPaCBuild(
 	HttpClient := GetHttpClientFunction()
 
 	// we have to supply source_url as additional param, because PaC isn't able to resolve it for trigger
-	jsonTemplate := `{"params": {"source_url": "%s"}, "secret": "%s", "repository": "%s", "branch": "%s", "pipelinerun": "%s", "namespace": "%s"}`
-	bytesParam := []byte(fmt.Sprintf(jsonTemplate, repoUrl, secretValue, repository.Name, targetBranch, pipelineRunName, repository.Namespace))
+	payload := pacIncomingWebhookPayload{
+		Params:      pacIncomingWebhookParams{SourceURL: repoUrl},
+		Secret:      secretValue,
+		Repository:  repository.Name,
+		Branch:      targetBranch,
+		PipelineRun: pipelineRunName,
+		Namespace:   repository.Namespace,
+	}
+	bytesParam, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal incoming webhook payload: %w", err)
+	}
 
 	resp, err := HttpClient.Post(triggerURL, "application/json", bytes.NewBuffer(bytesParam))
 	if err != nil {
@@ -450,8 +474,18 @@ func (r *ComponentBuildReconciler) TriggerPaCBuildOldModel(ctx context.Context, 
 	HttpClient := GetHttpClientFunction()
 
 	// we have to supply source_url as additional param, because PaC isn't able to resolve it for trigger
-	jsonTemplate := `{"params": {"source_url": "%s"}, "secret": "%s", "repository": "%s", "branch": "%s", "pipelinerun": "%s", "namespace": "%s"}`
-	bytesParam := []byte(fmt.Sprintf(jsonTemplate, repoUrl, secretValue, repository.Name, targetBranch, pipelineRunName, repository.Namespace))
+	payload := pacIncomingWebhookPayload{
+		Params:      pacIncomingWebhookParams{SourceURL: repoUrl},
+		Secret:      secretValue,
+		Repository:  repository.Name,
+		Branch:      targetBranch,
+		PipelineRun: pipelineRunName,
+		Namespace:   repository.Namespace,
+	}
+	bytesParam, err := json.Marshal(payload)
+	if err != nil {
+		return false, fmt.Errorf("failed to marshal incoming webhook payload: %w", err)
+	}
 
 	resp, err := HttpClient.Post(triggerURL, "application/json", bytes.NewBuffer(bytesParam))
 	if err != nil {
