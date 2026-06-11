@@ -17,7 +17,7 @@ import (
 
 const (
 	// E2E_GIT_PROVIDERS_ENV controls which git providers to run tests against.
-	// Comma-separated list of provider prefixes: "gh,gl,gt" or "gh" or "gl,gt"
+	// Comma-separated list of provider prefixes: "gh,gl,fj" or "gh" or "gl,fj"
 	// If not set or empty, all registered providers will be used.
 	// Examples:
 	//   E2E_GIT_PROVIDERS=gh           -> only GitHub
@@ -111,7 +111,7 @@ func GetRegisteredProviderEntries() []TableEntry {
 //   - E2E_GIT_PROVIDERS=gh          -> only GitHub tests run
 //   - E2E_GIT_PROVIDERS=gl          -> only GitLab tests run
 //   - E2E_GIT_PROVIDERS=gh,gl       -> both GitHub and GitLab
-//   - E2E_GIT_PROVIDERS=gh,gl,gt    -> all three providers
+//   - E2E_GIT_PROVIDERS=gh,gl,fj    -> all three providers
 //   - E2E_GIT_PROVIDERS="" or unset -> all registered providers (default)
 func GetEnabledProviderEntries() []TableEntry {
 	enabledProviders := getEnabledProviderPrefixes()
