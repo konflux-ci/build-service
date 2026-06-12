@@ -101,13 +101,13 @@ QUAY_TOKEN=<quay token>
        # Skip TLS verification for PaC webhook URLs — the e2e environment
 ```
 
-10. Do the custom build-service image override in `operator/pkg/manifests/build-service/manifests.yaml`
+10. If you want to use custom build-service image, override it in `operator/pkg/manifests/build-service/manifests.yaml`
 
 ```diff
          command:
          - /manager
 -        image: quay.io/konflux-ci/build-service:ea2cad62004f1c497ac7b5b784bd46bfc0409cc1
-+        image: quay.io/konflux-ci/build-service:2d761643b30f58b78c5d017a769a8027f7982433
++        image: quay.io/susdas/build-service:2d761643b30f58b78c5d017a769a8027f7982433
          livenessProbe:
            httpGet:
 ```
@@ -120,7 +120,7 @@ export KIND_CLUSTER=konflux
 export KONFLUX_CR=operator/config/samples/konflux-e2e.yaml
 export KONFLUX_READY_TIMEOUT=30m
 export CONTAINER_TOOL=podman
-export OPERATOR_INSTALL_METHOD=local
+export OPERATOR_INSTALL_METHOD=none
 
 ./scripts/deploy-local.sh
 ```
