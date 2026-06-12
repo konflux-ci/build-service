@@ -23,7 +23,7 @@ import (
 	"regexp"
 	"strings"
 
-	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
+	compv1alpha1 "github.com/konflux-ci/build-service/api/konflux/v1alpha1"
 	"github.com/konflux-ci/build-service/pkg/boerrors"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -44,7 +44,7 @@ func sanitizeVersionName(name string) string {
 // validateVersions performs validation checks on version definitions.
 // Returns a slice of validation error messages describing any issues found,
 // or an empty slice if all validations pass.
-func validateVersions(component *compapiv1alpha1.Component) (validationErrors []string) {
+func validateVersions(component *compv1alpha1.Component) (validationErrors []string) {
 	// Track sanitized version names for uniqueness check
 	sanitizedNames := make(map[string]string) // map[sanitized]original
 
@@ -78,7 +78,7 @@ func validateVersions(component *compapiv1alpha1.Component) (validationErrors []
 
 // hasPipelineRefGit checks if any PipelineRefGit field is set.
 // Returns true if any field is non-empty, false otherwise.
-func hasPipelineRefGit(refGit *compapiv1alpha1.PipelineRefGit) bool {
+func hasPipelineRefGit(refGit *compv1alpha1.PipelineRefGit) bool {
 	return refGit != nil && (refGit.Url != "" || refGit.PathInRepo != "" || refGit.Revision != "")
 }
 
@@ -90,14 +90,14 @@ func hasPipelineRefName(refName string) bool {
 
 // hasPipelineSpecFromBundle checks if any PipelineSpecFromBundle field is set.
 // Returns true if any field is non-empty, false otherwise.
-func hasPipelineSpecFromBundle(specFromBundle *compapiv1alpha1.PipelineSpecFromBundle) bool {
+func hasPipelineSpecFromBundle(specFromBundle *compv1alpha1.PipelineSpecFromBundle) bool {
 	return specFromBundle != nil && (specFromBundle.Bundle != "" || specFromBundle.Name != "")
 }
 
 // validatePipelineRefGitFields validates that all PipelineRefGit fields are set.
 // Returns a slice of validation error messages for any missing required fields,
 // or an empty slice if all fields are present.
-func validatePipelineRefGitFields(refGit *compapiv1alpha1.PipelineRefGit, errorPrefix string) (errors []string) {
+func validatePipelineRefGitFields(refGit *compv1alpha1.PipelineRefGit, errorPrefix string) (errors []string) {
 	if refGit == nil {
 		return nil
 	}
@@ -116,7 +116,7 @@ func validatePipelineRefGitFields(refGit *compapiv1alpha1.PipelineRefGit, errorP
 // validatePipelineSpecFromBundleFields validates that all PipelineSpecFromBundle fields are set.
 // Returns a slice of validation error messages for any missing required fields,
 // or an empty slice if all fields are present.
-func validatePipelineSpecFromBundleFields(specFromBundle *compapiv1alpha1.PipelineSpecFromBundle, errorPrefix string) (errors []string) {
+func validatePipelineSpecFromBundleFields(specFromBundle *compv1alpha1.PipelineSpecFromBundle, errorPrefix string) (errors []string) {
 	if specFromBundle == nil {
 		return nil
 	}
@@ -131,7 +131,7 @@ func validatePipelineSpecFromBundleFields(specFromBundle *compapiv1alpha1.Pipeli
 
 // hasPipelineDefConfig checks if a pipeline definition has any configuration.
 // Returns true if any pipeline configuration is present, false otherwise.
-func hasPipelineDefConfig(pipelineDef *compapiv1alpha1.PipelineDefinition) bool {
+func hasPipelineDefConfig(pipelineDef *compv1alpha1.PipelineDefinition) bool {
 	if pipelineDef == nil {
 		return false
 	}
@@ -142,7 +142,7 @@ func hasPipelineDefConfig(pipelineDef *compapiv1alpha1.PipelineDefinition) bool 
 
 // hasPipelineConfig checks if any pipeline configuration is set.
 // Returns true if any pipeline configuration (PullAndPush, Pull, or Push) is present, false otherwise.
-func hasPipelineConfig(pipeline *compapiv1alpha1.ComponentBuildPipeline) bool {
+func hasPipelineConfig(pipeline *compv1alpha1.ComponentBuildPipeline) bool {
 	if pipeline == nil {
 		return false
 	}
@@ -156,7 +156,7 @@ func hasPipelineConfig(pipeline *compapiv1alpha1.ComponentBuildPipeline) bool {
 // extractPipelineDef extracts a PipelineDef from a PipelineDefinition.
 // Returns a pointer to the extracted PipelineDef structure.
 // Deep-copies pointer fields to prevent aliasing with the original Component spec.
-func extractPipelineDef(pipelineDef *compapiv1alpha1.PipelineDefinition) *PipelineDef {
+func extractPipelineDef(pipelineDef *compv1alpha1.PipelineDefinition) *PipelineDef {
 	if pipelineDef == nil {
 		return nil
 	}
@@ -193,7 +193,7 @@ func extractPipelineDef(pipelineDef *compapiv1alpha1.PipelineDefinition) *Pipeli
 // - Validates that all required fields are set for PipelineRefGit and PipelineSpecFromBundle when used
 // Returns a slice of validation error messages describing any issues found,
 // or an empty slice if all validations pass.
-func validatePipelineConfiguration(pipeline *compapiv1alpha1.ComponentBuildPipeline, versionName string) (validationErrors []string) {
+func validatePipelineConfiguration(pipeline *compv1alpha1.ComponentBuildPipeline, versionName string) (validationErrors []string) {
 	if pipeline == nil {
 		return nil
 	}
@@ -216,7 +216,7 @@ func validatePipelineConfiguration(pipeline *compapiv1alpha1.ComponentBuildPipel
 	}
 
 	// Validate each pipeline definition section
-	checkPipelineDef := func(pipelineDef *compapiv1alpha1.PipelineDefinition, pipelineType string) {
+	checkPipelineDef := func(pipelineDef *compv1alpha1.PipelineDefinition, pipelineType string) {
 		if !hasPipelineDefConfig(pipelineDef) {
 			return // Skip validation if no configuration is set
 		}
@@ -264,7 +264,7 @@ func validatePipelineConfiguration(pipeline *compapiv1alpha1.ComponentBuildPipel
 
 // validatePipelines performs validation checks on pipeline configurations and extracts pipeline definitions.
 // Returns a slice of validation error messages and a map of version names to their pipeline definitions.
-func validatePipelines(component *compapiv1alpha1.Component) ([]string, map[string]*VersionPipelineDefinition) {
+func validatePipelines(component *compv1alpha1.Component) ([]string, map[string]*VersionPipelineDefinition) {
 	var validationErrors []string
 	versionPipelines := make(map[string]*VersionPipelineDefinition)
 
@@ -456,7 +456,7 @@ func resolvePipelineDefinitions(versionPipelines map[string]*VersionPipelineDefi
 			def.PipelineSpecFromBundle = &sfb
 		} else {
 			// Fall back to Name & Bundle
-			def.PipelineSpecFromBundle = &compapiv1alpha1.PipelineSpecFromBundle{
+			def.PipelineSpecFromBundle = &compv1alpha1.PipelineSpecFromBundle{
 				Name:   defaultPipeline.Name,
 				Bundle: defaultPipeline.Bundle,
 			}

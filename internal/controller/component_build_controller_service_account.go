@@ -31,7 +31,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
-	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
+	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1" // TODO remove after only new model is used and old model is gone
+	compv1alpha1 "github.com/konflux-ci/build-service/api/konflux/v1alpha1"
 	l "github.com/konflux-ci/build-service/pkg/logs"
 	imgcv1alpha1 "github.com/konflux-ci/image-controller/api/v1alpha1"
 )
@@ -54,7 +55,7 @@ func getBuildPipelineServiceAccountName(componentName string) string {
 // EnsureBuildPipelineServiceAccount checks if dedicated Service Account for Component build pipelines and
 // corresponding Role Binding to appstudio-pipeline-runner Cluster Role exists.
 // If a resource missing, it will be created.
-func (r *ComponentBuildReconciler) EnsureBuildPipelineServiceAccount(ctx context.Context, component *compapiv1alpha1.Component, ensureNudging bool) error {
+func (r *ComponentBuildReconciler) EnsureBuildPipelineServiceAccount(ctx context.Context, component *compv1alpha1.Component) error {
 	log := ctrllog.FromContext(ctx).WithName("buildSA-provision")
 
 	// Verify build pipeline Service Account
@@ -86,7 +87,7 @@ func (r *ComponentBuildReconciler) EnsureBuildPipelineServiceAccount(ctx context
 			return err
 		}
 	} else {
-		// TODO remove after new component model migration is done and old model is gone
+		// TODO remove after only new model is used and old model is gone
 		// Service Account already exists, add ownership if it isn't there already
 		ownershipFound := false
 		for _, owner := range buildPipelinesServiceAccount.ObjectMeta.OwnerReferences {
@@ -109,7 +110,74 @@ func (r *ComponentBuildReconciler) EnsureBuildPipelineServiceAccount(ctx context
 		}
 	}
 
-	// TODO remove after for new component model
+	if err := r.ensureBuildPipelineServiceAccountBinding(ctx, component); err != nil {
+		log.Error(err, "failed to ensure role binding for build pipleine Service Account")
+		return err
+	}
+
+	return nil
+}
+
+// EnsureBuildPipelineServiceAccount checks if dedicated Service Account for Component build pipelines and
+// corresponding Role Binding to appstudio-pipeline-runner Cluster Role exists.
+// If a resource missing, it will be created.
+// TODO remove after only new model is used and old model is gone
+func (r *ComponentBuildReconcilerOldModel) EnsureBuildPipelineServiceAccount(ctx context.Context, component *compapiv1alpha1.Component, ensureNudging bool) error {
+	log := ctrllog.FromContext(ctx).WithName("buildSA-provision")
+
+	// Verify build pipeline Service Account
+	buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(component.Name)
+	buildPipelinesServiceAccount := &corev1.ServiceAccount{}
+	if err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: component.Namespace}, buildPipelinesServiceAccount); err != nil {
+		if !errors.IsNotFound(err) {
+			log.Error(err, fmt.Sprintf("failed to read build pipeline Service Account %s in namespace %s", buildPipelineServiceAccountName, component.Namespace), l.Action, l.ActionView)
+			return err
+		}
+
+		// Service Account for Component build pipelines doesn't exist.
+		// Create Service Account for the build pipeline.
+		buildPipelineSA := &corev1.ServiceAccount{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      buildPipelineServiceAccountName,
+				Namespace: component.Namespace,
+			},
+		}
+		if err := controllerutil.SetOwnerReference(component, buildPipelineSA, r.Scheme); err != nil {
+			log.Error(err, "failed to add owner reference to build pipeline Service Account")
+			return err
+		}
+		if err := r.linkCommonSecretsToBuildPipelineServiceAccount(ctx, buildPipelineSA); err != nil {
+			return err
+		}
+		if err := r.Client.Create(ctx, buildPipelineSA); err != nil {
+			log.Error(err, fmt.Sprintf("failed to create Service Account %s in namespace %s", buildPipelineServiceAccountName, component.Namespace), l.Action, l.ActionAdd)
+			return err
+		}
+	} else {
+		// TODO remove after only new model is used and old model is gone
+		// Service Account already exists, add ownership if it isn't there already
+		ownershipFound := false
+		for _, owner := range buildPipelinesServiceAccount.ObjectMeta.OwnerReferences {
+			if owner.UID == component.UID {
+				ownershipFound = true
+				break
+			}
+		}
+		if !ownershipFound {
+			if err := controllerutil.SetOwnerReference(component, buildPipelinesServiceAccount, r.Scheme); err != nil {
+				log.Error(err, "failed to add owner reference to build pipeline Service Account")
+				return err
+			}
+
+			if err := r.Client.Update(ctx, buildPipelinesServiceAccount); err != nil {
+				log.Error(err, "failed to update build pipeline Service Account", l.Action, l.ActionUpdate)
+				return err
+			}
+			log.Info("Updated Service Account ownership")
+		}
+	}
+
+	// TODO remove after only new model is used and old model is gone
 	if ensureNudging {
 		if err := r.ensureNudgingPullSecrets(ctx, component); err != nil {
 			log.Error(err, "failed to ensure nudge secrets linked")
@@ -152,11 +220,39 @@ func (r *ComponentBuildReconciler) linkCommonSecretsToBuildPipelineServiceAccoun
 	return nil
 }
 
-// TODO remove after for new component model
+// TODO remove after only new model is used and old model is gone
+// linkCommonSecretsToBuildPipelineServiceAccount searches for common build Secrets in Component namespace
+// marked with corresponding label and adds them into secrets section of the given Service Account.
+func (r *ComponentBuildReconcilerOldModel) linkCommonSecretsToBuildPipelineServiceAccount(ctx context.Context, serviceAccount *corev1.ServiceAccount) error {
+	// Get all secrets with common for all Component label
+	commonSecretsList := &corev1.SecretList{}
+
+	commonBuildSecretRequirement, err := labels.NewRequirement(commonBuildSecretLabelName, selection.Equals, []string{"true"})
+	if err != nil {
+		return err
+	}
+	commonBuildSecretsSelector := labels.NewSelector().Add(*commonBuildSecretRequirement)
+	commonBuildSecretsListOptions := client.ListOptions{
+		LabelSelector: commonBuildSecretsSelector,
+		Namespace:     serviceAccount.Namespace,
+	}
+	if err := r.Client.List(ctx, commonSecretsList, &commonBuildSecretsListOptions); err != nil {
+		return err
+	}
+
+	// Add found secrets to the Service Account Secrets section
+	for _, commonSecret := range commonSecretsList.Items {
+		serviceAccount.Secrets = append(serviceAccount.Secrets, corev1.ObjectReference{Name: commonSecret.Name})
+	}
+
+	return nil
+}
+
+// TODO remove after only new model is used and old model is gone
 // ensureNudgingPullSecrets makes sure that Component build pipeline Service Account
 // has pull secrets for image repositories of Components that nudge current Component linked.
 // Note, they must be linked into Secrets section (not imagePullSecrets).
-func (r *ComponentBuildReconciler) ensureNudgingPullSecrets(ctx context.Context, component *compapiv1alpha1.Component) error {
+func (r *ComponentBuildReconcilerOldModel) ensureNudgingPullSecrets(ctx context.Context, component *compapiv1alpha1.Component) error {
 	buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(component.Name)
 	log := ctrllog.FromContext(ctx).WithValues("ServiceAccountName", buildPipelineServiceAccountName)
 
@@ -222,9 +318,10 @@ func (r *ComponentBuildReconciler) ensureNudgingPullSecrets(ctx context.Context,
 	return nil
 }
 
+// TODO remove after only new model is used and old model is gone
 // cleanUpNudgingPullSecrets removes the current Component pull secret from the linked secrets list
 // of the nudged Components build pipeline Service Account.
-func (r *ComponentBuildReconciler) cleanUpNudgingPullSecrets(ctx context.Context, component *compapiv1alpha1.Component) error {
+func (r *ComponentBuildReconcilerOldModel) cleanUpNudgingPullSecrets(ctx context.Context, component *compapiv1alpha1.Component) error {
 	if len(component.Spec.BuildNudgesRef) == 0 {
 		// No nudge relations, nothing to do.
 		return nil
@@ -273,9 +370,10 @@ func (r *ComponentBuildReconciler) cleanUpNudgingPullSecrets(ctx context.Context
 	return nil
 }
 
+// TODO remove after only new model is used and old model is gone
 // getComponentImageRepository retreives related to the given Component Image Repository.
 // Returns nil if the Component doesn't have related Image Repository.
-func (r *ComponentBuildReconciler) getComponentImageRepository(ctx context.Context, componentName, namespace string) (*imgcv1alpha1.ImageRepository, error) {
+func (r *ComponentBuildReconcilerOldModel) getComponentImageRepository(ctx context.Context, componentName, namespace string) (*imgcv1alpha1.ImageRepository, error) {
 	log := ctrllog.FromContext(ctx)
 
 	imageRepositoryList := &imgcv1alpha1.ImageRepositoryList{}
@@ -301,7 +399,73 @@ func (r *ComponentBuildReconciler) getComponentImageRepository(ctx context.Conte
 
 // ensureBuildPipelineServiceAccountBinding makes sure that a common for all build pipelines Service Accounts
 // Role Binding exists and contains a subject record for the given component.
-func (r *ComponentBuildReconciler) ensureBuildPipelineServiceAccountBinding(ctx context.Context, component *compapiv1alpha1.Component) error {
+func (r *ComponentBuildReconciler) ensureBuildPipelineServiceAccountBinding(ctx context.Context, component *compv1alpha1.Component) error {
+	log := ctrllog.FromContext(ctx)
+
+	buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(component.Name)
+
+	// Verify Role Binding for build pipeline Service Account
+	buildPipelinesRoleBinding := &rbacv1.RoleBinding{}
+	if err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineRoleBindingName, Namespace: component.Namespace}, buildPipelinesRoleBinding); err != nil {
+		if !errors.IsNotFound(err) {
+			log.Error(err, "failed to read common build pipelines Role Binding", l.Action, l.ActionView)
+			return err
+		}
+
+		// This is the first Component in the namespace being onboarded.
+		// Create common Role Binding to appstudio-pipelines-runner Cluster Role for all build pipeline Service Accounts.
+		// Add only one subject for the given Component.
+		buildPipelinesRoleBinding = &rbacv1.RoleBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      buildPipelineRoleBindingName,
+				Namespace: component.Namespace,
+			},
+			RoleRef: rbacv1.RoleRef{
+				Kind:     "ClusterRole",
+				Name:     BuildPipelineClusterRoleName,
+				APIGroup: rbacv1.SchemeGroupVersion.Group,
+			},
+			Subjects: []rbacv1.Subject{
+				{
+					Kind:      "ServiceAccount",
+					Name:      buildPipelineServiceAccountName,
+					Namespace: component.Namespace,
+				},
+			},
+		}
+		if err := r.Client.Create(ctx, buildPipelinesRoleBinding); err != nil {
+			// errors.IsNotFound(err) will always be false because appstudio-pipelines-runner Cluster Role exists.
+			log.Error(err, "failed to create common build pipelines Role Binding", l.Action, l.ActionAdd)
+			return err
+		}
+		return nil
+	}
+
+	// Common Role Binding to appstudio-pipelines-runner Cluster Role for all build pipeline Service Accounts exists.
+	// Make sure it contains a subject record for the given Component.
+	if getRoleBindingSaSubjectIndex(buildPipelinesRoleBinding, buildPipelineServiceAccountName) != -1 {
+		// Up to date, nothing to do.
+		return nil
+	}
+	// Add record for the Component build pipeline Service Account and update common Role Binding.
+	buildPipelinesRoleBinding.Subjects = append(buildPipelinesRoleBinding.Subjects, rbacv1.Subject{
+		Kind:      "ServiceAccount",
+		Name:      buildPipelineServiceAccountName,
+		Namespace: component.Namespace,
+	})
+	if err := r.Client.Update(ctx, buildPipelinesRoleBinding); err != nil {
+		log.Error(err, "failed to add a subject to common build pipelines Role Binding", l.Action, l.ActionUpdate)
+		return err
+	}
+	log.Info("Added Service Account to common build pipelines Role Binding", "ServiceAccountName", buildPipelineServiceAccountName, l.Action, l.ActionUpdate)
+
+	return nil
+}
+
+// TODO remove after only new model is used and old model is gone
+// ensureBuildPipelineServiceAccountBinding makes sure that a common for all build pipelines Service Accounts
+// Role Binding exists and contains a subject record for the given component.
+func (r *ComponentBuildReconcilerOldModel) ensureBuildPipelineServiceAccountBinding(ctx context.Context, component *compapiv1alpha1.Component) error {
 	log := ctrllog.FromContext(ctx)
 
 	buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(component.Name)
@@ -379,7 +543,73 @@ func getRoleBindingSaSubjectIndex(roleBinding *rbacv1.RoleBinding, serviceAccoun
 // removeBuildPipelineServiceAccountBinding deletes subject record for build pipleine Service Account
 // of the given Component from the common build pipelines Role Binding.
 // Deletes the common Role Binding if no subjects are left.
-func (r *ComponentBuildReconciler) removeBuildPipelineServiceAccountBinding(ctx context.Context, component *compapiv1alpha1.Component) error {
+func (r *ComponentBuildReconciler) removeBuildPipelineServiceAccountBinding(ctx context.Context, component *compv1alpha1.Component) error {
+	log := ctrllog.FromContext(ctx)
+	log.Info("requested to remove build pipeline Service Account binding")
+
+	buildPipelinesRoleBinding := &rbacv1.RoleBinding{}
+	if err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineRoleBindingName, Namespace: component.Namespace}, buildPipelinesRoleBinding); err != nil {
+		if errors.IsNotFound(err) {
+			// Nothing to do
+			return nil
+		}
+		log.Error(err, "failed to read common build pipelines Role Binding", l.Action, l.ActionView)
+		return err
+	}
+
+	subjectsNumberBefore := len(buildPipelinesRoleBinding.Subjects)
+
+	buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(component.Name)
+	subjectIndex := getRoleBindingSaSubjectIndex(buildPipelinesRoleBinding, buildPipelineServiceAccountName)
+	if subjectIndex != -1 {
+		if len(buildPipelinesRoleBinding.Subjects) == 1 {
+			// Remove the last subject
+			buildPipelinesRoleBinding.Subjects = nil
+		} else {
+			// Remove subject by its index
+			oldSubjects := buildPipelinesRoleBinding.Subjects
+			newSubjects := append(oldSubjects[:subjectIndex], oldSubjects[subjectIndex+1:]...) //nolint:gocritic
+			buildPipelinesRoleBinding.Subjects = newSubjects
+		}
+	}
+
+	// This is nice to have action to clean up records for already deleted Service Accounts.
+	// That might happen when a user creates a Component and deletes it before PaC provision.
+	if len(buildPipelinesRoleBinding.Subjects) != 0 {
+		saList := &corev1.ServiceAccountList{}
+		if err := r.Client.List(ctx, saList, client.InNamespace(buildPipelinesRoleBinding.Namespace)); err == nil {
+			buildPipelinesRoleBinding = removeInvalidServiceAccountSubjects(buildPipelinesRoleBinding, saList.Items)
+		} else {
+			// Do not break flow because of optional cleanup
+			log.Error(err, "failed to list Service Accounts, skipping additional build pipeline Role Binding cleanup")
+		}
+	}
+
+	if len(buildPipelinesRoleBinding.Subjects) != 0 {
+		if len(buildPipelinesRoleBinding.Subjects) != subjectsNumberBefore {
+			if err := r.Client.Update(ctx, buildPipelinesRoleBinding); err != nil {
+				log.Error(err, "failed to remove subject from common build pipelines Role Binding")
+				return err
+			}
+			log.Info("removed subject from common build pipelines Role Binding")
+		}
+	} else {
+		// No subjects left, remove whole Role Binding
+		if err := r.Client.Delete(ctx, buildPipelinesRoleBinding); err != nil {
+			log.Error(err, "failed to delete common build pipelines Role Binding", l.Action, l.ActionDelete)
+			return err
+		}
+		log.Info("deleted common build pipelines Role Binding")
+	}
+
+	return nil
+}
+
+// TODO remove after only new model is used and old model is gone
+// removeBuildPipelineServiceAccountBinding deletes subject record for build pipleine Service Account
+// of the given Component from the common build pipelines Role Binding.
+// Deletes the common Role Binding if no subjects are left.
+func (r *ComponentBuildReconcilerOldModel) removeBuildPipelineServiceAccountBinding(ctx context.Context, component *compapiv1alpha1.Component) error {
 	log := ctrllog.FromContext(ctx)
 	log.Info("requested to remove build pipeline Service Account binding")
 

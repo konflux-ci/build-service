@@ -32,7 +32,7 @@ import (
 	"github.com/konflux-ci/build-service/pkg/bometrics"
 	. "github.com/konflux-ci/build-service/pkg/common"
 
-	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
+	compv1alpha1 "github.com/konflux-ci/build-service/api/konflux/v1alpha1"
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 )
@@ -52,17 +52,15 @@ func TestGetProvisionTimeMetricsBuckets(t *testing.T) {
 }
 
 func TestGeneratePaCPipelineRunForComponent(t *testing.T) {
-	component := &compapiv1alpha1.Component{
+	component := &compv1alpha1.Component{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "my-component",
 			Namespace: "my-namespace",
 		},
-		Spec: compapiv1alpha1.ComponentSpec{
+		Spec: compv1alpha1.ComponentSpec{
 			ContainerImage: "registry.io/username/image:tag",
-			Source: compapiv1alpha1.ComponentSource{
-				ComponentSourceUnion: compapiv1alpha1.ComponentSourceUnion{
-					GitURL: "https://githost.com/user/repo.git",
-				},
+			Source: compv1alpha1.ComponentSource{
+				GitURL: "https://githost.com/user/repo.git",
 			},
 		},
 	}
@@ -254,7 +252,7 @@ func TestGeneratePaCPipelineRunForComponent(t *testing.T) {
 }
 
 func TestGeneratePaCPipelineRunForComponent_ShouldStopIfTargetBranchIsNotSet(t *testing.T) {
-	_, err := generatePaCPipelineRunForComponent(&compapiv1alpha1.Component{ObjectMeta: metav1.ObjectMeta{Name: "my-component", Namespace: "my-namespace"}},
+	_, err := generatePaCPipelineRunForComponent(&compv1alpha1.Component{ObjectMeta: metav1.ObjectMeta{Name: "my-component", Namespace: "my-namespace"}},
 		nil, nil, &VersionInfo{}, nil, true)
 	if err == nil {
 		t.Errorf("generatePaCPipelineRunForComponent(): expected error")
@@ -786,18 +784,16 @@ func TestCreateWorkspaceBinding(t *testing.T) {
 }
 
 func TestGeneratePACRepository(t *testing.T) {
-	getComponent := func(repoUrl string, annotations map[string]string, repoSettings *compapiv1alpha1.RepositorySettings) compapiv1alpha1.Component {
-		component := compapiv1alpha1.Component{
+	getComponent := func(repoUrl string, annotations map[string]string, repoSettings *compv1alpha1.RepositorySettings) compv1alpha1.Component {
+		component := compv1alpha1.Component{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:        "testcomponent",
 				Namespace:   "workspace-name",
 				Annotations: annotations,
 			},
-			Spec: compapiv1alpha1.ComponentSpec{
-				Source: compapiv1alpha1.ComponentSource{
-					ComponentSourceUnion: compapiv1alpha1.ComponentSourceUnion{
-						GitURL: repoUrl,
-					},
+			Spec: compv1alpha1.ComponentSpec{
+				Source: compv1alpha1.ComponentSource{
+					GitURL: repoUrl,
 				},
 			},
 		}
@@ -813,7 +809,7 @@ func TestGeneratePACRepository(t *testing.T) {
 		componentAnnotations             map[string]string
 		pacConfig                        map[string][]byte
 		expectedGitProviderConfig        *pacv1alpha1.GitProvider
-		repoSettings                     *compapiv1alpha1.RepositorySettings
+		repoSettings                     *compv1alpha1.RepositorySettings
 		expectedGithubAppTokenScopeRepos *[]string
 		expectedCommentStrategy          string
 		skipBuildsMap                    map[string]bool
@@ -861,7 +857,7 @@ func TestGeneratePACRepository(t *testing.T) {
 				},
 				WebhookSecret: &pacv1alpha1.Secret{
 					Name: pipelinesAsCodeWebhooksSecretName,
-					Key:  getWebhookSecretKeyForComponent(getComponent("https://github.com/user/test-component-repository", nil, nil), true),
+					Key:  getWebhookSecretKeyForComponent(getComponent("https://github.com/user/test-component-repository", nil, nil)),
 				},
 				URL:  "",
 				Type: "github",
@@ -902,7 +898,7 @@ func TestGeneratePACRepository(t *testing.T) {
 				},
 				WebhookSecret: &pacv1alpha1.Secret{
 					Name: pipelinesAsCodeWebhooksSecretName,
-					Key:  getWebhookSecretKeyForComponent(getComponent("https://github.self-hosted.com/user/test-component-repository/", nil, nil), true),
+					Key:  getWebhookSecretKeyForComponent(getComponent("https://github.self-hosted.com/user/test-component-repository/", nil, nil)),
 				},
 				URL:  "https://github.self-hosted.com",
 				Type: "github",
@@ -928,7 +924,7 @@ func TestGeneratePACRepository(t *testing.T) {
 				},
 				WebhookSecret: &pacv1alpha1.Secret{
 					Name: pipelinesAsCodeWebhooksSecretName,
-					Key:  getWebhookSecretKeyForComponent(getComponent("https://github.self-hosted.com/user/test-component-repository/", nil, nil), true),
+					Key:  getWebhookSecretKeyForComponent(getComponent("https://github.self-hosted.com/user/test-component-repository/", nil, nil)),
 				},
 				URL:  "https://github.self-hosted-proxy.com",
 				Type: "github",
@@ -950,7 +946,7 @@ func TestGeneratePACRepository(t *testing.T) {
 				},
 				WebhookSecret: &pacv1alpha1.Secret{
 					Name: pipelinesAsCodeWebhooksSecretName,
-					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.com/user/test-component-repository/", nil, nil), true),
+					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.com/user/test-component-repository/", nil, nil)),
 				},
 				URL:  "",
 				Type: "gitlab",
@@ -974,7 +970,7 @@ func TestGeneratePACRepository(t *testing.T) {
 				},
 				WebhookSecret: &pacv1alpha1.Secret{
 					Name: pipelinesAsCodeWebhooksSecretName,
-					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.com/user/test-component-repository", nil, nil), true),
+					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.com/user/test-component-repository", nil, nil)),
 				},
 				Type: "gitlab",
 			},
@@ -998,7 +994,7 @@ func TestGeneratePACRepository(t *testing.T) {
 				},
 				WebhookSecret: &pacv1alpha1.Secret{
 					Name: pipelinesAsCodeWebhooksSecretName,
-					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.self-hosted.com/user/test-component-repository/", nil, nil), true),
+					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.self-hosted.com/user/test-component-repository/", nil, nil)),
 				},
 				URL:  "https://gitlab.self-hosted.com",
 				Type: "gitlab",
@@ -1024,7 +1020,7 @@ func TestGeneratePACRepository(t *testing.T) {
 				},
 				WebhookSecret: &pacv1alpha1.Secret{
 					Name: pipelinesAsCodeWebhooksSecretName,
-					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.self-hosted.com/user/test-component-repository/", nil, nil), true),
+					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.self-hosted.com/user/test-component-repository/", nil, nil)),
 				},
 				URL:  "https://gitlab.self-hosted-proxy.com",
 				Type: "gitlab",
@@ -1050,7 +1046,7 @@ func TestGeneratePACRepository(t *testing.T) {
 				},
 				WebhookSecret: &pacv1alpha1.Secret{
 					Name: pipelinesAsCodeWebhooksSecretName,
-					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.self-hosted.com/user/test-component-repository/", nil, nil), true),
+					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.self-hosted.com/user/test-component-repository/", nil, nil)),
 				},
 				URL:  "https://gitlab.self-hosted-proxy.com",
 				Type: "gitlab",
@@ -1075,7 +1071,7 @@ func TestGeneratePACRepository(t *testing.T) {
 				},
 				WebhookSecret: &pacv1alpha1.Secret{
 					Name: pipelinesAsCodeWebhooksSecretName,
-					Key:  getWebhookSecretKeyForComponent(getComponent("https://forgejo.example.com/user/test-component-repository/", nil, nil), true),
+					Key:  getWebhookSecretKeyForComponent(getComponent("https://forgejo.example.com/user/test-component-repository/", nil, nil)),
 				},
 				URL:  "https://forgejo.example.com",
 				Type: "forgejo",
@@ -1100,7 +1096,7 @@ func TestGeneratePACRepository(t *testing.T) {
 				},
 				WebhookSecret: &pacv1alpha1.Secret{
 					Name: pipelinesAsCodeWebhooksSecretName,
-					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitea.example.com/user/test-component-repository/", nil, nil), true),
+					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitea.example.com/user/test-component-repository/", nil, nil)),
 				},
 				URL:  "https://gitea.example.com",
 				Type: "forgejo",
@@ -1122,7 +1118,7 @@ func TestGeneratePACRepository(t *testing.T) {
 				},
 				WebhookSecret: &pacv1alpha1.Secret{
 					Name: pipelinesAsCodeWebhooksSecretName,
-					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitea.example.com/user/test-component-repository/", nil, nil), true),
+					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitea.example.com/user/test-component-repository/", nil, nil)),
 				},
 				URL:  "https://gitea.example.com",
 				Type: "forgejo",
@@ -1139,7 +1135,7 @@ func TestGeneratePACRepository(t *testing.T) {
 				PipelinesAsCodeGithubPrivateKey: []byte("private-key"),
 			},
 			expectedGitProviderConfig:        nil,
-			repoSettings:                     &compapiv1alpha1.RepositorySettings{CommentStrategy: "disable_all"},
+			repoSettings:                     &compv1alpha1.RepositorySettings{CommentStrategy: "disable_all"},
 			expectedGithubAppTokenScopeRepos: nil,
 			expectedCommentStrategy:          "disable_all",
 		},
@@ -1151,7 +1147,7 @@ func TestGeneratePACRepository(t *testing.T) {
 				PipelinesAsCodeGithubPrivateKey: []byte("private-key"),
 			},
 			expectedGitProviderConfig:        nil,
-			repoSettings:                     &compapiv1alpha1.RepositorySettings{GithubAppTokenScopeRepos: []string{"scope1", "scope2"}},
+			repoSettings:                     &compv1alpha1.RepositorySettings{GithubAppTokenScopeRepos: []string{"scope1", "scope2"}},
 			expectedGithubAppTokenScopeRepos: &[]string{"scope1", "scope2"},
 			expectedCommentStrategy:          "",
 		},
@@ -1163,7 +1159,7 @@ func TestGeneratePACRepository(t *testing.T) {
 				PipelinesAsCodeGithubPrivateKey: []byte("private-key"),
 			},
 			expectedGitProviderConfig: nil,
-			repoSettings: &compapiv1alpha1.RepositorySettings{
+			repoSettings: &compv1alpha1.RepositorySettings{
 				CommentStrategy:          "disable_all",
 				GithubAppTokenScopeRepos: []string{"scope1", "scope2"}},
 			expectedGithubAppTokenScopeRepos: &[]string{"scope1", "scope2"},
@@ -1185,7 +1181,7 @@ func TestGeneratePACRepository(t *testing.T) {
 				},
 				Data: tt.pacConfig,
 			}
-			pacRepo, err := generatePACRepository(component, secret, &component.Spec.RepositorySettings, tt.skipBuildsMap, true)
+			pacRepo, err := generatePACRepository(component, secret, &component.Spec.RepositorySettings, tt.skipBuildsMap)
 
 			if err != nil {
 				t.Errorf("Failed to generate PaC repository object. Cause: %v", err)
@@ -1260,16 +1256,14 @@ func TestPaCRepoAddParamWorkspace(t *testing.T) {
 		Data: pacConfig,
 	}
 
-	component := &compapiv1alpha1.Component{
+	component := &compv1alpha1.Component{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "my-component",
 			Namespace: "my-namespace",
 		},
-		Spec: compapiv1alpha1.ComponentSpec{
-			Source: compapiv1alpha1.ComponentSource{
-				ComponentSourceUnion: compapiv1alpha1.ComponentSourceUnion{
-					GitURL: "https://github.com/user/repo.git",
-				},
+		Spec: compv1alpha1.ComponentSpec{
+			Source: compv1alpha1.ComponentSource{
+				GitURL: "https://github.com/user/repo.git",
 			},
 		},
 	}
@@ -1283,7 +1277,7 @@ func TestPaCRepoAddParamWorkspace(t *testing.T) {
 	}
 
 	t.Run("add to Spec.Params", func(t *testing.T) {
-		repository, _ := generatePACRepository(*component, secret, nil, nil, true)
+		repository, _ := generatePACRepository(*component, secret, nil, nil)
 		pacRepoAddParamWorkspaceName(repository, workspaceName)
 
 		params := convertCustomParamsToMap(repository)
@@ -1293,7 +1287,7 @@ func TestPaCRepoAddParamWorkspace(t *testing.T) {
 	})
 
 	t.Run("override existing workspace parameter, unset other fields btw", func(t *testing.T) {
-		repository, _ := generatePACRepository(*component, secret, nil, nil, true)
+		repository, _ := generatePACRepository(*component, secret, nil, nil)
 		params := []pacv1alpha1.Params{
 			{
 				Name:      pacCustomParamAppstudioWorkspace,
@@ -1317,17 +1311,15 @@ func TestPaCRepoAddParamWorkspace(t *testing.T) {
 }
 
 func TestGetGitProvider(t *testing.T) {
-	getComponent := func(repoUrl, annotationValue string) compapiv1alpha1.Component {
-		component := compapiv1alpha1.Component{
+	getComponent := func(repoUrl, annotationValue string) compv1alpha1.Component {
+		component := compv1alpha1.Component{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "testcomponent",
 				Namespace: "workspace-name",
 			},
-			Spec: compapiv1alpha1.ComponentSpec{
-				Source: compapiv1alpha1.ComponentSource{
-					ComponentSourceUnion: compapiv1alpha1.ComponentSourceUnion{
-						GitURL: repoUrl,
-					},
+			Spec: compv1alpha1.ComponentSpec{
+				Source: compv1alpha1.ComponentSource{
+					GitURL: repoUrl,
 				},
 			},
 		}
@@ -1486,7 +1478,7 @@ func TestGetGitProvider(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			component := getComponent(tt.componentRepoUrl, tt.componentGitProviderAnnotation)
-			got, err := getGitProvider(component, true)
+			got, err := getGitProvider(component)
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("Detecting git provider for component with '%s' url and '%s' annotation value should fail", tt.componentRepoUrl, tt.componentGitProviderAnnotation)
@@ -1502,7 +1494,7 @@ func TestGetGitProvider(t *testing.T) {
 	t.Run("should return error if git source is nil", func(t *testing.T) {
 		component := getComponent("", "")
 		component.Spec.Source.GitURL = ""
-		_, err := getGitProvider(component, true)
+		_, err := getGitProvider(component)
 		if err == nil {
 			t.Error("Expected error for nil source URL")
 		}
