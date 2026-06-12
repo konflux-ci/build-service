@@ -53,19 +53,19 @@ Tests consume shared utilities from [`github.com/konflux-ci/e2e-tests`](https://
 
 3. Create a local kind cluster
 
-```
+```bash
 KIND_MEMORY_GB=12 ./scripts/setup-kind-local-cluster.sh
 ```
 
 4. Create a copy of the env file
 
-```
+```bash
 cp scripts/deploy-local.env.template scripts/deploy-local.env
 ```
 
 5. For webhook forwarding, use a gosmee channel and set the value in `deploy-local.env`
 
-```
+```bash
 SMEE_CHANNEL=https://hook.pipelinesascode.com/<channel_id>
 ```
 **Note:** Use `hook.pipelinesascode.com` (gosmee) instead of `smee.io`. smee.io does not work with Forgejo because webhook signature validation fails.
@@ -73,7 +73,7 @@ SMEE_CHANNEL=https://hook.pipelinesascode.com/<channel_id>
 6. Create a Github App to receive the webhook events from GitHub following [the documentation](https://konflux-ci.dev/konflux-ci/docs/guides/github-secrets/)
 and set below values in `deploy-local.env`
 
-```
+```bash
 GITHUB_PRIVATE_KEY_PATH=<path to private key downloaded earlier>
 WEBHOOK_SECRET=<secret generated earlier>
 GITHUB_APP_ID=<GitHub APP ID>
@@ -83,7 +83,7 @@ GITHUB_APP_ID=<GitHub APP ID>
 
 8. Setup the quay repository to be used in the e2e tests and set the values in `deploy-local.env` file
 
-```
+```bash
 QUAY_ORGANIZATION=<Quay Org>
 QUAY_TOKEN=<quay token>
 ```
@@ -114,7 +114,7 @@ QUAY_TOKEN=<quay token>
 
 11. Install the dependencies and create required secrets after setting up required environment variables.
 
-```
+```bash
 export DEPLOY_LOCAL_SKIP_KIND=1
 export KIND_CLUSTER=konflux
 export KONFLUX_CR=operator/config/samples/konflux-e2e.yaml
@@ -127,7 +127,7 @@ export OPERATOR_INSTALL_METHOD=local
 
 12. Move to the `operator` directory and run the konflux operator
 
-```
+```bash
 cd operator
 make install   # Install CRDs
 make run       # Run the operator locally
@@ -135,13 +135,13 @@ make run       # Run the operator locally
 
 13. Then, in another terminal, apply the Konflux CR:
 
-```
+```bash
 kubectl apply -f operator/config/samples/konflux-e2e.yaml
 ```
 
 14. Wait for konflux to be ready.
 
-```
+```bash
 kubectl wait --for=condition=Ready konflux konflux --timeout=15m
 ```
 
@@ -151,7 +151,7 @@ kubectl wait --for=condition=Ready konflux konflux --timeout=15m
 
 2. Setup the environment needed by the e2e tests
 
-```
+```bash
 # for running tests in upstream konflux environment
 export TEST_ENVIRONMENT=upstream
 
@@ -178,6 +178,6 @@ export CODEBERG_BOT_TOKEN=<codeberg bot token>
 
 3. Run tests using ginkgo commands, for example, to run the `build-service` labelled tests
 
-```
+```bash
 ginkgo -v --label-filter="build-service" ./e2e-tests/tests/
 ```
