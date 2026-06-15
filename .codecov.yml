@@ -16,6 +16,4 @@ coverage:
         target: 80%
         informational: true
 
-comment:
-  layout: "reach,diff,flags,files,footer"
-  require_changes: true
+comment: false
