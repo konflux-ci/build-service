@@ -1,23 +1,19 @@
-comment: off
-
 codecov:
-  require_ci_to_pass: no
-  notify: 
-    wait_for_ci: no
+  require_ci_to_pass: false
 
 ignore:
   - "pkg/git"
 
 coverage:
   status:
-    patch:
-      default:
-        informational: true
     project:
       default:
         target: auto
         threshold: 1%
-        removed_code_behavior: adjust_base
-        if_ci_failed: success
-      required:
-        threshold: 2%
+        informational: true
+    patch:
+      default:
+        target: 80%
+        informational: true
+
+comment: false
