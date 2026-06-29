@@ -59,8 +59,10 @@ const (
 	pipelinesAsCodeWebhooksSecretName = "pipelines-as-code-webhooks-secret"
 
 	pacCelExpressionAnnotationName = "pipelinesascode.tekton.dev/on-cel-expression"
-	pacIncomingSecretNameSuffix    = "-incoming"
-	pacIncomingSecretKey           = "incoming-secret"
+
+	konfluxAuthorEmail          = "konflux@no-reply.konflux-ci.dev"
+	pacIncomingSecretNameSuffix = "-incoming"
+	pacIncomingSecretKey        = "incoming-secret"
 
 	pacMergeRequestSourceBranchPrefix = "konflux-"
 
@@ -711,15 +713,19 @@ func (r *ComponentBuildReconciler) CreatePipelineRunsInRepository(ctx context.Co
 
 	gitProvider, _ := getGitProvider(*component, newModel)
 	authorName := "konflux"
+	authorEmail := konfluxAuthorEmail
 	namePrefix := "Konflux"
 
 	// Check if app is used and override defaults with app-specific values
 	isAppUsed := common.IsPaCApplicationConfigured(gitProvider, pacConfig)
 	if isAppUsed {
 		// Customize PR data to reflect git application name
-		if appName, appSlug, err := gitClient.GetConfiguredGitAppName(); err == nil {
+		if appName, appSlug, appBotUserId, err := gitClient.GetConfiguredGitAppName(); err == nil {
 			namePrefix = appName
 			authorName = appSlug
+			if appBotUserId != 0 {
+				authorEmail = fmt.Sprintf("%d+%s[bot]@users.noreply.github.com", appBotUserId, appSlug)
+			}
 		} else {
 			if gitProvider == "github" {
 				log.Error(err, "failed to get PaC GitHub Application name", l.Action, l.ActionView, l.Audit, "true")
@@ -736,7 +742,7 @@ func (r *ComponentBuildReconciler) CreatePipelineRunsInRepository(ctx context.Co
 		Title:          fmt.Sprintf("%s update %s:%s", namePrefix, component.Name, versionInfo.OriginalVersion),
 		Text:           mergeRequestDescription,
 		AuthorName:     authorName,
-		AuthorEmail:    "konflux@no-reply.konflux-ci.dev",
+		AuthorEmail:    authorEmail,
 		Files: []gp.RepositoryFile{
 			{FullPath: getPipelineRunDefinitionFilePath(component.Name, versionInfo.SanitizedVersion, false), Content: pipelineRunOnPushYaml},
 			{FullPath: getPipelineRunDefinitionFilePath(component.Name, versionInfo.SanitizedVersion, true), Content: pipelineRunOnPRYaml},
@@ -803,7 +809,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaCOldModel(ctx context
 		Title:          "Konflux update " + component.Name,
 		Text:           mergeRequestDescription,
 		AuthorName:     "konflux",
-		AuthorEmail:    "konflux@no-reply.konflux-ci.dev",
+		AuthorEmail:    konfluxAuthorEmail,
 		Files: []gp.RepositoryFile{
 			{FullPath: getPipelineRunDefinitionFilePath(component.Name, "", false), Content: pipelineRunOnPushYaml},
 			{FullPath: getPipelineRunDefinitionFilePath(component.Name, "", true), Content: pipelineRunOnPRYaml},
@@ -813,10 +819,13 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaCOldModel(ctx context
 	isAppUsed := common.IsPaCApplicationConfigured(gitProvider, pacConfig)
 	if isAppUsed {
 		// Customize PR data to reflect git application name
-		if appName, appSlug, err := gitClient.GetConfiguredGitAppName(); err == nil {
+		if appName, appSlug, appBotUserId, err := gitClient.GetConfiguredGitAppName(); err == nil {
 			mrData.CommitMessage = fmt.Sprintf("%s update %s", appName, component.Name)
 			mrData.Title = fmt.Sprintf("%s update %s", appName, component.Name)
 			mrData.AuthorName = appSlug
+			if appBotUserId != 0 {
+				mrData.AuthorEmail = fmt.Sprintf("%d+%s[bot]@users.noreply.github.com", appBotUserId, appSlug)
+			}
 		} else {
 			if gitProvider == "github" {
 				log.Error(err, "failed to get PaC GitHub Application name", l.Action, l.ActionView, l.Audit, "true")
@@ -911,15 +920,19 @@ func (r *ComponentBuildReconciler) RemovePipelineRunsFromRepository(ctx context.
 	sourceBranch := generateMergeRequestSourceBranch(component, versionInfo.SanitizedVersion)
 
 	authorName := "konflux"
+	authorEmail := konfluxAuthorEmail
 	namePrefix := "Konflux"
 
 	// Check if app is used and override defaults with app-specific values
 	isAppUsed := common.IsPaCApplicationConfigured(gitProvider, pacConfig)
 	if isAppUsed {
 		// Customize PR data to reflect git application name
-		if appName, appSlug, err := gitClient.GetConfiguredGitAppName(); err == nil {
+		if appName, appSlug, appBotUserId, err := gitClient.GetConfiguredGitAppName(); err == nil {
 			namePrefix = appName
 			authorName = appSlug
+			if appBotUserId != 0 {
+				authorEmail = fmt.Sprintf("%d+%s[bot]@users.noreply.github.com", appBotUserId, appSlug)
+			}
 		} else {
 			if gitProvider == "github" {
 				log.Error(err, "failed to get PaC GitHub Application name", l.Action, l.ActionView, l.Audit, "true")
@@ -975,7 +988,7 @@ func (r *ComponentBuildReconciler) RemovePipelineRunsFromRepository(ctx context.
 			Title:          fmt.Sprintf("%s purge %s:%s", namePrefix, component.Name, versionInfo.OriginalVersion),
 			Text:           "Pipelines as Code configuration removal",
 			AuthorName:     authorName,
-			AuthorEmail:    "konflux@no-reply.konflux-ci.dev",
+			AuthorEmail:    authorEmail,
 			Files: []gp.RepositoryFile{
 				{FullPath: getPipelineRunDefinitionFilePath(component.Name, versionInfo.SanitizedVersion, false)},
 				{FullPath: getPipelineRunDefinitionFilePath(component.Name, versionInfo.SanitizedVersion, true)},
@@ -1098,7 +1111,7 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPacOldModel(ctx conte
 			Title:          "Konflux purge " + component.Name,
 			Text:           "Pipelines as Code configuration removal",
 			AuthorName:     "konflux",
-			AuthorEmail:    "konflux@no-reply.konflux-ci.dev",
+			AuthorEmail:    konfluxAuthorEmail,
 			Files: []gp.RepositoryFile{
 				{FullPath: getPipelineRunDefinitionFilePath(component.Name, "", false)},
 				{FullPath: getPipelineRunDefinitionFilePath(component.Name, "", true)},
@@ -1107,10 +1120,13 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPacOldModel(ctx conte
 
 		if isAppUsed {
 			// Customize PR data to reflect git application name
-			if appName, appSlug, err := gitClient.GetConfiguredGitAppName(); err == nil {
+			if appName, appSlug, appBotUserId, err := gitClient.GetConfiguredGitAppName(); err == nil {
 				mrData.CommitMessage = fmt.Sprintf("%s purge %s", appName, component.Name)
 				mrData.Title = fmt.Sprintf("%s purge %s", appName, component.Name)
 				mrData.AuthorName = appSlug
+				if appBotUserId != 0 {
+					mrData.AuthorEmail = fmt.Sprintf("%d+%s[bot]@users.noreply.github.com", appBotUserId, appSlug)
+				}
 			} else {
 				if gitProvider == "github" {
 					log.Error(err, "failed to get PaC GitHub Application name", l.Action, l.ActionView, l.Audit, "true")
