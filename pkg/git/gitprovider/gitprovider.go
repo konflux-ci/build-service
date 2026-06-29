@@ -61,9 +61,9 @@ type GitProviderClient interface {
 	// GetBrowseRepositoryAtShaLink returns web URL of repository state at given SHA
 	GetBrowseRepositoryAtShaLink(repoUrl, sha string) string
 
-	// GetConfiguredGitAppName returns configured git application name and id.
+	// GetConfiguredGitAppName returns configured git application name, slug and app bot user id.
 	// Not all git providers support applications. Currently only GitHub does.
-	GetConfiguredGitAppName() (string, string, error)
+	GetConfiguredGitAppName() (string, string, int64, error)
 
 	// GetAppUserId get info about application user
 	GetAppUserId(userName string) (int64, error)
