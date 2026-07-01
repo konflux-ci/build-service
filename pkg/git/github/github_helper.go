@@ -249,6 +249,9 @@ func (g *GithubClient) addCommitToBranch(owner, repository, authorName, authorEm
 	commit := &github.Commit{Author: author, Message: &commitMessage, Tree: tree, Parents: []*github.Commit{parent.Commit}}
 	newCommit, resp, err := g.client.Git.CreateCommit(g.ctx, owner, repository, commit)
 	if err != nil {
+		if strings.Contains(err.Error(), "Repository rule violations") {
+			return boerrors.NewBuildOpError(boerrors.ERepositoryRuleViolation, fmt.Errorf("commit creation failed due to repository rule violations"))
+		}
 		return refineGitHostingServiceError(resp.Response, err)
 	}
 
@@ -283,6 +286,9 @@ func (g *GithubClient) addDeleteCommitToBranch(owner, repository, authorName, au
 	commit := &github.Commit{Author: author, Message: &commitMessage, Tree: tree, Parents: []*github.Commit{parent.Commit}}
 	newCommit, resp, err := g.client.Git.CreateCommit(g.ctx, owner, repository, commit)
 	if err != nil {
+		if strings.Contains(err.Error(), "Repository rule violations") {
+			return boerrors.NewBuildOpError(boerrors.ERepositoryRuleViolation, fmt.Errorf("commit creation failed due to repository rule violations"))
+		}
 		return refineGitHostingServiceError(resp.Response, err)
 	}
 
