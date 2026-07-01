@@ -26,8 +26,7 @@ import (
 )
 
 var _ = Describe("Component PipelineRuns pruner controller", func() {
-
-	// TODO remove after only new model is used
+	// TODO remove after only new model is used and old model is gone
 	Context("Test Component PipelineRuns pruning Old Model", func() {
 
 		var (
@@ -48,7 +47,7 @@ var _ = Describe("Component PipelineRuns pruner controller", func() {
 		It("should not fail if nothing to prune", func() {
 			Expect(listComponentPipelineRuns(resourcePrunerKey)).To(BeEmpty())
 
-			deleteComponent(resourcePrunerKey)
+			deleteComponentOldModel(resourcePrunerKey)
 			waitNoPipelineRunsForComponent(resourcePrunerKey)
 		})
 
@@ -56,7 +55,7 @@ var _ = Describe("Component PipelineRuns pruner controller", func() {
 			createPaCPipelineRunWithName(resourcePrunerKey, resourcePrunerKey.Name)
 			Expect(listComponentPipelineRuns(resourcePrunerKey)).To(HaveLen(1))
 
-			deleteComponent(resourcePrunerKey)
+			deleteComponentOldModel(resourcePrunerKey)
 			waitNoPipelineRunsForComponent(resourcePrunerKey)
 		})
 
@@ -67,7 +66,7 @@ var _ = Describe("Component PipelineRuns pruner controller", func() {
 			createPaCPipelineRunWithName(resourcePrunerKey, "component-on-push-b9i8p")
 			Expect(listComponentPipelineRuns(resourcePrunerKey)).To(HaveLen(4))
 
-			deleteComponent(resourcePrunerKey)
+			deleteComponentOldModel(resourcePrunerKey)
 			waitNoPipelineRunsForComponent(resourcePrunerKey)
 		})
 
@@ -88,7 +87,7 @@ var _ = Describe("Component PipelineRuns pruner controller", func() {
 			createPaCPipelineRunWithName(anotherComponentKey, anotherComponentPipelineRun2Name)
 			Expect(listComponentPipelineRuns(anotherComponentKey)).To(HaveLen(2))
 
-			deleteComponent(resourcePrunerKey)
+			deleteComponentOldModel(resourcePrunerKey)
 			waitNoPipelineRunsForComponent(resourcePrunerKey)
 
 			anotherComponentPipelineRuns := listComponentPipelineRuns(anotherComponentKey)
@@ -103,7 +102,7 @@ var _ = Describe("Component PipelineRuns pruner controller", func() {
 				}
 			}
 
-			deleteComponent(anotherComponentKey)
+			deleteComponentOldModel(anotherComponentKey)
 			waitNoPipelineRunsForComponent(anotherComponentKey)
 		})
 
@@ -127,7 +126,7 @@ var _ = Describe("Component PipelineRuns pruner controller", func() {
 			createPaCPipelineRunWithName(anotherComponentKey, anotherComponentPipelineRun2Name)
 			Expect(listComponentPipelineRuns(anotherComponentKey)).To(HaveLen(2))
 
-			deleteComponent(resourcePrunerKey)
+			deleteComponentOldModel(resourcePrunerKey)
 			waitNoPipelineRunsForComponent(resourcePrunerKey)
 
 			anotherComponentPipelineRuns := listComponentPipelineRuns(anotherComponentKey)
@@ -142,7 +141,7 @@ var _ = Describe("Component PipelineRuns pruner controller", func() {
 				}
 			}
 
-			deleteComponent(anotherComponentKey)
+			deleteComponentOldModel(anotherComponentKey)
 			waitNoPipelineRunsForComponent(anotherComponentKey)
 			deleteNamespace(anotherComponentNamespace)
 		})

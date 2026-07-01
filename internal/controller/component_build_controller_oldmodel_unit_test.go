@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// TODO remove whole file after only new model is used
+// TODO remove whole file after only new model is used and old model is gone
 package controllers
 
 import (
@@ -36,7 +36,6 @@ import (
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 )
 
-// TODO remove after only new model is used
 func TestReadBuildStatusOldModel(t *testing.T) {
 	tests := []struct {
 		name                       string
@@ -88,7 +87,6 @@ func TestReadBuildStatusOldModel(t *testing.T) {
 	}
 }
 
-// TODO remove after only new model is used
 func TestWriteBuildStatusOldModel(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -175,7 +173,6 @@ func TestWriteBuildStatusOldModel(t *testing.T) {
 	}
 }
 
-// TODO remove after only new model is used
 func TestGeneratePaCPipelineRunForComponentOldModel(t *testing.T) {
 	component := &compapiv1alpha1.Component{
 		ObjectMeta: metav1.ObjectMeta{
@@ -336,7 +333,6 @@ func TestGeneratePaCPipelineRunForComponentOldModel(t *testing.T) {
 	}
 }
 
-// TODO remove after only new model is used
 func TestGeneratePaCPipelineRunForComponent_ShouldStopIfTargetBranchIsNotSetOldModel(t *testing.T) {
 	_, err := generatePaCPipelineRunForComponentOldModel(nil, nil, nil, "", nil, true)
 	if err == nil {
@@ -344,7 +340,6 @@ func TestGeneratePaCPipelineRunForComponent_ShouldStopIfTargetBranchIsNotSetOldM
 	}
 }
 
-// TODO remove after only new model is used
 func TestGenerateCelExpressionForPipelineOldModel(t *testing.T) {
 	componentKey := types.NamespacedName{Namespace: "test-ns", Name: "component-name"}
 	ResetTestGitProviderClient()
@@ -470,7 +465,6 @@ func TestGenerateCelExpressionForPipelineOldModel(t *testing.T) {
 	ResetTestGitProviderClient()
 }
 
-// TODO remove after only new model is used
 func TestGeneratePACRepositoryOldModel(t *testing.T) {
 	getComponent := func(repoUrl string, annotations map[string]string) compapiv1alpha1.Component {
 		return compapiv1alpha1.Component{
@@ -530,7 +524,7 @@ func TestGeneratePACRepositoryOldModel(t *testing.T) {
 				},
 				WebhookSecret: &pacv1alpha1.Secret{
 					Name: pipelinesAsCodeWebhooksSecretName,
-					Key:  getWebhookSecretKeyForComponent(getComponent("https://github.com/user/test-component-repository", nil), false),
+					Key:  getWebhookSecretKeyForComponentOldModel(getComponent("https://github.com/user/test-component-repository", nil)),
 				},
 				URL:  "",
 				Type: "github",
@@ -565,7 +559,7 @@ func TestGeneratePACRepositoryOldModel(t *testing.T) {
 				},
 				WebhookSecret: &pacv1alpha1.Secret{
 					Name: pipelinesAsCodeWebhooksSecretName,
-					Key:  getWebhookSecretKeyForComponent(getComponent("https://github.self-hosted.com/user/test-component-repository/", nil), false),
+					Key:  getWebhookSecretKeyForComponentOldModel(getComponent("https://github.self-hosted.com/user/test-component-repository/", nil)),
 				},
 				URL:  "https://github.self-hosted.com",
 				Type: "github",
@@ -588,7 +582,7 @@ func TestGeneratePACRepositoryOldModel(t *testing.T) {
 				},
 				WebhookSecret: &pacv1alpha1.Secret{
 					Name: pipelinesAsCodeWebhooksSecretName,
-					Key:  getWebhookSecretKeyForComponent(getComponent("https://github.self-hosted.com/user/test-component-repository/", nil), false),
+					Key:  getWebhookSecretKeyForComponentOldModel(getComponent("https://github.self-hosted.com/user/test-component-repository/", nil)),
 				},
 				URL:  "https://github.self-hosted-proxy.com",
 				Type: "github",
@@ -607,7 +601,7 @@ func TestGeneratePACRepositoryOldModel(t *testing.T) {
 				},
 				WebhookSecret: &pacv1alpha1.Secret{
 					Name: pipelinesAsCodeWebhooksSecretName,
-					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.com/user/test-component-repository/", nil), false),
+					Key:  getWebhookSecretKeyForComponentOldModel(getComponent("https://gitlab.com/user/test-component-repository/", nil)),
 				},
 				URL:  "",
 				Type: "gitlab",
@@ -628,7 +622,7 @@ func TestGeneratePACRepositoryOldModel(t *testing.T) {
 				},
 				WebhookSecret: &pacv1alpha1.Secret{
 					Name: pipelinesAsCodeWebhooksSecretName,
-					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.com/user/test-component-repository", nil), false),
+					Key:  getWebhookSecretKeyForComponentOldModel(getComponent("https://gitlab.com/user/test-component-repository", nil)),
 				},
 				Type: "gitlab",
 			},
@@ -649,7 +643,7 @@ func TestGeneratePACRepositoryOldModel(t *testing.T) {
 				},
 				WebhookSecret: &pacv1alpha1.Secret{
 					Name: pipelinesAsCodeWebhooksSecretName,
-					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.self-hosted.com/user/test-component-repository/", nil), false),
+					Key:  getWebhookSecretKeyForComponentOldModel(getComponent("https://gitlab.self-hosted.com/user/test-component-repository/", nil)),
 				},
 				URL:  "https://gitlab.self-hosted.com",
 				Type: "gitlab",
@@ -672,7 +666,7 @@ func TestGeneratePACRepositoryOldModel(t *testing.T) {
 				},
 				WebhookSecret: &pacv1alpha1.Secret{
 					Name: pipelinesAsCodeWebhooksSecretName,
-					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.self-hosted.com/user/test-component-repository/", nil), false),
+					Key:  getWebhookSecretKeyForComponentOldModel(getComponent("https://gitlab.self-hosted.com/user/test-component-repository/", nil)),
 				},
 				URL:  "https://gitlab.self-hosted-proxy.com",
 				Type: "gitlab",
@@ -695,7 +689,7 @@ func TestGeneratePACRepositoryOldModel(t *testing.T) {
 				},
 				WebhookSecret: &pacv1alpha1.Secret{
 					Name: pipelinesAsCodeWebhooksSecretName,
-					Key:  getWebhookSecretKeyForComponent(getComponent("https://gitlab.self-hosted.com/user/test-component-repository/", nil), false),
+					Key:  getWebhookSecretKeyForComponentOldModel(getComponent("https://gitlab.self-hosted.com/user/test-component-repository/", nil)),
 				},
 				URL:  "https://gitlab.self-hosted-proxy.com",
 				Type: "gitlab",
@@ -717,7 +711,7 @@ func TestGeneratePACRepositoryOldModel(t *testing.T) {
 				},
 				WebhookSecret: &pacv1alpha1.Secret{
 					Name: pipelinesAsCodeWebhooksSecretName,
-					Key:  getWebhookSecretKeyForComponent(getComponent("https://forgejo.example.com/user/test-component-repository/", nil), false),
+					Key:  getWebhookSecretKeyForComponentOldModel(getComponent("https://forgejo.example.com/user/test-component-repository/", nil)),
 				},
 				URL:  "https://forgejo.example.com",
 				Type: "forgejo",
@@ -739,7 +733,7 @@ func TestGeneratePACRepositoryOldModel(t *testing.T) {
 				},
 				Data: tt.pacConfig,
 			}
-			pacRepo, err := generatePACRepository(component, secret, nil, nil, false)
+			pacRepo, err := generatePACRepositoryOldModel(component, secret)
 
 			if err != nil {
 				t.Errorf("Failed to generate PaC repository object. Cause: %v", err)
@@ -764,7 +758,6 @@ func TestGeneratePACRepositoryOldModel(t *testing.T) {
 	}
 }
 
-// TODO remove after only new model is used
 func TestPaCRepoAddParamWorkspaceOldModel(t *testing.T) {
 	const workspaceName = "someone-tenant"
 
@@ -796,7 +789,7 @@ func TestPaCRepoAddParamWorkspaceOldModel(t *testing.T) {
 	}
 
 	t.Run("add to Spec.Params", func(t *testing.T) {
-		repository, _ := generatePACRepository(*component, secret, nil, nil, false)
+		repository, _ := generatePACRepositoryOldModel(*component, secret)
 		pacRepoAddParamWorkspaceName(repository, workspaceName)
 
 		params := convertCustomParamsToMap(repository)
@@ -806,7 +799,7 @@ func TestPaCRepoAddParamWorkspaceOldModel(t *testing.T) {
 	})
 
 	t.Run("override existing workspace parameter, unset other fields btw", func(t *testing.T) {
-		repository, _ := generatePACRepository(*component, secret, nil, nil, false)
+		repository, _ := generatePACRepositoryOldModel(*component, secret)
 		params := []pacv1alpha1.Params{
 			{
 				Name:      pacCustomParamAppstudioWorkspace,
@@ -829,7 +822,6 @@ func TestPaCRepoAddParamWorkspaceOldModel(t *testing.T) {
 	})
 }
 
-// TODO remove after only new model is used
 func TestGetGitProviderOldModel(t *testing.T) {
 	getComponent := func(repoUrl, annotationValue string) compapiv1alpha1.Component {
 		componentMeta := metav1.ObjectMeta{
@@ -1004,7 +996,7 @@ func TestGetGitProviderOldModel(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			component := getComponent(tt.componentRepoUrl, tt.componentGitProviderAnnotation)
-			got, err := getGitProvider(component, false)
+			got, err := getGitProviderOldModel(component)
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("Detecting git provider for component with '%s' url and '%s' annotation value should fail", tt.componentRepoUrl, tt.componentGitProviderAnnotation)
@@ -1020,7 +1012,7 @@ func TestGetGitProviderOldModel(t *testing.T) {
 	t.Run("should return error if git source is nil", func(t *testing.T) {
 		component := getComponent("", "")
 		component.Spec.Source.GitSource = nil
-		_, err := getGitProvider(component, false)
+		_, err := getGitProviderOldModel(component)
 		if err == nil {
 			t.Error("Expected error for nil source URL")
 		}
