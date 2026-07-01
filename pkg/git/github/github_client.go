@@ -62,7 +62,7 @@ func (g *GithubClient) EnsurePaCMergeRequest(repoUrl string, d *gp.MergeRequestD
 	if d.BaseBranchName == "" {
 		baseBranch, err := g.getDefaultBranch(owner, repository)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to get default branch for %s/%s: %w", owner, repository, err)
 		}
 		d.BaseBranchName = baseBranch
 	}
@@ -70,7 +70,7 @@ func (g *GithubClient) EnsurePaCMergeRequest(repoUrl string, d *gp.MergeRequestD
 	// Check if Pipelines as Code configuration up to date in the main branch
 	upToDate, err := g.filesUpToDate(owner, repository, d.BaseBranchName, d.Files)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to check if files are up to date in branch %s: %w", d.BaseBranchName, err)
 	}
 	if upToDate {
 		// Nothing to do, the configuration is alredy in the main branch of the repository
@@ -80,30 +80,30 @@ func (g *GithubClient) EnsurePaCMergeRequest(repoUrl string, d *gp.MergeRequestD
 	// Check if branch with a proposal exists
 	branchExists, err := g.branchExist(owner, repository, d.BranchName)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to check if branch %s exists: %w", d.BranchName, err)
 	}
 
 	if branchExists {
 		upToDate, err := g.filesUpToDate(owner, repository, d.BranchName, d.Files)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to check if files are up to date in branch %s: %w", d.BranchName, err)
 		}
 		if !upToDate {
 			// Update branch
 			branchRef, err := g.getBranch(owner, repository, d.BranchName)
 			if err != nil {
-				return "", err
+				return "", fmt.Errorf("failed to get branch %s: %w", d.BranchName, err)
 			}
 
 			err = g.addCommitToBranch(owner, repository, d.AuthorName, d.AuthorEmail, d.CommitMessage, d.SignedOff, d.Files, branchRef)
 			if err != nil {
-				return "", err
+				return "", fmt.Errorf("failed to add commit to branch %s: %w", d.BranchName, err)
 			}
 		}
 
 		pr, err := g.findPullRequestByBranchesWithinRepository(owner, repository, d.BranchName, d.BaseBranchName)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to find pull request for branch %s: %w", d.BranchName, err)
 		}
 		if pr != nil {
 			return *pr.HTMLURL, nil
@@ -116,7 +116,7 @@ func (g *GithubClient) EnsurePaCMergeRequest(repoUrl string, d *gp.MergeRequestD
 				// Current branch has correct configuration, but it's not possible to create a PR,
 				// because current branch reference is included into main branch.
 				if _, err := g.deleteBranch(owner, repository, d.BranchName); err != nil {
-					return "", err
+					return "", fmt.Errorf("failed to delete branch %s: %w", d.BranchName, err)
 				}
 				return g.EnsurePaCMergeRequest(repoUrl, d)
 			}
@@ -127,12 +127,12 @@ func (g *GithubClient) EnsurePaCMergeRequest(repoUrl string, d *gp.MergeRequestD
 		// Create branch, commit and pull request
 		branchRef, err := g.createBranch(owner, repository, d.BranchName, d.BaseBranchName)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to create branch %s: %w", d.BranchName, err)
 		}
 
 		err = g.addCommitToBranch(owner, repository, d.AuthorName, d.AuthorEmail, d.CommitMessage, d.SignedOff, d.Files, branchRef)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to add commit to branch %s: %w", d.BranchName, err)
 		}
 
 		return g.createPullRequestWithinRepository(owner, repository, d.BranchName, d.BaseBranchName, d.Title, d.Text)
@@ -147,14 +147,14 @@ func (g *GithubClient) UndoPaCMergeRequest(repoUrl string, d *gp.MergeRequestDat
 	if d.BaseBranchName == "" {
 		baseBranch, err := g.getDefaultBranch(owner, repository)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to get default branch for %s/%s: %w", owner, repository, err)
 		}
 		d.BaseBranchName = baseBranch
 	}
 
 	files, err := g.filesExistInDirectory(owner, repository, d.BaseBranchName, ".tekton", d.Files)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to check existing files in .tekton directory: %w", err)
 	}
 	if len(files) == 0 {
 		// Nothing to prune
@@ -165,18 +165,18 @@ func (g *GithubClient) UndoPaCMergeRequest(repoUrl string, d *gp.MergeRequestDat
 
 	// Delete old branch, if any
 	if _, err := g.deleteBranch(owner, repository, d.BranchName); err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to delete branch %s: %w", d.BranchName, err)
 	}
 
 	// Create branch, commit and pull request
 	branchRef, err := g.createBranch(owner, repository, d.BranchName, d.BaseBranchName)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to create branch %s: %w", d.BranchName, err)
 	}
 
 	err = g.addDeleteCommitToBranch(owner, repository, d.AuthorName, d.AuthorEmail, d.CommitMessage, d.SignedOff, d.Files, branchRef)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to add delete commit to branch %s: %w", d.BranchName, err)
 	}
 
 	return g.createPullRequestWithinRepository(owner, repository, d.BranchName, d.BaseBranchName, d.Title, d.Text)
@@ -217,15 +217,17 @@ func (g *GithubClient) SetupPaCWebhook(repoUrl, webhookUrl, webhookSecret string
 
 	existingWebhook, err := g.getWebhookByTargetUrl(owner, repository, webhookUrl)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get webhook by target URL: %w", err)
 	}
 
 	defaultWebhook := getDefaultWebhookConfig(webhookUrl, webhookSecret)
 
 	if existingWebhook == nil {
 		// Webhook does not exist
-		_, err = g.createWebhook(owner, repository, defaultWebhook)
-		return err
+		if _, err = g.createWebhook(owner, repository, defaultWebhook); err != nil {
+			return fmt.Errorf("failed to create webhook: %w", err)
+		}
+		return nil
 	}
 
 	// Webhook exists
@@ -257,8 +259,10 @@ func (g *GithubClient) SetupPaCWebhook(repoUrl, webhookUrl, webhookSecret string
 		existingWebhook.Active = defaultWebhook.Active
 	}
 
-	_, err = g.updateWebhook(owner, repository, existingWebhook)
-	return err
+	if _, err = g.updateWebhook(owner, repository, existingWebhook); err != nil {
+		return fmt.Errorf("failed to update webhook: %w", err)
+	}
+	return nil
 }
 
 func getDefaultWebhookConfig(webhookUrl, webhookSecret string) *github.Hook {
@@ -284,14 +288,17 @@ func (g *GithubClient) DeletePaCWebhook(repoUrl, webhookUrl string) error {
 
 	existingWebhook, err := g.getWebhookByTargetUrl(owner, repository, webhookUrl)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get webhook by target URL: %w", err)
 	}
 	if existingWebhook == nil {
 		// Webhook doesn't exist, nothing to do
 		return nil
 	}
 
-	return g.deleteWebhook(owner, repository, *existingWebhook.ID)
+	if err := g.deleteWebhook(owner, repository, *existingWebhook.ID); err != nil {
+		return fmt.Errorf("failed to delete webhook: %w", err)
+	}
+	return nil
 }
 
 // GetDefaultBranchWithChecks returns name of default branch in the given repository
@@ -321,14 +328,14 @@ func (g *GithubClient) GetBranchSha(repoUrl, branchName string) (string, error) 
 	if branchName == "" {
 		defaultBranchName, err := g.getDefaultBranch(owner, repository)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to get default branch for %s/%s: %w", owner, repository, err)
 		}
 		branchName = defaultBranchName
 	}
 
 	ref, err := g.getBranch(owner, repository, branchName)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to get branch %s: %w", branchName, err)
 	}
 	if ref.GetObject() == nil {
 		return "", fmt.Errorf("unexpected response while getting branch top commit SHA")
@@ -346,14 +353,14 @@ func (g *GithubClient) IsFileExist(repoUrl, branchName, filePath string) (bool, 
 		var err error
 		branchName, err = g.getDefaultBranch(owner, repository)
 		if err != nil {
-			return false, err
+			return false, fmt.Errorf("failed to get default branch for %s/%s: %w", owner, repository, err)
 		}
 	}
 
 	directory := filepath.Dir(filePath)
 	files, err := g.filesExistInDirectory(owner, repository, branchName, directory, []gp.RepositoryFile{{FullPath: filePath}})
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("failed to check if file %s exists in directory %s: %w", filePath, directory, err)
 	}
 	return len(files) > 0, nil
 }
@@ -365,7 +372,7 @@ func (g *GithubClient) DownloadFileContent(repoUrl, branchName, filePath string)
 		var err error
 		branchName, err = g.getDefaultBranch(owner, repository)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to get default branch for %s/%s: %w", owner, repository, err)
 		}
 	}
 
@@ -378,7 +385,7 @@ func (g *GithubClient) IsRepositoryPublic(repoUrl string) (bool, error) {
 
 	repoInfo, err := g.getRepositoryInfo(owner, repository)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("failed to get repository info for %s/%s: %w", owner, repository, err)
 	}
 	if repoInfo == nil {
 		// There is no difference between private and not found for GitHub unless the user is the owner.

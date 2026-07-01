@@ -119,7 +119,7 @@ func (r *ComponentBuildReconciler) GetPacSecrets(ctx context.Context, component 
 
 	pacSecret, err := r.lookupPaCSecret(ctx, component, gitProvider, newModel)
 	if err != nil {
-		return "", nil, err
+		return "", nil, fmt.Errorf("failed to lookup PaC secret: %w", err)
 	}
 
 	if err := validatePaCConfiguration(gitProvider, *pacSecret); err != nil {
@@ -135,7 +135,7 @@ func (r *ComponentBuildReconciler) GetPacSecrets(ctx context.Context, component 
 		// and stores it in the corresponding k8s secret.
 		webhookSecretString, err = r.ensureWebhookSecret(ctx, component, newModel)
 		if err != nil {
-			return "", nil, err
+			return "", nil, fmt.Errorf("failed to ensure webhook secret: %w", err)
 		}
 	}
 
@@ -155,7 +155,7 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponentOldModel(ctx context.
 	gitProvider, err := getGitProvider(*component, newModel)
 	if err != nil {
 		// Do not reconcile, because configuration must be fixed before it is possible to proceed.
-		return "", err
+		return "", fmt.Errorf("failed to get git provider: %w", err)
 	}
 	repoUrl := getGitRepoUrl(*component, newModel)
 
@@ -173,7 +173,7 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponentOldModel(ctx context.
 
 	pacSecret, err := r.lookupPaCSecret(ctx, component, gitProvider, newModel)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to lookup PaC secret: %w", err)
 	}
 
 	if err := validatePaCConfiguration(gitProvider, *pacSecret); err != nil {
@@ -189,19 +189,19 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponentOldModel(ctx context.
 		// and stores it in the corresponding k8s secret.
 		webhookSecretString, err = r.ensureWebhookSecret(ctx, component, newModel)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to ensure webhook secret: %w", err)
 		}
 
 		// Obtain Pipelines as Code callback URL
 		webhookTargetUrl, err = r.getPaCWebhookTargetUrl(ctx, repoUrl)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to get PaC webhook target URL: %w", err)
 		}
 	}
 
 	var pacRepositoryName string
 	if pacRepositoryName, err = r.ensurePaCRepository(ctx, component, pacSecret, nil, nil, newModel); err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to ensure PaC repository: %w", err)
 	}
 	log.Info("Using PaC repository", "PaCRepositoryName", pacRepositoryName, l.Action, l.ActionView)
 
@@ -209,7 +209,7 @@ func (r *ComponentBuildReconciler) ProvisionPaCForComponentOldModel(ctx context.
 	mrUrl, err := r.ConfigureRepositoryForPaCOldModel(ctx, component, pacSecret.Data, webhookTargetUrl, webhookSecretString)
 	if err != nil {
 		r.EventRecorder.Eventf(component, nil, "Warning", "ErrorConfiguringPaCForComponentRepository", "ConfigurePaCRepository", err.Error())
-		return "", err
+		return "", fmt.Errorf("failed to configure repository for PaC: %w", err)
 	}
 	var mrMessage string
 	if mrUrl != "" {
@@ -241,7 +241,7 @@ func validatePaCConfiguration(gitProvider string, pacSecret corev1.Secret) error
 			// GitHub application
 			err := checkMandatoryFieldsNotEmpty(pacSecret.Data, []string{common.PipelinesAsCodeGithubAppIdKey, common.PipelinesAsCodeGithubPrivateKey})
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to validate PaC GitHub App configuration: %w", err)
 			}
 
 			// validate content of the fields
@@ -375,7 +375,7 @@ func (r *ComponentBuildReconciler) TriggerPaCBuildOldModel(ctx context.Context, 
 
 	repository, err := r.findPaCRepositoryForComponent(ctx, component, newModel)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("failed to find PaC repository for component: %w", err)
 	}
 
 	if repository == nil {
@@ -384,19 +384,19 @@ func (r *ComponentBuildReconciler) TriggerPaCBuildOldModel(ctx context.Context, 
 
 	incomingSecret, reconcileRequired, err := r.ensureIncomingSecret(ctx, component, newModel)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("failed to ensure incoming secret: %w", err)
 	}
 
 	repoUrl := getGitRepoUrl(*component, newModel)
 	gitProvider, err := getGitProvider(*component, newModel)
 	if err != nil {
 		// There is no point to continue if git provider is not known.
-		return false, err
+		return false, fmt.Errorf("failed to get git provider: %w", err)
 	}
 
 	pacSecret, err := r.lookupPaCSecret(ctx, component, gitProvider, newModel)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("failed to lookup PaC secret: %w", err)
 	}
 
 	gitClient, err := gitproviderfactory.CreateGitClient(gitproviderfactory.GitClientConfig{
@@ -405,13 +405,13 @@ func (r *ComponentBuildReconciler) TriggerPaCBuildOldModel(ctx context.Context, 
 		RepoUrl:       repoUrl,
 	})
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("failed to create git client: %w", err)
 	}
 
 	// getting branch in advance just to test credentials
 	defaultBranch, err := gitClient.GetDefaultBranchWithChecks(repoUrl)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("failed to get default branch: %w", err)
 	}
 
 	// get target branch for incoming hook
@@ -424,7 +424,7 @@ func (r *ComponentBuildReconciler) TriggerPaCBuildOldModel(ctx context.Context, 
 	if incomingUpdated {
 		if err := r.Client.Update(ctx, repository); err != nil {
 			log.Error(err, "failed to update PaC repository with incomings", "PaCRepositoryName", repository.Name)
-			return false, err
+			return false, fmt.Errorf("failed to update PaC repository %s with incomings: %w", repository.Name, err)
 		}
 		log.Info("Added incomings to the PaC repository", "PaCRepositoryName", repository.Name, l.Action, l.ActionUpdate)
 
@@ -439,7 +439,7 @@ func (r *ComponentBuildReconciler) TriggerPaCBuildOldModel(ctx context.Context, 
 
 	pacInternalUrl, err := r.getInternalPaCEndpoint(ctx)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("failed to get PaC webhook target URL: %w", err)
 	}
 
 	secretValue := string(incomingSecret.Data[pacIncomingSecretKey])
@@ -482,7 +482,7 @@ func (r *ComponentBuildReconciler) UndoPaCProvisionForComponentOldModel(ctx cont
 	gitProvider, err := getGitProvider(*component, newModel)
 	if err != nil {
 		// There is no point to continue if git provider is not known.
-		return "", err
+		return "", fmt.Errorf("failed to get git provider: %w", err)
 	}
 
 	pacSecret, err := r.lookupPaCSecret(ctx, component, gitProvider, newModel)
@@ -506,13 +506,13 @@ func (r *ComponentBuildReconciler) UndoPaCProvisionForComponentOldModel(ctx cont
 	baseBranch, mrUrl, action, err := r.UnconfigureRepositoryForPacOldModel(ctx, component, pacSecret.Data, webhookTargetUrl)
 	if err != nil {
 		log.Error(err, "failed to create merge request to remove Pipelines as Code configuration from Component source repository", l.Audit, "true")
-		return "", err
+		return "", fmt.Errorf("failed to unconfigure repository for PaC: %w", err)
 	}
 
 	err = r.cleanupPaCRepositoryIncomingsAndSecretOldModel(ctx, component, baseBranch, newModel)
 	if err != nil {
 		log.Error(err, "failed cleanup incomings from repo and incoming secret")
-		return "", err
+		return "", fmt.Errorf("failed to cleanup PaC repository incomings: %w", err)
 	}
 
 	switch action {
@@ -543,7 +543,7 @@ func (r *ComponentBuildReconciler) getPaCWebhookTargetUrl(ctx context.Context, r
 		var err error
 		webhookTargetUrl, err = r.getPaCRoutePublicUrl(ctx)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to get PaC route public URL: %w", err)
 		}
 	}
 
@@ -653,13 +653,13 @@ func GetGitClient(component *compapiv1alpha1.Component, pacConfig map[string][]b
 		RepoUrl:       repoUrl,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create git client: %w", err)
 	}
 
 	// getting branch just to test credentials
 	_, err = gitClient.GetDefaultBranchWithChecks(repoUrl)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to verify git credentials: %w", err)
 	}
 
 	return gitClient, nil
@@ -686,7 +686,7 @@ func (r *ComponentBuildReconciler) SetupPacWebhookWhenAppNotUsed(ctx context.Con
 
 		if err := gitClient.SetupPaCWebhook(repoUrl, webhookTargetUrl, webhookSecret); err != nil {
 			log.Error(err, fmt.Sprintf("failed to setup Pipelines as Code webhook %s for %s Component in %s namespace", webhookTargetUrl, component.Name, component.Namespace), l.Audit, "true")
-			return err
+			return fmt.Errorf("failed to setup PaC webhook: %w", err)
 		} else {
 			log.Info(fmt.Sprintf("Pipelines as Code webhook \"%s\" configured for %s Component in %s namespace",
 				webhookTargetUrl, component.Name, component.Namespace),
@@ -706,7 +706,7 @@ func (r *ComponentBuildReconciler) CreatePipelineRunsInRepository(ctx context.Co
 
 	pipelineRunOnPushYaml, pipelineRunOnPRYaml, err := r.generatePaCPipelineRunConfigs(ctx, component, gitClient, versionInfo, pipelineDefinition)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to generate PaC pipeline run configs: %w", err)
 	}
 
 	gitProvider, _ := getGitProvider(*component, newModel)
@@ -746,7 +746,7 @@ func (r *ComponentBuildReconciler) CreatePipelineRunsInRepository(ctx context.Co
 	repoUrl := getGitRepoUrl(*component, newModel)
 	mrUrl, err := gitClient.EnsurePaCMergeRequest(repoUrl, mrData)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to ensure PaC merge request: %w", err)
 	}
 
 	var mrMessage string
@@ -776,13 +776,13 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaCOldModel(ctx context
 		RepoUrl:       repoUrl,
 	})
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to create git client: %w", err)
 	}
 
 	// getting branch in advance just to test credentials
 	defaultBranch, err := gitClient.GetDefaultBranchWithChecks(repoUrl)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to verify git credentials: %w", err)
 	}
 
 	baseBranch := component.Spec.Source.GitSource.Revision
@@ -792,7 +792,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaCOldModel(ctx context
 
 	pipelineRunOnPushYaml, pipelineRunOnPRYaml, err := r.generatePaCPipelineRunConfigsOldModel(ctx, component, gitClient, baseBranch)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to generate PaC pipeline run configs: %w", err)
 	}
 
 	mrData := &gp.MergeRequestData{
@@ -827,7 +827,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaCOldModel(ctx context
 		// Webhook
 		if err := gitClient.SetupPaCWebhook(repoUrl, webhookTargetUrl, webhookSecret); err != nil {
 			log.Error(err, fmt.Sprintf("failed to setup Pipelines as Code webhook %s", webhookTargetUrl), l.Audit, "true")
-			return "", err
+			return "", fmt.Errorf("failed to setup PaC webhook: %w", err)
 		} else {
 			log.Info(fmt.Sprintf("Pipelines as Code webhook \"%s\" configured for %s Component in %s namespace",
 				webhookTargetUrl, component.Name, component.Namespace),
@@ -863,7 +863,7 @@ func (r *ComponentBuildReconciler) RemovePacWebhook(ctx context.Context, compone
 		componentList := &compapiv1alpha1.ComponentList{}
 		if err := r.Client.List(ctx, componentList, &client.ListOptions{Namespace: component.Namespace}); err != nil {
 			log.Error(err, "failed to list components")
-			return err
+			return fmt.Errorf("failed to list components in namespace %s: %w", component.Namespace, err)
 		}
 
 		sameRepoUsed := false
@@ -936,14 +936,14 @@ func (r *ComponentBuildReconciler) RemovePipelineRunsFromRepository(ctx context.
 
 	mergeRequest, err := gitClient.FindUnmergedPaCMergeRequest(repoUrl, mrData)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to find unmerged PaC merge request: %w", err)
 	}
 
 	// Non-existing source branch should not be an error, just ignore it,
 	// but other errors should be handled.
 	branchDeleted, err := gitClient.DeleteBranch(repoUrl, sourceBranch)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to delete branch %s: %w", sourceBranch, err)
 	}
 	if branchDeleted {
 		log.Info(fmt.Sprintf("PaC configuration proposal branch %s is deleted, for component %s, version %s", sourceBranch, component.Name, versionInfo.OriginalVersion), l.Action, l.ActionDelete)
@@ -992,7 +992,10 @@ func (r *ComponentBuildReconciler) RemovePipelineRunsFromRepository(ctx context.
 		} else {
 			log.Error(err, "failed to create merge request to remove Pipelines as Code configuration from Component source repository", "componentName", component.Name, "versionName", versionInfo.OriginalVersion, l.Audit, "true")
 		}
-		return err
+		if err != nil {
+			return fmt.Errorf("failed to create PaC configuration removal merge request: %w", err)
+		}
+		return nil
 	}
 	return nil
 }
@@ -1015,13 +1018,13 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPacOldModel(ctx conte
 		RepoUrl:       repoUrl,
 	})
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", fmt.Errorf("failed to create git client: %w", err)
 	}
 
 	// getting branch in advance just to test credentials
 	defaultBranch, err := gitClient.GetDefaultBranchWithChecks(repoUrl)
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", fmt.Errorf("failed to verify git credentials: %w", err)
 	}
 
 	isAppUsed := common.IsPaCApplicationConfigured(gitProvider, pacConfig)
@@ -1029,7 +1032,7 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPacOldModel(ctx conte
 		componentList := &compapiv1alpha1.ComponentList{}
 		if err := r.Client.List(ctx, componentList, &client.ListOptions{Namespace: component.Namespace}); err != nil {
 			log.Error(err, "failed to list components")
-			return "", "", "", err
+			return "", "", "", fmt.Errorf("failed to list components: %w", err)
 		}
 
 		sameRepoUsed := false
@@ -1071,7 +1074,7 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPacOldModel(ctx conte
 
 	mergeRequest, err := gitClient.FindUnmergedPaCMergeRequest(repoUrl, mrData)
 	if err != nil {
-		return baseBranch, "", "", err
+		return baseBranch, "", "", fmt.Errorf("failed to find unmerged PaC merge request: %w", err)
 	}
 
 	action_done := "close"
@@ -1082,7 +1085,7 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPacOldModel(ctx conte
 	// but other errors should be handled.
 	branchDeleted, err := gitClient.DeleteBranch(repoUrl, sourceBranch)
 	if err != nil {
-		return baseBranch, prUrl, action_done, err
+		return baseBranch, prUrl, action_done, fmt.Errorf("failed to delete branch %s: %w", sourceBranch, err)
 	}
 	if branchDeleted {
 		log.Info(fmt.Sprintf("PaC configuration proposal branch %s is deleted", sourceBranch), l.Action, l.ActionDelete)
@@ -1144,7 +1147,7 @@ func validateGitSourceUrl(component compapiv1alpha1.Component, gitProvider strin
 	sourceUrl := getGitRepoUrl(component, newModel)
 	gitUrl, err := url.Parse(sourceUrl)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to parse git source URL %s: %w", sourceUrl, err)
 	}
 	shouldFail := false
 	gitSourceUrlPathParts := strings.Split(strings.TrimSuffix(strings.TrimPrefix(gitUrl.Path, "/"), "/"), "/")
