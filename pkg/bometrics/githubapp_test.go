@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/go-github/v45/github"
+	"github.com/google/go-github/v88/github"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"sigs.k8s.io/controller-runtime/pkg/client"
