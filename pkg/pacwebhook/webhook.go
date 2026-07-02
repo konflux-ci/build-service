@@ -61,13 +61,13 @@ func readMapping(webhookConfigPath string) (map[string]string, error) {
 	// #nosec G304
 	content, err := os.ReadFile(webhookConfigPath) //nolint:gosec
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read webhook config file %s: %w", webhookConfigPath, err)
 	}
 
 	var mapping map[string]string
 	err = json.Unmarshal(content, &mapping)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse webhook config file %s: %w", webhookConfigPath, err)
 	}
 
 	return mapping, nil

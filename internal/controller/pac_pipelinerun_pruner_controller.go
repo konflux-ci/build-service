@@ -97,7 +97,7 @@ func (r *PaCPipelineRunPrunerReconciler) PrunePipelineRuns(ctx context.Context, 
 
 	componentPipelineRunsRequirement, err := labels.NewRequirement(ComponentNameLabelName, selection.Equals, []string{req.Name})
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create label selector for pipeline runs: %w", err)
 	}
 	componentPipelineRunsSelector := labels.NewSelector().Add(*componentPipelineRunsRequirement)
 	componentPipelineRunsListOptions := client.ListOptions{
@@ -107,7 +107,7 @@ func (r *PaCPipelineRunPrunerReconciler) PrunePipelineRuns(ctx context.Context, 
 
 	componentPipelineRunsList := &tektonapi.PipelineRunList{}
 	if err := r.Client.List(ctx, componentPipelineRunsList, &componentPipelineRunsListOptions); err != nil {
-		return err
+		return fmt.Errorf("failed to list pipeline runs for component %s: %w", req.Name, err)
 	}
 	if len(componentPipelineRunsList.Items) == 0 {
 		log.Info(fmt.Sprintf("No PipelineRuns to prune for Component %s/%s", req.Namespace, req.Name))
@@ -119,7 +119,7 @@ func (r *PaCPipelineRunPrunerReconciler) PrunePipelineRuns(ctx context.Context, 
 	}
 	if err := r.Client.DeleteAllOf(ctx, &tektonapi.PipelineRun{}, &deleteComponentPipelineRunsOptions); err != nil {
 		log.Error(err, fmt.Sprintf("failed to delete PipelineRuns for Component %s/%s", req.Namespace, req.Name), l.Action, l.ActionDelete)
-		return err
+		return fmt.Errorf("failed to delete pipeline runs for component %s/%s: %w", req.Namespace, req.Name, err)
 	}
 	log.Info(fmt.Sprintf("Pruned %d PipelineRuns for Component %s/%s", len(componentPipelineRunsList.Items), req.Namespace, req.Name), l.Action, l.ActionDelete)
 
