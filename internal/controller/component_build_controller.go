@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -527,40 +528,24 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	return ctrl.Result{}, nil
 }
 
-// WaitForCacheUpdateOldModel waits for cache update
+// WaitForCacheUpdateOldModel waits for the controller cache to reflect the latest component update.
 // TODO remove after only new model is used
 func (r *ComponentBuildReconciler) WaitForCacheUpdateOldModel(ctx context.Context, namespace types.NamespacedName, component *compapiv1alpha1.Component) {
 	log := ctrllog.FromContext(ctx)
 
-	// Here we do some trick.
-	// The problem is that the component update triggers both: a new reconcile and operator cache update.
-	// In other words we are getting race condition. If a new reconcile is triggered before cache update,
-	// requested build action will be repeated, because the last update has not yet visible for the operator.
-	// For example, instead of one initial pipeline run we could get two.
-	// To resolve the problem above, instead of just ending the reconcile loop here,
-	// we are waiting for the cache update. This approach prevents next reconciles with outdated cache.
-	isComponentInCacheUpToDate := false
-	for i := 0; i < 20; i++ {
-		if err := r.Client.Get(ctx, namespace, component); err == nil {
-			_, buildRequestAnnotationExists := component.Annotations[BuildRequestAnnotationName]
-			_, buildStatusAnnotationExists := component.Annotations[BuildStatusAnnotationName]
-			if !buildRequestAnnotationExists && buildStatusAnnotationExists {
-				// Cache contains updated component
-				isComponentInCacheUpToDate = true
-				break
-			}
-			// Outdated version of the component, wait more.
-		} else {
+	err := wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, 2*time.Second, true, func(ctx context.Context) (bool, error) {
+		if err := r.Client.Get(ctx, namespace, component); err != nil {
 			if errors.IsNotFound(err) {
-				// The component was deleted
-				isComponentInCacheUpToDate = true
-				break
+				return true, nil
 			}
 			log.Error(err, "failed to get the component", l.Action, l.ActionView)
+			return false, nil
 		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	if !isComponentInCacheUpToDate {
+		_, buildRequestAnnotationExists := component.Annotations[BuildRequestAnnotationName]
+		_, buildStatusAnnotationExists := component.Annotations[BuildStatusAnnotationName]
+		return !buildRequestAnnotationExists && buildStatusAnnotationExists, nil
+	})
+	if err != nil {
 		log.Info("failed to wait for updated cache. Requested action could be repeated.", l.Audit, "true")
 	}
 }
