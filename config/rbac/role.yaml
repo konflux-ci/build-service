@@ -20,13 +20,6 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - events
-  verbs:
-  - create
-  - patch
-- apiGroups:
-  - ""
-  resources:
   - namespaces
   - services
   verbs:
@@ -44,6 +37,14 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - ""
+  - events.k8s.io
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
 - apiGroups:
   - apiextensions.k8s.io
   resources:
