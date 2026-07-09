@@ -403,8 +403,8 @@ func (f *ForgejoClient) IsRepositoryPublic(repoUrl string) (bool, error) {
 
 // GetConfiguredGitAppName returns the configured Git App name.
 // Forgejo does not support GitHub-style Apps, so this returns an error.
-func (f *ForgejoClient) GetConfiguredGitAppName() (string, string, error) {
-	return "", "", boerrors.NewBuildOpError(boerrors.EForgejoGitAppNotSupported,
+func (f *ForgejoClient) GetConfiguredGitAppName() (string, string, int64, error) {
+	return "", "", 0, boerrors.NewBuildOpError(boerrors.EForgejoGitAppNotSupported,
 		fmt.Errorf("forgejo does not support GitHub-style applications"))
 }
 

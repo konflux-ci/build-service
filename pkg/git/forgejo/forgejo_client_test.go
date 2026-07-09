@@ -172,7 +172,7 @@ func TestGetConfiguredGitAppName(t *testing.T) {
 	// Create a mock client to avoid DNS lookup
 	gClient := &ForgejoClient{}
 
-	name, slug, err := gClient.GetConfiguredGitAppName()
+	name, slug, _, err := gClient.GetConfiguredGitAppName()
 	if err == nil {
 		t.Error("GetConfiguredGitAppName() should return an error")
 	}

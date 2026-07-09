@@ -42,6 +42,10 @@ func getOwnerAndRepoFromUrl(repoUrl string) (owner string, repository string) {
 // If no one is detected, the original error will be returned.
 // RefineGitHostingServiceError should be called just after every GitHub API call.
 func refineGitHostingServiceError(response *http.Response, originErr error) error {
+	if originErr != nil && strings.Contains(originErr.Error(), "Repository rule violations") {
+		return boerrors.NewBuildOpError(boerrors.ERepositoryRuleViolation, originErr)
+	}
+
 	// go-github APIs do not return a http.Response object if the error is not related to an HTTP request.
 	if response == nil {
 		return originErr

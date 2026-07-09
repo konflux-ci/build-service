@@ -40,7 +40,7 @@ var (
 	DownloadFileContentFunc          func(repoUrl, branchName, filePath string) ([]byte, error)
 	IsFileExistFunc                  func(repoUrl, branchName, filePath string) (bool, error)
 	IsRepositoryPublicFunc           func(repoUrl string) (bool, error)
-	GetConfiguredGitAppNameFunc      func() (string, string, error)
+	GetConfiguredGitAppNameFunc      func() (string, string, int64, error)
 	GetAppUserIdFunc                 func(userName string) (int64, error)
 )
 
@@ -85,8 +85,8 @@ func ResetTestGitProviderClient() {
 	IsRepositoryPublicFunc = func(repoUrl string) (bool, error) {
 		return true, nil
 	}
-	GetConfiguredGitAppNameFunc = func() (string, string, error) {
-		return "git-app-name", "slug", nil
+	GetConfiguredGitAppNameFunc = func() (string, string, int64, error) {
+		return "git-app-name", "slug", TestGitHubAppId, nil
 	}
 	GetAppUserIdFunc = func(userName string) (int64, error) {
 		return TestGitHubAppId, nil
@@ -133,7 +133,7 @@ func (*TestGitProviderClient) IsFileExist(repoUrl, branchName, filePath string) 
 func (*TestGitProviderClient) IsRepositoryPublic(repoUrl string) (bool, error) {
 	return IsRepositoryPublicFunc(repoUrl)
 }
-func (*TestGitProviderClient) GetConfiguredGitAppName() (string, string, error) {
+func (*TestGitProviderClient) GetConfiguredGitAppName() (string, string, int64, error) {
 	return GetConfiguredGitAppNameFunc()
 }
 func (*TestGitProviderClient) GetAppUserId(userName string) (int64, error) {

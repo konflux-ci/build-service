@@ -229,7 +229,7 @@ func TestGetGitHubAppName(t *testing.T) {
 		return
 	}
 
-	appName, appSlug, err := ghclient.GetConfiguredGitAppName()
+	appName, appSlug, _, err := ghclient.GetConfiguredGitAppName()
 	if err != nil {
 		t.Fatal(err)
 	}

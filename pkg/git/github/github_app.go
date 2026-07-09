@@ -101,12 +101,18 @@ func newGithubClientByApp(appId int64, privateKeyPem []byte, repoUrl string) (*G
 	return githubClient, nil
 }
 
-// GetConfiguredGitAppName returns name and slug of GitHub App that created client token.
-func (g *GithubClient) GetConfiguredGitAppName() (string, string, error) {
+// GetConfiguredGitAppName returns name, slug and bot user id of GitHub App that created client token.
+func (g *GithubClient) GetConfiguredGitAppName() (string, string, int64, error) {
 	if g.isAppConfigured() {
-		return g.appName, g.appSlug, nil
+		appBotName := fmt.Sprintf("%s[bot]", g.appSlug)
+		appBotUserId, err := g.GetAppUserId(appBotName)
+		if err != nil {
+			return "", "", 0, fmt.Errorf("failed to get application user info: %w", err)
+		}
+
+		return g.appName, g.appSlug, appBotUserId, nil
 	} else {
-		return "", "", fmt.Errorf("github application is not configured")
+		return "", "", 0, fmt.Errorf("github application is not configured")
 	}
 }
 

@@ -104,6 +104,8 @@ const (
 	EWrongGitSourceUrl BOErrorId = 62
 	// Not existing repo or host in git source url
 	ENotExistGitSourceUrl BOErrorId = 63
+	// Repository rule violation prevents action
+	ERepositoryRuleViolation BOErrorId = 64
 
 	// Happens when configured in cluster Pipelines as Code application is not installed in Component source repository.
 	// User must install the application to fix this error.
@@ -207,10 +209,11 @@ var boErrorMessages = map[BOErrorId]string{
 	EPaCDuplicateRepository:     "Git repository is already handled by Pipelines as Code",
 	EPaCNotAllowedRepositoryUrl: "Git repository is restricted from being onboarded. It must be added to the allow list.",
 
-	EUnknownGitProvider:    "unknown git provider of the source repository",
-	EHttpUsedForRepository: "http used for git repository, use secure connection",
-	EWrongGitSourceUrl:     "wrong git source url used, can't be path to tree/blob etc",
-	ENotExistGitSourceUrl:  "Not existing repo or host in git source url",
+	EUnknownGitProvider:      "unknown git provider of the source repository",
+	EHttpUsedForRepository:   "http used for git repository, use secure connection",
+	EWrongGitSourceUrl:       "wrong git source url used, can't be path to tree/blob etc",
+	ENotExistGitSourceUrl:    "Not existing repo or host in git source url",
+	ERepositoryRuleViolation: "Repository rule violation prevents action",
 
 	EGitHubAppNotInstalled:         "GitHub Application is not installed in user repository",
 	EGitHubAppMalformedPrivateKey:  "malformed GitHub Application private key",
