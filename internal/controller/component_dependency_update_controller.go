@@ -33,7 +33,10 @@ import (
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
 	"knative.dev/pkg/apis"
@@ -75,6 +78,8 @@ const (
 
 	FailureRetryTime  = time.Minute * 5 // We retry after 5 minutes on failure
 	DefaultNudgeFiles = ".*Dockerfile.*, .*.yaml, .*Containerfile.*"
+
+	integrationNudgeConfigName = "nudge-config"
 )
 
 // The amount of time we wait before attempting to update the component, to try and avoid contention issues
@@ -151,15 +156,14 @@ func (r *ComponentDependencyUpdateReconciler) SetupWithManager(manager ctrl.Mana
 		Complete(r)
 }
 
+//+kubebuilder:rbac:groups=core,resources=configmaps,verbs=create;get;list;watch;update;patch;delete
+//+kubebuilder:rbac:groups=appstudio.redhat.com,resources=components,verbs=get;list;watch;update;patch
+//+kubebuilder:rbac:groups=appstudio.redhat.com,resources=components/status,verbs=get;list;watch
+//+kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns,verbs=get;list;watch;create;update;patch;delete;deletecollection
+//+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+//+kubebuilder:rbac:groups=appstudio.redhat.com,resources=nudgeconfigs,verbs=get;list;watch
+
 // Reconcile handles component dependency updates.
-// The following line for configmaps is informational, the actual permissions are defined in component_build_controller.
-// +kubebuilder:rbac:groups=core,resources=configmaps,verbs=create;get;list;watch;update;patch;delete
-// +kubebuilder:rbac:groups=appstudio.redhat.com,resources=components,verbs=get;list;watch;update;patch
-// +kubebuilder:rbac:groups=appstudio.redhat.com,resources=components/status,verbs=get;list;watch
-// +kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns,verbs=get;list;watch;create;update;patch;delete;deletecollection
-// +kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns/finalizers,verbs=update
-// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 func (r *ComponentDependencyUpdateReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var cancel context.CancelFunc
 	ctx, cancel = context.WithTimeout(ctx, contextTimeout)
@@ -212,6 +216,25 @@ func (r *ComponentDependencyUpdateReconciler) Reconcile(ctx context.Context, req
 		return ctrl.Result{}, nil
 	}
 	log.Info("component has BuildNudgesRef set", "ComponentName", component.Name, "BuildNudgesRef", component.Spec.BuildNudgesRef)
+
+	// check if integration nudgeConfig exists, if it does skip nudging and just set nudge processed annotation
+	integrationNudgeConfig := &unstructured.Unstructured{}
+	integrationNudgeConfig.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "appstudio.redhat.com",
+		Version: "v1beta2",
+		Kind:    "NudgeConfig",
+	})
+	err = r.Client.Get(ctx, types.NamespacedName{Name: integrationNudgeConfigName, Namespace: pipelineRun.Namespace}, integrationNudgeConfig)
+	if err != nil {
+		if !errors.IsNotFound(err) && !apimeta.IsNoMatchError(err) {
+			log.Error(err, "Failed to get nudgeConfig", "NudgeConfigName", integrationNudgeConfigName)
+			return ctrl.Result{}, err
+		}
+	} else {
+		patch := client.MergeFrom(pipelineRun.DeepCopy())
+		log.Info("skipping nudging, because NudgeConfig exists in the namespace", "NudgeConfigName", integrationNudgeConfigName)
+		return r.removePipelineFinalizer(ctx, pipelineRun, patch)
+	}
 
 	// verify that there exist some components to be nudged
 	allComponents := compapiv1alpha1.ComponentList{}
