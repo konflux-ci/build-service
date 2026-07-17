@@ -555,7 +555,7 @@ func generateRenovateConfigForNudge(target updateTarget, buildResult *BuildResul
 		BranchTopic:            buildResult.Component.Name,
 		AdditionalBranchPrefix: nudgingBranchName,
 		CommitMessageTopic:     buildResult.Component.Name,
-		PRFooter:               "To execute skipped test pipelines write comment `/ok-to-test`",
+		PRFooter:               "To execute skipped test pipelines write comment `/ok-to-test`\nThis is Konflux nudging PR, not Mintmaker.",
 		PRHeader:               fmt.Sprintf("Image created from '%s'", gitRepoAtShaLink),
 		RecreateWhen:           "always",
 		RebaseWhen:             "behind-base-branch",
