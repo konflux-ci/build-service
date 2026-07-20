@@ -98,7 +98,7 @@ spec:
           - name: url
             value: https://github.com/konflux-ci/konflux-ci
           - name: revision
-            value: d91a9ece92d5e0a5ec6408a0a3dc2ec0fa4e0215
+            value: 8a3219a261dca651737a0890c3868c7363af2877
           - name: pathInRepo
             value: .tekton/tasks/deploy-konflux/task.yaml
       params:
@@ -126,7 +126,7 @@ spec:
         - name: git-url
           value: https://github.com/konflux-ci/konflux-ci
         - name: revision
-          value: d91a9ece92d5e0a5ec6408a0a3dc2ec0fa4e0215
+          value: main
     - name: pre-pull-images
       runAfter:
         - deploy-konflux
