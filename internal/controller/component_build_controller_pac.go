@@ -722,7 +722,7 @@ func (r *ComponentBuildReconciler) CreatePipelineRunsInRepository(ctx context.Co
 		// Customize PR data to reflect git application name
 		if appName, appSlug, appBotUserId, err := gitClient.GetConfiguredGitAppName(); err == nil {
 			namePrefix = appName
-			authorName = appSlug
+			authorName = fmt.Sprintf("%s[bot]", appSlug)
 			if appBotUserId != 0 {
 				authorEmail = fmt.Sprintf("%d+%s[bot]@users.noreply.github.com", appBotUserId, appSlug)
 			}
@@ -822,7 +822,7 @@ func (r *ComponentBuildReconciler) ConfigureRepositoryForPaCOldModel(ctx context
 		if appName, appSlug, appBotUserId, err := gitClient.GetConfiguredGitAppName(); err == nil {
 			mrData.CommitMessage = fmt.Sprintf("%s update %s", appName, component.Name)
 			mrData.Title = fmt.Sprintf("%s update %s", appName, component.Name)
-			mrData.AuthorName = appSlug
+			mrData.AuthorName = fmt.Sprintf("%s[bot]", appSlug)
 			if appBotUserId != 0 {
 				mrData.AuthorEmail = fmt.Sprintf("%d+%s[bot]@users.noreply.github.com", appBotUserId, appSlug)
 			}
@@ -929,7 +929,7 @@ func (r *ComponentBuildReconciler) RemovePipelineRunsFromRepository(ctx context.
 		// Customize PR data to reflect git application name
 		if appName, appSlug, appBotUserId, err := gitClient.GetConfiguredGitAppName(); err == nil {
 			namePrefix = appName
-			authorName = appSlug
+			authorName = fmt.Sprintf("%s[bot]", appSlug)
 			if appBotUserId != 0 {
 				authorEmail = fmt.Sprintf("%d+%s[bot]@users.noreply.github.com", appBotUserId, appSlug)
 			}
@@ -1123,7 +1123,7 @@ func (r *ComponentBuildReconciler) UnconfigureRepositoryForPacOldModel(ctx conte
 			if appName, appSlug, appBotUserId, err := gitClient.GetConfiguredGitAppName(); err == nil {
 				mrData.CommitMessage = fmt.Sprintf("%s purge %s", appName, component.Name)
 				mrData.Title = fmt.Sprintf("%s purge %s", appName, component.Name)
-				mrData.AuthorName = appSlug
+				mrData.AuthorName = fmt.Sprintf("%s[bot]", appSlug)
 				if appBotUserId != 0 {
 					mrData.AuthorEmail = fmt.Sprintf("%d+%s[bot]@users.noreply.github.com", appBotUserId, appSlug)
 				}
