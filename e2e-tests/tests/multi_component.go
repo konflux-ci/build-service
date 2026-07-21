@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/devfile/library/v2/pkg/util"
-	"github.com/google/go-github/v66/github"
+	"github.com/google/go-github/v89/github"
 	appservice "github.com/konflux-ci/application-api/api/v1alpha1"
 	"github.com/konflux-ci/build-service/controllers"
 	. "github.com/onsi/ginkgo/v2" //nolint:staticcheck
@@ -171,21 +171,21 @@ var _ = framework.BuildSuiteDescribe("Build service E2E tests", Label("build-ser
 					GinkgoWriter.Printf("merged result sha: %s for PR #%d\n", mergeResultSha, prNumber)
 
 				})
-			It("leads to triggering on push PipelineRun", func() {
-				timeout = time.Minute * 5
+				It("leads to triggering on push PipelineRun", func() {
+					timeout = time.Minute * 5
 
-				Eventually(func() error {
-					pipelineRun, err := f.AsKubeAdmin.HasController.GetComponentPipelineRun(componentName, applicationName, testNamespace, mergeResultSha)
-					if err != nil {
-						GinkgoWriter.Printf("Push PipelineRun has not been created yet for the component %s/%s\n", testNamespace, componentName)
-						return err
-					}
-					if !pipelineRun.HasStarted() {
-						return fmt.Errorf("push pipelinerun %s/%s hasn't started yet", pipelineRun.GetNamespace(), pipelineRun.GetName())
-					}
-					return nil
-				}, timeout, constants.PipelineRunPollingInterval).Should(Succeed(), fmt.Sprintf("timed out when waiting for the PipelineRun to start for the component %s/%s", testNamespace, componentName))
-			})
+					Eventually(func() error {
+						pipelineRun, err := f.AsKubeAdmin.HasController.GetComponentPipelineRun(componentName, applicationName, testNamespace, mergeResultSha)
+						if err != nil {
+							GinkgoWriter.Printf("Push PipelineRun has not been created yet for the component %s/%s\n", testNamespace, componentName)
+							return err
+						}
+						if !pipelineRun.HasStarted() {
+							return fmt.Errorf("push pipelinerun %s/%s hasn't started yet", pipelineRun.GetNamespace(), pipelineRun.GetName())
+						}
+						return nil
+					}, timeout, constants.PipelineRunPollingInterval).Should(Succeed(), fmt.Sprintf("timed out when waiting for the PipelineRun to start for the component %s/%s", testNamespace, componentName))
+				})
 			}
 			It("only one component is changed", func() {
 				//Delete all the pipelineruns in the namespace before sending PR
