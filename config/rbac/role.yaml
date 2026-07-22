@@ -67,6 +67,7 @@ rules:
   resources:
   - imagerepositories
   - imagerepositories/status
+  - nudgeconfigs
   - releaseplanadmissions
   verbs:
   - get
