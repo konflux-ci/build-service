@@ -303,6 +303,7 @@ func getCacheExcludedObjectsTypes() []client.Object {
 }
 
 func getCacheOptions() cache.Options {
+	var syncPeriod time.Duration
 	componentPipelineRunRequirement, err := labels.NewRequirement(controllers.ComponentNameLabelName, selection.Exists, []string{})
 	if err != nil {
 		// With valid arguments for the requirement above, the error is always nil.
@@ -317,6 +318,8 @@ func getCacheOptions() cache.Options {
 			},
 			&releaseapi.ReleasePlanAdmission{}: {},
 		},
+		// disable periodic all objects requeue by passing 0 time
+		SyncPeriod: &syncPeriod,
 	}
 }
 
