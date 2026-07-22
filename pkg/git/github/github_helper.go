@@ -228,6 +228,17 @@ func (g *GithubClient) deleteFromTree(owner, repository string, baseRef *github.
 	return tree, refineGitHostingServiceError(resp.Response, err)
 }
 
+// getCommitAuthor returns a CommitAuthor for the given name and email, or nil
+// if the name identifies a GitHub App bot (suffix "[bot]"), letting GitHub set
+// the author from the installation token so the commit is auto-signed.
+func getCommitAuthor(authorName, authorEmail string) *github.CommitAuthor {
+	if strings.HasSuffix(authorName, "[bot]") {
+		return nil
+	}
+	date := time.Now()
+	return &github.CommitAuthor{Date: &date, Name: &authorName, Email: &authorEmail}
+}
+
 // addCommitToBranch creates commit on top of the given branch reference with provided files.
 // nolint:dupl // Extracting create the commit using the tree doesn't make sense now.
 func (g *GithubClient) addCommitToBranch(owner, repository, authorName, authorEmail, commitMessage string, signedOff bool, files []gp.RepositoryFile, ref *github.Reference) error {
@@ -248,9 +259,8 @@ func (g *GithubClient) addCommitToBranch(owner, repository, authorName, authorEm
 	}
 
 	// Create the commit using the tree.
-	date := time.Now()
-	author := &github.CommitAuthor{Date: &date, Name: &authorName, Email: &authorEmail}
-	commit := &github.Commit{Author: author, Message: &commitMessage, Tree: tree, Parents: []*github.Commit{parent.Commit}}
+	commitAuthor := getCommitAuthor(authorName, authorEmail)
+	commit := &github.Commit{Author: commitAuthor, Committer: commitAuthor, Message: &commitMessage, Tree: tree, Parents: []*github.Commit{parent.Commit}}
 	newCommit, resp, err := g.client.Git.CreateCommit(g.ctx, owner, repository, commit)
 	if err != nil {
 		return refineGitHostingServiceError(resp.Response, err)
@@ -282,9 +292,8 @@ func (g *GithubClient) addDeleteCommitToBranch(owner, repository, authorName, au
 	}
 
 	// Create the commit using the tree.
-	date := time.Now()
-	author := &github.CommitAuthor{Date: &date, Name: &authorName, Email: &authorEmail}
-	commit := &github.Commit{Author: author, Message: &commitMessage, Tree: tree, Parents: []*github.Commit{parent.Commit}}
+	commitAuthor := getCommitAuthor(authorName, authorEmail)
+	commit := &github.Commit{Author: commitAuthor, Committer: commitAuthor, Message: &commitMessage, Tree: tree, Parents: []*github.Commit{parent.Commit}}
 	newCommit, resp, err := g.client.Git.CreateCommit(g.ctx, owner, repository, commit)
 	if err != nil {
 		return refineGitHostingServiceError(resp.Response, err)
