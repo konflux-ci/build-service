@@ -25,6 +25,7 @@ import (
 
 	"github.com/go-logr/logr"
 	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
+	compv1alpha1 "github.com/konflux-ci/build-service/api/konflux/v1alpha1"
 	imagerepositoryapi "github.com/konflux-ci/image-controller/api/v1alpha1"
 	releaseapi "github.com/konflux-ci/release-service/api/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
@@ -84,6 +85,7 @@ var _ = BeforeSuite(func() {
 		CRDDirectoryPaths: []string{
 			filepath.Join("..", "..", "hack", "routecrd", "route.yaml"),
 			filepath.Join("..", "..", "hack", "nudgeconfigcrd", "nudgeconfig.yaml"),
+			filepath.Join("..", "..", "config", "crd", "bases"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "konflux-ci", "application-api@"+applicationApiDepVersion, "config", "crd", "bases"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "tektoncd", "pipeline@v1.10.2", "config", "300-crds"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "openshift-pipelines", "pipelines-as-code@v0.43.0", "config"),
@@ -101,7 +103,11 @@ var _ = BeforeSuite(func() {
 	err = routev1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
+	// TODO remove after only new model is used and old model is gone
 	err = compapiv1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	err = compv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	err = tektonapi.AddToScheme(scheme.Scheme)
@@ -126,6 +132,8 @@ var _ = BeforeSuite(func() {
 	Expect(k8sClient.Get(ctx, types.NamespacedName{Name: HASAppNamespace}, defaultNS)).Should(Succeed())
 	defaultNS.SetLabels(map[string]string{
 		appstudioWorkspaceNameLabel: "build",
+		// TODO remove after only new model is used and old model is gone
+		appstudioWorkspaceNameLabelOldModel: "build-old",
 	})
 	Expect(k8sClient.Update(ctx, defaultNS)).Should(Succeed())
 
@@ -149,6 +157,16 @@ var _ = BeforeSuite(func() {
 	err = (&ComponentBuildReconciler{
 		Client:             k8sManager.GetClient(),
 		Scheme:             k8sManager.GetScheme(),
+		EventRecorder:      k8sManager.GetEventRecorder("ComponentBuildReconciler"),
+		PaCWebhookMapping:  pacWebhookMapping,
+		CredentialProvider: k8s.NewGitCredentialProvider(k8sManager.GetClient()),
+	}).SetupWithManager(k8sManager)
+	Expect(err).ToNot(HaveOccurred())
+
+	// TODO remove after only new model is used and old model is gone
+	err = (&ComponentBuildReconcilerOldModel{
+		Client:             k8sManager.GetClient(),
+		Scheme:             k8sManager.GetScheme(),
 		EventRecorder:      k8sManager.GetEventRecorder("ComponentOnboarding"),
 		PaCWebhookMapping:  pacWebhookMapping,
 		CredentialProvider: k8s.NewGitCredentialProvider(k8sManager.GetClient()),
@@ -159,6 +177,14 @@ var _ = BeforeSuite(func() {
 		Client:        k8sManager.GetClient(),
 		Scheme:        k8sManager.GetScheme(),
 		EventRecorder: k8sManager.GetEventRecorder("PaCPipelineRunPruner"),
+	}).SetupWithManager(k8sManager)
+	Expect(err).ToNot(HaveOccurred())
+
+	// TODO remove after only new model is used and old model is gone
+	err = (&PaCPipelineRunPrunerReconcilerOldModel{
+		Client:        k8sManager.GetClient(),
+		Scheme:        k8sManager.GetScheme(),
+		EventRecorder: k8sManager.GetEventRecorder("PaCPipelineRunPrunerOld"),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
