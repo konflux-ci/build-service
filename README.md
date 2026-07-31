@@ -131,6 +131,12 @@ make deploy IMG=<your-registry>/build-service:tag
 
 **Important:** This will not result in a functional build system without the required dependencies listed above.
 
+## Component API groups
+- New API group : `konflux-ci.dev/v1alpha1`
+- Old API group : `appstudio.redhat.com/v1alpha1`
+
+Old API group will be eventually removed in favor of new one.
+
 ## Configuration
 
 Build Service is configured through:
