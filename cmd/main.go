@@ -33,9 +33,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/discovery"
@@ -61,7 +59,8 @@ import (
 	l "github.com/konflux-ci/build-service/pkg/logs"
 	pacwebhook "github.com/konflux-ci/build-service/pkg/pacwebhook"
 
-	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
+	compv1alpha1 "github.com/konflux-ci/application-api/api/konflux/v1alpha1"
+	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1" // TODO remove after only new model is used and old model is gone
 	imagerepositoryapi "github.com/konflux-ci/image-controller/api/v1alpha1"
 	releaseapi "github.com/konflux-ci/release-service/api/v1alpha1"
 	pacv1alpha1 "github.com/openshift-pipelines/pipelines-as-code/pkg/apis/pipelinesascode/v1alpha1"
@@ -78,7 +77,8 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
-	utilruntime.Must(compapiv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(compapiv1alpha1.AddToScheme(scheme)) // TODO remove after only new model is used and old model is gone
+	utilruntime.Must(compv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -227,11 +227,23 @@ func main() {
 	if err = (&controllers.ComponentBuildReconciler{
 		Client:             mgr.GetClient(),
 		Scheme:             mgr.GetScheme(),
-		EventRecorder:      mgr.GetEventRecorder("ComponentOnboarding"),
+		EventRecorder:      mgr.GetEventRecorder("ComponentBuildReconciler"),
 		PaCWebhookMapping:  pacWebhookMapping,
 		CredentialProvider: k8s.NewGitCredentialProvider(mgr.GetClient()),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ComponentOnboarding")
+		setupLog.Error(err, "unable to create controller", "controller", "ComponentBuildReconciler")
+		os.Exit(1)
+	}
+
+	// TODO remove after only new model is used and old model is gone
+	if err = (&controllers.ComponentBuildReconcilerOldModel{
+		Client:             mgr.GetClient(),
+		Scheme:             mgr.GetScheme(),
+		EventRecorder:      mgr.GetEventRecorder("ComponentBuildReconcilerOldModel"),
+		PaCWebhookMapping:  pacWebhookMapping,
+		CredentialProvider: k8s.NewGitCredentialProvider(mgr.GetClient()),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create old controller", "controller", "ComponentBuildReconcilerOldModel")
 		os.Exit(1)
 	}
 
@@ -241,6 +253,16 @@ func main() {
 		EventRecorder: mgr.GetEventRecorder("PaCPipelineRunPruner"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "PaCPipelineRunPruner")
+		os.Exit(1)
+	}
+
+	// TODO remove after only new model is used and old model is gone
+	if err = (&controllers.PaCPipelineRunPrunerReconcilerOldModel{
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		EventRecorder: mgr.GetEventRecorder("PaCPipelineRunPrunerOld"),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create old controller", "controller", "PaCPipelineRunPrunerOld")
 		os.Exit(1)
 	}
 
@@ -299,25 +321,14 @@ func getCacheExcludedObjectsTypes() []client.Object {
 		&corev1.ConfigMap{},
 		&corev1.Service{},
 		&rbacv1.ClusterRole{},
+		&tektonapi.PipelineRun{},
 	}
 }
 
 func getCacheOptions() cache.Options {
 	var syncPeriod time.Duration
-	componentPipelineRunRequirement, err := labels.NewRequirement(controllers.ComponentNameLabelName, selection.Exists, []string{})
-	if err != nil {
-		// With valid arguments for the requirement above, the error is always nil.
-		panic(err)
-	}
-	appStudioComponentPipelineRunSelector := labels.NewSelector().Add(*componentPipelineRunRequirement)
 
 	return cache.Options{
-		ByObject: map[client.Object]cache.ByObject{
-			&tektonapi.PipelineRun{}: {
-				Label: appStudioComponentPipelineRunSelector,
-			},
-			&releaseapi.ReleasePlanAdmission{}: {},
-		},
 		// disable periodic all objects requeue by passing 0 time
 		SyncPeriod: &syncPeriod,
 	}
@@ -335,6 +346,9 @@ func ensureRequiredAPIGroupsAndResourcesExist(restConfig *rest.Config) {
 		},
 		"pipelinesascode.tekton.dev": {
 			"repositories",
+		},
+		"konflux-ci.dev": {
+			"components",
 		},
 	}
 

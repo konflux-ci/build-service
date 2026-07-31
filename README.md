@@ -33,7 +33,7 @@ Monitors Component CRs and manages the entire build pipeline lifecycle:
 
 ### PaC PipelineRun Pruner Controller
 
-Removes PipelineRun CRs created for Components that are being deleted, ensuring proper cleanup based on the `appstudio.openshift.io/component` label.
+Removes PipelineRun CRs created for Components that are being deleted, ensuring proper cleanup based on the `build.konflux-ci.dev/component` label (`appstudio.openshift.io/component` in case of old Component API Group used).
 
 ### Component Dependency Update Controller (Nudging)
 

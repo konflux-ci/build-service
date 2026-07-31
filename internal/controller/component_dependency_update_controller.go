@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// TODO remove whole file after only new model is used
+// TODO remove whole file after only new model is used and old model is gone
 package controllers
 
 import (
@@ -54,8 +54,8 @@ import (
 
 const (
 	contextTimeout = 300 * time.Second
-	// PipelineRunTypeLabelName contains the type of the PipelineRunType
-	PipelineRunTypeLabelName = "pipelines.appstudio.openshift.io/type"
+	// PipelineRunTypeLabelNameOldModel contains the type of the PipelineRunType
+	PipelineRunTypeLabelNameOldModel = "pipelines.appstudio.openshift.io/type"
 	// PipelineRunBuildType is the type denoting a build PipelineRun.
 	PipelineRunBuildType = "build"
 	// PacEventTypeAnnotationName represents the current event type
@@ -450,7 +450,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 		targets = append(targets, newTargets...)
 	}
 
-	gitRepoAtShaLink := pipelineRun.Annotations[gitRepoAtShaAnnotationName]
+	gitRepoAtShaLink := pipelineRun.Annotations[gitRepoAtShaAnnotationNameOldModel]
 	if len(targets) > 0 {
 		log.Info("will create renovate job")
 		simpleBranchName := false
@@ -525,7 +525,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 	// the finalizer.
 
 	pipelines := tektonapi.PipelineRunList{}
-	err = r.Client.List(ctx, &pipelines, client.InNamespace(pipelineRun.Namespace), client.MatchingLabels{PipelineRunTypeLabelName: PipelineRunBuildType, ComponentNameLabelName: updatedComponent.Name})
+	err = r.Client.List(ctx, &pipelines, client.InNamespace(pipelineRun.Namespace), client.MatchingLabels{PipelineRunTypeLabelNameOldModel: PipelineRunBuildType, ComponentNameLabelNameOldModel: updatedComponent.Name})
 	if err != nil {
 		// I don't think we want to retry this, it should be really rare anyway
 		// and would require an even more complex label based state machine.
@@ -733,12 +733,12 @@ func IsBuildPushPipelineRun(object client.Object) bool {
 	if pipelineRun, ok := object.(*tektonapi.PipelineRun); ok {
 
 		// Ensure the PipelineRun belongs to a Component
-		if pipelineRun.Labels == nil || pipelineRun.Labels[ComponentNameLabelName] == "" {
+		if pipelineRun.Labels == nil || pipelineRun.Labels[ComponentNameLabelNameOldModel] == "" {
 			// PipelineRun does not belong to a Component
 			return false
 		}
 		if pipelineRun.Labels != nil && pipelineRun.Annotations != nil {
-			if pipelineRun.Labels[PipelineRunTypeLabelName] == PipelineRunBuildType && (strings.EqualFold(pipelineRun.Annotations[PacEventTypeAnnotationName], PacEventPushType) || strings.EqualFold(pipelineRun.Annotations[PacEventTypeAnnotationName], PacEventIncomingType)) {
+			if pipelineRun.Labels[PipelineRunTypeLabelNameOldModel] == PipelineRunBuildType && (strings.EqualFold(pipelineRun.Annotations[PacEventTypeAnnotationName], PacEventPushType) || strings.EqualFold(pipelineRun.Annotations[PacEventTypeAnnotationName], PacEventIncomingType)) {
 				return true
 			}
 		}
@@ -749,7 +749,7 @@ func IsBuildPushPipelineRun(object client.Object) bool {
 // GetComponentFromPipelineRun loads from the cluster the Component referenced in the given PipelineRun. If the PipelineRun doesn't
 // specify a Component we return nil, if the component is not specified we return an error
 func GetComponentFromPipelineRun(c client.Client, ctx context.Context, pipelineRun *tektonapi.PipelineRun) (*compapiv1alpha1.Component, error) {
-	if componentName, found := pipelineRun.Labels[ComponentNameLabelName]; found {
+	if componentName, found := pipelineRun.Labels[ComponentNameLabelNameOldModel]; found {
 		component := &compapiv1alpha1.Component{}
 		err := c.Get(ctx, types.NamespacedName{
 			Namespace: pipelineRun.Namespace,
