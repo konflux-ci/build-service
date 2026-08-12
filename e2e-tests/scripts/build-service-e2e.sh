@@ -51,6 +51,12 @@ post_actions() {
         log "ERROR" "The process for running tests timed out after $E2E_TIMEOUT" | tee -a "${ARTIFACT_DIR}/e2e-tests.log"
     fi
 
+    log "INFO" "Collecting controller logs for debugging..."
+    kubectl -n build-service logs deployment/build-service-controller-manager --tail=5000 \
+        > "${ARTIFACT_DIR}/build-service-controller.log" 2>&1 || true
+    kubectl -n tekton-pipelines logs deployment/pipelines-as-code-controller --tail=5000 \
+        > "${ARTIFACT_DIR}/pac-controller.log" 2>&1 || true
+
     exit "$exit_code"
 }
 
