@@ -88,9 +88,13 @@ rules:
   - watch
 - apiGroups:
   - rbac.authorization.k8s.io
+  resourceNames:
+  - appstudio-pipelines-runner
+  - konflux-build-pipelines-runner
   resources:
   - clusterroles
   verbs:
+  - bind
   - get
 - apiGroups:
   - rbac.authorization.k8s.io
