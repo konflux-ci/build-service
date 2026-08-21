@@ -83,7 +83,7 @@ func init() {
 }
 
 // +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=get
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=get;bind,resourceNames=konflux-build-pipelines-runner;appstudio-pipelines-runner
 
 func main() {
 	var metricsAddr string
