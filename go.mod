@@ -9,7 +9,7 @@ require (
 	github.com/google/go-containerregistry v0.21.1
 	github.com/google/go-github/v45 v45.2.0
 	github.com/h2non/gock v1.2.0
-	github.com/konflux-ci/coverport/instrumentation/go v0.0.0-20251127115143-b5207b335f8b
+	github.com/konflux-ci/coverport/instrumentation/go v0.0.0-20260811133333-454aceabdba8
 	github.com/onsi/ginkgo/v2 v2.27.2
 	github.com/onsi/gomega v1.38.2
 	github.com/openshift/api v0.0.0-20221013123534-96eec44e1979
@@ -85,7 +85,7 @@ require (
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/go-github/v75 v75.0.0 // indirect
 	github.com/google/go-querystring v1.2.0 // indirect
-	github.com/google/pprof v0.0.0-20250403155104-27863c87afa6 // indirect
+	github.com/google/pprof v0.0.0-20260802141513-ef3492d7dac3 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
 	github.com/h2non/parth v0.0.0-20190131123155-b4df798d6542 // indirect
@@ -97,7 +97,7 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.18.4 // indirect
-	github.com/konflux-ci/operator-toolkit v0.0.0-20240402130556-ef6dcbeca69d // indirect
+	github.com/konflux-ci/operator-toolkit v0.0.0-20260312101100-d4e398191a68 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
@@ -157,7 +157,7 @@ require (
 	k8s.io/apiserver v0.35.0 // indirect
 	k8s.io/component-base v0.35.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20251125145642-4e65d59e963e // indirect
-	k8s.io/utils v0.0.0-20260108192941-914a6e750570 // indirect
+	k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.31.2 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
