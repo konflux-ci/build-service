@@ -1,14 +1,14 @@
 module github.com/konflux-ci/build-service/e2e-tests
 
-go 1.25.6
+go 1.26
 
 require (
 	github.com/devfile/library/v2 v2.2.1-0.20230418160146-e75481b7eebd
 	github.com/google/go-containerregistry v0.21.0
 	github.com/google/go-github/v66 v66.0.0
-	github.com/konflux-ci/application-api v0.0.0-20260529131129-a9594acdc104
+	github.com/konflux-ci/application-api v0.0.0-20260727123715-2999a91451c6
 	github.com/konflux-ci/build-service v0.0.0-20240611083846-2dee6cfe6fe4
-	github.com/konflux-ci/e2e-tests v0.0.0-20260521070148-51052ba6ac77
+	github.com/konflux-ci/e2e-tests v0.0.0-20260907141935-56c230f52af9
 	github.com/konflux-ci/release-service v0.0.0-20260127184035-c36c56a3c440
 	github.com/onsi/ginkgo/v2 v2.28.0
 	github.com/onsi/gomega v1.39.1
@@ -113,7 +113,7 @@ require (
 	github.com/kevinburke/ssh_config v1.4.0 // indirect
 	github.com/klauspost/compress v1.18.4 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
-	github.com/konflux-ci/image-controller v0.0.0-20240530145826-3296e4996f6f // indirect
+	github.com/konflux-ci/image-controller v0.0.0-20260902123452-65b644b9b875 // indirect
 	github.com/konflux-ci/integration-service v0.0.0-20260330012634-6190adb9bbce // indirect
 	github.com/konflux-ci/operator-toolkit v0.0.0-20260312101100-d4e398191a68 // indirect
 	github.com/magefile/mage v1.14.0 // indirect
