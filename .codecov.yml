@@ -3,6 +3,13 @@ codecov:
 
 ignore:
   - "pkg/git"
+  - ".agents/**"
+  - ".claude/**"
+  - ".cursor/**"
+  - "skills/**"
+  - "docs/**"
+  - "*.md"
+  - "*.toml"
 
 coverage:
   status:
