@@ -24,9 +24,9 @@ const (
 	helloWorldComponentDefaultBranch     = "default"
 	helloWorldComponentRevision          = "d2d03e69de912e3827c29b4c5b71ffe8bcb5dad8"
 
-	multiComponentGitSourceRepoName = "sample-multi-component"
+	multiComponentGitSourceRepoName = "multi-component-repo"
 	multiComponentDefaultBranch     = "main"
-	multiComponentGitRevision       = "8eae0fb5b391476fea7a52c2c4d9a466da52b5f0"
+	multiComponentGitRevision       = "f773abead46eeabb7a06671e95cb0f6f469c23b0"
 
 	secretLookupGitSourceRepoOneName = "secret-lookup-sample-repo-one"
 	secretLookupDefaultBranchOne     = "main"
@@ -57,17 +57,17 @@ const (
 )
 
 var (
-	additionalTags                     = []string{"test-tag1", "test-tag2"}
-	componentUrls                      = strings.Split(utils.GetEnv(COMPONENT_REPO_URLS_ENV, pythonComponentGitHubURL), ",") //multiple urls
+	additionalTags                      = []string{"test-tag1", "test-tag2"}
+	componentUrls                       = strings.Split(utils.GetEnv(COMPONENT_REPO_URLS_ENV, pythonComponentGitHubURL), ",") //multiple urls
 	githubOrg                           = utils.GetEnv(constants.GITHUB_E2E_ORGANIZATION_ENV, "redhat-appstudio-qe")
 	gitlabOrg                           = utils.GetEnv(constants.GITLAB_QE_ORG_ENV, constants.DefaultGitLabQEOrg)
 	forgejoOrg                          = utils.GetEnv(constants.CODEBERG_QE_ORG_ENV, constants.DefaultCodebergQEOrg)
 	annotationsTestGitHubURL            = fmt.Sprintf(githubUrlFormat, githubOrg, annotationsTestGitSourceRepoName)
 	helloWorldComponentGitLabProjectID  = fmt.Sprintf("%s/%s", gitlabOrg, helloWorldComponentGitSourceRepoName)
 	helloWorldComponentForgejoProjectID = fmt.Sprintf("%s/%s", forgejoOrg, helloWorldComponentGitSourceRepoName)
-	multiComponentGitHubURL            = fmt.Sprintf(githubUrlFormat, githubOrg, multiComponentGitSourceRepoName)
-	multiComponentContextDirs          = []string{"go-component", "python-component"}
-	pythonComponentGitHubURL           = fmt.Sprintf(githubUrlFormat, githubOrg, pythonComponentRepoName)
+	multiComponentGitHubURL             = fmt.Sprintf(githubUrlFormat, githubOrg, multiComponentGitSourceRepoName)
+	multiComponentContextDirs           = []string{"test-component", "python-component"}
+	pythonComponentGitHubURL            = fmt.Sprintf(githubUrlFormat, githubOrg, pythonComponentRepoName)
 
 	secretLookupComponentOneGitSourceURL = fmt.Sprintf(githubUrlFormat, noAppOrgName, secretLookupGitSourceRepoOneName)
 	secretLookupComponentTwoGitSourceURL = fmt.Sprintf(githubUrlFormat, noAppOrgName, secretLookupGitSourceRepoTwoName)

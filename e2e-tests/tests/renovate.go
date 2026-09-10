@@ -30,7 +30,7 @@ var _ = framework.BuildSuiteDescribe("Build service E2E tests", Label("build-ser
 	defer GinkgoRecover()
 
 	renovateEntries := GetEnabledProviderEntries()
-	DescribeTableSubtree("test git provider", Label("renovate", "multi-component"), func(gitProvider git.GitProvider, gitPrefix string) {
+	DescribeTableSubtree("test git provider", Label("renovate"), func(gitProvider git.GitProvider, gitPrefix string) {
 		// separate Describe is needed to avoid skipping tests for other git providers when one fails
 		Describe("component update with renovate", Ordered, func() {
 			type multiComponent struct {
