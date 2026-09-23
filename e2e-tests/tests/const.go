@@ -24,9 +24,9 @@ const (
 	helloWorldComponentDefaultBranch     = "default"
 	helloWorldComponentRevision          = "d2d03e69de912e3827c29b4c5b71ffe8bcb5dad8"
 
-	multiComponentGitSourceRepoName = "multi-component-repo"
+	multiComponentGitSourceRepoName = "sample-multi-component-repo"
 	multiComponentDefaultBranch     = "main"
-	multiComponentGitRevision       = "f773abead46eeabb7a06671e95cb0f6f469c23b0"
+	multiComponentGitRevision       = "e153bd0dcb2451a90e634bc42e1e77f871b73e3d"
 
 	secretLookupGitSourceRepoOneName = "secret-lookup-sample-repo-one"
 	secretLookupDefaultBranchOne     = "main"
