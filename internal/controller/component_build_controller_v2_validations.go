@@ -414,7 +414,7 @@ func validatePipelineResolution(versionPipelines map[string]*VersionPipelineDefi
 			continue
 		}
 		checkPipelineExists := func(def *PipelineDef, pipelineType string) {
-			if def != nil && def.PipelineSpecFromBundle != nil && def.PipelineSpecFromBundle.Bundle == "latest" {
+			if def != nil && def.PipelineSpecFromBundle != nil {
 				pipelineName := def.PipelineSpecFromBundle.Name
 				// Find the pipeline in config by name
 				found := false

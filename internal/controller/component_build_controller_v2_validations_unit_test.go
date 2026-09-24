@@ -1483,3 +1483,205 @@ func TestDetermineVersionsToTriggerBuild(t *testing.T) {
 		})
 	}
 }
+
+func TestValidatePipelineResolution(t *testing.T) {
+	tests := []struct {
+		name                   string
+		versionPipelines       map[string]*VersionPipelineDefinition
+		versionsToOnboard      []string
+		defaultPipelinesConfig *pipelineConfig
+		wantErrors             []string
+	}{
+		{
+			name: "should error when version pull pipeline uses pipelinespec-from-bundle but config entry has only PipelineRefGit",
+			versionPipelines: map[string]*VersionPipelineDefinition{
+				"v1": {
+					Pull: &PipelineDef{
+						PipelineSpecFromBundle: &compv1alpha1.PipelineSpecFromBundle{
+							Name:   "docker-build",
+							Bundle: "latest",
+						},
+					},
+				},
+			},
+			versionsToOnboard: []string{"v1"},
+			defaultPipelinesConfig: &pipelineConfig{
+				Pipelines: []BuildPipeline{
+					{
+						Name: "docker-build",
+						PipelineRefGit: &compv1alpha1.PipelineRefGit{
+							Url:        "https://github.com/test/pipelines",
+							PathInRepo: ".tekton/docker-build.yaml",
+							Revision:   "main",
+						},
+					},
+				},
+			},
+			wantErrors: []string{
+				"version 'v1' pull pipeline references 'docker-build' with bundle 'latest', but pipeline in config has no bundle specified",
+			},
+		},
+		{
+			name: "should error when version push pipeline uses pipelinespec-from-bundle but pipeline name not found in config",
+			versionPipelines: map[string]*VersionPipelineDefinition{
+				"v1": {
+					Push: &PipelineDef{
+						PipelineSpecFromBundle: &compv1alpha1.PipelineSpecFromBundle{
+							Name:   "nonexistent-pipeline",
+							Bundle: "latest",
+						},
+					},
+				},
+			},
+			versionsToOnboard: []string{"v1"},
+			defaultPipelinesConfig: &pipelineConfig{
+				Pipelines: []BuildPipeline{
+					{
+						Name:   "docker-build",
+						Bundle: "quay.io/repo/bundle:latest",
+					},
+				},
+			},
+			wantErrors: []string{
+				"version 'v1' push pipeline references 'nonexistent-pipeline' which is not found in config",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			errors := validatePipelineResolution(tt.versionPipelines, tt.versionsToOnboard, tt.defaultPipelinesConfig)
+			assert.Equal(t, len(tt.wantErrors), len(errors), "unexpected number of errors: %v", errors)
+			for i, wantErr := range tt.wantErrors {
+				assert.Equal(t, wantErr, errors[i])
+			}
+		})
+	}
+}
+
+func TestResolvePipelineDefinitions(t *testing.T) {
+	tests := []struct {
+		name                   string
+		versionPipelines       map[string]*VersionPipelineDefinition
+		versionsToOnboard      []string
+		defaultPipeline        *BuildPipeline
+		defaultPipelinesConfig *pipelineConfig
+		wantVersionPipelines   map[string]*VersionPipelineDefinition
+	}{
+		{
+			name:              "should resolve missing version pipeline to default pipeline defined by PipelineRefGit",
+			versionPipelines:  map[string]*VersionPipelineDefinition{},
+			versionsToOnboard: []string{"v1"},
+			defaultPipeline: &BuildPipeline{
+				PipelineRefGit: &compv1alpha1.PipelineRefGit{
+					Url:        "https://github.com/test/pipelines",
+					PathInRepo: ".tekton/docker-build.yaml",
+					Revision:   "main",
+				},
+			},
+			defaultPipelinesConfig: &pipelineConfig{
+				Pipelines: []BuildPipeline{},
+			},
+			wantVersionPipelines: map[string]*VersionPipelineDefinition{
+				"v1": {
+					Pull: &PipelineDef{
+						PipelineRefGit: &compv1alpha1.PipelineRefGit{
+							Url:        "https://github.com/test/pipelines",
+							PathInRepo: ".tekton/docker-build.yaml",
+							Revision:   "main",
+						},
+					},
+					Push: &PipelineDef{
+						PipelineRefGit: &compv1alpha1.PipelineRefGit{
+							Url:        "https://github.com/test/pipelines",
+							PathInRepo: ".tekton/docker-build.yaml",
+							Revision:   "main",
+						},
+					},
+				},
+			},
+		},
+		{
+			name:              "should resolve missing version pipeline to default pipeline defined by PipelineSpecFromBundle",
+			versionPipelines:  map[string]*VersionPipelineDefinition{},
+			versionsToOnboard: []string{"v1"},
+			defaultPipeline: &BuildPipeline{
+				PipelineSpecFromBundle: &compv1alpha1.PipelineSpecFromBundle{
+					Name:   "docker-build",
+					Bundle: "quay.io/repo/bundle:latest",
+				},
+			},
+			defaultPipelinesConfig: &pipelineConfig{
+				Pipelines: []BuildPipeline{},
+			},
+			wantVersionPipelines: map[string]*VersionPipelineDefinition{
+				"v1": {
+					Pull: &PipelineDef{
+						PipelineSpecFromBundle: &compv1alpha1.PipelineSpecFromBundle{
+							Name:   "docker-build",
+							Bundle: "quay.io/repo/bundle:latest",
+						},
+					},
+					Push: &PipelineDef{
+						PipelineSpecFromBundle: &compv1alpha1.PipelineSpecFromBundle{
+							Name:   "docker-build",
+							Bundle: "quay.io/repo/bundle:latest",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "should resolve bundle 'latest' in version pipeline to actual bundle from config",
+			versionPipelines: map[string]*VersionPipelineDefinition{
+				"v1": {
+					Pull: &PipelineDef{
+						PipelineSpecFromBundle: &compv1alpha1.PipelineSpecFromBundle{
+							Name:   "docker-build",
+							Bundle: "latest",
+						},
+					},
+					Push: &PipelineDef{
+						PipelineSpecFromBundle: &compv1alpha1.PipelineSpecFromBundle{
+							Name:   "docker-build",
+							Bundle: "latest",
+						},
+					},
+				},
+			},
+			versionsToOnboard: []string{"v1"},
+			defaultPipeline:   &BuildPipeline{},
+			defaultPipelinesConfig: &pipelineConfig{
+				Pipelines: []BuildPipeline{
+					{
+						Name:   "docker-build",
+						Bundle: "quay.io/repo/bundle:latest",
+					},
+				},
+			},
+			wantVersionPipelines: map[string]*VersionPipelineDefinition{
+				"v1": {
+					Pull: &PipelineDef{
+						PipelineSpecFromBundle: &compv1alpha1.PipelineSpecFromBundle{
+							Name:   "docker-build",
+							Bundle: "quay.io/repo/bundle:latest",
+						},
+					},
+					Push: &PipelineDef{
+						PipelineSpecFromBundle: &compv1alpha1.PipelineSpecFromBundle{
+							Name:   "docker-build",
+							Bundle: "quay.io/repo/bundle:latest",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resolvePipelineDefinitions(tt.versionPipelines, tt.versionsToOnboard, tt.defaultPipeline, tt.defaultPipelinesConfig)
+			assert.DeepEqual(t, tt.wantVersionPipelines, tt.versionPipelines)
+		})
+	}
+}

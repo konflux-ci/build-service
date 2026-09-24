@@ -65,6 +65,8 @@ const (
 	ImageRegistrySecretLinkFinalizer = "image-registry-secret-sa-link.component.appstudio.openshift.io/finalizer"
 	ApplicationNameLabelName         = "appstudio.openshift.io/application"
 	ComponentNameLabelNameOldModel   = "appstudio.openshift.io/component"
+
+	waitForContainerImageMessageOldModel = "waiting for spec.containerImage to be set (often by ImageRepository with annotation image-controller.appstudio.redhat.com/update-component-image)"
 )
 
 type BuildStatus struct {
@@ -193,11 +195,11 @@ func (r *ComponentBuildReconcilerOldModel) Reconcile(ctx context.Context, req ct
 
 		buildStatus := readBuildStatus(&component)
 
-		if buildStatus.Message == waitForContainerImageMessage {
+		if buildStatus.Message == waitForContainerImageMessageOldModel {
 			return ctrl.Result{}, nil
 		}
 
-		buildStatus.Message = waitForContainerImageMessage
+		buildStatus.Message = waitForContainerImageMessageOldModel
 		writeBuildStatus(&component, buildStatus)
 		if err := r.Client.Update(ctx, &component); err != nil {
 			log.Error(err, "failed to update component after waiting for containerImage", l.Action, l.ActionUpdate, l.Audit, "true")
@@ -320,7 +322,7 @@ func (r *ComponentBuildReconcilerOldModel) Reconcile(ctx context.Context, req ct
 			return ctrl.Result{}, nil
 		}
 		// When only message is set, unless it is waiting for ContainerImage message do nothing
-		if buildStatus.Message != "" && !strings.Contains(buildStatus.Message, waitForContainerImageMessage) {
+		if buildStatus.Message != "" && !strings.Contains(buildStatus.Message, waitForContainerImageMessageOldModel) {
 			return ctrl.Result{}, nil
 		}
 

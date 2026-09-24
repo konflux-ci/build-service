@@ -67,7 +67,7 @@ const (
 	buildPipelineConfigMapResourceName = "build-pipeline-config"
 	buildPipelineConfigName            = "config.yaml"
 
-	waitForContainerImageMessage = "waiting for spec.containerImage to be set by ImageRepository with annotation image-controller.appstudio.redhat.com/update-component-image"
+	waitForContainerImageMessage = "waiting for spec.containerImage to be set (often by ImageRepository with annotation build.konflux-ci.dev/update-component-image)"
 )
 
 // PipelineDef represents a single pipeline definition with pointer fields

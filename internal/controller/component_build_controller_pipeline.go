@@ -282,7 +282,10 @@ func retrievePipelineSpec(ctx context.Context, bundleUri, pipelineName string) (
 	resolver := oci.NewResolver(bundleUri, authn.DefaultKeychain)
 
 	if obj, _, err = resolver.Get(ctx, "pipeline", pipelineName); err != nil {
-		return nil, err
+		return nil, boerrors.NewBuildOpError(
+			boerrors.EPipelineRetrievalFailed,
+			fmt.Errorf("failed to retrieve pipeline %s from bundle %s: %w", pipelineName, bundleUri, err),
+		)
 	}
 
 	var pipelineSpec tektonapi.PipelineSpec
