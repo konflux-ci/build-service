@@ -2,8 +2,6 @@ package constants
 
 import (
 	"time"
-
-	"github.com/konflux-ci/build-service/e2e-tests/pkg/utils"
 )
 
 type BuildPipelineType string
@@ -34,7 +32,7 @@ const (
 	CODEBERG_QE_ORG_ENV string = "CODEBERG_QE_ORG"
 
 	DefaultGithubOrg      = "redhat-appstudio-qe"
-	DefaultGilabGroupId   = "85150202" // group id for "konflux-qe"
+	DefaultGitlabGroupId  = "85150202" // group id for "konflux-qe"
 	DefaultGitLabAPIURL   = "https://gitlab.com/api/v4"
 	DefaultCodebergAPIURL = "https://codeberg.org"
 	DefaultCodebergQEOrg  = "konflux-qe"
@@ -62,9 +60,10 @@ const (
 	// Default user name available after deploying upstream version of konflux-ci
 	DefaultKonfluxCIUserName = "user2@konflux.dev"
 
-	ImageControllerE2ETestNamesapcePrefix = "image-controller-e2e"
-	BuildServiceE2ETestNamesapcePrefix    = "build-e2e"
+	ImageControllerE2ETestNamespacePrefix = "image-controller-e2e"
+	BuildServiceE2ETestNamespacePrefix    = "build-e2e"
 
+	ImageRepositoryFinalizerName     = "konflux-ci.dev/image-repository"
 	ComponentNamespacePullSecretName = "components-namespace-pull"
 
 	SampleTestRepoName = "testrepo"
@@ -74,7 +73,6 @@ const (
 )
 
 var (
-	githubOrg           = utils.GetEnv(GITHUB_E2E_ORGANIZATION_ENV, DefaultGithubOrg)
 	GitLabProjectIdsMap = map[string]string{"hacbs-test-project-integration": "56586709", "devfile-sample-hello-world": "60038001", "build-nudge-parent": "62134305", "build-nudge-child": "62134341"}
 )
 

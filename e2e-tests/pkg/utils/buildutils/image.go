@@ -1,4 +1,4 @@
-package build
+package buildutils
 
 import (
 	"encoding/base64"
@@ -117,7 +117,7 @@ func IsImagePullableWithSecret(secret *corev1.Secret, imageRef string) (bool, er
 // NewKeychainFromPullSecret builds a keychain that resolves registry credentials
 // from the docker config stored in the given kubernetes pull secret.
 func NewKeychainFromPullSecret(secret *corev1.Secret) (authn.Keychain, error) {
-	auths, err := getDockerConfigFromSecret(secret)
+	auths, err := GetDockerConfigFromSecret(secret)
 	if err != nil {
 		return nil, err
 	}
@@ -160,8 +160,8 @@ func (k *pullSecretKeychain) Resolve(target authn.Resource) (authn.Authenticator
 	return &authn.Basic{Username: username, Password: password}, nil
 }
 
-// getDockerConfigFromSecret reads registry credentials from a pull / push secret.
-func getDockerConfigFromSecret(secret *corev1.Secret) (DockerConfig, error) {
+// GetDockerConfigFromSecret reads registry credentials from a pull / push secret.
+func GetDockerConfigFromSecret(secret *corev1.Secret) (DockerConfig, error) {
 	if secret == nil {
 		return nil, fmt.Errorf("secret is nil")
 	}

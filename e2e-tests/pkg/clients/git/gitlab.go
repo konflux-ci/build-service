@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	gitlab2 "github.com/xanzy/go-gitlab"
+	goGitlab "github.com/xanzy/go-gitlab"
 
 	"github.com/konflux-ci/build-service/e2e-tests/pkg/clients/gitlab"
 	"github.com/konflux-ci/build-service/e2e-tests/pkg/constants"
@@ -50,7 +50,7 @@ func (g *GitLabClient) CreateFile(repository, pathToFile, content, branchName st
 		return nil, err
 	}
 
-	opts := gitlab2.GetFileOptions{Ref: gitlab2.Ptr(branchName)}
+	opts := goGitlab.GetFileOptions{Ref: goGitlab.Ptr(branchName)}
 	file, _, err := g.GetClient().RepositoryFiles.GetFile(repository, pathToFile, &opts)
 	if err != nil {
 		return nil, err
@@ -63,7 +63,7 @@ func (g *GitLabClient) CreateFile(repository, pathToFile, content, branchName st
 }
 
 func (g *GitLabClient) GetFile(repository, pathToFile, branchName string) (*RepositoryFile, error) {
-	opts := gitlab2.GetFileOptions{Ref: gitlab2.Ptr(branchName)}
+	opts := goGitlab.GetFileOptions{Ref: goGitlab.Ptr(branchName)}
 	file, _, err := g.GetClient().RepositoryFiles.GetFile(repository, pathToFile, &opts)
 	if err != nil {
 		return nil, err
@@ -95,17 +95,17 @@ func (g *GitLabClient) MergePullRequest(repository string, prNumber int) (*PullR
 
 func (g *GitLabClient) UpdatePullRequestBranch(repository string, prNumber int) error {
 	// GitLab handles MR branch updates via rebase
-	opts := gitlab2.RebaseMergeRequestOptions{}
+	opts := goGitlab.RebaseMergeRequestOptions{}
 	_, err := g.GetClient().MergeRequests.RebaseMergeRequest(repository, prNumber, &opts)
 	return err
 }
 
 func (g *GitLabClient) CreatePullRequest(repository, title, body, head, base string) (*PullRequest, error) {
-	opts := gitlab2.CreateMergeRequestOptions{
-		Title:        gitlab2.Ptr(title),
-		Description:  gitlab2.Ptr(body),
-		SourceBranch: gitlab2.Ptr(head),
-		TargetBranch: gitlab2.Ptr(base),
+	opts := goGitlab.CreateMergeRequestOptions{
+		Title:        goGitlab.Ptr(title),
+		Description:  goGitlab.Ptr(body),
+		SourceBranch: goGitlab.Ptr(head),
+		TargetBranch: goGitlab.Ptr(base),
 	}
 	mr, _, err := g.GetClient().MergeRequests.CreateMergeRequest(repository, &opts)
 	if err != nil {

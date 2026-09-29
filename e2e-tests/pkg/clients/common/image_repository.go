@@ -3,8 +3,10 @@ package common
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
+	"github.com/konflux-ci/build-service/e2e-tests/pkg/constants"
 	"github.com/konflux-ci/build-service/e2e-tests/pkg/utils"
 	"github.com/konflux-ci/image-controller/api/konflux/v1alpha1"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
@@ -88,10 +90,10 @@ func (s *SuiteController) WaitForImageRepositoryToBeReady(name, namespace string
 
 	err := utils.WaitUntil(func() (done bool, err error) {
 		if err := s.KubeRest().Get(context.Background(), namespacedName, &imageRepository); err != nil {
-			fmt.Printf("Image repository %q do not have right state ('%s' != 'ready') yet but it has status %v.\n", name, imageRepository.Status.State, imageRepository.Status)
+			fmt.Printf("failed to get image repository %q with error: %v", name, err)
 			return false, nil
 		}
-		return imageRepository.Status.State == "ready", nil
+		return imageRepository.Status.State == "ready" && slices.Contains(imageRepository.Finalizers, constants.ImageRepositoryFinalizerName), nil
 	}, 2*time.Minute)
 
 	return err
@@ -124,6 +126,20 @@ func (s *SuiteController) GetImageURLFromIR(imageRepoName, namespace string) (st
 		return "", err
 	}
 	return imageRepository.Status.Image.URL, err
+}
+
+// GetImageVisibilityFromIR reads and returns the image visibility from the image repository
+func (s *SuiteController) GetImageVisibilityFromIR(imageRepoName, namespace string) (string, error) {
+	namespacedName := types.NamespacedName{
+		Name:      imageRepoName,
+		Namespace: namespace,
+	}
+	imageRepository := v1alpha1.ImageRepository{}
+	err := s.KubeRest().Get(context.Background(), namespacedName, &imageRepository)
+	if err != nil {
+		return "", err
+	}
+	return string(imageRepository.Status.Image.Visibility), err
 }
 
 // GetGenerateTimestamp return the generationTimestamp of credentials of image repository
@@ -188,6 +204,7 @@ func (s *SuiteController) DeleteImageRepositoryCR(name, namespace string) error 
 	return nil
 }
 
+// UpdateImageName try to update the spec.image.name field of the ImageRepository object
 func (s *SuiteController) UpdateImageName(imageRepoCRName, namespace, updatedImageName string) error {
 	namespacedName := types.NamespacedName{
 		Name:      imageRepoCRName,
@@ -208,6 +225,7 @@ func (s *SuiteController) UpdateImageName(imageRepoCRName, namespace, updatedIma
 	return nil
 }
 
+// UpdateVisibility updates the spec.image.visibility field of the ImageRepository object
 func (s *SuiteController) UpdateVisibility(imageRepoCRName, namespace, updatedVisibility string) error {
 	namespacedName := types.NamespacedName{
 		Name:      imageRepoCRName,
@@ -279,13 +297,13 @@ func (s *SuiteController) RegenerateNamespacePullToken(imageRepoCRName, namespac
 }
 
 // SetVerifyLinking will set the spec.credentials.verify-linking to true
-func (i *SuiteController) SetVerifyLinking(imageRepoName, namespace string) error {
+func (s *SuiteController) SetVerifyLinking(imageRepoName, namespace string) error {
 	namespacedName := types.NamespacedName{
 		Name:      imageRepoName,
 		Namespace: namespace,
 	}
 	imageRepository := v1alpha1.ImageRepository{}
-	err := i.KubeRest().Get(context.Background(), namespacedName, &imageRepository)
+	err := s.KubeRest().Get(context.Background(), namespacedName, &imageRepository)
 	if err != nil {
 		return err
 	}
@@ -296,15 +314,15 @@ func (i *SuiteController) SetVerifyLinking(imageRepoName, namespace string) erro
 	}
 	imageRepository.Spec.Credentials = credentials
 
-	err = i.KubeRest().Update(context.Background(), &imageRepository)
+	err = s.KubeRest().Update(context.Background(), &imageRepository)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
+// RemoveFinalizerFromIR removes the finalizer "konflux-ci.dev/image-repository" from the ImageRepository object
 func (s *SuiteController) RemoveFinalizerFromIR(imageRepoCRName, namespace string) error {
-	finalizerName := "konflux-ci.dev/image-repository"
 	namespacedName := types.NamespacedName{
 		Name:      imageRepoCRName,
 		Namespace: namespace,
@@ -315,17 +333,18 @@ func (s *SuiteController) RemoveFinalizerFromIR(imageRepoCRName, namespace strin
 		return err
 	}
 	patch := client.MergeFrom(imageRepository.DeepCopy())
-	if ok := controllerutil.RemoveFinalizer(&imageRepository, finalizerName); ok {
+	if ok := controllerutil.RemoveFinalizer(&imageRepository, constants.ImageRepositoryFinalizerName); ok {
 		err = s.KubeRest().Patch(context.Background(), &imageRepository, patch)
 		if err != nil {
 			return err
 		}
 		return nil
 	} else {
-		return fmt.Errorf("failed to remove finalizer %s from image repository", finalizerName)
+		return fmt.Errorf("failed to remove finalizer %s from image repository", constants.ImageRepositoryFinalizerName)
 	}
 }
 
+// AddAnnotationsToIR adds the annotations to the ImageRepository object
 func (s *SuiteController) AddAnnotationsToIR(imageRepoCRName, namespace string, annotations map[string]string) error {
 	namespacedName := types.NamespacedName{
 		Name:      imageRepoCRName,
@@ -351,6 +370,7 @@ func (s *SuiteController) AddAnnotationsToIR(imageRepoCRName, namespace string, 
 	return nil
 }
 
+// UpdatePushSecretName updates the spec.status.credentials.push-secret-name field of the ImageRepository object
 func (s *SuiteController) UpdatePushSecretName(imageRepoCRName, namespace, updatedName string) error {
 	namespacedName := types.NamespacedName{
 		Name:      imageRepoCRName,
@@ -370,7 +390,8 @@ func (s *SuiteController) UpdatePushSecretName(imageRepoCRName, namespace, updat
 	return nil
 }
 
-func (s *SuiteController) AddNotifictionToIR(imageRepoCRName, namespace, title, webhookUrl string) error {
+// AddNotificationToIR add a notification to the ImageRepository object
+func (s *SuiteController) AddNotificationToIR(imageRepoCRName, namespace, title, webhookUrl string) error {
 	namespacedName := types.NamespacedName{
 		Name:      imageRepoCRName,
 		Namespace: namespace,
@@ -396,6 +417,7 @@ func (s *SuiteController) AddNotifictionToIR(imageRepoCRName, namespace, title, 
 	return nil
 }
 
+// GetMatchingNotificationStatus fetchs the notificationStatus matching the title
 func (s *SuiteController) GetMatchingNotificationStatus(imageRepoCRName, namespace, notificationTitle string) (*v1alpha1.NotificationStatus, error) {
 	namespacedName := types.NamespacedName{
 		Name:      imageRepoCRName,
@@ -416,6 +438,7 @@ func (s *SuiteController) GetMatchingNotificationStatus(imageRepoCRName, namespa
 	return notificationStatus, fmt.Errorf("does not find any notification matching the title")
 }
 
+// UpdateWebhookUrlInNotification updates the notification with new webhook url
 func (s *SuiteController) UpdateWebhookUrlInNotification(imageRepoCRName, namespace, notificationTitle, webhookUrl string) error {
 	namespacedName := types.NamespacedName{
 		Name:      imageRepoCRName,
@@ -426,13 +449,16 @@ func (s *SuiteController) UpdateWebhookUrlInNotification(imageRepoCRName, namesp
 	if err != nil {
 		return err
 	}
-	// Get the index
+	// Find the index
 	notificationIndex := -1
 	notifications := imageRepository.Spec.Notifications
 	for index := range imageRepository.Spec.Notifications {
 		if notifications[index].Title == notificationTitle {
 			notificationIndex = index
 		}
+	}
+	if notificationIndex == -1 {
+		return fmt.Errorf("notification with title %q not found", notificationTitle)
 	}
 	patch := client.MergeFrom(imageRepository.DeepCopy())
 	imageRepository.Spec.Notifications[notificationIndex].Config.Url = webhookUrl
@@ -443,6 +469,7 @@ func (s *SuiteController) UpdateWebhookUrlInNotification(imageRepoCRName, namesp
 	return nil
 }
 
+// DeleteNotificationFromIR removes the notification matching title
 func (s *SuiteController) DeleteNotificationFromIR(imageRepoCRName, namespace, title string) error {
 	namespacedName := types.NamespacedName{
 		Name:      imageRepoCRName,
@@ -453,13 +480,16 @@ func (s *SuiteController) DeleteNotificationFromIR(imageRepoCRName, namespace, t
 	if err != nil {
 		return err
 	}
-	// Get the index matching the title
+	// Find the index matching the title
 	notificationIndex := -1
 	notifications := imageRepository.Spec.Notifications
 	for index := range imageRepository.Spec.Notifications {
 		if notifications[index].Title == title {
 			notificationIndex = index
 		}
+	}
+	if notificationIndex == -1 {
+		return fmt.Errorf("notification with title %q not found", title)
 	}
 	patch := client.MergeFrom(imageRepository.DeepCopy())
 	imageRepository.Spec.Notifications = append(notifications[:notificationIndex], notifications[notificationIndex+1:]...)
