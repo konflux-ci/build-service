@@ -88,7 +88,7 @@ func (s *SuiteController) WaitForImageRepositoryToBeReady(name, namespace string
 
 	err := utils.WaitUntil(func() (done bool, err error) {
 		if err := s.KubeRest().Get(context.Background(), namespacedName, &imageRepository); err != nil {
-			fmt.Printf("Image repository %q do not have right state ('%s' != 'ready') yet but it has status %v.\n", name, imageRepository.Status.State, imageRepository.Status)
+			fmt.Printf("failed to get image repository %q with error: %v", name, err)
 			return false, nil
 		}
 		return imageRepository.Status.State == "ready", nil
@@ -279,13 +279,13 @@ func (s *SuiteController) RegenerateNamespacePullToken(imageRepoCRName, namespac
 }
 
 // SetVerifyLinking will set the spec.credentials.verify-linking to true
-func (i *SuiteController) SetVerifyLinking(imageRepoName, namespace string) error {
+func (s *SuiteController) SetVerifyLinking(imageRepoName, namespace string) error {
 	namespacedName := types.NamespacedName{
 		Name:      imageRepoName,
 		Namespace: namespace,
 	}
 	imageRepository := v1alpha1.ImageRepository{}
-	err := i.KubeRest().Get(context.Background(), namespacedName, &imageRepository)
+	err := s.KubeRest().Get(context.Background(), namespacedName, &imageRepository)
 	if err != nil {
 		return err
 	}
@@ -296,7 +296,7 @@ func (i *SuiteController) SetVerifyLinking(imageRepoName, namespace string) erro
 	}
 	imageRepository.Spec.Credentials = credentials
 
-	err = i.KubeRest().Update(context.Background(), &imageRepository)
+	err = s.KubeRest().Update(context.Background(), &imageRepository)
 	if err != nil {
 		return err
 	}
@@ -370,7 +370,7 @@ func (s *SuiteController) UpdatePushSecretName(imageRepoCRName, namespace, updat
 	return nil
 }
 
-func (s *SuiteController) AddNotifictionToIR(imageRepoCRName, namespace, title, webhookUrl string) error {
+func (s *SuiteController) AddNotificationToIR(imageRepoCRName, namespace, title, webhookUrl string) error {
 	namespacedName := types.NamespacedName{
 		Name:      imageRepoCRName,
 		Namespace: namespace,
@@ -426,13 +426,16 @@ func (s *SuiteController) UpdateWebhookUrlInNotification(imageRepoCRName, namesp
 	if err != nil {
 		return err
 	}
-	// Get the index
+	// Find the index
 	notificationIndex := -1
 	notifications := imageRepository.Spec.Notifications
 	for index := range imageRepository.Spec.Notifications {
 		if notifications[index].Title == notificationTitle {
 			notificationIndex = index
 		}
+	}
+	if notificationIndex == -1 {
+		return fmt.Errorf("notification with title %q not found", notificationTitle)
 	}
 	patch := client.MergeFrom(imageRepository.DeepCopy())
 	imageRepository.Spec.Notifications[notificationIndex].Config.Url = webhookUrl
@@ -453,13 +456,16 @@ func (s *SuiteController) DeleteNotificationFromIR(imageRepoCRName, namespace, t
 	if err != nil {
 		return err
 	}
-	// Get the index matching the title
+	// Find the index matching the title
 	notificationIndex := -1
 	notifications := imageRepository.Spec.Notifications
 	for index := range imageRepository.Spec.Notifications {
 		if notifications[index].Title == title {
 			notificationIndex = index
 		}
+	}
+	if notificationIndex == -1 {
+		return fmt.Errorf("notification with title %q not found", title)
 	}
 	patch := client.MergeFrom(imageRepository.DeepCopy())
 	imageRepository.Spec.Notifications = append(notifications[:notificationIndex], notifications[notificationIndex+1:]...)

@@ -143,7 +143,7 @@ func (g *Github) GetCheckRunConclusion(checkRunName, repoName, prHeadSha string,
 	err = utils.WaitUntil(func() (done bool, err error) {
 		checkRun, err = g.GetCheckRun(repoName, checkRun.GetID())
 		if err != nil {
-			ginkgo.GinkgoWriter.Printf("got error when listing CheckRuns: %+v\n", errMsgSuffix, err)
+			ginkgo.GinkgoWriter.Printf("got error when listing CheckRuns: %s with error %+v\n", errMsgSuffix, err)
 			return false, nil
 		}
 		currentCheckRunStatus := checkRun.GetStatus()

@@ -62,8 +62,8 @@ const (
 	// Default user name available after deploying upstream version of konflux-ci
 	DefaultKonfluxCIUserName = "user2@konflux.dev"
 
-	ImageControllerE2ETestNamesapcePrefix = "image-controller-e2e"
-	BuildServiceE2ETestNamesapcePrefix    = "build-e2e"
+	ImageControllerE2ETestNamespacePrefix = "image-controller-e2e"
+	BuildServiceE2ETestNamespacePrefix    = "build-e2e"
 
 	ComponentNamespacePullSecretName = "components-namespace-pull"
 

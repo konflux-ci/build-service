@@ -6,7 +6,7 @@ import (
 	"time"
 
 	applicationApi "github.com/konflux-ci/application-api/api/konflux/v1alpha1"
-	"github.com/konflux-ci/e2e-tests/pkg/constants"
+	"github.com/konflux-ci/build-service/e2e-tests/pkg/constants"
 	"github.com/onsi/ginkgo/v2"
 	pipeline "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	"k8s.io/apimachinery/pkg/labels"

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/konflux-ci/application-api/api/konflux/v1alpha1"
-	applicationApi "github.com/konflux-ci/application-api/api/konflux/v1alpha1"
 	"github.com/konflux-ci/build-service/e2e-tests/pkg/utils"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -14,7 +13,7 @@ import (
 )
 
 // Method to create a component in the kubernetes clusters.
-func (s *SuiteController) CreateComponent(componentObj *applicationApi.Component) (*applicationApi.Component, error) {
+func (s *SuiteController) CreateComponent(componentObj *v1alpha1.Component) (*v1alpha1.Component, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*1)
 	defer cancel()
 	if err := s.KubeRest().Create(ctx, componentObj); err != nil {
@@ -24,12 +23,12 @@ func (s *SuiteController) CreateComponent(componentObj *applicationApi.Component
 }
 
 // GetComponent reads and returns the component
-func (s *SuiteController) GetComponent(componentName, namespace string) (applicationApi.Component, error) {
+func (s *SuiteController) GetComponent(componentName, namespace string) (v1alpha1.Component, error) {
 	namespacedName := types.NamespacedName{
 		Name:      componentName,
 		Namespace: namespace,
 	}
-	component := applicationApi.Component{}
+	component := v1alpha1.Component{}
 	err := s.KubeRest().Get(context.Background(), namespacedName, &component)
 	if err != nil {
 		return component, err
@@ -53,7 +52,7 @@ func (s *SuiteController) DeleteComponent(name, namespace string) error {
 	return nil
 }
 
-// WaitForImageRepositoryToBeReady waits for the image repository status to be in ready state
+// WaitForComponentVersionOnboardingToSucceed waits for component version status to be succeeded
 func (s *SuiteController) WaitForComponentVersionOnboardingToSucceed(componentName, namespace, testVersionName string) error {
 	namespacedName := types.NamespacedName{
 		Name:      componentName,
