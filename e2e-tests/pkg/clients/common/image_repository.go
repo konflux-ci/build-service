@@ -188,6 +188,7 @@ func (s *SuiteController) DeleteImageRepositoryCR(name, namespace string) error 
 	return nil
 }
 
+// UpdateImageName try to update the spec.image.name field of the ImageRepository object
 func (s *SuiteController) UpdateImageName(imageRepoCRName, namespace, updatedImageName string) error {
 	namespacedName := types.NamespacedName{
 		Name:      imageRepoCRName,
@@ -208,6 +209,7 @@ func (s *SuiteController) UpdateImageName(imageRepoCRName, namespace, updatedIma
 	return nil
 }
 
+// UpdateVisibility updates the spec.image.visibility field of the ImageRepository object
 func (s *SuiteController) UpdateVisibility(imageRepoCRName, namespace, updatedVisibility string) error {
 	namespacedName := types.NamespacedName{
 		Name:      imageRepoCRName,
@@ -303,6 +305,7 @@ func (s *SuiteController) SetVerifyLinking(imageRepoName, namespace string) erro
 	return nil
 }
 
+// RemoveFinalizerFromIR removes the finalizer "konflux-ci.dev/image-repository" from the ImageRepository object
 func (s *SuiteController) RemoveFinalizerFromIR(imageRepoCRName, namespace string) error {
 	finalizerName := "konflux-ci.dev/image-repository"
 	namespacedName := types.NamespacedName{
@@ -326,6 +329,7 @@ func (s *SuiteController) RemoveFinalizerFromIR(imageRepoCRName, namespace strin
 	}
 }
 
+// AddAnnotationsToIR adds the annotations to the ImageRepository object
 func (s *SuiteController) AddAnnotationsToIR(imageRepoCRName, namespace string, annotations map[string]string) error {
 	namespacedName := types.NamespacedName{
 		Name:      imageRepoCRName,
@@ -351,6 +355,7 @@ func (s *SuiteController) AddAnnotationsToIR(imageRepoCRName, namespace string, 
 	return nil
 }
 
+// UpdatePushSecretName updates the spec.status.credentials.push-secret-name field of the ImageRepository object
 func (s *SuiteController) UpdatePushSecretName(imageRepoCRName, namespace, updatedName string) error {
 	namespacedName := types.NamespacedName{
 		Name:      imageRepoCRName,
@@ -370,6 +375,7 @@ func (s *SuiteController) UpdatePushSecretName(imageRepoCRName, namespace, updat
 	return nil
 }
 
+// AddNotificationToIR add a notification to the ImageRepository object
 func (s *SuiteController) AddNotificationToIR(imageRepoCRName, namespace, title, webhookUrl string) error {
 	namespacedName := types.NamespacedName{
 		Name:      imageRepoCRName,
@@ -396,6 +402,7 @@ func (s *SuiteController) AddNotificationToIR(imageRepoCRName, namespace, title,
 	return nil
 }
 
+// GetMatchingNotificationStatus fetchs the notificationStatus matching the title
 func (s *SuiteController) GetMatchingNotificationStatus(imageRepoCRName, namespace, notificationTitle string) (*v1alpha1.NotificationStatus, error) {
 	namespacedName := types.NamespacedName{
 		Name:      imageRepoCRName,
@@ -416,6 +423,7 @@ func (s *SuiteController) GetMatchingNotificationStatus(imageRepoCRName, namespa
 	return notificationStatus, fmt.Errorf("does not find any notification matching the title")
 }
 
+// UpdateWebhookUrlInNotification updates the notification with new webhook url
 func (s *SuiteController) UpdateWebhookUrlInNotification(imageRepoCRName, namespace, notificationTitle, webhookUrl string) error {
 	namespacedName := types.NamespacedName{
 		Name:      imageRepoCRName,
@@ -446,6 +454,7 @@ func (s *SuiteController) UpdateWebhookUrlInNotification(imageRepoCRName, namesp
 	return nil
 }
 
+// DeleteNotificationFromIR removes the notification matching title
 func (s *SuiteController) DeleteNotificationFromIR(imageRepoCRName, namespace, title string) error {
 	namespacedName := types.NamespacedName{
 		Name:      imageRepoCRName,

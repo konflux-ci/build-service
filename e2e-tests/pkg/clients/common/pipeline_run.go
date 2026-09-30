@@ -51,7 +51,7 @@ func (s *SuiteController) WaitForComponentPipelineToBeFinished(component *applic
 		pr, err = s.GetComponentPipelineRun(component.GetName(), component.GetNamespace(), pipelineType, eventType, sha)
 
 		if err != nil {
-			ginkgo.GinkgoWriter.Printf("faile to get pipelinerun for the Component %s/%s\n", component.GetNamespace(), component.GetName())
+			ginkgo.GinkgoWriter.Printf("failed to get pipelinerun for the Component %s/%s\n", component.GetNamespace(), component.GetName())
 			return false, nil
 		}
 

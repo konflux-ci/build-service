@@ -48,7 +48,7 @@ func NewClientsFromEnv() (Clients, error) {
 		gl, err := gitlab.NewGitlabClient(
 			gitlabToken,
 			utils.GetEnv(constants.GITLAB_API_URL_ENV, constants.DefaultGitLabAPIURL),
-			utils.GetEnv("GITLAB_GROUP_ID", constants.DefaultGilabGroupId),
+			utils.GetEnv("GITLAB_GROUP_ID", constants.DefaultGitlabGroupId),
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create gitlab client: %w", err)
