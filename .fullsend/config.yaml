@@ -9,7 +9,6 @@ roles:
     - triage
     - coder
     - fix
-    - review
     - prioritize
 allowed_remote_resources:
     - https://raw.githubusercontent.com/fullsend-ai/fullsend/
