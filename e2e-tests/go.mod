@@ -1,10 +1,9 @@
 module github.com/konflux-ci/build-service/e2e-tests
 
-go 1.25.6
+go 1.26.0
 
 require (
 	github.com/devfile/library/v2 v2.2.1-0.20230418160146-e75481b7eebd
-	github.com/google/go-containerregistry v0.21.0
 	github.com/google/go-github/v66 v66.0.0
 	github.com/konflux-ci/application-api v0.0.0-20260529131129-a9594acdc104
 	github.com/konflux-ci/build-service v0.0.0-20240611083846-2dee6cfe6fe4
@@ -95,6 +94,7 @@ require (
 	github.com/google/cel-go v0.27.0 // indirect
 	github.com/google/gnostic-models v0.7.1 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
+	github.com/google/go-containerregistry v0.21.0 // indirect
 	github.com/google/go-github/v45 v45.2.0 // indirect
 	github.com/google/go-github/v75 v75.0.0 // indirect
 	github.com/google/go-querystring v1.2.0 // indirect
