@@ -2115,6 +2115,8 @@ github.com/konflux-ci/e2e-tests v0.0.0-20260907141935-56c230f52af9 h1:3kN0KnmXBe
 github.com/konflux-ci/e2e-tests v0.0.0-20260907141935-56c230f52af9/go.mod h1:F58gaInT4SPWUQfLS0nY6kuAsis8UDQ7vmZF72nNvDM=
 github.com/konflux-ci/e2e-tests v0.0.0-20260929075316-f89dd6b31483 h1:X/YSvSer0svnT5Zpda2ukB8TbXl+/WLhTCKKkLeVhX4=
 github.com/konflux-ci/e2e-tests v0.0.0-20260929075316-f89dd6b31483/go.mod h1:F58gaInT4SPWUQfLS0nY6kuAsis8UDQ7vmZF72nNvDM=
+github.com/konflux-ci/e2e-tests v0.0.0-20261005080553-57f6fb6eb6f2 h1:KCpqBjzANeM8H+9iQyYb+FTrV/lIhYHoKY7MaZ+7wmM=
+github.com/konflux-ci/e2e-tests v0.0.0-20261005080553-57f6fb6eb6f2/go.mod h1:F58gaInT4SPWUQfLS0nY6kuAsis8UDQ7vmZF72nNvDM=
 github.com/konflux-ci/image-controller v0.0.0-20240530145826-3296e4996f6f h1:IKlHR2SjBGx/qVgCpu7+/u5b0vHcRuvq+PiqG774Coo=
 github.com/konflux-ci/image-controller v0.0.0-20240530145826-3296e4996f6f/go.mod h1:sktzzIA3GZy9RUjPZFeDyM0G3OFGZJH8U8Np0NCJNUA=
 github.com/konflux-ci/image-controller v0.0.0-20260902123452-65b644b9b875 h1:tNb6i837ruaYqtGmnPcHyyPB9iNNDdH+y9U2iVOL6os=

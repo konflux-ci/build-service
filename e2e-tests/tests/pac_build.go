@@ -91,8 +91,6 @@ var _ = framework.BuildSuiteDescribe("Build service E2E tests", Label("build-ser
 
 				if gitProvider == git.ForgejoProvider {
 					gitProviderAnnotation = map[string]string{"git-provider": "forgejo"}
-					// sometimes forgejo repo clone takes few seconds to reflect in server side, there is not errors thrown, yet to know the exact reason, adding a sleep for 10 secs to check if it helps
-					time.Sleep(10 * time.Second)
 				}
 
 				err = gitClient.CreateBranch(helloWorldRepository, helloWorldComponentDefaultBranch, helloWorldComponentRevision, componentBaseBranchName)

@@ -8,7 +8,7 @@ require (
 	github.com/google/go-github/v66 v66.0.0
 	github.com/konflux-ci/application-api v0.0.0-20260727123715-2999a91451c6
 	github.com/konflux-ci/build-service v0.0.0-20240611083846-2dee6cfe6fe4
-	github.com/konflux-ci/e2e-tests v0.0.0-20260929075316-f89dd6b31483
+	github.com/konflux-ci/e2e-tests v0.0.0-20261005080553-57f6fb6eb6f2
 	github.com/konflux-ci/release-service v0.0.0-20260127184035-c36c56a3c440
 	github.com/onsi/ginkgo/v2 v2.28.0
 	github.com/onsi/gomega v1.39.1
