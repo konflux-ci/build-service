@@ -1,7 +1,8 @@
 module github.com/konflux-ci/build-service
 
-go 1.25.6
+go 1.27
 
+// If you update dependencies below you must also update internal/controller/suite_test.go
 require (
 	codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v3 v3.0.0
 	github.com/bradleyfalzon/ghinstallation/v2 v2.17.0
@@ -9,11 +10,16 @@ require (
 	github.com/google/go-containerregistry v0.21.1
 	github.com/google/go-github/v45 v45.2.0
 	github.com/h2non/gock v1.2.0
+	github.com/konflux-ci/application-api v0.0.0-20260727123715-2999a91451c6
 	github.com/konflux-ci/coverport/instrumentation/go v0.0.0-20251127115143-b5207b335f8b
+	github.com/konflux-ci/image-controller v0.0.0-20250424143112-69ec692d353c
+	github.com/konflux-ci/release-service v0.0.0-20240610124538-758a1d48d002
 	github.com/onsi/ginkgo/v2 v2.27.2
 	github.com/onsi/gomega v1.38.2
+	github.com/openshift-pipelines/pipelines-as-code v0.43.0
 	github.com/openshift/api v0.0.0-20221013123534-96eec44e1979
 	github.com/prometheus/client_golang v1.23.2
+	github.com/tektoncd/pipeline v1.10.2
 	github.com/xanzy/go-gitlab v0.108.0
 	go.uber.org/zap v1.27.1
 	golang.org/x/oauth2 v0.35.0
@@ -25,15 +31,6 @@ require (
 	knative.dev/pkg v0.0.0-20260120122510-4a022ed9999a
 	sigs.k8s.io/controller-runtime v0.23.3
 	sigs.k8s.io/yaml v1.6.0
-)
-
-// If you update dependencies below you must also update internal/controller/suite_test.go
-require (
-	github.com/konflux-ci/application-api v0.0.0-20260727123715-2999a91451c6
-	github.com/konflux-ci/image-controller v0.0.0-20250424143112-69ec692d353c
-	github.com/konflux-ci/release-service v0.0.0-20240610124538-758a1d48d002
-	github.com/openshift-pipelines/pipelines-as-code v0.43.0
-	github.com/tektoncd/pipeline v1.10.2
 )
 
 require (
