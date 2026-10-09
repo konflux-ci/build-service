@@ -2709,4 +2709,79 @@ var _ = Describe("Component build controller", func() {
 			Expect((*repository.Spec.Incomings)[0].Params).To(Equal([]string{"source_url"}))
 		})
 	})
+
+	Context("Test disable old model processing", func() {
+		var (
+			namespace    = "disable-old-model-test"
+			componentKey = types.NamespacedName{Name: "component-disable-old-model", Namespace: namespace}
+			configMapKey = types.NamespacedName{Name: disableOldModelConfigMapResourceName, Namespace: BuildServiceNamespaceName}
+		)
+
+		BeforeEach(func() {
+			createNamespace(namespace)
+			createNamespace(BuildServiceNamespaceName)
+			createDefaultBuildPipelineConfigMap(defaultPipelineConfigMapKey)
+			pacSecretData := map[string]string{
+				"github-application-id": "12345",
+				"github-private-key":    githubAppPrivateKey,
+			}
+			createSecret(pacSecretKey, pacSecretData)
+		})
+
+		AfterEach(func() {
+			deleteComponentOldModel(componentKey)
+			deleteServiceAccount(getComponentServiceAccountKey(componentKey))
+		})
+
+		It("should stop old model processing while the disable-old-model ConfigMap exists and resume once it is removed", func() {
+			disableOldModelConfigMap := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: configMapKey.Name, Namespace: configMapKey.Namespace},
+			}
+			Expect(k8sClient.Create(ctx, disableOldModelConfigMap)).To(Succeed())
+
+			createCustomComponentWithoutBuildRequest(componentConfigOldModel{componentKey: componentKey})
+
+			Eventually(func() string {
+				return readBuildStatus(getComponentOldModel(componentKey)).Message
+			}, timeout, interval).Should(Equal(disabledOldModelMessage))
+
+			componentSAKey := getComponentServiceAccountKey(componentKey)
+			Expect(k8sErrors.IsNotFound(k8sClient.Get(ctx, componentSAKey, &corev1.ServiceAccount{}))).To(BeTrue())
+			waitFinalizerOnComponent(componentKey, PaCProvisionFinalizerOldModel, false)
+
+			deleteConfigMap(configMapKey)
+
+			// trigger a reconcile
+			setComponentBuildRequestOldModel(componentKey, BuildRequestConfigurePaCAnnotationValue)
+
+			// Build pipeline Service Account is only (re)created when old model processing isn't disabled.
+			waitServiceAccount(componentSAKey)
+			// Finalizer will be present because onboarding was successful
+			waitFinalizerOnComponent(componentKey, PaCProvisionFinalizerOldModel, true)
+
+			Eventually(func() string {
+				return readBuildStatus(getComponentOldModel(componentKey)).Message
+			}, timeout, interval).ShouldNot(Equal(disabledOldModelMessage))
+		})
+
+		It("should still delete an already onboarded component while disable-old-model ConfigMap exists", func() {
+			createCustomComponentWithoutBuildRequest(componentConfigOldModel{componentKey: componentKey})
+			componentSAKey := getComponentServiceAccountKey(componentKey)
+			waitServiceAccount(componentSAKey)
+			waitFinalizerOnComponent(componentKey, PaCProvisionFinalizerOldModel, false)
+
+			Eventually(func() string {
+				return readBuildStatus(getComponentOldModel(componentKey)).Message
+			}, timeout, interval).Should(Equal("done"))
+
+			disableOldModelConfigMap := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: configMapKey.Name, Namespace: configMapKey.Namespace},
+			}
+			Expect(k8sClient.Create(ctx, disableOldModelConfigMap)).To(Succeed())
+
+			deleteComponentOldModel(componentKey)
+
+			deleteConfigMap(configMapKey)
+		})
+	})
 })
