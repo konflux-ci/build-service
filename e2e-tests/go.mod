@@ -1,6 +1,6 @@
 module github.com/konflux-ci/build-service/e2e-tests
 
-go 1.25.6
+go 1.26
 
 require (
 	github.com/devfile/library/v2 v2.2.1-0.20230418160146-e75481b7eebd
