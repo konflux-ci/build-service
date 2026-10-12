@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -41,6 +42,7 @@ import (
 
 	"github.com/konflux-ci/build-service/pkg/boerrors"
 	"github.com/konflux-ci/build-service/pkg/bometrics"
+	"github.com/konflux-ci/build-service/pkg/common"
 	"github.com/konflux-ci/build-service/pkg/k8s"
 	l "github.com/konflux-ci/build-service/pkg/logs"
 	pacwebhook "github.com/konflux-ci/build-service/pkg/pacwebhook"
@@ -67,6 +69,9 @@ const (
 	ComponentNameLabelNameOldModel   = "appstudio.openshift.io/component"
 
 	waitForContainerImageMessageOldModel = "waiting for spec.containerImage to be set (often by ImageRepository with annotation image-controller.appstudio.redhat.com/update-component-image)"
+	disabledOldModelMessage              = "old component model resources processing is disabled in favor of new component model"
+
+	disableOldModelConfigMapResourceName = "disable-old-model"
 )
 
 type BuildStatus struct {
@@ -180,8 +185,17 @@ func (r *ComponentBuildReconcilerOldModel) Reconcile(ctx context.Context, req ct
 
 	log = ctrllog.FromContext(ctx).WithName("ComponentOnboarding")
 
+	disableOldModel := true
+	disableOldModelConfigMap := &corev1.ConfigMap{}
+	if err := r.Client.Get(ctx, types.NamespacedName{Name: disableOldModelConfigMapResourceName, Namespace: common.BuildServiceNamespaceName}, disableOldModelConfigMap); err != nil {
+		if !errors.IsNotFound(err) {
+			return ctrl.Result{}, err
+		}
+		disableOldModel = false
+	}
+
 	// Don't recreate build pipeline Service Account upon component deletion.
-	if component.ObjectMeta.DeletionTimestamp.IsZero() {
+	if component.ObjectMeta.DeletionTimestamp.IsZero() && !disableOldModel {
 		// We need to make sure the Service Account exists before checking the Component image,
 		// because Image Controller operator expects the Service Account to exist to link push secret to it.
 		if err := r.EnsureBuildPipelineServiceAccount(ctx, &component, true); err != nil {
@@ -189,7 +203,7 @@ func (r *ComponentBuildReconcilerOldModel) Reconcile(ctx context.Context, req ct
 		}
 	}
 
-	if getContainerImageRepositoryForComponentOldModel(&component) == "" {
+	if getContainerImageRepositoryForComponentOldModel(&component) == "" && !disableOldModel {
 		// Container image must be set. It's not possible to proceed without it.
 		log.Info("Waiting for ContainerImage to be set")
 
@@ -270,6 +284,26 @@ func (r *ComponentBuildReconcilerOldModel) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, nil
 	}
 
+	if disableOldModel {
+		log.Info("Old component model processing is disabled")
+
+		buildStatus := readBuildStatus(&component)
+
+		if buildStatus.Message == disabledOldModelMessage {
+			return ctrl.Result{}, nil
+		}
+
+		buildStatus.Message = disabledOldModelMessage
+		writeBuildStatus(&component, buildStatus)
+		if err := r.Client.Update(ctx, &component); err != nil {
+			log.Error(err, "failed to update component with disable old model message", l.Action, l.ActionUpdate, l.Audit, "true")
+			return ctrl.Result{}, err
+		}
+		r.WaitForCacheUpdateOldModel(ctx, req.NamespacedName, &component)
+
+		return ctrl.Result{}, nil
+	}
+
 	_, _, err = r.GetBuildPipelineFromComponentAnnotation(ctx, &component)
 	if err != nil {
 		buildStatus := readBuildStatus(&component)
@@ -322,7 +356,7 @@ func (r *ComponentBuildReconcilerOldModel) Reconcile(ctx context.Context, req ct
 			return ctrl.Result{}, nil
 		}
 		// When only message is set, unless it is waiting for ContainerImage message do nothing
-		if buildStatus.Message != "" && !strings.Contains(buildStatus.Message, waitForContainerImageMessageOldModel) {
+		if buildStatus.Message != "" && !strings.Contains(buildStatus.Message, waitForContainerImageMessageOldModel) && !strings.Contains(buildStatus.Message, disabledOldModelMessage) {
 			return ctrl.Result{}, nil
 		}
 
