@@ -361,11 +361,16 @@ func getWebhookSecretKeyForComponentOldModel(component compapiv1alpha1.Component
 	return notAllowedCharRegex.ReplaceAllString(gitRepoUrl, "_")
 }
 
+// randReadFunc is the function used to fill a byte slice with random data.
+// It defaults to crypto/rand.Read but can be replaced in tests to simulate
+// random-generator failures without touching the real entropy source.
+var randReadFunc = rand.Read
+
 // generatePaCWebhookSecretString generates string alike openssl rand -hex 20
 func generatePaCWebhookSecretString() string {
 	length := 20 // in bytes
 	tokenBytes := make([]byte, length)
-	if _, err := rand.Read(tokenBytes); err != nil {
+	if _, err := randReadFunc(tokenBytes); err != nil {
 		panic("Failed to read from random generator")
 	}
 	return hex.EncodeToString(tokenBytes)
