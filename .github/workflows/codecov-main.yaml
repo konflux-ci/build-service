@@ -12,10 +12,11 @@ jobs:
         with:
           go-version-file: './go.mod'
       - name: Run tests
-        run: make test
+        run: make test-coverage-courtney
       - name: Codecov
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
+          files: cover-courtney.out
           flags: unit-tests
           verbose: true
