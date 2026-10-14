@@ -2087,8 +2087,11 @@ var _ = Describe("Component build controller", func() {
 
 			defer gock.Off()
 
-			// return 505 on the first request, so there will be new reconcile
-			// just to test that it will trigger new reconcile
+			gock.New(internalPaCEndpoint).
+				Post("/incoming").
+				ReplyError(fmt.Errorf("connection refused"))
+
+			// Retry after transport errors and unsuccessful HTTP responses.
 			gock.New(internalPaCEndpoint).
 				BodyString("").
 				Post("/incoming").
