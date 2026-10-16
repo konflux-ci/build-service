@@ -118,6 +118,10 @@ test: manifests generate fmt vet envtest ## Run tests.
 test-coverage-courtney: manifests generate fmt vet envtest courtney ## Run tests with courtney coverage filtering.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" $(COURTNEY) -t="-count=1" -o cover-courtney.out $$(go list ./... | grep -v /e2e)
 
+.PHONY: show-test-coverage-courtney
+show-test-coverage-courtney: ## Display code coverage report with courtney filtering.
+	go tool cover -html=cover-courtney.out
+
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
 	$(GOLANGCI_LINT) run
