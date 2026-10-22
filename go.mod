@@ -20,7 +20,7 @@ require (
 	gotest.tools/v3 v3.5.2
 	k8s.io/api v0.35.0
 	k8s.io/apimachinery v0.35.0
-	k8s.io/client-go v1.5.2
+	k8s.io/client-go v0.35.0
 	k8s.io/klog/v2 v2.130.1
 	knative.dev/pkg v0.0.0-20260120122510-4a022ed9999a
 	sigs.k8s.io/controller-runtime v0.23.3
@@ -163,5 +163,7 @@ require (
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.2-0.20260122202528-d9cc6641c482 // indirect
 )
+
+exclude k8s.io/client-go v1.5.2
 
 replace k8s.io/client-go => k8s.io/client-go v0.35.0
