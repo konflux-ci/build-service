@@ -130,6 +130,92 @@ func (g *GitlabClient) EnsurePaCMergeRequest(repoUrl string, d *gp.MergeRequestD
 	}
 }
 
+// EnsureMigrationMergeRequest creates or updates existing merge request with the given files.
+// Returns the merge request web URL.
+// If there is no error and web URL is empty, it means that the merge request is not needed (base branch is up to date).
+// TODO remove after only new model is used and old model is gone
+func (g *GitlabClient) EnsureMigrationMergeRequest(repoUrl string, d *gp.MergeRequestData) (webUrl string, err error) {
+	projectPath, err := getProjectPathFromRepoUrl(repoUrl)
+	if err != nil {
+		return "", err
+	}
+
+	baseBranchExists, err := g.branchExist(projectPath, d.BaseBranchName)
+	if err != nil {
+		return "", err
+	}
+	if !baseBranchExists {
+		return "", boerrors.NewBuildOpError(boerrors.EGitLabBranchDoesntExist, fmt.Errorf("branch '%s' does not exist", d.BaseBranchName))
+	}
+
+	baseBranchUpToDate, err := g.filesUpToDate(projectPath, d.BaseBranchName, d.Files)
+	if err != nil {
+		return "", err
+	}
+	if baseBranchUpToDate {
+		// Nothing to do, the migration is already applied in the base branch
+		return "", nil
+	}
+
+	mrBranchExists, err := g.branchExist(projectPath, d.BranchName)
+	if err != nil {
+		return "", err
+	}
+
+	if mrBranchExists {
+		mrBranchUpToDate, err := g.filesUpToDate(projectPath, d.BranchName, d.Files)
+		if err != nil {
+			return "", err
+		}
+		if !mrBranchUpToDate {
+			// Don't commit on top of the branch's own (possibly stale) history: the branch may have
+			// diverged from the base branch in ways that make a clean commit impossible (e.g. a path
+			// we need to delete/rename on top of it no longer exists there). Content is always fully
+			// regenerated from the base branch's current state anyway, so just recreate the branch.
+			if _, err := g.deleteBranch(projectPath, d.BranchName); err != nil {
+				return "", err
+			}
+			return g.EnsureMigrationMergeRequest(repoUrl, d)
+		}
+
+		mr, err := g.findMergeRequestByBranches(projectPath, d.BranchName, d.BaseBranchName)
+		if err != nil {
+			return "", err
+		}
+		if mr != nil {
+			// Merge request already exists
+			return mr.WebURL, nil
+		}
+
+		diffExists, err := g.diffNotEmpty(projectPath, d.BranchName, d.BaseBranchName)
+		if err != nil {
+			return "", err
+		}
+		if !diffExists {
+			// This situation occurs if an MR was merged but the branch was not deleted and main is changed after the merge.
+			// Despite the fact that there is actual diff between branches, git treats it as no diff,
+			// because the branch is already "included" in main.
+			if _, err := g.deleteBranch(projectPath, d.BranchName); err != nil {
+				return "", err
+			}
+			return g.EnsureMigrationMergeRequest(repoUrl, d)
+		}
+
+		return g.createMergeRequestWithinRepository(projectPath, d.BranchName, d.BaseBranchName, d.Title, d.Text)
+	}
+
+	// Need to create branch and MR with the given files
+	if err := g.createBranch(projectPath, d.BranchName, d.BaseBranchName); err != nil {
+		return "", err
+	}
+
+	if err := g.commitFilesIntoBranch(projectPath, d.BranchName, d.CommitMessage, d.AuthorName, d.AuthorEmail, d.SignedOff, d.Files); err != nil {
+		return "", err
+	}
+
+	return g.createMergeRequestWithinRepository(projectPath, d.BranchName, d.BaseBranchName, d.Title, d.Text)
+}
+
 // UndoPaCMergeRequest creates or updates existing Pipelines as Code configuration removal merge request.
 // Returns the merge request web URL.
 // If there is no error and web URL is empty, it means that the merge request is not needed (the configuration has already been deleted).
@@ -340,6 +426,17 @@ func (g *GitlabClient) IsFileExist(repoUrl, branchName, filePath string) (bool, 
 		return false, err
 	}
 	return len(files) > 0, nil
+}
+
+// GetFilesFromDirectory returns list of files existing in the given directory of the given branch of the repository.
+// TODO remove after only new model is used and old model is gone
+func (g *GitlabClient) GetFilesFromDirectory(repoUrl, branchName, directoryPath string) ([]gp.RepositoryFile, error) {
+	projectPath, err := getProjectPathFromRepoUrl(repoUrl)
+	if err != nil {
+		return nil, err
+	}
+
+	return g.filesInDirectory(projectPath, branchName, directoryPath)
 }
 
 // IsRepositoryPublic returns true if the repository could be accessed without authentication

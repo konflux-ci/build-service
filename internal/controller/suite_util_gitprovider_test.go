@@ -29,6 +29,7 @@ var (
 	TestGitHubAppId         = int64(1234567890)
 
 	EnsurePaCMergeRequestFunc        func(repoUrl string, data *gp.MergeRequestData) (webUrl string, err error)
+	EnsureMigrationMergeRequestFunc  func(repoUrl string, data *gp.MergeRequestData) (webUrl string, err error)
 	UndoPaCMergeRequestFunc          func(repoUrl string, data *gp.MergeRequestData) (webUrl string, err error)
 	FindUnmergedPaCMergeRequestFunc  func(repoUrl string, data *gp.MergeRequestData) (*gp.MergeRequest, error)
 	SetupPaCWebhookFunc              func(repoUrl string, webhookUrl string, webhookSecret string) error
@@ -39,6 +40,7 @@ var (
 	GetBrowseRepositoryAtShaLinkFunc func(repoUrl string, sha string) string
 	DownloadFileContentFunc          func(repoUrl, branchName, filePath string) ([]byte, error)
 	IsFileExistFunc                  func(repoUrl, branchName, filePath string) (bool, error)
+	GetFilesFromDirectoryFunc        func(repoUrl, branchName, directoryPath string) ([]gp.RepositoryFile, error)
 	IsRepositoryPublicFunc           func(repoUrl string) (bool, error)
 	GetConfiguredGitAppNameFunc      func() (string, string, int64, error)
 	GetAppUserIdFunc                 func(userName string) (int64, error)
@@ -50,6 +52,9 @@ func ResetTestGitProviderClient() {
 	}
 
 	EnsurePaCMergeRequestFunc = func(repoUrl string, data *gp.MergeRequestData) (webUrl string, err error) {
+		return "https://githost.com/mr/1234", nil
+	}
+	EnsureMigrationMergeRequestFunc = func(repoUrl string, data *gp.MergeRequestData) (webUrl string, err error) {
 		return "https://githost.com/mr/1234", nil
 	}
 	UndoPaCMergeRequestFunc = func(repoUrl string, data *gp.MergeRequestData) (webUrl string, err error) {
@@ -82,6 +87,9 @@ func ResetTestGitProviderClient() {
 	IsFileExistFunc = func(repoUrl, branchName, filePath string) (bool, error) {
 		return true, nil
 	}
+	GetFilesFromDirectoryFunc = func(repoUrl, branchName, directoryPath string) ([]gp.RepositoryFile, error) {
+		return nil, nil
+	}
 	IsRepositoryPublicFunc = func(repoUrl string) (bool, error) {
 		return true, nil
 	}
@@ -99,6 +107,9 @@ type TestGitProviderClient struct{}
 
 func (*TestGitProviderClient) EnsurePaCMergeRequest(repoUrl string, data *gp.MergeRequestData) (webUrl string, err error) {
 	return EnsurePaCMergeRequestFunc(repoUrl, data)
+}
+func (*TestGitProviderClient) EnsureMigrationMergeRequest(repoUrl string, data *gp.MergeRequestData) (webUrl string, err error) {
+	return EnsureMigrationMergeRequestFunc(repoUrl, data)
 }
 func (*TestGitProviderClient) UndoPaCMergeRequest(repoUrl string, data *gp.MergeRequestData) (webUrl string, err error) {
 	return UndoPaCMergeRequestFunc(repoUrl, data)
@@ -129,6 +140,9 @@ func (*TestGitProviderClient) DownloadFileContent(repoUrl, branchName, filePath 
 }
 func (*TestGitProviderClient) IsFileExist(repoUrl, branchName, filePath string) (bool, error) {
 	return IsFileExistFunc(repoUrl, branchName, filePath)
+}
+func (*TestGitProviderClient) GetFilesFromDirectory(repoUrl, branchName, directoryPath string) ([]gp.RepositoryFile, error) {
+	return GetFilesFromDirectoryFunc(repoUrl, branchName, directoryPath)
 }
 func (*TestGitProviderClient) IsRepositoryPublic(repoUrl string) (bool, error) {
 	return IsRepositoryPublicFunc(repoUrl)

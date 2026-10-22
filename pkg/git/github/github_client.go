@@ -144,6 +144,87 @@ func (g *GithubClient) EnsurePaCMergeRequest(repoUrl string, d *gp.MergeRequestD
 	}
 }
 
+// EnsureMigrationMergeRequest creates or updates existing merge request with the given files.
+// Returns the merge request web URL.
+// If there is no error and web URL is empty, it means that the merge request is not needed (base branch is up to date).
+// TODO remove after only new model is used and old model is gone
+func (g *GithubClient) EnsureMigrationMergeRequest(repoUrl string, d *gp.MergeRequestData) (webUrl string, err error) {
+	owner, repository := getOwnerAndRepoFromUrl(repoUrl)
+
+	_, err = g.getBranch(owner, repository, d.BaseBranchName)
+	if err != nil {
+		return "", err
+	}
+
+	// Check if migration is already applied in the base branch
+	baseUpToDate, err := g.filesUpToDate(owner, repository, d.BaseBranchName, d.Files)
+	if err != nil {
+		return "", err
+	}
+	if baseUpToDate {
+		return "", nil
+	}
+
+	// Check if branch with a proposal exists
+	branchExists, err := g.branchExist(owner, repository, d.BranchName)
+	if err != nil {
+		return "", err
+	}
+
+	if branchExists {
+		branchUpToDate, err := g.filesUpToDate(owner, repository, d.BranchName, d.Files)
+		if err != nil {
+			return "", err
+		}
+		if !branchUpToDate {
+			// Don't amend on top of the branch's own (possibly stale) history: the branch may have
+			// diverged from the base branch in ways that make a clean commit impossible (e.g. a path
+			// we need to delete/rename on top of it no longer exists there). Content is always fully
+			// regenerated from the base branch's current state anyway, so just recreate the branch.
+			if _, err := g.deleteBranch(owner, repository, d.BranchName); err != nil {
+				return "", err
+			}
+			return g.EnsureMigrationMergeRequest(repoUrl, d)
+		}
+
+		pr, err := g.findPullRequestByBranchesWithinRepository(owner, repository, d.BranchName, d.BaseBranchName)
+		if err != nil {
+			return "", err
+		}
+		if pr != nil {
+			return *pr.HTMLURL, nil
+		}
+
+		prUrl, err := g.createPullRequestWithinRepository(owner, repository, d.BranchName, d.BaseBranchName, d.Title, d.Text)
+		if err != nil {
+			if strings.Contains(err.Error(), "No commits between") {
+				// This could happen when a PR was created and merged, but PR branch was not deleted. Then
+				// base was updated. Current branch has correct configuration, but it's not possible to
+				// create a PR, because current branch reference is included into base branch.
+				if _, err := g.deleteBranch(owner, repository, d.BranchName); err != nil {
+					return "", err
+				}
+				return g.EnsureMigrationMergeRequest(repoUrl, d)
+			}
+			return "", err
+		}
+		return prUrl, nil
+	}
+
+	// Create branch, commit and pull request
+	branchRef, err := g.createBranch(owner, repository, d.BranchName, d.BaseBranchName)
+	if err != nil {
+		return "", err
+	}
+
+	err = g.addCommitToBranch(owner, repository, d.AuthorName, d.AuthorEmail, d.CommitMessage, d.SignedOff, d.Files, branchRef)
+	if err != nil {
+		return "", err
+	}
+
+	return g.createPullRequestWithinRepository(owner, repository, d.BranchName, d.BaseBranchName, d.Title, d.Text)
+}
+
 // UndoPaCMergeRequest creates or updates existing Pipelines as Code configuration removal merge request
 func (g *GithubClient) UndoPaCMergeRequest(repoUrl string, d *gp.MergeRequestData) (webUrl string, err error) {
 	owner, repository := getOwnerAndRepoFromUrl(repoUrl)
@@ -370,6 +451,14 @@ func (g *GithubClient) IsFileExist(repoUrl, branchName, filePath string) (bool, 
 		return false, err
 	}
 	return len(files) > 0, nil
+}
+
+// GetFilesFromDirectory returns list of files existing in the given directory of the given branch of the repository.
+// TODO remove after only new model is used and old model is gone
+func (g *GithubClient) GetFilesFromDirectory(repoUrl, branchName, directoryPath string) ([]gp.RepositoryFile, error) {
+	owner, repository := getOwnerAndRepoFromUrl(repoUrl)
+
+	return g.filesInDirectory(owner, repository, branchName, directoryPath)
 }
 
 func (g *GithubClient) DownloadFileContent(repoUrl, branchName, filePath string) ([]byte, error) {

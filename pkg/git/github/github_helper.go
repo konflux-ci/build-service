@@ -165,10 +165,19 @@ func (g *GithubClient) filesUpToDate(owner, repository, branch string, files []g
 		fileContent, err := g.downloadFileContent(owner, repository, branch, file.FullPath)
 		if err != nil {
 			if strings.Contains(err.Error(), "not found") {
+				if file.Delete {
+					// Already gone - up to date
+					continue
+				}
 				// File not found
 				return false, nil
 			}
 			return false, err
+		}
+
+		if file.Delete {
+			// File should have been deleted but still exists
+			return false, nil
 		}
 
 		if !bytes.Equal(fileContent, file.Content) {
@@ -212,10 +221,45 @@ func (g *GithubClient) filesExistInDirectory(owner, repository, branch, director
 	return existingFiles, nil
 }
 
+// TODO remove after only new model is used and old model is gone
+// filesInDirectory returns all files existing under the specified directory.
+func (g *GithubClient) filesInDirectory(owner, repository, branch, directoryPath string) ([]gp.RepositoryFile, error) {
+	files := []gp.RepositoryFile{}
+
+	opts := &github.RepositoryContentGetOptions{
+		Ref: "refs/heads/" + branch,
+	}
+	_, dirContent, resp, err := g.client.Repositories.GetContents(g.ctx, owner, repository, directoryPath, opts)
+	if err != nil {
+		switch resp.StatusCode {
+		case 401:
+			return files, boerrors.NewBuildOpError(boerrors.EGitHubTokenUnauthorized, err)
+		case 404:
+			return files, nil
+		}
+		return files, err
+	}
+
+	for _, file := range dirContent {
+		if file.GetType() != "file" {
+			continue
+		}
+		files = append(files, gp.RepositoryFile{FullPath: file.GetPath()})
+	}
+
+	return files, nil
+}
+
+// createTree builds a tree with the given files added/updated, and, for files marked with Delete, removed.
 func (g *GithubClient) createTree(owner, repository string, baseRef *github.Reference, files []gp.RepositoryFile) (tree *github.Tree, err error) {
 	// Load each file into the tree.
 	entries := []*github.TreeEntry{}
 	for _, file := range files {
+		if file.Delete {
+			// Omitting both SHA and Content signals deletion of the path (see github.TreeEntry.MarshalJSON).
+			entries = append(entries, &github.TreeEntry{Path: github.String(file.FullPath), Type: github.String("blob"), Mode: github.String("100644")})
+			continue
+		}
 		entries = append(entries, &github.TreeEntry{Path: github.String(file.FullPath), Type: github.String("blob"), Content: github.String(string(file.Content)), Mode: github.String("100644")})
 	}
 
