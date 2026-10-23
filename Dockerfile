@@ -1,7 +1,7 @@
 # Build the manager binary
 # For more details and updates, refer to
 # https://catalog.redhat.com/en/software/containers/ubi10/go-toolset/677d3db01d4db033edfda594
-FROM registry.access.redhat.com/ubi10/go-toolset:1787080070@sha256:a7e505b797c95c8e618a364de3a8c0383882935a12a1222a376d667c65d119b8 AS builder
+FROM registry.access.redhat.com/ubi10/go-toolset:1.26.10@sha256:557f358c83892a8b94fb72649a99e1c303a625d240547fb97a9cbc1620e808c0 AS builder
 ARG TARGETOS
 ARG TARGETARCH
 ARG ENABLE_COVERAGE=false
@@ -35,7 +35,7 @@ RUN if [ "$ENABLE_COVERAGE" = "true" ]; then \
 # Use ubi-minimal as minimal base image to package the manager binary
 # For more details and updates, refer to
 # https://catalog.redhat.com/en/software/containers/ubi10/ubi-minimal/66f1504a379b9c2cf23e145c
-FROM registry.access.redhat.com/ubi10/ubi-minimal:1787204571@sha256:07ab7c0a596785afa1de1963c1cac07f2b9df2e762b9d20d3433cff18ac1af18
+FROM registry.access.redhat.com/ubi10/ubi-minimal:10.2@sha256:ab67cd02caf8706e34a695a1432ebe965934f6128ec352a6c3f4048b43a4fb5e
 WORKDIR /
 COPY --from=builder /workspace/manager .
 USER 65532:65532
