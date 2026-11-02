@@ -359,8 +359,8 @@ var _ = Describe("Component nudge controller", func() {
 			Expect(caMounted).Should(BeTrue())
 		})
 
-		It("Test skip nudge when nudgeConfig exists", func() {
-			// create nudgeConfig
+		It("Test skip nudge when old api nudgeConfig exists", func() {
+			// create old api nudgeConfig
 			nudgeConfig := unstructured.Unstructured{}
 			nudgeConfig.SetGroupVersionKind(schema.GroupVersionKind{
 				Group:   "appstudio.redhat.com",
@@ -374,9 +374,36 @@ var _ = Describe("Component nudge controller", func() {
 			Expect(err).ToNot(HaveOccurred())
 			defer k8sClient.Delete(context.TODO(), &nudgeConfig)
 
-			createBuildPipelineRun("test-pipeline-1", UserNamespace, baseComponentName, "")
+			createBuildPipelineRun("test-pipeline-nudge-old-1", UserNamespace, baseComponentName, "")
 			Eventually(func() bool {
-				pr := getPipelineRun("test-pipeline-1", UserNamespace)
+				pr := getPipelineRun("test-pipeline-nudge-old-1", UserNamespace)
+				// skipped pipeline will never have finalizer set
+				if controllerutil.ContainsFinalizer(pr, NudgeFinalizer) {
+					return false
+				}
+				// but it will have processed annotation set
+				return pr.Annotations != nil && pr.Annotations[NudgeProcessedAnnotationName] != ""
+			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
+		})
+
+		It("Test skip nudge when new api nudgeConfig exists", func() {
+			// create new api nudgeConfig
+			nudgeConfig := unstructured.Unstructured{}
+			nudgeConfig.SetGroupVersionKind(schema.GroupVersionKind{
+				Group:   "konflux-ci.dev",
+				Version: "v1beta2",
+				Kind:    "NudgeConfig",
+			})
+			nudgeConfig.SetNamespace(UserNamespace)
+			nudgeConfig.SetName(integrationNudgeConfigName)
+
+			err := k8sClient.Create(context.TODO(), &nudgeConfig)
+			Expect(err).ToNot(HaveOccurred())
+			defer k8sClient.Delete(context.TODO(), &nudgeConfig)
+
+			createBuildPipelineRun("test-pipeline-nudge-new-1", UserNamespace, baseComponentName, "")
+			Eventually(func() bool {
+				pr := getPipelineRun("test-pipeline-nudge-new-1", UserNamespace)
 				// skipped pipeline will never have finalizer set
 				if controllerutil.ContainsFinalizer(pr, NudgeFinalizer) {
 					return false

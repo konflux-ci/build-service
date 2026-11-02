@@ -75,6 +75,14 @@ rules:
   - update
   - watch
 - apiGroups:
+  - konflux-ci.dev
+  resources:
+  - nudgeconfigs
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - pipelinesascode.tekton.dev
   resources:
   - repositories

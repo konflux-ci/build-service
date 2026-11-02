@@ -85,6 +85,7 @@ var _ = BeforeSuite(func() {
 		CRDDirectoryPaths: []string{
 			filepath.Join("..", "..", "hack", "routecrd", "route.yaml"),
 			filepath.Join("..", "..", "hack", "nudgeconfigcrd", "nudgeconfig.yaml"),
+			filepath.Join("..", "..", "hack", "nudgeconfigcrd", "nudgeconfigold.yaml"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "konflux-ci", "application-api@"+applicationApiDepVersion, "config", "crd", "bases"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "tektoncd", "pipeline@v1.11.1", "config", "300-crds"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "openshift-pipelines", "pipelines-as-code@v0.48.0", "config"),

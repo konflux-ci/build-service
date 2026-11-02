@@ -162,6 +162,7 @@ func (r *ComponentDependencyUpdateReconciler) SetupWithManager(manager ctrl.Mana
 //+kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns,verbs=get;list;watch;create;update;patch;delete;deletecollection
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=nudgeconfigs,verbs=get;list;watch
+//+kubebuilder:rbac:groups=konflux-ci.dev,resources=nudgeconfigs,verbs=get;list;watch
 
 // Reconcile handles component dependency updates.
 func (r *ComponentDependencyUpdateReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -219,8 +220,28 @@ func (r *ComponentDependencyUpdateReconciler) Reconcile(ctx context.Context, req
 
 	// check if integration nudgeConfig exists, if it does skip nudging and just set nudge processed annotation
 	integrationNudgeConfig := &unstructured.Unstructured{}
+	// check old api group
 	integrationNudgeConfig.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   "appstudio.redhat.com",
+		Version: "v1beta2",
+		Kind:    "NudgeConfig",
+	})
+	err = r.Client.Get(ctx, types.NamespacedName{Name: integrationNudgeConfigName, Namespace: pipelineRun.Namespace}, integrationNudgeConfig)
+	if err != nil {
+		if !errors.IsNotFound(err) && !apimeta.IsNoMatchError(err) {
+			log.Error(err, "Failed to get nudgeConfig", "NudgeConfigName", integrationNudgeConfigName)
+			return ctrl.Result{}, err
+		}
+	} else {
+		patch := client.MergeFrom(pipelineRun.DeepCopy())
+		log.Info("skipping nudging, because NudgeConfig exists in the namespace", "NudgeConfigName", integrationNudgeConfigName)
+		return r.removePipelineFinalizer(ctx, pipelineRun, patch)
+	}
+
+	integrationNudgeConfig = &unstructured.Unstructured{}
+	// check new api group
+	integrationNudgeConfig.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "konflux-ci.dev",
 		Version: "v1beta2",
 		Kind:    "NudgeConfig",
 	})
