@@ -85,3 +85,12 @@ To verify single file, run:
 ```sh
 ./bin/golangci-lint run path/to/file.go
 ```
+
+## Review Guidelines
+
+### Dependency update PRs
+
+- Changes that only touch `e2e-tests/` cannot be validated by agents since e2e tests require a running Konflux cluster. When reviewing such PRs, flag unverifiable changes for human review, especially for major version bumps.
+- The `e2e-tests/` directory is a separate Go module with its own `go.mod` and independent dependency tree from the main module.
+- Major version bumps of git provider client libraries (`go-github`, `go-gitlab`, `forgejo-sdk`) are high risk — these libraries form the core API surface of the e2e tests and frequently introduce breaking changes across major versions.
+- When a dependency update PR only changes import paths without adapting API calls, verify that the API surface actually remained stable across the version range. A large version jump with only import path changes is a red flag for missing migration work.
