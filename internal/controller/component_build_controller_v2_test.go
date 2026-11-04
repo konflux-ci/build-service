@@ -630,6 +630,16 @@ var _ = Describe("Component build controller new model", func() {
 		It("should remove invalid versions from TriggerBuilds action", func() {
 			versionName := "v1"
 
+			client := &http.Client{}
+			gock.InterceptClient(client)
+			originalGetHttpClient := GetHttpClientFunction
+			GetHttpClientFunction = func() *http.Client { return client }
+			DeferCleanup(func() {
+				GetHttpClientFunction = originalGetHttpClient
+				gock.Off()
+			})
+			gock.New(internalPaCEndpoint).Post("/incoming").Reply(202)
+
 			// First onboard v1
 			component := getComponentData(componentConfig{
 				componentKey: componentKey,
@@ -2571,6 +2581,10 @@ spec:
 			version1Name := "v1"
 			version2Name := "v2"
 
+			gock.New(internalPaCEndpoint).
+				Post("/incoming").
+				ReplyError(fmt.Errorf("connection refused"))
+
 			// Mock HTTP POST request
 			var capturedPostData map[string]any
 			gock.New(internalPaCEndpoint).
@@ -3411,6 +3425,18 @@ spec:
 				})
 
 				It("should successfully trigger builds using token authentication", func() {
+					createPaCService(pacServiceKey)
+					defer deleteService(pacServiceKey)
+					client := &http.Client{}
+					gock.InterceptClient(client)
+					originalGetHttpClient := GetHttpClientFunction
+					GetHttpClientFunction = func() *http.Client { return client }
+					DeferCleanup(func() {
+						GetHttpClientFunction = originalGetHttpClient
+						gock.Off()
+					})
+					gock.New(internalPaCEndpoint).Post("/incoming").Reply(202)
+
 					// Get component (should exist from onboarding test)
 					component = getComponent(componentKey)
 					Expect(component.Status.Versions).To(HaveLen(1), "Component should be onboarded")
