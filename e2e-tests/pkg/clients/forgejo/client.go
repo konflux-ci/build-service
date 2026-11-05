@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"strings"
 
-	"codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v2"
+	"codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v4"
 )
 
 // ForgejoClient wraps the Forgejo SDK client
