@@ -291,6 +291,9 @@ func (g *GitlabClient) GetBranchSha(repoUrl, branchName string) (string, error) 
 	if err != nil {
 		return "", err
 	}
+	if branch == nil {
+		return "", boerrors.NewBuildOpError(boerrors.EGitLabBranchDoesntExist, fmt.Errorf("branch '%s' does not exist", branchName))
+	}
 	if branch.Commit == nil {
 		return "", fmt.Errorf("unexpected response while getting branch top commit SHA")
 	}

@@ -2264,9 +2264,9 @@ spec:
 					prUrl = v1PrUrl
 					v1ConfigPRCreatedCount++
 				} else if d.BranchName == "konflux-"+componentKey.Name+"-"+version2Name {
-					// v2 fails with branch doesn't exist error
+					// v2 fails with a persistent error during PR creation
 					v2ConfigPRAttemptedCount++
-					return "", boerrors.NewBuildOpError(boerrors.EGitLabBranchDoesntExist, fmt.Errorf("branch 'non-existing-branch' does not exist"))
+					return "", boerrors.NewBuildOpError(boerrors.EGitHubReachRateLimit, fmt.Errorf("API rate limit exceeded"))
 				} else if d.BranchName == "konflux-"+componentKey.Name+"-"+version3Name {
 					versionName = version3Name
 					baseBranch = "develop"
@@ -2319,7 +2319,7 @@ spec:
 				componentKey: componentKey,
 				versions: []compv1alpha1.ComponentVersion{
 					{Name: version1Name, Revision: "main"},
-					{Name: version2Name, Revision: "non-existing-branch"},
+					{Name: version2Name, Revision: "release"},
 					{Name: version3Name, Revision: "develop"},
 				},
 			})
@@ -2373,7 +2373,7 @@ spec:
 			Expect(versionMap).To(HaveKey(version1Name))
 			verifyComponentVersionStatus(versionMap[version1Name], version1Name, "main", "succeeded", v1PrUrl, "", false)
 			Expect(versionMap).To(HaveKey(version2Name))
-			verifyComponentVersionStatus(versionMap[version2Name], version2Name, "non-existing-branch", "failed", "", "94: GitLab branch does not exist", false)
+			verifyComponentVersionStatus(versionMap[version2Name], version2Name, "release", "failed", "", "76: Reach GitHub REST API rate limit", false)
 			Expect(versionMap).To(HaveKey(version3Name))
 			verifyComponentVersionStatus(versionMap[version3Name], version3Name, "develop", "succeeded", v3PrUrl, "", false)
 
@@ -2524,6 +2524,120 @@ spec:
 			Expect(v1ConfigPRCreatedCount).To(Equal(1), "v1 PR should have been created exactly once")
 			Expect(v2ConfigPRAttemptedCount).To(Equal(3), "v2 should have been attempted three times (first failed, second failed, third succeeded)")
 			Expect(v3ConfigPRCreatedCount).To(Equal(1), "v3 PR should have been created exactly once")
+
+			saKey := getComponentServiceAccountKey(componentKey)
+			waitServiceAccount(saKey)
+
+			waitServiceAccountInRoleBinding(buildRoleBindingKey, saKey.Name)
+		})
+
+		It("should fail onboarding for version with non-existing branch while retrying and succeeding onboarding for version with transient branch verification error using AllVersions", func() {
+			version1Name := "v1"
+			version2Name := "v2"
+			version3Name := "v3"
+			v1PrUrl := "https://github.com/devfile-samples/devfile-sample/pull/1111"
+			v3PrUrl := "https://github.com/devfile-samples/devfile-sample/pull/3333"
+
+			v3BranchShaAttempts := 0
+			GetBranchShaFunc = func(repoUrl, branchName string) (string, error) {
+				switch branchName {
+				case "non-existing-branch":
+					// v2: branch doesn't exist, persistent error
+					return "", boerrors.NewBuildOpError(boerrors.EGitHubNoResourceToOperateOn, fmt.Errorf("branch 'non-existing-branch' does not exist"))
+				case "branch-v3":
+					// v3: first verification fails with a transient error, second succeeds
+					v3BranchShaAttempts++
+					if v3BranchShaAttempts == 1 {
+						return "", fmt.Errorf("transient network error")
+					}
+					return "abcd890", nil
+				default:
+					return "abcd890", nil
+				}
+			}
+
+			v1ConfigPRCreatedCount := 0
+			v3ConfigPRCreatedCount := 0
+			EnsurePaCMergeRequestFunc = func(repoUrl string, d *gp.MergeRequestData) (string, error) {
+				defer GinkgoRecover()
+
+				if d.BranchName == "konflux-"+componentKey.Name+"-"+version1Name {
+					v1ConfigPRCreatedCount++
+					return v1PrUrl, nil
+				} else if d.BranchName == "konflux-"+componentKey.Name+"-"+version3Name {
+					v3ConfigPRCreatedCount++
+					return v3PrUrl, nil
+				}
+
+				Fail("Unexpected create configuration PR attempt for branch: " + d.BranchName)
+				return "", nil
+			}
+
+			component := getComponentData(componentConfig{
+				componentKey: componentKey,
+				versions: []compv1alpha1.ComponentVersion{
+					{Name: version1Name, Revision: "main"},
+					{Name: version2Name, Revision: "non-existing-branch"},
+					{Name: version3Name, Revision: "branch-v3"},
+				},
+				actions: compv1alpha1.ComponentActions{
+					CreateConfiguration: compv1alpha1.ComponentCreatePipelineConfiguration{
+						AllVersions: true,
+					},
+				},
+			})
+			createComponent(component)
+
+			// Verify CreateConfiguration action is completely cleared once all versions are processed
+			Eventually(func() bool {
+				component = getComponent(componentKey)
+				return !component.Spec.Actions.CreateConfiguration.AllVersions &&
+					component.Spec.Actions.CreateConfiguration.Version == "" &&
+					len(component.Spec.Actions.CreateConfiguration.Versions) == 0
+			}, timeout, interval).Should(BeTrue())
+
+			// Verify all three versions eventually reach their expected final state:
+			// v1 onboarded with PR, v2 failed onboarding (branch doesn't exist),
+			// v3 onboarded with PR after retrying past the transient branch verification error
+			Eventually(func() bool {
+				component = getComponent(componentKey)
+				if len(component.Status.Versions) != 3 {
+					return false
+				}
+
+				v1Found := false
+				v2Failed := false
+				v3Found := false
+				for _, v := range component.Status.Versions {
+					if v.Name == version1Name && v.OnboardingStatus == "succeeded" && v.ConfigurationMergeURL == v1PrUrl {
+						v1Found = true
+					}
+					if v.Name == version2Name && v.OnboardingStatus == "failed" && v.Message != "" {
+						v2Failed = true
+					}
+					if v.Name == version3Name && v.OnboardingStatus == "succeeded" && v.ConfigurationMergeURL == v3PrUrl {
+						v3Found = true
+					}
+				}
+				return v1Found && v2Failed && v3Found
+			}, timeout, interval).Should(BeTrue())
+
+			// Verify all three versions in status with correct states
+			versionMap := make(map[string]compv1alpha1.ComponentVersionStatus)
+			for _, v := range component.Status.Versions {
+				versionMap[v.Name] = v
+			}
+
+			Expect(versionMap).To(HaveKey(version1Name))
+			verifyComponentVersionStatus(versionMap[version1Name], version1Name, "main", "succeeded", v1PrUrl, "", false)
+			Expect(versionMap).To(HaveKey(version2Name))
+			verifyComponentVersionStatus(versionMap[version2Name], version2Name, "non-existing-branch", "failed", "", "75: No resource for finishing the request", false)
+			Expect(versionMap).To(HaveKey(version3Name))
+			verifyComponentVersionStatus(versionMap[version3Name], version3Name, "branch-v3", "succeeded", v3PrUrl, "", false)
+
+			Expect(v1ConfigPRCreatedCount).To(Equal(1), "v1 PR should have been created exactly once")
+			Expect(v3ConfigPRCreatedCount).To(Equal(1), "v3 PR should have been created exactly once")
+			Expect(v3BranchShaAttempts).To(Equal(2), "v3 branch verification should have been attempted twice (first transient failure, second succeeded)")
 
 			saKey := getComponentServiceAccountKey(componentKey)
 			waitServiceAccount(saKey)
