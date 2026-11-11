@@ -424,21 +424,80 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	// Perform onboarding for all versions (adds them to status with OnboardingStatus and OnboardingTime)
 	if len(versionsToOnboard) > 0 {
+		repoUrl := getGitRepoUrl(component)
+
 		onboardedVersions := make([]onboardedVersionInfo, 0, len(versionsToOnboard))
+		failedVersions := make([]string, 0, len(versionsToOnboard))
+		var nonPersistentError error
 		for _, versionName := range versionsToOnboard {
+			versionInfo := existingSpecVersions[versionName]
+			// Verify the version's revision exists in the component git repository
+			if _, err := gitClient.GetBranchSha(repoUrl, versionInfo.Revision); err != nil {
+				log.Error(err, "Failed to verify branch for component version", "Version", versionName, "Branch", versionInfo.Revision)
+
+				// Check if error is persistent
+				isErrPersistent := false
+				var versionErrorMsg string
+				var boErr *boerrors.BuildOpError
+				if errors.As(err, &boErr) {
+					isErrPersistent = boErr.IsPersistent()
+					versionErrorMsg = boErr.ShortError()
+				}
+
+				if !isErrPersistent {
+					nonPersistentError = err
+					continue
+				}
+
+				// Persistent error, mark the version as failed onboarding and continue with the rest
+				failedVersions = append(failedVersions, versionName)
+				if updateErr := r.updateVersionsStatus(ctx, &component, []onboardedVersionInfo{{name: versionName}}, existingSpecVersions, false, versionErrorMsg); updateErr != nil {
+					log.Error(updateErr, "Failed to update status for failed version onboarding", "FailedVersion", versionName)
+					return ctrl.Result{}, updateErr
+				}
+				// Wait for cache to have the latest ResourceVersion to prevent race with newly triggered reconciles
+				r.WaitForCacheUpdateRes(ctx, types.NamespacedName{Namespace: component.Namespace, Name: component.Name}, &component)
+				continue
+			}
+
 			onboardedVersions = append(onboardedVersions, onboardedVersionInfo{name: versionName})
 		}
-		if err := r.updateVersionsStatus(ctx, &component, onboardedVersions, existingSpecVersions, true, ""); err != nil {
-			log.Error(err, "Failed to update status for versions onboarding", "Versions", versionsToOnboard)
-			return ctrl.Result{}, err
+
+		if len(onboardedVersions) > 0 {
+			if err := r.updateVersionsStatus(ctx, &component, onboardedVersions, existingSpecVersions, true, ""); err != nil {
+				log.Error(err, "Failed to update status for versions onboarding", "Versions", versionsToOnboard)
+				return ctrl.Result{}, err
+			}
+			// Wait for cache to have the latest ResourceVersion to prevent race with newly triggered reconciles
+			r.WaitForCacheUpdateRes(ctx, types.NamespacedName{Namespace: component.Namespace, Name: component.Name}, &component)
 		}
-		// Wait for cache to have the latest ResourceVersion to prevent race with newly triggered reconciles
-		r.WaitForCacheUpdateRes(ctx, types.NamespacedName{Namespace: component.Namespace, Name: component.Name}, &component)
 
 		// Observe metrics for successful onboarding
 		r.observeActionMetrics("onboard", reconcileStartTime)
 
-		log.Info("Successfully onboarded versions to status", "Versions", versionsToOnboard)
+		log.Info("Onboarded versions to status", "OnboardedVersions", onboardedVersions, "FailedVersions", failedVersions)
+
+		// Versions that failed onboarding should not have a configuration PR created for them
+		failedVersionsToCreatePRFor := make([]string, 0, len(failedVersions))
+		for _, versionName := range failedVersions {
+			if slices.Contains(versionsToCreatePRFor, versionName) {
+				failedVersionsToCreatePRFor = append(failedVersionsToCreatePRFor, versionName)
+			}
+		}
+		if len(failedVersionsToCreatePRFor) > 0 {
+			if err := r.removeCreateConfigurationActions(ctx, &component, failedVersionsToCreatePRFor, false, versionsToCreatePRFor); err != nil {
+				log.Error(err, "Failed to remove create configuration action for failed onboarding versions", "FailedVersions", failedVersionsToCreatePRFor)
+				return ctrl.Result{}, err
+			}
+			versionsToCreatePRFor = slices.DeleteFunc(versionsToCreatePRFor, func(versionName string) bool {
+				return slices.Contains(failedVersionsToCreatePRFor, versionName)
+			})
+		}
+
+		// Non-persistent error, return it to retry reconcile
+		if nonPersistentError != nil {
+			return ctrl.Result{}, nonPersistentError
+		}
 	}
 
 	// Perform offboarding
