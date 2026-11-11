@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v2"
+	"codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v4"
 	"github.com/onsi/gomega"
 
 	"github.com/konflux-ci/build-service/e2e-tests/pkg/utils"
