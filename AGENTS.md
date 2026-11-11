@@ -85,3 +85,40 @@ To verify single file, run:
 ```sh
 ./bin/golangci-lint run path/to/file.go
 ```
+
+## Testing guidelines
+
+- Focus tests on business logic and meaningful behavior, not on
+  framework error handling or K8s client plumbing.
+- Do not write tests that only verify K8s client error propagation
+  using fake interceptors (`WithInterceptorFuncs`). These test mock
+  machinery rather than production behavior and are hard to maintain.
+- Do not write tests solely for trivial `if err != nil { return err }`
+  pass-throughs, `log.Error()` calls, or defensive panic guards on
+  infallible stdlib functions (e.g. `crypto/rand.Read`).
+- Coverage improvements should come from testing real code paths,
+  conditional logic, and edge cases in the operator's domain logic.
+- When adding tests, follow existing conventions: standard Go `testing`
+  package for unit tests (`*_unit_test.go`), Ginkgo/Gomega BDD style
+  for integration tests (envtest).
+- Prefer extending existing test files over creating new standalone
+  test files for error path coverage.
+
+## Coverage
+
+The project uses [courtney](https://github.com/dave/courtney) to
+filter boilerplate lines out of coverage profiles. When addressing
+coverage gaps, prefer courtney-based exclusion over modifying
+production code or writing low-value tests.
+
+- Run coverage with courtney filtering: `make test-coverage-courtney`.
+- Exclude individual lines from coverage with a `// notest` comment.
+  Use this for unreachable panic guards, simple error pass-throughs,
+  and log-only error handlers that have no meaningful behavior to test.
+- Do not modify production code solely to make it testable for coverage.
+  Never introduce function variable indirections, test-only seams, or
+  mutable package-level variables just to reach unreachable branches.
+- Courtney automatically excludes certain boilerplate patterns. Check
+  the courtney documentation and the generated `cover-courtney.out`
+  profile to see what is already excluded before adding `// notest`
+  comments.
