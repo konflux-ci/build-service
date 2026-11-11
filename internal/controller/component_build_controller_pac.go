@@ -226,6 +226,13 @@ func (r *ComponentBuildReconcilerOldModel) ProvisionPaCForComponentOldModel(ctx 
 	return mrUrl, nil
 }
 
+type pacTriggerError struct {
+	cause error
+}
+
+func (e pacTriggerError) Error() string { return "failed to trigger PaC build" }
+func (e pacTriggerError) Unwrap() error { return e.cause }
+
 func getHttpClient() *http.Client { // #nosec G402 // dev instances need insecure, because they have self signed certificates
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{
@@ -233,7 +240,12 @@ func getHttpClient() *http.Client { // #nosec G402 // dev instances need insecur
 			MinVersion:         tls.VersionTLS13,
 		},
 	}
-	client := &http.Client{Transport: tr}
+	client := &http.Client{
+		Transport: tr,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 	return client
 }
 
@@ -353,8 +365,7 @@ func (r *ComponentBuildReconciler) TriggerPaCBuild(
 
 	resp, err := HttpClient.Post(triggerURL, "application/json", bytes.NewBuffer(bytesParam))
 	if err != nil {
-		log.Error(err, "error from incoming webhook trigger POST")
-		return nil
+		return pacTriggerError{cause: err}
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -457,8 +468,7 @@ func (r *ComponentBuildReconcilerOldModel) TriggerPaCBuildOldModel(ctx context.C
 
 	resp, err := HttpClient.Post(triggerURL, "application/json", bytes.NewBuffer(bytesParam))
 	if err != nil {
-		log.Error(err, "error from incoming webhook trigger POST")
-		return false, nil
+		return false, pacTriggerError{cause: err}
 	}
 	defer func() { _ = resp.Body.Close() }()
 
