@@ -65,6 +65,11 @@ func (g *GithubClient) EnsurePaCMergeRequest(repoUrl string, d *gp.MergeRequestD
 			return "", err
 		}
 		d.BaseBranchName = baseBranch
+	} else {
+		_, err := g.getBranch(owner, repository, d.BaseBranchName)
+		if err != nil {
+			return "", err
+		}
 	}
 
 	// Check if Pipelines as Code configuration up to date in the main branch
@@ -150,6 +155,15 @@ func (g *GithubClient) UndoPaCMergeRequest(repoUrl string, d *gp.MergeRequestDat
 			return "", err
 		}
 		d.BaseBranchName = baseBranch
+	} else {
+		baseBranchExists, err := g.branchExist(owner, repository, d.BaseBranchName)
+		if err != nil {
+			return "", err
+		}
+		if !baseBranchExists {
+			// when base branch doesn't exist, there is nothing to cleanup
+			return "", nil
+		}
 	}
 
 	files, err := g.filesExistInDirectory(owner, repository, d.BaseBranchName, ".tekton", d.Files)
