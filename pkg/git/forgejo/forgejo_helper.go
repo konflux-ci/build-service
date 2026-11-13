@@ -25,7 +25,7 @@ import (
 	"net/url"
 	"strings"
 
-	"codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v3"
+	"codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v4"
 
 	"github.com/konflux-ci/build-service/pkg/boerrors"
 	gp "github.com/konflux-ci/build-service/pkg/git/gitprovider"
