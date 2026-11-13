@@ -20,14 +20,8 @@
 name: fullsend
 
 on:
-  issues:
-    types: [opened, edited, labeled]
   issue_comment:
     types: [created]
-  pull_request_target:
-    types: [opened, synchronize, ready_for_review, closed, labeled, unlabeled]
-  pull_request_review:
-    types: [submitted]
 
 permissions: {}
 
