@@ -1,7 +1,7 @@
 # Build the manager binary
 # For more details and updates, refer to
 # https://catalog.redhat.com/en/software/containers/ubi10/go-toolset/677d3db01d4db033edfda594
-FROM registry.access.redhat.com/ubi10/go-toolset:1.26.10@sha256:557f358c83892a8b94fb72649a99e1c303a625d240547fb97a9cbc1620e808c0 AS builder
+FROM registry.access.redhat.com/ubi10/go-toolset:1.27.3-1793903644@sha256:05f3da136a4dbe077f30606e2e53a4f5cab185989c98309823ea06a9a1c52a50 AS builder
 ARG TARGETOS
 ARG TARGETARCH
 ARG ENABLE_COVERAGE=false
