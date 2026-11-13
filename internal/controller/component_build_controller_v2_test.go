@@ -2543,7 +2543,7 @@ spec:
 				switch branchName {
 				case "non-existing-branch":
 					// v2: branch doesn't exist, persistent error
-					return "", boerrors.NewBuildOpError(boerrors.EGitHubNoResourceToOperateOn, fmt.Errorf("branch 'non-existing-branch' does not exist"))
+					return "", boerrors.NewBuildOpError(boerrors.EGitHubBranchDoesntExist, fmt.Errorf("branch 'non-existing-branch' does not exist"))
 				case "branch-v3":
 					// v3: first verification fails with a transient error, second succeeds
 					v3BranchShaAttempts++
@@ -2631,7 +2631,7 @@ spec:
 			Expect(versionMap).To(HaveKey(version1Name))
 			verifyComponentVersionStatus(versionMap[version1Name], version1Name, "main", "succeeded", v1PrUrl, "", false)
 			Expect(versionMap).To(HaveKey(version2Name))
-			verifyComponentVersionStatus(versionMap[version2Name], version2Name, "non-existing-branch", "failed", "", "75: No resource for finishing the request", false)
+			verifyComponentVersionStatus(versionMap[version2Name], version2Name, "non-existing-branch", "failed", "", "79: GitHub branch does not exist", false)
 			Expect(versionMap).To(HaveKey(version3Name))
 			verifyComponentVersionStatus(versionMap[version3Name], version3Name, "branch-v3", "succeeded", v3PrUrl, "", false)
 

@@ -77,19 +77,29 @@ func (g *GithubClient) branchExist(owner, repository, branch string) (bool, erro
 	if err == nil {
 		return true, nil
 	}
-	switch resp.StatusCode {
-	case 401:
-		return false, boerrors.NewBuildOpError(boerrors.EGitHubTokenUnauthorized, err)
-	case 404:
+	if resp == nil {
+		return false, err
+	}
+	if resp.StatusCode == 404 {
 		return false, nil
 	}
 
-	return false, err
+	return false, refineGitHostingServiceError(resp.Response, err)
 }
 
 func (g *GithubClient) getBranch(owner, repository, branch string) (*github.Reference, error) {
 	ref, resp, err := g.client.Git.GetRef(g.ctx, owner, repository, "refs/heads/"+branch)
-	return ref, refineGitHostingServiceError(resp.Response, err)
+	if err == nil {
+		return ref, nil
+	}
+	if resp == nil {
+		return nil, err
+	}
+	if resp.StatusCode == 404 {
+		return nil, boerrors.NewBuildOpError(boerrors.EGitHubBranchDoesntExist, err)
+	}
+
+	return nil, refineGitHostingServiceError(resp.Response, err)
 }
 
 func (g *GithubClient) createBranch(owner, repository, branch, baseBranch string) (*github.Reference, error) {
