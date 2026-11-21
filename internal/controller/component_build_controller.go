@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// TODO remove whole file after only new model is used and old model is gone
+
 package controllers
 
 import (
@@ -23,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -39,42 +42,36 @@ import (
 
 	"github.com/konflux-ci/build-service/pkg/boerrors"
 	"github.com/konflux-ci/build-service/pkg/bometrics"
+	"github.com/konflux-ci/build-service/pkg/common"
 	"github.com/konflux-ci/build-service/pkg/k8s"
 	l "github.com/konflux-ci/build-service/pkg/logs"
 	pacwebhook "github.com/konflux-ci/build-service/pkg/pacwebhook"
 )
 
 const (
+	PaCProvisionFinalizerOldModel = "pac.component.appstudio.openshift.io/finalizer"
+
 	BuildRequestAnnotationName                  = "build.appstudio.openshift.io/request"
 	BuildRequestTriggerPaCBuildAnnotationValue  = "trigger-pac-build"
 	BuildRequestConfigurePaCAnnotationValue     = "configure-pac"
 	BuildRequestConfigurePaCNoMrAnnotationValue = "configure-pac-no-mr"
 	BuildRequestUnconfigurePaCAnnotationValue   = "unconfigure-pac"
 
-	BuildStatusAnnotationName = "build.appstudio.openshift.io/status"
+	BuildStatusAnnotationName             = "build.appstudio.openshift.io/status"
+	defaultBuildPipelineAnnotation        = "build.appstudio.openshift.io/pipeline"
+	gitCommitShaAnnotationNameOldModel    = "build.appstudio.redhat.com/commit_sha"
+	gitRepoAtShaAnnotationNameOldModel    = "build.appstudio.openshift.io/repo"
+	gitPRAnnotationNameOldModel           = "build.appstudio.redhat.com/pull_request_number"
+	gitTargetBranchAnnotationNameOldModel = "build.appstudio.redhat.com/target_branch"
 
-	PaCProvisionFinalizer            = "pac.component.appstudio.openshift.io/finalizer"
 	ImageRegistrySecretLinkFinalizer = "image-registry-secret-sa-link.component.appstudio.openshift.io/finalizer"
+	ApplicationNameLabelName         = "appstudio.openshift.io/application"
+	ComponentNameLabelNameOldModel   = "appstudio.openshift.io/component"
 
-	ApplicationNameLabelName  = "appstudio.openshift.io/application"
-	ComponentNameLabelName    = "appstudio.openshift.io/component"
-	PartOfLabelName           = "app.kubernetes.io/part-of"
-	PartOfAppStudioLabelValue = "appstudio"
+	waitForContainerImageMessageOldModel = "waiting for spec.containerImage to be set (often by ImageRepository with annotation image-controller.appstudio.redhat.com/update-component-image)"
+	disabledOldModelMessage              = "old component model resources processing is disabled in favor of new component model"
 
-	gitCommitShaAnnotationName = "build.appstudio.redhat.com/commit_sha"
-	gitRepoAtShaAnnotationName = "build.appstudio.openshift.io/repo"
-	ContextAnnotationName      = "appstudio.openshift.io/context"
-	VersionAnnotationName      = "appstudio.openshift.io/version"
-
-	defaultBuildPipelineAnnotation     = "build.appstudio.openshift.io/pipeline"
-	buildPipelineConfigMapResourceName = "build-pipeline-config"
-	buildPipelineConfigName            = "config.yaml"
-
-	waitForContainerImageMessage = "waiting for spec.containerImage to be set by ImageRepository with annotation image-controller.appstudio.redhat.com/update-component-image"
-
-	ComponentModelVersionAnnotation = "build.appstudio.openshift.io/component_model_version"
-	DefaultComponentModelVersion    = "v1"
-	NewComponentModelVersion        = "v2"
+	disableOldModelConfigMapResourceName = "disable-old-model"
 )
 
 type BuildStatus struct {
@@ -101,10 +98,10 @@ type PaCBuildStatus struct {
 	ErrorInfo
 }
 
-// ComponentBuildReconciler watches AppStudio Component objects in order to
+// ComponentBuildReconcilerOldModel watches AppStudio Component objects in order to
 // provision Pipelines as Code configuration for the Component or
 // submit initial builds and dependent resources if PaC is not configured.
-type ComponentBuildReconciler struct {
+type ComponentBuildReconcilerOldModel struct {
 	Client             client.Client
 	Scheme             *runtime.Scheme
 	EventRecorder      events.EventRecorder
@@ -113,24 +110,14 @@ type ComponentBuildReconciler struct {
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *ComponentBuildReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *ComponentBuildReconcilerOldModel) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&compapiv1alpha1.Component{}, builder.WithPredicates(predicate.Funcs{
 			CreateFunc: func(e event.CreateEvent) bool {
 				return true
 			},
 			UpdateFunc: func(e event.UpdateEvent) bool {
-				component, ok := e.ObjectNew.(*compapiv1alpha1.Component)
-				if !ok {
-					return false
-				}
-
-				// TODO remove newModel handling after only new model is used
-				// For new model: only reconcile when spec changes (Generation increments), not on status-only updates
-				// For old model: always reconcile on update (old model uses annotations which don't increment Generation)
-				if isComponentUsingNewModel(component) {
-					return e.ObjectOld.GetGeneration() != e.ObjectNew.GetGeneration()
-				}
+				// always reconcile on update (old model uses annotations which don't increment Generation)
 				return true
 			},
 			DeleteFunc: func(e event.DeleteEvent) bool {
@@ -158,13 +145,6 @@ func updateMetricsTimes(componentIdForMetrics string, requestedAction string, re
 	}
 }
 
-// isComponentUsingNewModel checks if the component is configured to use the new model (v2).
-// Returns true if the component has the new model annotation set to v2 or if the default model is v2.
-func isComponentUsingNewModel(component *compapiv1alpha1.Component) bool {
-	requestedModel, requestedModelAnnotationExists := component.Annotations[ComponentModelVersionAnnotation]
-	return (requestedModelAnnotationExists && requestedModel == NewComponentModelVersion) || DefaultComponentModelVersion == NewComponentModelVersion
-}
-
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=components,verbs=get;list;watch;update;patch
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=components/status,verbs=get;list;watch
 //+kubebuilder:rbac:groups=appstudio.redhat.com,resources=imagerepositories,verbs=get;list;watch
@@ -180,11 +160,11 @@ func isComponentUsingNewModel(component *compapiv1alpha1.Component) bool {
 //+kubebuilder:rbac:groups=core,resources=namespaces,verbs=get;list;watch
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups="events.k8s.io",resources=events,verbs=create;patch
-//+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch
+//+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch
 
-func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *ComponentBuildReconcilerOldModel) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := ctrllog.FromContext(ctx)
 	ctx = ctrllog.IntoContext(ctx, log)
 	reconcileStartTime := time.Now()
@@ -203,14 +183,19 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	if isComponentUsingNewModel(&component) {
-		return r.ReconcileNewModel(ctx, req)
-	}
-
 	log = ctrllog.FromContext(ctx).WithName("ComponentOnboarding")
 
+	disableOldModel := true
+	disableOldModelConfigMap := &corev1.ConfigMap{}
+	if err := r.Client.Get(ctx, types.NamespacedName{Name: disableOldModelConfigMapResourceName, Namespace: common.BuildServiceNamespaceName}, disableOldModelConfigMap); err != nil {
+		if !errors.IsNotFound(err) {
+			return ctrl.Result{}, err
+		}
+		disableOldModel = false
+	}
+
 	// Don't recreate build pipeline Service Account upon component deletion.
-	if component.ObjectMeta.DeletionTimestamp.IsZero() {
+	if component.ObjectMeta.DeletionTimestamp.IsZero() && !disableOldModel {
 		// We need to make sure the Service Account exists before checking the Component image,
 		// because Image Controller operator expects the Service Account to exist to link push secret to it.
 		if err := r.EnsureBuildPipelineServiceAccount(ctx, &component, true); err != nil {
@@ -218,17 +203,17 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
-	if getContainerImageRepositoryForComponent(&component) == "" {
+	if getContainerImageRepositoryForComponentOldModel(&component) == "" && !disableOldModel {
 		// Container image must be set. It's not possible to proceed without it.
 		log.Info("Waiting for ContainerImage to be set")
 
 		buildStatus := readBuildStatus(&component)
 
-		if buildStatus.Message == waitForContainerImageMessage {
+		if buildStatus.Message == waitForContainerImageMessageOldModel {
 			return ctrl.Result{}, nil
 		}
 
-		buildStatus.Message = waitForContainerImageMessage
+		buildStatus.Message = waitForContainerImageMessageOldModel
 		writeBuildStatus(&component, buildStatus)
 		if err := r.Client.Update(ctx, &component); err != nil {
 			log.Error(err, "failed to update component after waiting for containerImage", l.Action, l.ActionUpdate, l.Audit, "true")
@@ -276,12 +261,12 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return ctrl.Result{}, err
 		}
 
-		if controllerutil.ContainsFinalizer(&component, PaCProvisionFinalizer) {
+		if controllerutil.ContainsFinalizer(&component, PaCProvisionFinalizerOldModel) {
 			// In order to not to block the deletion of the Component,
 			// delete finalizer unconditionally and then try to do clean up ignoring errors.
 
 			// Delete Pipelines as Code provision finalizer
-			controllerutil.RemoveFinalizer(&component, PaCProvisionFinalizer)
+			controllerutil.RemoveFinalizer(&component, PaCProvisionFinalizerOldModel)
 			if err := r.Client.Update(ctx, &component); err != nil {
 				return ctrl.Result{}, err
 			}
@@ -295,6 +280,26 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if err := r.removeBuildPipelineServiceAccountBinding(ctx, &component); err != nil {
 			return ctrl.Result{}, err
 		}
+
+		return ctrl.Result{}, nil
+	}
+
+	if disableOldModel {
+		log.Info("Old component model processing is disabled")
+
+		buildStatus := readBuildStatus(&component)
+
+		if buildStatus.Message == disabledOldModelMessage {
+			return ctrl.Result{}, nil
+		}
+
+		buildStatus.Message = disabledOldModelMessage
+		writeBuildStatus(&component, buildStatus)
+		if err := r.Client.Update(ctx, &component); err != nil {
+			log.Error(err, "failed to update component with disable old model message", l.Action, l.ActionUpdate, l.Audit, "true")
+			return ctrl.Result{}, err
+		}
+		r.WaitForCacheUpdateOldModel(ctx, req.NamespacedName, &component)
 
 		return ctrl.Result{}, nil
 	}
@@ -351,7 +356,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return ctrl.Result{}, nil
 		}
 		// When only message is set, unless it is waiting for ContainerImage message do nothing
-		if buildStatus.Message != "" && !strings.Contains(buildStatus.Message, waitForContainerImageMessage) {
+		if buildStatus.Message != "" && !strings.Contains(buildStatus.Message, waitForContainerImageMessageOldModel) && !strings.Contains(buildStatus.Message, disabledOldModelMessage) {
 			return ctrl.Result{}, nil
 		}
 
@@ -436,8 +441,8 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 		// Add finalizer to clean up Pipelines as Code configuration on component deletion
 		if component.ObjectMeta.DeletionTimestamp.IsZero() && pacBuildStatus.ErrId == 0 {
-			if !controllerutil.ContainsFinalizer(&component, PaCProvisionFinalizer) {
-				controllerutil.AddFinalizer(&component, PaCProvisionFinalizer)
+			if !controllerutil.ContainsFinalizer(&component, PaCProvisionFinalizerOldModel) {
+				controllerutil.AddFinalizer(&component, PaCProvisionFinalizerOldModel)
 				log.Info("adding PaC finalizer")
 			}
 		}
@@ -457,8 +462,8 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		updateMetricsTimes(componentIdForMetrics, requestedAction, reconcileStartTime)
 
 		// Remove Pipelines as Code configuration finalizer
-		if controllerutil.ContainsFinalizer(&component, PaCProvisionFinalizer) {
-			controllerutil.RemoveFinalizer(&component, PaCProvisionFinalizer)
+		if controllerutil.ContainsFinalizer(&component, PaCProvisionFinalizerOldModel) {
+			controllerutil.RemoveFinalizer(&component, PaCProvisionFinalizerOldModel)
 			if err := r.Client.Update(ctx, &component); err != nil {
 				log.Error(err, "failed to remove PaC finalizer to the Component", l.Action, l.ActionUpdate)
 				return ctrl.Result{}, err
@@ -529,8 +534,7 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 }
 
 // WaitForCacheUpdateOldModel waits for cache update
-// TODO remove after only new model is used
-func (r *ComponentBuildReconciler) WaitForCacheUpdateOldModel(ctx context.Context, namespace types.NamespacedName, component *compapiv1alpha1.Component) {
+func (r *ComponentBuildReconcilerOldModel) WaitForCacheUpdateOldModel(ctx context.Context, namespace types.NamespacedName, component *compapiv1alpha1.Component) {
 	log := ctrllog.FromContext(ctx)
 
 	// Here we do some trick.

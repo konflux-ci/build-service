@@ -55,8 +55,7 @@ func createClient(clientType githubClientCreationWay) (*GithubClient, error) {
 			fmt.Printf("Cannot read private key file by path: %s", githubAppPrivateKeyPath)
 			return nil, err
 		}
-		owner, _ := getOwnerAndRepoFromUrl(repoUrl)
-		ghclient, err := NewGithubClientByApp(githubAppId, githubAppPrivateKey, owner)
+		ghclient, err := NewGithubClientByApp(githubAppId, githubAppPrivateKey, repoUrl)
 		if err != nil {
 			fmt.Printf("error: %v", err)
 			return nil, err

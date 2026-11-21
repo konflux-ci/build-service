@@ -10,6 +10,7 @@ e2e-tests/
 ├── scripts/        Shell scripts executed by Tekton Tasks
 ├── tasks/          Tekton Task definitions
 ├── tests/          Go test files (Ginkgo test suite)
+|── pkg/            Packages used in the tests (specially new component model tests)
 ├── go.mod          Go module for the test suite
 └── go.sum
 ```
@@ -39,7 +40,12 @@ Shell scripts invoked by the Tekton Tasks to configure the environment, load sec
 Ginkgo-based E2E tests that validate build-service functionality against a running Konflux cluster.
 Tests are organized by feature and use Ginkgo labels for filtering by git provider (`github`, `gitlab`, `forgejo`) and feature area (`pac-build`, `renovate`, `multi-component`, etc.).
 
-Tests consume shared utilities from [`github.com/konflux-ci/e2e-tests`](https://github.com/konflux-ci/e2e-tests).
+Old component model tests consume shared utilities from [`github.com/konflux-ci/e2e-tests`](https://github.com/konflux-ci/e2e-tests).
+New component model tests consume shared utilities from [`https://github.com/konflux-ci/build-service/tree/main/e2e-tests/pkg`](https://github.com/konflux-ci/build-service/tree/main/e2e-tests/pkg).
+
+### `pkg/`
+
+Contains all the common packages used by the new component model tests
 
 ## Running Tests locally on a Kind Cluster
 

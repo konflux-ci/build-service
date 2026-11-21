@@ -132,10 +132,10 @@ const (
 	EGitHubNoResourceToOperateOn BOErrorId = 75
 	// EGitHubReachRateLimit reach the GitHub REST API rate limit.
 	EGitHubReachRateLimit BOErrorId = 76
-	// EGitHubSecretInvalid the secret with GitHub App credentials is invalid.
-	EGitHubSecretInvalid = 79
+	// EGitHubBranchDoesntExist GitHub branch does not exist
+	EGitHubBranchDoesntExist BOErrorId = 79
 	// EGitHubSecretTypeNotSupported the secret type with GitHub App credentials is not supported.
-	EGitHubSecretTypeNotSupported = 80
+	EGitHubSecretTypeNotSupported BOErrorId = 80
 
 	// EGitLabTokenUnauthorized access token is not recognized by GitLab and 401 is responded.
 	// The access token may be malformed or expired.
@@ -225,6 +225,7 @@ var boErrorMessages = map[BOErrorId]string{
 	EGitHubTokenUnauthorized:     "Access token is unrecognizable by GitHub",
 	EGitHubNoResourceToOperateOn: "No resource for finishing the request",
 	EGitHubReachRateLimit:        "Reach GitHub REST API rate limit",
+	EGitHubBranchDoesntExist:     "GitHub branch does not exist",
 
 	EGitLabTokenInsufficientScope: "GitLab access token does not have enough scope",
 	EGitLabTokenUnauthorized:      "Access token is unrecognizable by remote GitLab service",

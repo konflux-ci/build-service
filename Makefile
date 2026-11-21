@@ -114,6 +114,14 @@ vet: ## Run go vet against code.
 test: manifests generate fmt vet envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test -count=1 $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
+.PHONY: test-coverage-courtney
+test-coverage-courtney: manifests generate fmt vet envtest courtney ## Run tests with courtney coverage filtering.
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" $(COURTNEY) -t="-count=1" -o cover-courtney.out $$(go list ./... | grep -v /e2e)
+
+.PHONY: show-test-coverage-courtney
+show-test-coverage-courtney: ## Display code coverage report with courtney filtering.
+	go tool cover -html=cover-courtney.out
+
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
 	$(GOLANGCI_LINT) run
@@ -212,12 +220,14 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+COURTNEY ?= $(LOCALBIN)/courtney
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.4.3
 CONTROLLER_TOOLS_VERSION ?= v0.17.2
 ENVTEST_VERSION ?= release-0.19
 GOLANGCI_LINT_VERSION ?= v2.12.2
+COURTNEY_VERSION ?= v0.5.1
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
@@ -238,6 +248,11 @@ $(ENVTEST): $(LOCALBIN)
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
 	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
+
+.PHONY: courtney
+courtney: $(COURTNEY) ## Download courtney locally if necessary.
+$(COURTNEY): $(LOCALBIN)
+	$(call go-install-tool,$(COURTNEY),github.com/dave/courtney,$(COURTNEY_VERSION))
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary

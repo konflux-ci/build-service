@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// TODO remove whole file after only new model is used
+// TODO remove whole file after only new model is used and old model is gone
 package controllers
 
 import (
@@ -33,7 +33,10 @@ import (
 	tektonapi "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
 	"knative.dev/pkg/apis"
@@ -51,8 +54,8 @@ import (
 
 const (
 	contextTimeout = 300 * time.Second
-	// PipelineRunTypeLabelName contains the type of the PipelineRunType
-	PipelineRunTypeLabelName = "pipelines.appstudio.openshift.io/type"
+	// PipelineRunTypeLabelNameOldModel contains the type of the PipelineRunType
+	PipelineRunTypeLabelNameOldModel = "pipelines.appstudio.openshift.io/type"
 	// PipelineRunBuildType is the type denoting a build PipelineRun.
 	PipelineRunBuildType = "build"
 	// PacEventTypeAnnotationName represents the current event type
@@ -75,6 +78,8 @@ const (
 
 	FailureRetryTime  = time.Minute * 5 // We retry after 5 minutes on failure
 	DefaultNudgeFiles = ".*Dockerfile.*, .*.yaml, .*Containerfile.*"
+
+	integrationNudgeConfigName = "nudge-config"
 )
 
 // The amount of time we wait before attempting to update the component, to try and avoid contention issues
@@ -151,15 +156,15 @@ func (r *ComponentDependencyUpdateReconciler) SetupWithManager(manager ctrl.Mana
 		Complete(r)
 }
 
+//+kubebuilder:rbac:groups=core,resources=configmaps,verbs=create;get;list;watch;update;patch;delete
+//+kubebuilder:rbac:groups=appstudio.redhat.com,resources=components,verbs=get;list;watch;update;patch
+//+kubebuilder:rbac:groups=appstudio.redhat.com,resources=components/status,verbs=get;list;watch
+//+kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns,verbs=get;list;watch;create;update;patch;delete;deletecollection
+//+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+//+kubebuilder:rbac:groups=appstudio.redhat.com,resources=nudgeconfigs,verbs=get;list;watch
+//+kubebuilder:rbac:groups=konflux-ci.dev,resources=nudgeconfigs,verbs=get;list;watch
+
 // Reconcile handles component dependency updates.
-// The following line for configmaps is informational, the actual permissions are defined in component_build_controller.
-// +kubebuilder:rbac:groups=core,resources=configmaps,verbs=create;get;list;watch;update;patch;delete
-// +kubebuilder:rbac:groups=appstudio.redhat.com,resources=components,verbs=get;list;watch;update;patch
-// +kubebuilder:rbac:groups=appstudio.redhat.com,resources=components/status,verbs=get;list;watch
-// +kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns,verbs=get;list;watch;create;update;patch;delete;deletecollection
-// +kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns/finalizers,verbs=update
-// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 func (r *ComponentDependencyUpdateReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var cancel context.CancelFunc
 	ctx, cancel = context.WithTimeout(ctx, contextTimeout)
@@ -212,6 +217,45 @@ func (r *ComponentDependencyUpdateReconciler) Reconcile(ctx context.Context, req
 		return ctrl.Result{}, nil
 	}
 	log.Info("component has BuildNudgesRef set", "ComponentName", component.Name, "BuildNudgesRef", component.Spec.BuildNudgesRef)
+
+	// check if integration nudgeConfig exists, if it does skip nudging and just set nudge processed annotation
+	integrationNudgeConfig := &unstructured.Unstructured{}
+	// check old api group
+	integrationNudgeConfig.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "appstudio.redhat.com",
+		Version: "v1beta2",
+		Kind:    "NudgeConfig",
+	})
+	err = r.Client.Get(ctx, types.NamespacedName{Name: integrationNudgeConfigName, Namespace: pipelineRun.Namespace}, integrationNudgeConfig)
+	if err != nil {
+		if !errors.IsNotFound(err) && !apimeta.IsNoMatchError(err) {
+			log.Error(err, "Failed to get nudgeConfig", "NudgeConfigName", integrationNudgeConfigName)
+			return ctrl.Result{}, err
+		}
+	} else {
+		patch := client.MergeFrom(pipelineRun.DeepCopy())
+		log.Info("skipping nudging, because NudgeConfig exists in the namespace", "NudgeConfigName", integrationNudgeConfigName)
+		return r.removePipelineFinalizer(ctx, pipelineRun, patch)
+	}
+
+	integrationNudgeConfig = &unstructured.Unstructured{}
+	// check new api group
+	integrationNudgeConfig.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "konflux-ci.dev",
+		Version: "v1beta2",
+		Kind:    "NudgeConfig",
+	})
+	err = r.Client.Get(ctx, types.NamespacedName{Name: integrationNudgeConfigName, Namespace: pipelineRun.Namespace}, integrationNudgeConfig)
+	if err != nil {
+		if !errors.IsNotFound(err) && !apimeta.IsNoMatchError(err) {
+			log.Error(err, "Failed to get nudgeConfig", "NudgeConfigName", integrationNudgeConfigName)
+			return ctrl.Result{}, err
+		}
+	} else {
+		patch := client.MergeFrom(pipelineRun.DeepCopy())
+		log.Info("skipping nudging, because NudgeConfig exists in the namespace", "NudgeConfigName", integrationNudgeConfigName)
+		return r.removePipelineFinalizer(ctx, pipelineRun, patch)
+	}
 
 	// verify that there exist some components to be nudged
 	allComponents := compapiv1alpha1.ComponentList{}
@@ -427,7 +471,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 		targets = append(targets, newTargets...)
 	}
 
-	gitRepoAtShaLink := pipelineRun.Annotations[gitRepoAtShaAnnotationName]
+	gitRepoAtShaLink := pipelineRun.Annotations[gitRepoAtShaAnnotationNameOldModel]
 	if len(targets) > 0 {
 		log.Info("will create renovate job")
 		simpleBranchName := false
@@ -502,7 +546,7 @@ func (r *ComponentDependencyUpdateReconciler) handleCompletedBuild(ctx context.C
 	// the finalizer.
 
 	pipelines := tektonapi.PipelineRunList{}
-	err = r.Client.List(ctx, &pipelines, client.InNamespace(pipelineRun.Namespace), client.MatchingLabels{PipelineRunTypeLabelName: PipelineRunBuildType, ComponentNameLabelName: updatedComponent.Name})
+	err = r.Client.List(ctx, &pipelines, client.InNamespace(pipelineRun.Namespace), client.MatchingLabels{PipelineRunTypeLabelNameOldModel: PipelineRunBuildType, ComponentNameLabelNameOldModel: updatedComponent.Name})
 	if err != nil {
 		// I don't think we want to retry this, it should be really rare anyway
 		// and would require an even more complex label based state machine.
@@ -710,12 +754,12 @@ func IsBuildPushPipelineRun(object client.Object) bool {
 	if pipelineRun, ok := object.(*tektonapi.PipelineRun); ok {
 
 		// Ensure the PipelineRun belongs to a Component
-		if pipelineRun.Labels == nil || pipelineRun.Labels[ComponentNameLabelName] == "" {
+		if pipelineRun.Labels == nil || pipelineRun.Labels[ComponentNameLabelNameOldModel] == "" {
 			// PipelineRun does not belong to a Component
 			return false
 		}
 		if pipelineRun.Labels != nil && pipelineRun.Annotations != nil {
-			if pipelineRun.Labels[PipelineRunTypeLabelName] == PipelineRunBuildType && (strings.EqualFold(pipelineRun.Annotations[PacEventTypeAnnotationName], PacEventPushType) || strings.EqualFold(pipelineRun.Annotations[PacEventTypeAnnotationName], PacEventIncomingType)) {
+			if pipelineRun.Labels[PipelineRunTypeLabelNameOldModel] == PipelineRunBuildType && (strings.EqualFold(pipelineRun.Annotations[PacEventTypeAnnotationName], PacEventPushType) || strings.EqualFold(pipelineRun.Annotations[PacEventTypeAnnotationName], PacEventIncomingType)) {
 				return true
 			}
 		}
@@ -726,7 +770,7 @@ func IsBuildPushPipelineRun(object client.Object) bool {
 // GetComponentFromPipelineRun loads from the cluster the Component referenced in the given PipelineRun. If the PipelineRun doesn't
 // specify a Component we return nil, if the component is not specified we return an error
 func GetComponentFromPipelineRun(c client.Client, ctx context.Context, pipelineRun *tektonapi.PipelineRun) (*compapiv1alpha1.Component, error) {
-	if componentName, found := pipelineRun.Labels[ComponentNameLabelName]; found {
+	if componentName, found := pipelineRun.Labels[ComponentNameLabelNameOldModel]; found {
 		component := &compapiv1alpha1.Component{}
 		err := c.Get(ctx, types.NamespacedName{
 			Namespace: pipelineRun.Namespace,

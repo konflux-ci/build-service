@@ -35,6 +35,8 @@ import (
 	eventsv1 "k8s.io/api/events/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"knative.dev/pkg/apis"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -355,6 +357,60 @@ var _ = Describe("Component nudge controller", func() {
 				}
 			}
 			Expect(caMounted).Should(BeTrue())
+		})
+
+		It("Test skip nudge when old api nudgeConfig exists", func() {
+			// create old api nudgeConfig
+			nudgeConfig := unstructured.Unstructured{}
+			nudgeConfig.SetGroupVersionKind(schema.GroupVersionKind{
+				Group:   "appstudio.redhat.com",
+				Version: "v1beta2",
+				Kind:    "NudgeConfig",
+			})
+			nudgeConfig.SetNamespace(UserNamespace)
+			nudgeConfig.SetName(integrationNudgeConfigName)
+
+			err := k8sClient.Create(context.TODO(), &nudgeConfig)
+			Expect(err).ToNot(HaveOccurred())
+			defer k8sClient.Delete(context.TODO(), &nudgeConfig)
+
+			createBuildPipelineRun("test-pipeline-nudge-old-1", UserNamespace, baseComponentName, "")
+			Eventually(func() bool {
+				pr := getPipelineRun("test-pipeline-nudge-old-1", UserNamespace)
+				// skipped pipeline will never have finalizer set
+				if controllerutil.ContainsFinalizer(pr, NudgeFinalizer) {
+					return false
+				}
+				// but it will have processed annotation set
+				return pr.Annotations != nil && pr.Annotations[NudgeProcessedAnnotationName] != ""
+			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
+		})
+
+		It("Test skip nudge when new api nudgeConfig exists", func() {
+			// create new api nudgeConfig
+			nudgeConfig := unstructured.Unstructured{}
+			nudgeConfig.SetGroupVersionKind(schema.GroupVersionKind{
+				Group:   "konflux-ci.dev",
+				Version: "v1beta2",
+				Kind:    "NudgeConfig",
+			})
+			nudgeConfig.SetNamespace(UserNamespace)
+			nudgeConfig.SetName(integrationNudgeConfigName)
+
+			err := k8sClient.Create(context.TODO(), &nudgeConfig)
+			Expect(err).ToNot(HaveOccurred())
+			defer k8sClient.Delete(context.TODO(), &nudgeConfig)
+
+			createBuildPipelineRun("test-pipeline-nudge-new-1", UserNamespace, baseComponentName, "")
+			Eventually(func() bool {
+				pr := getPipelineRun("test-pipeline-nudge-new-1", UserNamespace)
+				// skipped pipeline will never have finalizer set
+				if controllerutil.ContainsFinalizer(pr, NudgeFinalizer) {
+					return false
+				}
+				// but it will have processed annotation set
+				return pr.Annotations != nil && pr.Annotations[NudgeProcessedAnnotationName] != ""
+			}, timeout, interval).WithTimeout(ensureTimeout).Should(BeTrue())
 		})
 
 		It("Test build performs nudge on success, image repository partial auth", func() {
@@ -1095,10 +1151,10 @@ func createBuildPipelineRun(name, namespace, component, imageBuiltFrom string) *
 		},
 	}
 	run := tektonapi.PipelineRun{}
-	run.Labels = map[string]string{ComponentNameLabelName: component, PipelineRunTypeLabelName: PipelineRunBuildType}
-	run.Annotations = map[string]string{PacEventTypeAnnotationName: PacEventPushType, NudgeFilesAnnotationName: ".*Dockerfile.*, .*.yaml, .*Containerfile.*", gitRepoAtShaAnnotationName: "https://github.com/foo/bar/-/tree/4b00cdb6ceb84d3953d8987e3e06f967a6d86e76"}
+	run.Labels = map[string]string{ComponentNameLabelNameOldModel: component, ApplicationNameLabelName: HASAppName, PipelineRunTypeLabelNameOldModel: PipelineRunBuildType}
+	run.Annotations = map[string]string{PacEventTypeAnnotationName: PacEventPushType, NudgeFilesAnnotationName: ".*Dockerfile.*, .*.yaml, .*Containerfile.*", gitRepoAtShaAnnotationNameOldModel: "https://github.com/foo/bar/-/tree/4b00cdb6ceb84d3953d8987e3e06f967a6d86e76"}
 	if imageBuiltFrom != "" {
-		run.Annotations[gitRepoAtShaAnnotationName] = imageBuiltFrom
+		run.Annotations[gitRepoAtShaAnnotationNameOldModel] = imageBuiltFrom
 	}
 	run.Namespace = namespace
 	run.Name = name

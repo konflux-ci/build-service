@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	compv1alpha1 "github.com/konflux-ci/application-api/api/konflux/v1alpha1"
 	compapiv1alpha1 "github.com/konflux-ci/application-api/api/v1alpha1"
 	imagerepositoryapi "github.com/konflux-ci/image-controller/api/v1alpha1"
 	releaseapi "github.com/konflux-ci/release-service/api/v1alpha1"
@@ -79,13 +80,15 @@ var _ = BeforeSuite(func() {
 
 	By("bootstrapping test environment")
 
-	applicationApiDepVersion := "v0.0.0-20260529131129-a9594acdc104"
+	applicationApiDepVersion := "v0.0.0-20260727123715-2999a91451c6"
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
 			filepath.Join("..", "..", "hack", "routecrd", "route.yaml"),
+			filepath.Join("..", "..", "hack", "nudgeconfigcrd", "nudgeconfig.yaml"),
+			filepath.Join("..", "..", "hack", "nudgeconfigcrd", "nudgeconfigold.yaml"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "konflux-ci", "application-api@"+applicationApiDepVersion, "config", "crd", "bases"),
-			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "tektoncd", "pipeline@v1.10.2", "config", "300-crds"),
-			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "openshift-pipelines", "pipelines-as-code@v0.43.0", "config"),
+			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "tektoncd", "pipeline@v1.11.1", "config", "300-crds"),
+			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "openshift-pipelines", "pipelines-as-code@v0.48.0", "config"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "konflux-ci", "release-service@v0.0.0-20240610124538-758a1d48d002", "config", "crd", "bases"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "konflux-ci", "image-controller@v0.0.0-20250424143112-69ec692d353c", "config", "crd", "bases"),
 		},
@@ -100,7 +103,11 @@ var _ = BeforeSuite(func() {
 	err = routev1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
+	// TODO remove after only new model is used and old model is gone
 	err = compapiv1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	err = compv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	err = tektonapi.AddToScheme(scheme.Scheme)
@@ -124,7 +131,9 @@ var _ = BeforeSuite(func() {
 	defaultNS := &corev1.Namespace{}
 	Expect(k8sClient.Get(ctx, types.NamespacedName{Name: HASAppNamespace}, defaultNS)).Should(Succeed())
 	defaultNS.SetLabels(map[string]string{
-		appstudioWorkspaceNameLabel: "build",
+		konfluxWorkspaceNameLabel: "build",
+		// TODO remove after only new model is used and old model is gone
+		appstudioWorkspaceNameLabelOldModel: "build-old",
 	})
 	Expect(k8sClient.Update(ctx, defaultNS)).Should(Succeed())
 
@@ -148,6 +157,16 @@ var _ = BeforeSuite(func() {
 	err = (&ComponentBuildReconciler{
 		Client:             k8sManager.GetClient(),
 		Scheme:             k8sManager.GetScheme(),
+		EventRecorder:      k8sManager.GetEventRecorder("ComponentBuildReconciler"),
+		PaCWebhookMapping:  pacWebhookMapping,
+		CredentialProvider: k8s.NewGitCredentialProvider(k8sManager.GetClient()),
+	}).SetupWithManager(k8sManager)
+	Expect(err).ToNot(HaveOccurred())
+
+	// TODO remove after only new model is used and old model is gone
+	err = (&ComponentBuildReconcilerOldModel{
+		Client:             k8sManager.GetClient(),
+		Scheme:             k8sManager.GetScheme(),
 		EventRecorder:      k8sManager.GetEventRecorder("ComponentOnboarding"),
 		PaCWebhookMapping:  pacWebhookMapping,
 		CredentialProvider: k8s.NewGitCredentialProvider(k8sManager.GetClient()),
@@ -158,6 +177,14 @@ var _ = BeforeSuite(func() {
 		Client:        k8sManager.GetClient(),
 		Scheme:        k8sManager.GetScheme(),
 		EventRecorder: k8sManager.GetEventRecorder("PaCPipelineRunPruner"),
+	}).SetupWithManager(k8sManager)
+	Expect(err).ToNot(HaveOccurred())
+
+	// TODO remove after only new model is used and old model is gone
+	err = (&PaCPipelineRunPrunerReconcilerOldModel{
+		Client:        k8sManager.GetClient(),
+		Scheme:        k8sManager.GetScheme(),
+		EventRecorder: k8sManager.GetEventRecorder("PaCPipelineRunPrunerOld"),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 

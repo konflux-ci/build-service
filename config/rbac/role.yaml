@@ -9,6 +9,7 @@ rules:
   resources:
   - configmaps
   - secrets
+  - serviceaccounts
   verbs:
   - create
   - delete
@@ -28,17 +29,6 @@ rules:
   - watch
 - apiGroups:
   - ""
-  resources:
-  - serviceaccounts
-  verbs:
-  - create
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ""
   - events.k8s.io
   resources:
   - events
@@ -55,7 +45,6 @@ rules:
   - appstudio.redhat.com
   resources:
   - components
-  - components/status
   verbs:
   - get
   - list
@@ -65,9 +54,30 @@ rules:
 - apiGroups:
   - appstudio.redhat.com
   resources:
+  - components/status
   - imagerepositories
   - imagerepositories/status
+  - nudgeconfigs
   - releaseplanadmissions
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - konflux-ci.dev
+  resources:
+  - components
+  - components/status
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - konflux-ci.dev
+  resources:
+  - nudgeconfigs
   verbs:
   - get
   - list
@@ -86,9 +96,13 @@ rules:
   - watch
 - apiGroups:
   - rbac.authorization.k8s.io
+  resourceNames:
+  - appstudio-pipelines-runner
+  - konflux-build-pipelines-runner
   resources:
   - clusterroles
   verbs:
+  - bind
   - get
 - apiGroups:
   - rbac.authorization.k8s.io

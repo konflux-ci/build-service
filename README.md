@@ -33,7 +33,7 @@ Monitors Component CRs and manages the entire build pipeline lifecycle:
 
 ### PaC PipelineRun Pruner Controller
 
-Removes PipelineRun CRs created for Components that are being deleted, ensuring proper cleanup based on the `appstudio.openshift.io/component` label.
+Removes PipelineRun CRs created for Components that are being deleted, ensuring proper cleanup based on the `build.konflux-ci.dev/component` label (`appstudio.openshift.io/component` in case of old Component API Group used).
 
 ### Component Dependency Update Controller (Nudging)
 
@@ -130,6 +130,12 @@ make deploy IMG=<your-registry>/build-service:tag
 ```
 
 **Important:** This will not result in a functional build system without the required dependencies listed above.
+
+## Component API groups
+- New API group : `konflux-ci.dev/v1alpha1`
+- Old API group : `appstudio.redhat.com/v1alpha1`
+
+Old API group will be eventually removed in favor of new one.
 
 ## Configuration
 

@@ -347,7 +347,7 @@ func (f *ForgejoClient) GetBranchSha(repoUrl string, branchName string) (string,
 		return "", refineGitHostingServiceError(resp.Response, err)
 	}
 	if branch == nil {
-		return "", fmt.Errorf("branch '%s' not found", branchName)
+		return "", boerrors.NewBuildOpError(boerrors.EForgejoBranchDoesntExist, fmt.Errorf("branch '%s' does not exist", branchName))
 	}
 
 	return branch.Commit.ID, nil
