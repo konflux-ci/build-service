@@ -144,6 +144,95 @@ func (f *ForgejoClient) EnsurePaCMergeRequest(repoUrl string, d *gp.MergeRequest
 	}
 }
 
+// EnsureMigrationMergeRequest creates or updates existing merge request with the given files.
+// Returns the merge request web URL.
+// If there is no error and web URL is empty, it means that the merge request is not needed (base branch is up to date).
+// TODO remove after only new model is used and old model is gone
+func (f *ForgejoClient) EnsureMigrationMergeRequest(repoUrl string, d *gp.MergeRequestData) (webUrl string, err error) {
+	owner, repository, err := getOwnerAndRepoFromUrl(repoUrl)
+	if err != nil {
+		return "", err
+	}
+
+	baseBranchExists, err := f.branchExist(owner, repository, d.BaseBranchName)
+	if err != nil {
+		return "", err
+	}
+	if !baseBranchExists {
+		return "", boerrors.NewBuildOpError(boerrors.EForgejoBranchDoesntExist, fmt.Errorf("base branch '%s' does not exist", d.BaseBranchName))
+	}
+
+	// Check if files are already up to date in base branch
+	baseFilesUpToDate, err := f.filesUpToDate(owner, repository, d.BaseBranchName, d.Files)
+	if err != nil {
+		return "", err
+	}
+	if baseFilesUpToDate {
+		// Migration is already applied in the base branch
+		return "", nil
+	}
+
+	// Check if PR branch exists
+	prBranchExists, err := f.branchExist(owner, repository, d.BranchName)
+	if err != nil {
+		return "", err
+	}
+
+	if prBranchExists {
+		// Branch exists, check if files are up to date
+		branchFilesUpToDate, err := f.filesUpToDate(owner, repository, d.BranchName, d.Files)
+		if err != nil {
+			return "", err
+		}
+		if !branchFilesUpToDate {
+			// Don't commit on top of the branch's own (possibly stale) history: the branch may have
+			// diverged from the base branch in ways that make a clean commit impossible (e.g. a path
+			// we need to delete/rename on top of it no longer exists there). Content is always fully
+			// regenerated from the base branch's current state anyway, so just recreate the branch.
+			if _, err := f.deleteBranch(owner, repository, d.BranchName); err != nil {
+				return "", err
+			}
+			return f.EnsureMigrationMergeRequest(repoUrl, d)
+		}
+
+		pr, err := f.findPullRequestByBranches(owner, repository, d.BranchName, d.BaseBranchName)
+		if err != nil {
+			return "", err
+		}
+		if pr != nil {
+			return pr.HTMLURL, nil
+		}
+
+		// Check if there's a diff between branches
+		diffExists, err := f.diffNotEmpty(owner, repository, d.BranchName, d.BaseBranchName)
+		if err != nil {
+			return "", err
+		}
+		if !diffExists {
+			// No diff - the branch was already merged and not deleted, and the files now look stale in
+			// base again (e.g. changed by another commit after the merge) - delete the stale branch and
+			// recurse to recreate it from scratch with current content.
+			if _, err := f.deleteBranch(owner, repository, d.BranchName); err != nil {
+				return "", err
+			}
+			return f.EnsureMigrationMergeRequest(repoUrl, d)
+		}
+
+		return f.createPullRequestWithinRepository(owner, repository, d.BranchName, d.BaseBranchName, d.Title, d.Text)
+	}
+
+	// Branch doesn't exist - create it
+	if err := f.createBranch(owner, repository, d.BranchName, d.BaseBranchName); err != nil {
+		return "", err
+	}
+
+	if err := f.commitFilesIntoBranch(owner, repository, d.BranchName, d.CommitMessage, d.AuthorName, d.AuthorEmail, d.SignedOff, d.Files); err != nil {
+		return "", err
+	}
+
+	return f.createPullRequestWithinRepository(owner, repository, d.BranchName, d.BaseBranchName, d.Title, d.Text)
+}
+
 // UndoPaCMergeRequest creates a merge request that removes Pipelines as Code configuration from the repository.
 func (f *ForgejoClient) UndoPaCMergeRequest(repoUrl string, d *gp.MergeRequestData) (webUrl string, err error) {
 	owner, repository, err := getOwnerAndRepoFromUrl(repoUrl)
@@ -389,6 +478,17 @@ func (f *ForgejoClient) IsFileExist(repoUrl, branchName, filePath string) (bool,
 
 	exists, _, err := f.fileExist(owner, repository, branchName, filePath)
 	return exists, err
+}
+
+// GetFilesFromDirectory returns list of files existing in the given directory of the given branch of the repository.
+// TODO remove after only new model is used and old model is gone
+func (f *ForgejoClient) GetFilesFromDirectory(repoUrl, branchName, directoryPath string) ([]gp.RepositoryFile, error) {
+	owner, repository, err := getOwnerAndRepoFromUrl(repoUrl)
+	if err != nil {
+		return nil, err
+	}
+
+	return f.filesInDirectory(owner, repository, branchName, directoryPath)
 }
 
 // IsRepositoryPublic checks if the repository is publicly accessible.

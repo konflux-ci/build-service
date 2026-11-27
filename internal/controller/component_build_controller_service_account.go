@@ -755,3 +755,105 @@ func getSecretReferenceIndex(serviceAccount *corev1.ServiceAccount, secretName s
 func isSaSecretLinked(serviceAccount *corev1.ServiceAccount, secretName string, isPull bool) bool {
 	return getSecretReferenceIndex(serviceAccount, secretName, isPull) != -1
 }
+
+// TODO remove after only new model is used and old model is gone
+// isSecretEligibleForMigrationLinking returns true if the given old Component build pipeline Service Account
+// secret should be linked to the new Component build pipeline Service Account as part of pipeline runs migration.
+// Secrets that are (or will be) linked automatically through other mechanisms are not eligible:
+// common build secrets, Opaque or dockercfg secret types, the namespace pull secret, Image Repository secrets
+// and old model Application pull secrets.
+func isSecretEligibleForMigrationLinking(secret *corev1.Secret) bool {
+	if secret.Labels[commonBuildSecretLabelName] == "true" || secret.Labels[commonBuildSecretLabelNameOldModel] == "true" {
+		return false
+	}
+	if secret.Type == corev1.SecretTypeOpaque || secret.Type == corev1.SecretTypeDockercfg {
+		return false
+	}
+	if secret.Name == namespacePullSecretName {
+		return false
+	}
+	for _, ownerRef := range secret.OwnerReferences {
+		if ownerRef.Kind == "ImageRepository" || ownerRef.Kind == "Application" {
+			return false
+		}
+	}
+	return true
+}
+
+// TODO remove after only new model is used and old model is gone
+// linkMigratedSecretsToBuildPipelineServiceAccount links secrets from old Components' build pipeline Service
+// Accounts (identified via migrationMap, old component name -> version) to the new Component build pipeline
+// Service Account, skipping secrets that are already linked automatically (see isSecretEligibleForMigrationLinking)
+// or already linked to the new Service Account. Missing old Service Accounts or secrets are ignored (logged).
+func (r *ComponentBuildReconciler) linkMigratedSecretsToBuildPipelineServiceAccount(ctx context.Context, component *compv1alpha1.Component, migrationMap map[string]string) error {
+	log := ctrllog.FromContext(ctx).WithName("migrateSecrets")
+
+	buildPipelineServiceAccountName := getBuildPipelineServiceAccountName(component.Name)
+	buildPipelineServiceAccount := &corev1.ServiceAccount{}
+	if err := r.Client.Get(ctx, types.NamespacedName{Name: buildPipelineServiceAccountName, Namespace: component.Namespace}, buildPipelineServiceAccount); err != nil {
+		log.Error(err, "failed to get build pipeline Service Account", l.Action, l.ActionView)
+		return err
+	}
+
+	processedSecrets := map[string]bool{}
+	isServiceAccountUpdated := false
+	var linkedSecretNames []string
+
+	for oldComponentName := range migrationMap {
+		// when old component name is the same as new one, SA is the same for both of them
+		if oldComponentName == component.Name {
+			continue
+		}
+
+		oldServiceAccountName := getBuildPipelineServiceAccountName(oldComponentName)
+		oldServiceAccount := &corev1.ServiceAccount{}
+		if err := r.Client.Get(ctx, types.NamespacedName{Name: oldServiceAccountName, Namespace: component.Namespace}, oldServiceAccount); err != nil {
+			if errors.IsNotFound(err) {
+				log.Info("old Component build pipeline Service Account not found, skipping", "ServiceAccount", oldServiceAccountName)
+				continue
+			}
+			log.Error(err, "failed to get old Component build pipeline Service Account", "ServiceAccount", oldServiceAccountName, l.Action, l.ActionView)
+			return err
+		}
+
+		for _, secretRef := range oldServiceAccount.Secrets {
+			secretName := secretRef.Name
+			if processedSecrets[secretName] {
+				continue
+			}
+			processedSecrets[secretName] = true
+
+			secret := &corev1.Secret{}
+			if err := r.Client.Get(ctx, types.NamespacedName{Name: secretName, Namespace: component.Namespace}, secret); err != nil {
+				if errors.IsNotFound(err) {
+					log.Info("secret referenced by old Service Account not found, skipping", "Secret", secretName, "ServiceAccount", oldServiceAccountName)
+					continue
+				}
+				log.Error(err, "failed to get secret referenced by old Service Account", "Secret", secretName, "ServiceAccount", oldServiceAccountName, l.Action, l.ActionView)
+				return err
+			}
+
+			if !isSecretEligibleForMigrationLinking(secret) {
+				continue
+			}
+
+			if isSaSecretLinked(buildPipelineServiceAccount, secretName, false) {
+				continue
+			}
+
+			buildPipelineServiceAccount.Secrets = append(buildPipelineServiceAccount.Secrets, corev1.ObjectReference{Name: secretName})
+			isServiceAccountUpdated = true
+			linkedSecretNames = append(linkedSecretNames, secretName)
+		}
+	}
+
+	if isServiceAccountUpdated {
+		if err := r.Client.Update(ctx, buildPipelineServiceAccount); err != nil {
+			log.Error(err, "failed to update build pipeline Service Account with migrated secrets", l.Action, l.ActionUpdate)
+			return err
+		}
+		log.Info("linked migrated secrets to build pipeline Service Account", "ServiceAccount", buildPipelineServiceAccountName, "Secrets", linkedSecretNames)
+	}
+
+	return nil
+}

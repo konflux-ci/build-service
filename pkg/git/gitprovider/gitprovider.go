@@ -29,6 +29,15 @@ type GitProviderClient interface {
 	// If there is no error and web URL is empty, it means that the merge request is not needed (the configuration has already been deleted).
 	UndoPaCMergeRequest(repoUrl string, data *MergeRequestData) (webUrl string, err error)
 
+	// EnsureMigrationMergeRequest creates or updates existing merge request with the given files (additions, updates
+	// and, via RepositoryFile.Delete, deletions, all in a single commit). Like EnsurePaCMergeRequest, it compares
+	// the given files against the base branch's current content and returns an empty URL with no error if the base
+	// is already up to date (nothing to migrate). If a migration branch already exists but its content is stale
+	// relative to the base branch, it's deleted and recreated rather than amended.
+	// Returns the merge request web URL.
+	// TODO remove after only new model is used and old model is gone
+	EnsureMigrationMergeRequest(repoUrl string, data *MergeRequestData) (webUrl string, err error)
+
 	// FindUnmergedPaCMergeRequest searches for existing Pipelines as Code configuration proposal merge request
 	FindUnmergedPaCMergeRequest(repoUrl string, data *MergeRequestData) (*MergeRequest, error)
 
@@ -54,6 +63,10 @@ type GitProviderClient interface {
 
 	// IsFileExist check whether given file exists in the given branch of the reposiotry
 	IsFileExist(repoUrl, branchName, filePath string) (bool, error)
+
+	// GetFilesFromDirectory returns list of files existing in the given directory of the given branch of the repository.
+	// TODO remove after only new model is used and old model is gone
+	GetFilesFromDirectory(repoUrl, branchName, directoryPath string) ([]RepositoryFile, error)
 
 	// IsRepositoryPublic returns true if the repository could be accessed without authentication
 	IsRepositoryPublic(repoUrl string) (bool, error)
@@ -84,6 +97,10 @@ type MergeRequestData struct {
 type RepositoryFile struct {
 	FullPath string
 	Content  []byte
+	// Delete, when true, marks the file at FullPath for deletion instead of being added/updated.
+	// Supported by EnsureMigrationMergeRequest so adds, updates and deletes can be combined into a single commit/merge request.
+	// TODO remove after only new model is used and old model is gone
+	Delete bool
 }
 
 type MergeRequest struct {

@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -68,6 +69,11 @@ const (
 	buildPipelineConfigName            = "config.yaml"
 
 	waitForContainerImageMessage = "waiting for spec.containerImage to be set (often by ImageRepository with annotation build.konflux-ci.dev/update-component-image)"
+
+	// TODO remove after only new model is used and old model is gone
+	performMigrationAnnotationName = "perform_migration"
+	migrationMapAnnotationName     = "migration_map"
+	namespacePullSecretName        = "components-namespace-pull"
 )
 
 // PipelineDef represents a single pipeline definition with pointer fields
@@ -122,6 +128,12 @@ func (r *ComponentBuildReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				// OCP bumps generation when a component is deleted, which already triggers this predicate.
 				// This explicit check is a safeguard for environments that may not bump generation on deletion.
 				if !e.ObjectNew.GetDeletionTimestamp().IsZero() {
+					return true
+				}
+				// TODO remove after only new model is used and old model is gone
+				// perform_migration annotation is added/changed after creation, which doesn't bump generation,
+				// so it needs an explicit check to trigger reconciliation of the pipeline runs migration.
+				if e.ObjectOld.GetAnnotations()[performMigrationAnnotationName] != e.ObjectNew.GetAnnotations()[performMigrationAnnotationName] {
 					return true
 				}
 				// only reconcile when spec changes (Generation increments), not on status-only updates
@@ -275,12 +287,73 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		log.Info("Skip builds settings changed, need to update PAC Repository", l.Action, l.ActionUpdate, "PacRepository", component.Status.PacRepository)
 	}
 
+	// TODO remove after only new model is used and old model is gone
+	// Read migration annotations
+	performMigrationAnnotationValue := component.GetAnnotations()[performMigrationAnnotationName]
+	migrationMapAnnotationValue := component.GetAnnotations()[migrationMapAnnotationName]
+	var migrationMap map[string]string
+	var performMigration bool
+	var migrationMapParseErr error
+	if performMigrationAnnotationValue == "true" && migrationMapAnnotationValue != "" {
+		if err := json.Unmarshal([]byte(migrationMapAnnotationValue), &migrationMap); err != nil {
+			migrationMapParseErr = err
+			log.Error(err, "Failed to parse migration_map annotation", l.Action, l.ActionView)
+			if statusErr := r.setStatusMessage(ctx, &component, fmt.Sprintf("Pipeline runs migration: failed to parse migration_map annotation: %s", err)); statusErr != nil {
+				return ctrl.Result{}, statusErr
+			}
+		} else {
+			performMigration = true
+			log.Info("Component requests pipeline runs migration", l.Action, l.ActionView, "MigrationMap", migrationMap, "PerformMigration", performMigration)
+		}
+	}
+
+	if performMigration {
+		// Drop entries whose target version no longer exists in the spec, is being offboarded (won't
+		// exist going forward to migrate onto), or still has its pipeline configuration PR pending
+		// (that PR creates the version's pipeline runs fresh in the new model already, so migrating the
+		// old ones onto it is redundant) - persist the shrunk map right away instead of waiting for
+		// MigratePipelineRunsInRepository.
+		filteredMigrationMap := make(map[string]string, len(migrationMap))
+		for oldComponentName, newVersionName := range migrationMap {
+			if _, exists := existingSpecVersions[newVersionName]; !exists {
+				log.Info("version referenced by migration map no longer exists in component spec, dropping migration for old component", "OldComponent", oldComponentName, "Version", newVersionName, l.Audit, "true")
+				continue
+			}
+			if slices.Contains(versionsToOffboard, newVersionName) {
+				log.Info("version referenced by migration map is being offboarded, dropping migration for old component", "OldComponent", oldComponentName, "Version", newVersionName, l.Audit, "true")
+				continue
+			}
+			if slices.Contains(versionsToCreatePRFor, newVersionName) {
+				log.Info("version referenced by migration map is being configured with the new model, dropping migration for old component", "OldComponent", oldComponentName, "Version", newVersionName, l.Audit, "true")
+				continue
+			}
+			filteredMigrationMap[oldComponentName] = newVersionName
+		}
+		if len(filteredMigrationMap) != len(migrationMap) {
+			migrationMap = filteredMigrationMap
+			if err := r.updateMigrationState(ctx, &component, migrationMap, nil, false); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+		if len(migrationMap) == 0 {
+			performMigration = false
+		}
+	}
+
+	if performMigration {
+		if err := r.linkMigratedSecretsToBuildPipelineServiceAccount(ctx, &component, migrationMap); err != nil {
+			log.Error(err, "Failed to link migrated secrets to build pipeline Service Account")
+			return ctrl.Result{}, err
+		}
+		log.Info("Successfully linked migrated secrets to build pipeline Service Account")
+	}
+
 	var webhookSecretString string
 	var pacSecret *corev1.Secret
 	var gitClient gitprovider.GitProviderClient
 
 	// Get webhook data and PaC secret and git client if any action needs to be performed
-	if createOrUpdateRepository || len(versionsToOnboard) > 0 || len(versionsToOffboard) > 0 || len(versionsToTriggerBuildFor) > 0 || len(versionsToCreatePRFor) > 0 {
+	if createOrUpdateRepository || len(versionsToOnboard) > 0 || len(versionsToOffboard) > 0 || len(versionsToTriggerBuildFor) > 0 || len(versionsToCreatePRFor) > 0 || performMigration {
 		webhookSecretString, pacSecret, err = r.GetPacSecrets(ctx, &component)
 		if err != nil {
 			return ctrl.Result{}, r.handlePersistentError(ctx, &component, err, "Failed to get webhook data and PaC secret")
@@ -683,8 +756,10 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		log.Info("All configurations created successfully", "VersionsWithPRs", versionsToCreatePRFor)
 	}
 
-	// Clear component-level error message on successful reconciliation
-	if component.Status.Message != "" {
+	// Clear component-level error message on successful reconciliation, unless it was just set this
+	// round by a failure to parse the migration_map annotation - that message must survive until the
+	// annotation is fixed, not be wiped out before Reconcile even returns.
+	if migrationMapParseErr == nil && component.Status.Message != "" {
 		if err := r.setStatusMessage(ctx, &component, ""); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -693,6 +768,21 @@ func (r *ComponentBuildReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	log.Info("New model reconciliation completed successfully", l.Action, l.ActionView)
+
+	// TODO remove after only new model is used and old model is gone
+	// migrate pipeline runs in the repository
+	if performMigration {
+		remainingMigrationMap, migrateErr := r.MigratePipelineRunsInRepository(ctx, &component, existingSpecVersions, migrationMap, gitClient, pacSecret.Data)
+		if migrateErr != nil {
+			log.Error(migrateErr, "Failed to migrate pipeline runs in repository")
+		}
+		if err := r.updateMigrationState(ctx, &component, remainingMigrationMap, migrateErr, true); err != nil {
+			return ctrl.Result{}, err
+		}
+		if migrateErr == nil {
+			log.Info("Successfully migrated pipeline runs in repository")
+		}
+	}
 
 	return ctrl.Result{}, nil
 }
@@ -1545,4 +1635,92 @@ func (r *ComponentBuildReconciler) setVersionStatusMessage(ctx context.Context, 
 
 	log.Info("Set version message in status", "Version", versionName, "Message", message, l.Action, l.ActionUpdate)
 	return nil
+}
+
+// TODO remove after only new model is used and old model is gone
+// allErrorsPermanent returns true if err is nil, or if every error it wraps (including, recursively, the
+// errors combined by errors.Join) is a persistent BuildOpError.
+func allErrorsPermanent(err error) bool {
+	if err == nil {
+		return true
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, wrapped := range joined.Unwrap() {
+			if !allErrorsPermanent(wrapped) {
+				return false
+			}
+		}
+		return true
+	}
+	var boErr *boerrors.BuildOpError
+	return errors.As(err, &boErr) && boErr.IsPersistent()
+}
+
+// TODO remove after only new model is used and old model is gone
+// updateMigrationState persists the remaining migration map (old components still pending migration) onto
+// the Component, and removes the migration annotations altogether once the map is empty and migration
+// completed without errors.
+// If migrateErr is nil but remainingMigrationMap is still non-empty (some old components were skipped for
+// lack of a pipeline run file - not an error, just needs a manual fix in the repo) and clearPerformMigration
+// is true, perform_migration is removed too: it's a one-shot trigger, not a "keep retrying" flag, so the
+// reconciler won't attempt migration again until it's explicitly re-requested. Callers that persist a
+// pruned migration map before even attempting migration (e.g. dropping entries whose target version no
+// longer exists) pass false, since that isn't the outcome of an attempt.
+// If migrateErr is non-nil, it's recorded (with a migration-specific prefix) in the component status
+// message. migrateErr is returned unchanged unless every error it wraps is a persistent BuildOpError, in
+// which case retrying won't help so nil is returned instead to avoid forcing a reconcile requeue.
+func (r *ComponentBuildReconciler) updateMigrationState(ctx context.Context, component *compv1alpha1.Component, remainingMigrationMap map[string]string, migrateErr error, clearPerformMigration bool) error {
+	log := ctrllog.FromContext(ctx)
+
+	if migrateErr == nil && len(remainingMigrationMap) == 0 {
+		if _, exists := component.Annotations[performMigrationAnnotationName]; exists {
+			delete(component.Annotations, performMigrationAnnotationName)
+			delete(component.Annotations, migrationMapAnnotationName)
+			if err := r.Client.Update(ctx, component); err != nil {
+				log.Error(err, "failed to update component migration annotations", l.Action, l.ActionUpdate, l.Audit, "true")
+				return err
+			}
+			log.Info("Pipeline runs migration completed, removed migration annotations", l.Action, l.ActionUpdate)
+		}
+		return nil
+	}
+
+	migrationMapJson, err := json.Marshal(remainingMigrationMap)
+	if err != nil {
+		return fmt.Errorf("failed to marshal remaining migration map: %w", err)
+	}
+
+	// Entries are only ever dropped, never added, so a length change is enough to detect an update.
+	var currentMigrationMap map[string]string
+	_ = json.Unmarshal([]byte(component.Annotations[migrationMapAnnotationName]), &currentMigrationMap)
+	mapChanged := len(currentMigrationMap) != len(remainingMigrationMap)
+	dropPerformMigration := migrateErr == nil && clearPerformMigration
+	if mapChanged || dropPerformMigration {
+		if component.Annotations == nil {
+			component.Annotations = map[string]string{}
+		}
+		component.Annotations[migrationMapAnnotationName] = string(migrationMapJson)
+		if dropPerformMigration {
+			delete(component.Annotations, performMigrationAnnotationName)
+		}
+		if err := r.Client.Update(ctx, component); err != nil {
+			log.Error(err, "failed to update component migration map annotation", l.Action, l.ActionUpdate, l.Audit, "true")
+			return err
+		}
+		log.Info("Updated component pipeline runs migration map", l.Action, l.ActionUpdate, "RemainingMigrationMap", remainingMigrationMap, "ClearedPerformMigration", dropPerformMigration)
+	}
+
+	if migrateErr == nil {
+		return nil
+	}
+
+	if err := r.setStatusMessage(ctx, component, fmt.Sprintf("Pipeline runs migration: %s", migrateErr.Error())); err != nil {
+		return err
+	}
+
+	if allErrorsPermanent(migrateErr) {
+		log.Error(migrateErr, "Pipeline runs migration failed with permanent error(s)", l.Audit, "true")
+		return nil
+	}
+	return migrateErr
 }

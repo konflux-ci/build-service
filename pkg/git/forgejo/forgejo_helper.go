@@ -211,10 +211,19 @@ func (f *ForgejoClient) filesUpToDate(owner, repository, branch string, files []
 		remoteFileBytes, err := f.downloadFileContent(owner, repository, branch, file.FullPath)
 		if err != nil {
 			if err.Error() == "not found" {
+				if file.Delete {
+					// Already gone - up to date
+					continue
+				}
 				// File doesn't exist in the repository
 				return false, nil
 			}
 			return false, err
+		}
+
+		if file.Delete {
+			// File should have been deleted but still exists
+			return false, nil
 		}
 
 		if !bytes.Equal(file.Content, remoteFileBytes) {
@@ -259,6 +268,29 @@ func (f *ForgejoClient) fileExist(owner, repository, branch, filePath string) (b
 	return true, contents.SHA, nil
 }
 
+// TODO remove after only new model is used and old model is gone
+// filesInDirectory returns all files existing under the specified directory.
+func (f *ForgejoClient) filesInDirectory(owner, repository, branch, directoryPath string) ([]gp.RepositoryFile, error) {
+	files := []gp.RepositoryFile{}
+
+	contents, resp, err := f.client.ListContents(owner, repository, branch, directoryPath)
+	if err != nil {
+		if resp != nil && resp.StatusCode == http.StatusNotFound {
+			return files, nil
+		}
+		return files, refineGitHostingServiceError(resp.Response, err)
+	}
+
+	for _, content := range contents {
+		if content.Type != "file" {
+			continue
+		}
+		files = append(files, gp.RepositoryFile{FullPath: content.Path})
+	}
+
+	return files, nil
+}
+
 // isRepositoryPublic checks if the repository is public
 func (f *ForgejoClient) isRepositoryPublic(owner, repository string) (bool, error) {
 	repo, resp, err := f.client.GetRepo(owner, repository)
@@ -271,12 +303,13 @@ func (f *ForgejoClient) isRepositoryPublic(owner, repository string) (bool, erro
 	return !repo.Private, nil
 }
 
-// commitFilesIntoBranch creates a commit with the given files in the specified branch
+// commitFilesIntoBranch creates a commit with the given files in the specified branch.
+// Files marked with Delete are removed instead of added/updated.
 func (f *ForgejoClient) commitFilesIntoBranch(owner, repository, branchName, commitMessage, authorName, authorEmail string, signedOff bool, files []gp.RepositoryFile) error {
 	// Note: Forgejo API doesn't support multi-file commits in a single operation
-	// Each file needs to be created/updated individually
+	// Each file needs to be created/updated/deleted individually
 	for _, file := range files {
-		// Check if file exists to determine if we should create or update
+		// Check if file exists to determine if we should create, update or delete
 		exists, sha, err := f.fileExist(owner, repository, branchName, file.FullPath)
 		if err != nil {
 			return err
@@ -285,6 +318,30 @@ func (f *ForgejoClient) commitFilesIntoBranch(owner, repository, branchName, com
 		author := forgejo.Identity{
 			Name:  authorName,
 			Email: authorEmail,
+		}
+
+		if file.Delete {
+			if !exists {
+				continue
+			}
+			opts := forgejo.DeleteFileOptions{
+				FileOptions: forgejo.FileOptions{
+					Message:    commitMessage,
+					BranchName: branchName,
+					Author:     author,
+					Committer:  author,
+					Signoff:    signedOff,
+				},
+				SHA: sha,
+			}
+			resp, err := f.client.DeleteFile(owner, repository, file.FullPath, opts)
+			if err != nil {
+				if resp != nil && resp.StatusCode == http.StatusNotFound {
+					continue
+				}
+				return refineGitHostingServiceError(resp.Response, err)
+			}
+			continue
 		}
 
 		if exists {
