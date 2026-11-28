@@ -9,10 +9,10 @@ require (
 	github.com/google/go-containerregistry v0.21.3
 	github.com/google/go-github/v45 v45.2.0
 	github.com/h2non/gock v1.2.0
-	github.com/konflux-ci/coverport/instrumentation/go v0.0.0-20251127115143-b5207b335f8b
+	github.com/konflux-ci/coverport/instrumentation/go v0.0.0-20261120164020-96782a26f0d7
 	github.com/onsi/ginkgo/v2 v2.27.2
 	github.com/onsi/gomega v1.38.2
-	github.com/openshift/api v0.0.0-20221013123534-96eec44e1979
+	github.com/openshift/api 889c1f5c276a
 	github.com/prometheus/client_golang v1.23.2
 	github.com/xanzy/go-gitlab v0.108.0
 	go.uber.org/zap v1.27.1
@@ -29,8 +29,8 @@ require (
 
 // If you update dependencies below you must also update internal/controller/suite_test.go
 require (
-	github.com/konflux-ci/application-api v0.0.0-20260727123715-2999a91451c6
-	github.com/konflux-ci/image-controller v0.0.0-20250424143112-69ec692d353c
+	github.com/konflux-ci/application-api v0.0.0-20261101085949-41d2a0ab82ca
+	github.com/konflux-ci/image-controller v0.0.0-20261124083921-6171b3e24c72
 	github.com/konflux-ci/release-service v0.0.0-20240610124538-758a1d48d002
 	github.com/openshift-pipelines/pipelines-as-code v0.48.0
 	github.com/tektoncd/pipeline v1.11.1
